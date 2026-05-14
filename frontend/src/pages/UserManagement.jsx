@@ -65,7 +65,7 @@ const UserManagement = () => {
   const handleOpenModal = () => {
     setFormData({
       full_name: '',
-      role: newUserType === 'org' ? 'Org President' : 'chairman',
+      role: newUserType === 'org' ? 'org-president' : 'chairman',
       email: '',
       org_name: '',
       acronym: '',
@@ -83,7 +83,7 @@ const UserManagement = () => {
 
     const payload = {
       full_name: newUserType === 'org' ? formData.org_name : formData.full_name,
-      role: newUserType === 'org' ? 'Org President' : formData.role,
+      role: newUserType === 'org' ? 'org-president' : formData.role,
       email: formData.email,
       password: tempPassword,
       status: 'Active',
@@ -114,10 +114,10 @@ const UserManagement = () => {
     const name = user.full_name || '';
     const role = user.role || '';
     const matchesSearch = name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          role.toLowerCase().includes(searchQuery.toLowerCase());
+                          role.includes(searchQuery);
     
     if (filterType === 'all') return matchesSearch;
-    if (filterType === 'org') return matchesSearch && role === 'Org President';
+    if (filterType === 'org') return matchesSearch && role === 'org-president';
     if (filterType === 'staff') return matchesSearch && (role === 'chairman' || role === 'vice-chairman');
     return matchesSearch;
   });
@@ -200,7 +200,7 @@ const UserManagement = () => {
                   <tr key={user.id} className="hover:bg-gray-50/80 transition-colors group">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-sm ${user.role === 'Org President' ? 'bg-secondary-gold text-primary-green' : 'bg-primary-green'}`}>
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-sm ${user.role === 'org-president' ? 'bg-secondary-gold text-primary-green' : 'bg-primary-green'}`}>
                           {user.full_name?.charAt(0).toUpperCase()}
                         </div>
                         <div>

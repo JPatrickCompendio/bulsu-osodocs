@@ -24,7 +24,7 @@ const Header = () => {
         <div className="flex items-center gap-3">
           <div className="text-right hidden sm:block">
             <p className="text-sm font-bold text-gray-800">{user?.username}</p>
-            <p className="text-[10px] text-gray-400 uppercase tracking-wider">{user?.role?.replace('-', ' ')}</p>
+            <p className="text-[10px] text-gray-400 uppercase tracking-wider">{user?.role}</p>
           </div>
           <div className="w-10 h-10 rounded-full bg-primary-green flex items-center justify-center text-white font-bold border-2 border-white shadow-sm">
             {user?.username?.charAt(0).toUpperCase()}

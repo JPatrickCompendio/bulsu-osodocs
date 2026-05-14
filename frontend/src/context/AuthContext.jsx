@@ -64,13 +64,10 @@ export const AuthProvider = ({ children }) => {
 
             if (data.success && data.profile) {
                 console.log('Profile found via Backend:', data.profile);
-                const normalizedRole =
-                    data.profile.role?.toLowerCase().replace(/\s+/g, '-') || 'user';
-
                 setUser({
                     ...authUser,
                     ...data.profile,
-                    role: normalizedRole
+                    role: data.profile.role || 'user'
                 });
             } else {
                 console.warn('No profile found via Backend.');
@@ -102,8 +99,7 @@ export const AuthProvider = ({ children }) => {
             }
 
             // IMPORTANT: Set the user state manually so navigate('/') works immediately
-            const normalizedRole = data.user.role?.toLowerCase().replace(/\s+/g, '-') || 'user';
-            setUser({ ...data.user, role: normalizedRole });
+            setUser({ ...data.user, role: data.user.role || 'user' });
 
             return { success: true };
         } catch (error) {

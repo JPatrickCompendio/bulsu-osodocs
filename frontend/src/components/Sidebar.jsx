@@ -45,7 +45,7 @@ const Sidebar = () => {
     ],
   };
 
-  const roleKey = user?.role?.toLowerCase().replace(/\s+/g, '-');
+  const roleKey = user?.role;
   const currentMenu = menuItems[roleKey] || [];
 
   return (
@@ -83,7 +83,7 @@ const Sidebar = () => {
           </div>
           <div className="flex flex-col">
             <span className="text-sm font-semibold truncate w-32">{user?.full_name || 'User'}</span>
-            <span className="text-xs text-white/60 capitalize">{user?.role?.replace('-', ' ')}</span>
+            <span className="text-xs text-white/60 capitalize">{user?.role}</span>
           </div>
         </div>
         <button
