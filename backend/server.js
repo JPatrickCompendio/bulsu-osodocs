@@ -78,24 +78,27 @@ const server = http.createServer(async (req, res) => {
 
         // GET /api/users
         if (method === 'GET' && url === '/api/users') {
-            const { supabaseKey } = require('./supabase');
-            const urlToCheck = 'https://ngvnkvzpaynlwvajlxis.supabase.co';
-            console.log('--- CONNECTION CHECK ---');
-            console.log('Connecting to URL:', urlToCheck);
-            
-            const payload = JSON.parse(Buffer.from(supabaseKey.split('.')[1], 'base64').toString());
-            console.log('Using Key Role:', payload.role);
-            console.log('Project Ref in Key:', payload.ref);
+            // 1. Fetch profiles from public.users
+            const { data: profiles, error: profileError } = await supabase.from('users').select('*');
+            if (profileError) return sendJSON(res, { error: profileError.message }, 500);
 
-            const { data, error } = await supabase.from('users').select('*');
-            
-            if (error) {
-                console.error('DB ERROR:', error.message);
-                return sendJSON(res, { error: error.message }, 500);
+            // 2. Fetch users from Supabase Auth (Admin API)
+            const { data: { users: authUsers }, error: authError } = await supabase.auth.admin.listUsers();
+            if (authError) {
+                // If auth fetch fails, return profiles without emails
+                return sendJSON(res, profiles);
             }
 
-            console.log(`Found ${data?.length || 0} users in this specific database.`);
-            return sendJSON(res, data);
+            // 3. Merge Email into profiles
+            const mergedUsers = profiles.map(profile => {
+                const authUser = authUsers.find(u => u.id === profile.id);
+                return {
+                    ...profile,
+                    email: authUser?.email || 'No Email'
+                };
+            });
+
+            return sendJSON(res, mergedUsers);
         }
 
         // POST /api/users
@@ -184,16 +187,27 @@ const server = http.createServer(async (req, res) => {
             const id = url.split('/').pop();
             const body = await getJSONBody(req);
             
+            // 1. Update Auth email if changed
+            if (body.email) {
+                const { error: authError } = await supabase.auth.admin.updateUserById(id, {
+                    email: body.email
+                });
+                if (authError) {
+                    return sendJSON(res, { error: 'Auth Update Error: ' + authError.message }, 500);
+                }
+            }
+
+            // 2. Update profile in public.users
             const { data, error } = await supabase
                 .from('users')
                 .update({
                     full_name: body.full_name,
                     role: body.role,
                     status: body.status,
-                    org_name: body.org_name,
-                    no_member: body.no_member,
-                    adviser_name: body.adviser_name,
-                    joined_date: body.joined_date
+                    org_name: body.org_name || null,
+                    no_member: (body.no_member === "" || body.no_member === undefined) ? null : body.no_member,
+                    adviser_name: body.adviser_name || null,
+                    joined_date: body.joined_date === "" ? null : body.joined_date
                 })
                 .eq('id', id)
                 .select();

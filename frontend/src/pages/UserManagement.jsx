@@ -38,6 +38,8 @@ const UserManagement = () => {
   const [userToDelete, setUserToDelete] = useState(null);
   const [adminPassword, setAdminPassword] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
   
   const { user: currentUser } = useAuth();
 
@@ -139,6 +141,8 @@ const UserManagement = () => {
       
       if (result.success) {
         setIsDeleteModalOpen(false);
+        setSuccessMessage('User account has been successfully deleted!');
+        setIsSuccessModalOpen(true);
         fetchUsers();
       } else {
         alert('Error: ' + result.error);
@@ -235,13 +239,13 @@ const UserManagement = () => {
 
     const payload = {
       full_name: formData.full_name,
-      role: newUserType === 'org' ? 'org-president' : formData.role,
+      role: formData.role,
       email: formData.email,
       status: 'Active',
-      org_name: formData.org_name,
-      no_member: formData.no_member,
-      adviser_name: formData.adviser_name,
-      joined_date: formData.joined_date
+      org_name: formData.org_name || null,
+      no_member: formData.no_member || null,
+      adviser_name: formData.adviser_name || null,
+      joined_date: formData.joined_date || null
     };
     
     if (!isEditMode) {
@@ -262,6 +266,8 @@ const UserManagement = () => {
       
       if (result.success) {
         setIsModalOpen(false);
+        setSuccessMessage(isEditMode ? 'User account has been successfully updated!' : 'New user account has been successfully created!');
+        setIsSuccessModalOpen(true);
         fetchUsers(); // Refresh table
       } else {
         alert('Error: ' + result.error);
@@ -456,13 +462,21 @@ const UserManagement = () => {
             <div className="p-6 border-b border-gray-100">
               <div className="flex p-1 bg-gray-100 rounded-xl w-fit mx-auto text-gray-800">
                 <button 
-                  onClick={() => { setNewUserType('org'); generatePassword('org'); }}
+                  onClick={() => { 
+                    setNewUserType('org'); 
+                    generatePassword('org');
+                    setFormData(prev => ({ ...prev, role: 'org-president' }));
+                  }}
                   className={`px-6 py-2 rounded-lg text-sm font-semibold transition-all ${newUserType === 'org' ? 'bg-white text-primary-green shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
                   Student Organization
                 </button>
                 <button 
-                  onClick={() => { setNewUserType('admin-staff'); generatePassword('admin-staff'); }}
+                  onClick={() => { 
+                    setNewUserType('admin-staff'); 
+                    generatePassword('admin-staff');
+                    setFormData(prev => ({ ...prev, role: 'chairman' }));
+                  }}
                   className={`px-6 py-2 rounded-lg text-sm font-semibold transition-all ${newUserType === 'admin-staff' ? 'bg-white text-primary-green shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
                   Chairman / Vice Chairman
@@ -703,6 +717,30 @@ const UserManagement = () => {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Modal */}
+      {isSuccessModalOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setIsSuccessModalOpen(false)}></div>
+          
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl relative z-10 overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-8 text-center">
+              <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Check size={40} />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">Success!</h2>
+              <p className="text-gray-500 mb-8 text-gray-500">{successMessage}</p>
+              
+              <button 
+                onClick={() => setIsSuccessModalOpen(false)}
+                className="w-full px-6 py-3 bg-primary-green text-white font-bold rounded-xl shadow-lg hover:shadow-primary-green/20 transition-all"
+              >
+                Continue
+              </button>
             </div>
           </div>
         </div>
