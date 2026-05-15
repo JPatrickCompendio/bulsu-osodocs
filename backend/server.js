@@ -101,7 +101,10 @@ const server = http.createServer(async (req, res) => {
         // POST /api/users
         if (method === 'POST' && url === '/api/users') {
             const body = await getJSONBody(req);
-            const { full_name, role, status, profile_image, email, password } = body;
+            const { 
+                full_name, role, status, profile_image, email, password,
+                adviser_name, no_member, org_name 
+            } = body;
 
             if (!full_name || !role || !email || !password) {
                 return sendJSON(res, { error: 'Full name, role, email, and password are required' }, 400);
@@ -127,7 +130,12 @@ const server = http.createServer(async (req, res) => {
                         full_name, 
                         role, 
                         status: status || 'Active', 
-                        profile_image: profile_image || null 
+                        profile_image: profile_image || null,
+                        adviser_name: adviser_name || null,
+                        no_member: no_member || null,
+                        org_name: org_name || null,
+                        joined_date: body.joined_date || null,
+                        created_at: new Date().toISOString()
                     }
                 ])
                 .select();
@@ -169,6 +177,70 @@ const server = http.createServer(async (req, res) => {
                 ]);
             }
             return sendJSON(res, data);
+        }
+
+        // PUT /api/users/:id
+        if (method === 'PUT' && url.startsWith('/api/users/')) {
+            const id = url.split('/').pop();
+            const body = await getJSONBody(req);
+            
+            const { data, error } = await supabase
+                .from('users')
+                .update({
+                    full_name: body.full_name,
+                    role: body.role,
+                    status: body.status,
+                    org_name: body.org_name,
+                    no_member: body.no_member,
+                    adviser_name: body.adviser_name,
+                    joined_date: body.joined_date
+                })
+                .eq('id', id)
+                .select();
+
+            if (error) return sendJSON(res, { error: error.message }, 500);
+            return sendJSON(res, { success: true, user: data[0] });
+        }
+
+        // DELETE /api/users/:id
+        if (method === 'DELETE' && url.startsWith('/api/users/')) {
+            const id = url.split('/').pop();
+            const body = await getJSONBody(req);
+            const { adminEmail, adminPassword } = body;
+
+            if (!adminEmail || !adminPassword) {
+                return sendJSON(res, { error: 'Admin credentials required' }, 400);
+            }
+
+            // 1. Verify admin password
+            const { error: authError } = await supabase.auth.signInWithPassword({
+                email: adminEmail,
+                password: adminPassword,
+            });
+
+            if (authError) {
+                return sendJSON(res, { error: 'Invalid password. Access denied.' }, 401);
+            }
+
+            // 2. Delete the user (This also deletes from users table if there is a cascade or if we manually handle it)
+            // In your setup, Supabase Auth delete doesn't automatically delete from public.users unless you have a trigger.
+            // But usually we delete from public.users first if there's no cascade.
+            
+            const { error: profileDeleteError } = await supabase
+                .from('users')
+                .delete()
+                .eq('id', id);
+
+            if (profileDeleteError) {
+                return sendJSON(res, { error: 'Profile Delete Error: ' + profileDeleteError.message }, 500);
+            }
+
+            const { error: deleteError } = await supabase.auth.admin.deleteUser(id);
+            if (deleteError) {
+                return sendJSON(res, { error: 'Auth Delete Error: ' + deleteError.message }, 500);
+            }
+
+            return sendJSON(res, { success: true });
         }
 
         // GET /api/auth/profile

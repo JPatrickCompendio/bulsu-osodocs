@@ -12,8 +12,15 @@ import {
   Calendar,
   Shield,
   Briefcase,
-  Loader2
+  Loader2,
+  Copy,
+  Pencil,
+  Trash2,
+  Lock
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const UserManagement = () => {
   const [users, setUsers] = useState([]);
@@ -24,6 +31,15 @@ const UserManagement = () => {
   const [filterType, setFilterType] = useState('all');
   const [tempPassword, setTempPassword] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingUserId, setEditingUserId] = useState(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState(null);
+  const [adminPassword, setAdminPassword] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+  
+  const { user: currentUser } = useAuth();
 
   // Form State
   const [formData, setFormData] = useState({
@@ -31,10 +47,9 @@ const UserManagement = () => {
     role: '',
     email: '',
     org_name: '',
-    acronym: '',
-    members: '',
-    formation_date: '',
-    advisers: ''
+    no_member: '',
+    adviser_name: '',
+    joined_date: ''
   });
 
   const fetchUsers = async () => {
@@ -55,6 +70,12 @@ const UserManagement = () => {
   useEffect(() => {
     fetchUsers();
   }, []);
+  
+  const handleCopyPassword = () => {
+    navigator.clipboard.writeText(tempPassword);
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 2000);
+  };
 
   const generatePassword = (type) => {
     const prefix = type === 'org' ? 'OSO' : 'STAFF';
@@ -63,18 +84,149 @@ const UserManagement = () => {
   };
 
   const handleOpenModal = () => {
+    setIsEditMode(false);
+    setEditingUserId(null);
     setFormData({
       full_name: '',
       role: newUserType === 'org' ? 'org-president' : 'chairman',
       email: '',
       org_name: '',
-      acronym: '',
-      members: '',
-      formation_date: '',
-      advisers: ''
+      no_member: '',
+      adviser_name: '',
+      joined_date: ''
     });
     generatePassword(newUserType);
     setIsModalOpen(true);
+  };
+
+  const handleEditClick = (user) => {
+    setIsEditMode(true);
+    setEditingUserId(user.id);
+    setNewUserType(user.role === 'org-president' ? 'org' : 'admin-staff');
+    setFormData({
+      full_name: user.full_name || '',
+      role: user.role || '',
+      email: user.email || '',
+      org_name: user.org_name || '',
+      no_member: user.no_member || '',
+      adviser_name: user.adviser_name || '',
+      joined_date: user.joined_date || ''
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteClick = (user) => {
+    setUserToDelete(user);
+    setAdminPassword('');
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmDelete = async (e) => {
+    e.preventDefault();
+    if (!adminPassword) return;
+    
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`http://localhost:5000/api/users/${userToDelete.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adminEmail: currentUser.email,
+          adminPassword: adminPassword
+        })
+      });
+      const result = await response.json();
+      
+      if (result.success) {
+        setIsDeleteModalOpen(false);
+        fetchUsers();
+      } else {
+        alert('Error: ' + result.error);
+      }
+    } catch (error) {
+      console.error('Error deleting user:', error);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleGenerateReport = () => {
+    const doc = new jsPDF();
+    const timestamp = new Date().toLocaleString();
+    const filterLabel = filterType === 'all' ? 'All Roles' : 
+                       filterType === 'org' ? 'Organization Presidents' : 
+                       'Chairman / Vice Chairman';
+
+    // 1. Header Design
+    doc.setFillColor(34, 139, 34); // Primary Green
+    doc.rect(0, 0, 210, 40, 'F');
+    
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(22);
+    doc.setFont('helvetica', 'bold');
+    doc.text('BULSU BUSTOS', 105, 18, { align: 'center' });
+    
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'normal');
+    doc.text('OSODOCS: USER MANAGEMENT REPORT', 105, 28, { align: 'center' });
+
+    // 2. Report Info
+    doc.setTextColor(80, 80, 80);
+    doc.setFontSize(10);
+    doc.text(`Generated on: ${timestamp}`, 15, 50);
+    doc.text(`Filter Applied: ${filterLabel}`, 15, 55);
+    doc.text(`Total Records: ${filteredUsers.length}`, 15, 60);
+
+    // 3. Table Data
+    const tableHeaders = [['User Details', 'Role', 'Organization', 'Adviser', 'Members', 'Status', 'Joined']];
+    const tableData = filteredUsers.map(user => [
+      `${user.full_name}\n(ID: ${user.id.substring(0, 8)})`,
+      user.role,
+      user.org_name || '—',
+      user.adviser_name || '—',
+      user.no_member || '0',
+      user.status,
+      new Date(user.created_at).toLocaleDateString()
+    ]);
+
+    autoTable(doc, {
+      startY: 70,
+      head: tableHeaders,
+      body: tableData,
+      theme: 'grid',
+      headStyles: { 
+        fillColor: [34, 139, 34], 
+        textColor: [255, 255, 255],
+        fontSize: 9,
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      bodyStyles: { 
+        fontSize: 8,
+        valign: 'middle'
+      },
+      columnStyles: {
+        0: { cellWidth: 40 },
+        1: { cellWidth: 25 },
+        2: { cellWidth: 35 },
+        3: { cellWidth: 30 },
+        4: { cellWidth: 15, halign: 'center' },
+        5: { cellWidth: 20, halign: 'center' },
+        6: { cellWidth: 25, halign: 'center' }
+      },
+      didDrawPage: (data) => {
+        // Footer
+        doc.setFontSize(8);
+        doc.setTextColor(150, 150, 150);
+        doc.text(
+          `Page ${data.pageNumber} - OSODOCS System Generated`,
+          data.settings.margin.left,
+          doc.internal.pageSize.height - 10
+        );
+      }
+    });
+
+    doc.save(`OSODOCS_Report_${filterType}_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
   const handleSaveUser = async (e) => {
@@ -82,16 +234,27 @@ const UserManagement = () => {
     setIsSaving(true);
 
     const payload = {
-      full_name: newUserType === 'org' ? formData.org_name : formData.full_name,
+      full_name: formData.full_name,
       role: newUserType === 'org' ? 'org-president' : formData.role,
       email: formData.email,
-      password: tempPassword,
       status: 'Active',
+      org_name: formData.org_name,
+      no_member: formData.no_member,
+      adviser_name: formData.adviser_name,
+      joined_date: formData.joined_date
     };
+    
+    if (!isEditMode) {
+      payload.password = tempPassword;
+    }
 
     try {
-      const response = await fetch('http://localhost:5000/api/users', {
-        method: 'POST',
+      const url = isEditMode 
+        ? `http://localhost:5000/api/users/${editingUserId}` 
+        : 'http://localhost:5000/api/users';
+      
+      const response = await fetch(url, {
+        method: isEditMode ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
@@ -132,6 +295,7 @@ const UserManagement = () => {
         
         <div className="flex gap-3">
           <button 
+            onClick={handleGenerateReport}
             className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-all shadow-sm"
           >
             <FileText size={18} />
@@ -190,6 +354,9 @@ const UserManagement = () => {
                 <tr className="bg-gray-50/50 border-b border-gray-100">
                   <th className="px-6 py-4 font-semibold text-gray-600 text-sm">User Details</th>
                   <th className="px-6 py-4 font-semibold text-gray-600 text-sm">Role</th>
+                  <th className="px-6 py-4 font-semibold text-gray-600 text-sm">Organization</th>
+                  <th className="px-6 py-4 font-semibold text-gray-600 text-sm">Adviser</th>
+                  <th className="px-6 py-4 font-semibold text-gray-600 text-sm text-center">Members</th>
                   <th className="px-6 py-4 font-semibold text-gray-600 text-sm">Status</th>
                   <th className="px-6 py-4 font-semibold text-gray-600 text-sm">Joined</th>
                   <th className="px-6 py-4 font-semibold text-gray-600 text-sm text-right">Actions</th>
@@ -218,6 +385,15 @@ const UserManagement = () => {
                         {user.role}
                       </span>
                     </td>
+                    <td className="px-6 py-4 text-sm text-gray-600 font-medium">
+                      {user.org_name || <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600">
+                      {user.adviser_name || <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600 text-center font-mono">
+                      {user.no_member || <span className="text-gray-300">—</span>}
+                    </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-1.5">
                         <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
@@ -228,14 +404,27 @@ const UserManagement = () => {
                       {new Date(user.created_at).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button className="p-2 text-gray-300 hover:text-primary-green transition-colors">
-                        <MoreVertical size={18} />
-                      </button>
+                      <div className="flex justify-end gap-2">
+                        <button 
+                          onClick={() => handleEditClick(user)}
+                          className="p-2 text-gray-400 hover:text-blue-600 transition-colors bg-gray-50 rounded-lg hover:bg-blue-50"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        {user.role !== 'admin' && (
+                          <button 
+                            onClick={() => handleDeleteClick(user)}
+                            className="p-2 text-gray-400 hover:text-red-600 transition-colors bg-gray-50 rounded-lg hover:bg-red-50"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan="5" className="px-6 py-20 text-center text-gray-400">
+                    <td colSpan="8" className="px-6 py-20 text-center text-gray-400">
                       No users found.
                     </td>
                   </tr>
@@ -255,8 +444,8 @@ const UserManagement = () => {
             {/* Modal Header */}
             <div className="bg-primary-green p-6 text-white flex justify-between items-center">
               <div>
-                <h2 className="text-xl font-bold">Create New User</h2>
-                <p className="text-white/70 text-xs">Fill in the details to add a new account to Supabase.</p>
+                <h2 className="text-xl font-bold">{isEditMode ? 'Edit User' : 'Create New User'}</h2>
+                <p className="text-white/70 text-xs">{isEditMode ? 'Update existing user profile details.' : 'Fill in the details to add a new account to Supabase.'}</p>
               </div>
               <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
                 <X size={24} />
@@ -286,6 +475,20 @@ const UserManagement = () => {
               {newUserType === 'org' ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">President Full Name</label>
+                    <div className="relative">
+                      <Shield className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                      <input 
+                        type="text" 
+                        required
+                        className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-green" 
+                        placeholder="e.g. Juan Dela Cruz"
+                        value={formData.full_name}
+                        onChange={(e) => setFormData({...formData, full_name: e.target.value})}
+                      />
+                    </div>
+                  </div>
+                  <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Organization Name</label>
                     <div className="relative">
                       <UsersIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -300,23 +503,23 @@ const UserManagement = () => {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Acronym</label>
-                    <input 
-                      type="text" 
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-green" 
-                      placeholder="e.g. SSC"
-                      value={formData.acronym}
-                      onChange={(e) => setFormData({...formData, acronym: e.target.value})}
-                    />
-                  </div>
-                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">No. of Members</label>
                     <input 
                       type="number" 
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-green" 
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-green text-gray-800" 
                       placeholder="0"
-                      value={formData.members}
-                      onChange={(e) => setFormData({...formData, members: e.target.value})}
+                      value={formData.no_member}
+                      onChange={(e) => setFormData({...formData, no_member: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Adviser Name</label>
+                    <input 
+                      type="text" 
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-green text-gray-800" 
+                      placeholder="e.g. Prof. Juan Dela Cruz"
+                      value={formData.adviser_name}
+                      onChange={(e) => setFormData({...formData, adviser_name: e.target.value})}
                     />
                   </div>
                   <div>
@@ -326,8 +529,8 @@ const UserManagement = () => {
                       <input 
                         type="date" 
                         className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-green text-gray-800"
-                        value={formData.formation_date}
-                        onChange={(e) => setFormData({...formData, formation_date: e.target.value})}
+                        value={formData.joined_date}
+                        onChange={(e) => setFormData({...formData, joined_date: e.target.value})}
                       />
                     </div>
                   </div>
@@ -345,13 +548,22 @@ const UserManagement = () => {
                       />
                     </div>
                   </div>
-                  <div className="md:col-span-2 bg-gray-50 p-4 rounded-2xl border border-gray-100 animate-shine">
-                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Temporary Password</label>
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-primary-green font-bold text-lg">{tempPassword}</span>
+                  {!isEditMode && (
+                    <div className="md:col-span-2 bg-gray-50 p-4 rounded-2xl border border-gray-100 animate-shine">
+                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Temporary Password</label>
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono text-primary-green font-bold text-lg">{tempPassword}</span>
+                        <button 
+                          type="button"
+                          onClick={handleCopyPassword}
+                          className={`p-1.5 rounded-lg transition-all ${isCopied ? 'bg-green-100 text-green-600' : 'hover:bg-primary-green/10 text-primary-green'}`}
+                        >
+                          {isCopied ? <Check size={16} /> : <Copy size={16} />}
+                        </button>
+                      </div>
                       <span className="text-[10px] text-gray-400 italic">Auto-generated</span>
                     </div>
-                  </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-6">
@@ -399,13 +611,22 @@ const UserManagement = () => {
                       />
                     </div>
                   </div>
-                  <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 animate-shine">
-                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Temporary Password</label>
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-primary-green font-bold text-lg">{tempPassword}</span>
+                  {!isEditMode && (
+                    <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 animate-shine">
+                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Temporary Password</label>
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono text-primary-green font-bold text-lg">{tempPassword}</span>
+                        <button 
+                          type="button"
+                          onClick={handleCopyPassword}
+                          className={`p-1.5 rounded-lg transition-all ${isCopied ? 'bg-green-100 text-green-600' : 'hover:bg-primary-green/10 text-primary-green'}`}
+                        >
+                          {isCopied ? <Check size={16} /> : <Copy size={16} />}
+                        </button>
+                      </div>
                       <span className="text-[10px] text-gray-400 italic">Auto-generated</span>
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
             </form>
@@ -428,6 +649,60 @@ const UserManagement = () => {
                 {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Check size={18} />}
                 {isSaving ? 'Saving...' : 'Save User'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {isDeleteModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-md transition-opacity" onClick={() => setIsDeleteModalOpen(false)}></div>
+          
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl relative z-10 overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-8 text-center">
+              <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Trash2 size={40} />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">Confirm Deletion</h2>
+              <p className="text-gray-500 mb-8">
+                You are about to delete <span className="font-bold text-gray-800">{userToDelete?.full_name}</span>. This action cannot be undone.
+              </p>
+              
+              <form onSubmit={confirmDelete} className="space-y-4">
+                <div className="text-left">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Verify Admin Password</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                    <input 
+                      type="password" 
+                      required
+                      placeholder="Enter your password"
+                      className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-red-500 transition-all text-gray-800"
+                      value={adminPassword}
+                      onChange={(e) => setAdminPassword(e.target.value)}
+                    />
+                  </div>
+                </div>
+                
+                <div className="flex gap-3 pt-2">
+                  <button 
+                    type="button"
+                    onClick={() => setIsDeleteModalOpen(false)}
+                    className="flex-1 px-6 py-3 border border-gray-200 text-gray-600 font-bold rounded-xl hover:bg-gray-50 transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit"
+                    disabled={isDeleting}
+                    className="flex-1 px-6 py-3 bg-red-600 text-white font-bold rounded-xl shadow-lg hover:shadow-red-600/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {isDeleting ? <Loader2 className="animate-spin" size={18} /> : <Trash2 size={18} />}
+                    {isDeleting ? 'Deleting...' : 'Delete User'}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>
