@@ -87,21 +87,11 @@ export const MyDocuments = () => (
 
 // Moved to separate file: UserManagement.jsx
 
-export const ListOfRequirements = () => (
-  <div>
-    <PageHeader title="List of Requirements" />
-    <Card>
-      <div className="space-y-4">
-        {['Accreditation Form', 'List of Officers', 'Activity Proposal', 'Financial Plan'].map(req => (
-          <div key={req} className="flex items-center justify-between p-4 border border-gray-100 rounded-xl hover:border-secondary-gold transition-colors">
-            <span className="font-medium text-gray-700">{req}</span>
-            <span className="text-xs text-gray-400 font-mono uppercase">Required</span>
-          </div>
-        ))}
-      </div>
-    </Card>
-  </div>
-);
+import ListOfRequirementsComponent from './ListOfRequirements';
+
+import SubmitNewDocumentComponent from './SubmitNewDocument';
+
+export const ListOfRequirements = ListOfRequirementsComponent;
 
 export const Completed = () => (
   <div>
@@ -112,22 +102,4 @@ export const Completed = () => (
   </div>
 );
 
-export const SubmitNewDocuments = () => (
-  <div>
-    <PageHeader title="Submit New Documents" />
-    <Card>
-      <div className="space-y-6">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Document Title</label>
-          <input className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-green outline-none" placeholder="e.g. Activity Report" />
-        </div>
-        <div className="border-2 border-dashed border-gray-200 rounded-2xl p-12 text-center hover:border-primary-green transition-colors">
-          <p className="text-gray-400">Drag and drop files here or click to browse</p>
-        </div>
-        <button className="bg-primary-green text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:shadow-primary-green/20 transition-all">
-          Upload Document
-        </button>
-      </div>
-    </Card>
-  </div>
-);
+export const SubmitNewDocuments = SubmitNewDocumentComponent;
