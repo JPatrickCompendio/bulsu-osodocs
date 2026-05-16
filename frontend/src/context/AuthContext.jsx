@@ -5,32 +5,29 @@ const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
-    const [loading, setLoading] = useState(true); // Start as true to avoid layout flicker
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Patient timeout: If auth doesn't resolve in 6 seconds, force hide loading
+        // Only run the threshold check on the INITIAL mount
+        let isInitialLoad = true;
         const timer = setTimeout(() => {
-            if (loading) {
+            if (isInitialLoad && loading) {
                 console.warn('Auth check reached threshold - proceeding with caution');
                 setLoading(false);
             }
-        }, 6000);
+        }, 8000); // Give it a generous 8 seconds for slow connections
 
         const initializeAuth = async () => {
             try {
-                // Get the current session
                 const { data: { session } } = await supabase.auth.getSession();
-                
                 if (session) {
-                    // Start fetching profile but don't block the UI if it's slow
-                    fetchProfile(session.user);
-                } else {
-                    setLoading(false);
+                    await fetchProfile(session.user);
                 }
             } catch (err) {
                 console.error('Initial session fetch failed:', err);
-                setLoading(false);
             } finally {
+                isInitialLoad = false;
+                setLoading(false);
                 clearTimeout(timer);
             }
         };
@@ -38,21 +35,16 @@ export const AuthProvider = ({ children }) => {
         initializeAuth();
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-            console.log('Supabase Auth Event:', event);
-            try {
-                if (session) {
-                    // Set basic user info immediately
-                    setUser(prevUser => prevUser || { ...session.user, role: 'user' });
-                    
-                    if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED') {
-                        fetchProfile(session.user);
-                    }
-                } else {
-                    setUser(null);
+            if (session) {
+                // Set basic user info so UI can render
+                setUser(prevUser => prevUser || { ...session.user, role: 'user' });
+                
+                if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+                    fetchProfile(session.user);
                 }
-            } finally {
+            } else {
+                setUser(null);
                 setLoading(false);
-                clearTimeout(timer);
             }
         });
 
@@ -65,8 +57,6 @@ export const AuthProvider = ({ children }) => {
     const fetchProfile = async (authUser) => {
         try {
             const response = await fetch(`http://localhost:5000/api/auth/profile?id=${authUser.id}`);
-            if (!response.ok) throw new Error('Profile fetch failed');
-            
             const data = await response.json();
 
             if (data.success && data.profile) {
@@ -79,7 +69,7 @@ export const AuthProvider = ({ children }) => {
                 setUser({ ...authUser, role: 'user' });
             }
         } catch (error) {
-            console.warn('Profile fetch background error:', error.message);
+            console.warn('Profile fetch background sync:', error.message);
             setUser(prev => prev || { ...authUser, role: 'user' });
         } finally {
             setLoading(false);
@@ -87,6 +77,7 @@ export const AuthProvider = ({ children }) => {
     };
 
     const login = async (email, password) => {
+        setLoading(true); // Show loading during manual login
         try {
             const response = await fetch('http://localhost:5000/api/auth/login', {
                 method: 'POST',
@@ -109,17 +100,14 @@ export const AuthProvider = ({ children }) => {
         } catch (error) {
             console.error('Login error:', error.message);
             return { success: false, error: error.message };
+        } finally {
+            setLoading(false);
         }
     };
 
     const logout = async () => {
-        try {
-            await supabase.auth.signOut();
-            setUser(null);
-        } catch (err) {
-            console.error('Logout error:', err);
-            setUser(null);
-        }
+        await supabase.auth.signOut();
+        setUser(null);
     };
 
     return (
