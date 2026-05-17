@@ -91,8 +91,8 @@ export const uploadSubmissionFile = async (file, typeName, submissionId, version
   const timestamp = Date.now();
   const safeFileName = file.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
   
-  // New folder structure: submissions/activity-proposal/in-campus/{id}/file.pdf
-  let folderPath = `${safeTypeName}`;
+  // New folder structure: submitted-documents/activity-proposal/in-campus/{id}/file.pdf
+  let folderPath = `submitted-documents/${safeTypeName}`;
   if (proposalType) {
     folderPath += `/${proposalType.toLowerCase().replace(' ', '-')}`;
   }
