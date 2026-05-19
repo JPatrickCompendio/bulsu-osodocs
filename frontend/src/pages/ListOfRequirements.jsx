@@ -23,7 +23,9 @@ import {
   AlertCircle,
   CheckCircle2,
   LayoutGrid,
-  Settings2
+  Settings2,
+  MoreVertical,
+  MoreHorizontal
 } from 'lucide-react';
 
 const ListOfRequirements = () => {
@@ -46,6 +48,8 @@ const ListOfRequirements = () => {
   const [subType, setSubType] = useState('In-Campus'); // NEW: Subcategory state
   const [previewUrl, setPreviewUrl] = useState('');
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [activeDropdown, setActiveDropdown] = useState(null);
+  const [reqToDelete, setReqToDelete] = useState(null);
   
   // Form state
   const [formData, setFormData] = useState({
@@ -279,7 +283,7 @@ const ListOfRequirements = () => {
   }
 
   return (
-    <div className="p-8 max-w-[1500px] mx-auto min-h-screen animate-in fade-in duration-500">
+    <div className="w-full min-h-screen animate-in fade-in duration-500">
       {/* Toast */}
       {toast && (
         <div className={`fixed top-10 right-10 z-[200] flex items-center gap-4 px-8 py-5 rounded-[2rem] shadow-2xl animate-in slide-in-from-right-full duration-500 ${
@@ -293,11 +297,11 @@ const ListOfRequirements = () => {
       {/* Header */}
       <div className="mb-16 flex flex-col xl:flex-row xl:items-center justify-between gap-10">
         <div className="flex items-center gap-6">
-          <div className="p-5 bg-primary-green rounded-[2rem] shadow-2xl shadow-primary-green/30 ring-8 ring-primary-green/5">
-            <LayoutGrid className="text-white" size={40} />
+          <div className="p-3 bg-primary-green rounded-xl shadow-lg shadow-primary-green/20">
+            <LayoutGrid className="text-white" size={28} />
           </div>
           <div>
-            <h1 className="text-5xl font-black text-gray-800 uppercase tracking-tighter mb-2">Requirements</h1>
+            <h1 className="text-3xl font-black text-gray-800 uppercase tracking-tighter mb-1">Requirements</h1>
             <div className="flex items-center gap-3 text-gray-400 font-bold uppercase tracking-widest text-[10px]">
               <span className="text-primary-green">Document Management</span>
               <ChevronRight size={14} />
@@ -312,7 +316,7 @@ const ListOfRequirements = () => {
             <input 
               type="text" 
               placeholder="Search by title, code, or content..."
-              className="w-full pl-16 pr-8 py-5 bg-white border-2 border-gray-100 rounded-[2.5rem] focus:border-primary-green focus:ring-0 outline-none transition-all shadow-xl shadow-gray-200/40 font-bold text-gray-700"
+              className="w-full pl-12 pr-6 py-3.5 bg-white border border-gray-200 rounded-xl focus:border-primary-green focus:ring-0 outline-none transition-all shadow-sm font-bold text-gray-700 text-sm"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -320,9 +324,9 @@ const ListOfRequirements = () => {
           {isAdmin && !selectedType && (
             <button 
               onClick={() => handleOpenTypeModal()}
-              className="bg-gray-800 text-white px-8 py-5 rounded-[2rem] font-black flex items-center gap-3 hover:bg-black transition-all shadow-xl shadow-gray-900/20 whitespace-nowrap"
+              className="bg-gray-800 text-white px-6 py-3.5 rounded-xl text-sm font-black flex items-center gap-2 hover:bg-black transition-all shadow-md whitespace-nowrap"
             >
-              <Settings2 size={24} />
+              <Settings2 size={18} />
               New Category
             </button>
           )}
@@ -336,15 +340,15 @@ const ListOfRequirements = () => {
             <div 
               key={type.id}
               onClick={() => setSelectedType(type)}
-              className="bg-white p-12 rounded-[3.5rem] border border-gray-100 shadow-[0_30px_70px_-20px_rgba(0,0,0,0.06)] hover:shadow-[0_50px_100px_-30px_rgba(16,82,32,0.15)] hover:-translate-y-3 transition-all duration-500 cursor-pointer group relative overflow-hidden"
+              className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 cursor-pointer group relative overflow-hidden"
             >
-              <div className={`${getBgForType(type.name)} w-24 h-24 rounded-[2.5rem] flex items-center justify-center mb-10 group-hover:scale-110 transition-transform duration-500 shadow-inner`}>
-                {React.cloneElement(getIconForType(type.name), { size: 48 })}
+              <div className={`${getBgForType(type.name)} w-16 h-16 rounded-xl flex items-center justify-center mb-6 group-hover:scale-105 transition-transform duration-300`}>
+                {React.cloneElement(getIconForType(type.name), { size: 32 })}
               </div>
-              <h3 className="text-4xl font-black text-gray-800 mb-6 group-hover:text-primary-green transition-colors leading-tight">{type.name}</h3>
-              <p className="text-gray-400 font-bold leading-relaxed mb-12 text-lg line-clamp-2">{type.description || 'View and download requirements for this document category.'}</p>
+              <h3 className="text-xl font-black text-gray-800 mb-3 group-hover:text-primary-green transition-colors leading-tight">{type.name}</h3>
+              <p className="text-gray-500 font-medium leading-relaxed mb-8 text-sm line-clamp-2">{type.description || 'View and download requirements for this document category.'}</p>
               
-              <div className="pt-10 border-t-2 border-gray-50 flex items-center justify-between mt-auto">
+              <div className="pt-6 border-t border-gray-50 flex items-center justify-between mt-auto">
                 {isAdmin && (
                   <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                     <button onClick={() => handleOpenTypeModal(type)} className="p-3 text-gray-300 hover:text-blue-500 hover:bg-blue-50 rounded-2xl transition-all"><Edit2 size={20} /></button>
@@ -353,19 +357,19 @@ const ListOfRequirements = () => {
                 )}
                 <div className="flex items-center gap-3 ml-auto">
                   <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Explore List</span>
-                  <div className="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center text-gray-300 group-hover:bg-primary-green group-hover:text-white group-hover:rotate-45 transition-all duration-500">
-                    <ChevronRight size={24} />
+                  <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-gray-400 group-hover:bg-primary-green group-hover:text-white transition-all duration-300">
+                    <ChevronRight size={16} />
                   </div>
                 </div>
               </div>
             </div>
           ))}
           {documentTypes.length === 0 && (
-            <div className="col-span-full py-32 text-center bg-white rounded-[4rem] border-4 border-dashed border-gray-50 flex flex-col items-center gap-6">
-              <Info size={80} className="text-gray-200" />
-              <div className="space-y-2">
-                <p className="text-3xl font-black text-gray-300 uppercase tracking-widest">No Categories Defined</p>
-                <p className="text-gray-400 font-bold">Admins can create new document types to start grouping requirements.</p>
+            <div className="col-span-full py-20 text-center bg-white rounded-3xl border-2 border-dashed border-gray-100 flex flex-col items-center gap-4">
+              <Info size={48} className="text-gray-300" />
+              <div className="space-y-1">
+                <p className="text-xl font-black text-gray-400 uppercase tracking-widest">No Categories Defined</p>
+                <p className="text-gray-500 text-sm">Admins can create new document types to start grouping requirements.</p>
               </div>
             </div>
           )}
@@ -373,66 +377,49 @@ const ListOfRequirements = () => {
       ) : (
         /* Requirements Table */
         <div className="animate-in slide-in-from-right-10 duration-500">
-          <div className="flex flex-col md:flex-row md:items-center justify-between mb-12 gap-8">
+          <div className="flex items-center justify-between mb-8">
             <button 
               onClick={() => setSelectedType(null)}
-              className="flex items-center gap-4 text-gray-400 hover:text-primary-green transition-all group px-8 py-4 bg-white border-2 border-gray-100 rounded-3xl w-fit shadow-xl shadow-gray-200/20"
+              className="flex items-center gap-3 text-gray-500 hover:text-primary-green hover:bg-gray-50 transition-all p-3 rounded-xl"
             >
-              <ArrowLeft size={24} className="group-hover:-translate-x-3 transition-transform duration-300" />
-              <span className="font-black uppercase tracking-widest text-xs">Return to Dashboard</span>
+              <ArrowLeft size={24} />
+              <span className="font-bold text-sm">Back</span>
             </button>
 
-            <div className="flex items-center gap-6">
-              <div className="hidden lg:flex bg-gray-100 p-2 rounded-[2rem] shadow-inner max-w-xl overflow-x-auto no-scrollbar">
-                {documentTypes.slice(0, 3).map(type => (
-                  <button
-                    key={type.id}
-                    onClick={() => setSelectedType(type)}
-                    className={`px-8 py-3 rounded-2xl text-xs font-black transition-all duration-300 whitespace-nowrap ${
-                      selectedType.id === type.id 
-                        ? 'bg-white text-primary-green shadow-xl' 
-                        : 'text-gray-400 hover:text-gray-600'
-                    }`}
-                  >
-                    {type.name}
-                  </button>
-                ))}
-              </div>
-              {isAdmin && (
-                <button 
-                  onClick={() => handleOpenReqModal()}
-                  className="bg-primary-green text-white px-10 py-5 rounded-[2rem] font-black flex items-center gap-4 hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-primary-green/30"
-                >
-                  <Plus size={28} />
-                  Add Document
-                </button>
-              )}
-            </div>
+            {isAdmin && (
+              <button 
+                onClick={() => handleOpenReqModal()}
+                className="bg-primary-green text-white px-6 py-3 rounded-xl font-black flex items-center gap-3 hover:scale-105 active:scale-95 transition-all shadow-lg shadow-primary-green/30"
+              >
+                <Plus size={20} />
+                Add Requirement
+              </button>
+            )}
           </div>
 
-          <div className="bg-white rounded-[4rem] border-2 border-gray-50 shadow-[0_40px_100px_-30px_rgba(0,0,0,0.08)] overflow-hidden">
-            <div className="p-12 border-b-2 border-gray-50 bg-gray-50/20 flex flex-col md:flex-row items-center justify-between gap-10">
-              <div className="flex items-center gap-8">
-                <div className={`${getBgForType(selectedType.name)} w-20 h-20 rounded-[2rem] shadow-xl flex items-center justify-center ring-8 ring-white`}>
-                  {React.cloneElement(getIconForType(selectedType.name), { size: 32 })}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="p-8 border-b border-gray-100 bg-gray-50/30 flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="flex items-center gap-5">
+                <div className={`${getBgForType(selectedType.name)} w-14 h-14 rounded-xl shadow-sm flex items-center justify-center`}>
+                  {React.cloneElement(getIconForType(selectedType.name), { size: 24 })}
                 </div>
                 <div>
-                  <h2 className="text-4xl font-black text-gray-800 tracking-tight leading-none mb-3">{selectedType.name}</h2>
-                  <p className="text-gray-400 font-bold text-lg">{selectedType.description || 'System-authorized requirements and templates.'}</p>
+                  <h2 className="text-2xl font-black text-gray-800 tracking-tight leading-none mb-1.5">{selectedType.name}</h2>
+                  <p className="text-gray-500 text-sm">{selectedType.description || 'System-authorized requirements and templates.'}</p>
                 </div>
               </div>
 
               {/* NEW: Subcategory Toggle for Activity Proposal */}
               {selectedType.name.toLowerCase().includes('activity proposal') && (
-                <div className="flex bg-white p-2 rounded-[2.5rem] shadow-xl border-2 border-gray-50 ring-8 ring-gray-50/30">
+                <div className="flex bg-white p-1.5 rounded-xl shadow-sm border border-gray-100">
                   {['In-Campus', 'Off-Campus'].map((type) => (
                     <button
                       key={type}
                       onClick={() => setSubType(type)}
-                      className={`px-12 py-5 rounded-[1.8rem] text-sm font-black transition-all duration-500 uppercase tracking-widest ${
+                      className={`px-6 py-2.5 rounded-lg text-xs font-black transition-all duration-300 uppercase tracking-widest ${
                         subType === type 
-                          ? 'bg-primary-green text-white shadow-2xl shadow-primary-green/40 scale-105' 
-                          : 'text-gray-400 hover:bg-gray-50'
+                          ? 'bg-primary-green text-white shadow-md' 
+                          : 'text-gray-500 hover:bg-gray-50'
                       }`}
                     >
                       {type}
@@ -446,62 +433,75 @@ const ListOfRequirements = () => {
               <table className="w-full text-left">
                 <thead>
                   <tr className="bg-gray-50/30 text-gray-400 border-b-2 border-gray-50">
-                    <th className="px-12 py-8 font-black text-[10px] uppercase tracking-[0.2em] w-1/2">Requirement Title & Info</th>
-                    <th className="px-12 py-8 font-black text-[10px] uppercase tracking-[0.2em]">Code</th>
-                    <th className="px-12 py-8 font-black text-[10px] uppercase tracking-[0.2em] text-center">Status</th>
-                    <th className="px-12 py-8 font-black text-[10px] uppercase tracking-[0.2em] text-right">Actions</th>
+                    <th className="px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] w-1/4">Title of Requirement</th>
+                    <th className="px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em]">Code</th>
+                    <th className="px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] w-1/3">Description</th>
+                    <th className="px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em]">Attachment</th>
+                    <th className="px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y-2 divide-gray-50">
                   {requirements.filter(req => req.title.toLowerCase().includes(searchQuery.toLowerCase())).length > 0 ? (
                     requirements.filter(req => req.title.toLowerCase().includes(searchQuery.toLowerCase())).map((req) => (
                       <tr key={req.id} className="hover:bg-gray-50/20 transition-all group">
-                        <td className="px-12 py-10">
-                          <div className="flex items-start gap-6">
-                            <div className="w-14 h-14 rounded-2xl bg-white shadow-lg flex items-center justify-center text-primary-green border border-gray-50 group-hover:rotate-3 transition-transform">
-                              <FileText size={28} />
-                            </div>
-                            <div>
-                              <div className="font-black text-2xl text-gray-800 mb-2">{req.title}</div>
-                              <p className="text-gray-400 font-bold text-sm leading-relaxed max-w-xl line-clamp-1">{req.description || 'No special instructions provided.'}</p>
-                            </div>
-                          </div>
+                        <td className="px-6 py-4">
+                          <div className="font-black text-lg text-gray-800">{req.title}</div>
                         </td>
-                        <td className="px-12 py-10">
-                          <span className="px-6 py-2.5 bg-gray-100 text-gray-500 rounded-2xl text-[10px] font-black tracking-widest border border-gray-200/50">
+                        <td className="px-6 py-4">
+                          <span className="px-3 py-1.5 bg-gray-100 text-gray-500 rounded-lg text-[10px] font-black tracking-widest border border-gray-200/50">
                             {req.referenceCode || 'GENERAL'}
                           </span>
                         </td>
-                        <td className="px-12 py-10">
-                          <div className="flex justify-center">
-                            {req.file_url ? (
-                              <div className="flex items-center gap-3 px-6 py-2.5 bg-green-50 text-green-600 rounded-full border border-green-100/50">
-                                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                                <span className="font-black text-[10px] uppercase tracking-widest">Available</span>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-3 px-6 py-2.5 bg-gray-50 text-gray-400 rounded-full border border-gray-100/50">
-                                <span className="font-black text-[10px] uppercase tracking-widest">No Template</span>
-                              </div>
-                            )}
-                          </div>
+                        <td className="px-6 py-4">
+                          <p className="text-gray-400 font-bold text-xs leading-relaxed line-clamp-2">{req.description || 'No special instructions provided.'}</p>
                         </td>
-                        <td className="px-12 py-10">
-                          <div className="flex items-center justify-end gap-3">
-                            {req.file_url && (
-                              <>
-                                {!req.file_url.toLowerCase().endsWith('.docx') && (
-                                  <button onClick={() => handlePreview(req.file_url)} className="p-4 text-gray-400 hover:text-primary-green hover:bg-primary-green/10 rounded-2xl transition-all" title="Preview"><Eye size={24} /></button>
+                        <td className="px-6 py-4">
+                          {req.file_url ? (
+                            <div className="flex items-center gap-2 text-primary-green">
+                              <FileText size={16} />
+                              <span className="font-black text-xs truncate max-w-[150px]">
+                                {req.file_url.split('/').pop()}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="font-black text-xs text-gray-400 uppercase">None</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 relative">
+                          <div className="flex justify-end relative">
+                            <button 
+                              onClick={() => setActiveDropdown(activeDropdown === req.id ? null : req.id)}
+                              className="p-2 text-gray-400 hover:text-primary-green hover:bg-gray-100 rounded-lg transition-all"
+                            >
+                              <MoreHorizontal size={20} />
+                            </button>
+                            
+                            {activeDropdown === req.id && (
+                              <div className="absolute right-0 top-10 mt-2 w-48 bg-white rounded-xl shadow-xl border border-gray-100 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                                {req.file_url && (
+                                  <>
+                                    {!req.file_url.toLowerCase().endsWith('.docx') && (
+                                      <button onClick={() => { handlePreview(req.file_url); setActiveDropdown(null); }} className="w-full text-left px-4 py-3 text-sm font-bold text-gray-600 hover:bg-gray-50 hover:text-primary-green flex items-center gap-3">
+                                        <Eye size={16} /> Preview
+                                      </button>
+                                    )}
+                                    <button onClick={() => { handleDownload(req.file_url, `${req.title}${req.file_url.toLowerCase().endsWith('.docx') ? '.docx' : '.pdf'}`); setActiveDropdown(null); }} className="w-full text-left px-4 py-3 text-sm font-bold text-gray-600 hover:bg-gray-50 hover:text-primary-green flex items-center gap-3">
+                                      <Download size={16} /> Download
+                                    </button>
+                                  </>
                                 )}
-                                <button onClick={() => handleDownload(req.file_url, `${req.title}${req.file_url.toLowerCase().endsWith('.docx') ? '.docx' : '.pdf'}`)} className="p-4 text-gray-400 hover:text-primary-green hover:bg-primary-green/10 rounded-2xl transition-all" title="Download"><Download size={24} /></button>
-                              </>
-                            )}
-                            {isAdmin && (
-                              <>
-                                <div className="w-[2px] h-10 bg-gray-100 mx-2" />
-                                <button onClick={() => handleOpenReqModal(req)} className="p-4 text-gray-300 hover:text-blue-500 hover:bg-blue-50 rounded-2xl transition-all"><Edit2 size={22} /></button>
-                                <button onClick={(e) => { e.stopPropagation(); reqService.deleteRequirement(req.id, req.file_url).then(() => loadRequirements(selectedType.id)); }} className="p-4 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all"><Trash2 size={22} /></button>
-                              </>
+                                {isAdmin && (
+                                  <>
+                                    <div className="h-[1px] bg-gray-100 w-full" />
+                                    <button onClick={() => { handleOpenReqModal(req); setActiveDropdown(null); }} className="w-full text-left px-4 py-3 text-sm font-bold text-gray-600 hover:bg-blue-50 hover:text-blue-600 flex items-center gap-3">
+                                      <Edit2 size={16} /> Edit
+                                    </button>
+                                    <button onClick={() => { setReqToDelete(req); setActiveDropdown(null); }} className="w-full text-left px-4 py-3 text-sm font-bold text-red-500 hover:bg-red-50 flex items-center gap-3">
+                                      <Trash2 size={16} /> Delete
+                                    </button>
+                                  </>
+                                )}
+                              </div>
                             )}
                           </div>
                         </td>
@@ -509,12 +509,12 @@ const ListOfRequirements = () => {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={4} className="px-12 py-32 text-center opacity-40">
-                        <div className="flex flex-col items-center gap-8">
-                          <Info size={100} className="text-gray-200" />
-                          <div className="space-y-2">
-                            <p className="text-3xl font-black text-gray-400 uppercase tracking-widest">Category Empty</p>
-                            <p className="text-gray-400 font-bold">No requirements have been listed for this document type yet.</p>
+                      <td colSpan={5} className="px-6 py-20 text-center opacity-40">
+                        <div className="flex flex-col items-center gap-4">
+                          <Info size={64} className="text-gray-200" />
+                          <div className="space-y-1">
+                            <p className="text-xl font-black text-gray-400 uppercase tracking-widest">Category Empty</p>
+                            <p className="text-gray-400 font-bold text-sm">No requirements have been listed yet.</p>
                           </div>
                         </div>
                       </td>
@@ -522,6 +522,32 @@ const ListOfRequirements = () => {
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {reqToDelete && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-gray-950/40 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden p-8 animate-in zoom-in-95 duration-300 text-center">
+            <AlertCircle size={64} className="text-red-500 mx-auto mb-6" />
+            <h3 className="text-2xl font-black text-gray-800 mb-2">Delete Requirement?</h3>
+            <p className="text-gray-500 font-bold mb-8">Are you sure you want to delete "{reqToDelete.title}"? This action cannot be undone.</p>
+            <div className="flex gap-4">
+              <button onClick={() => setReqToDelete(null)} className="flex-1 py-4 bg-gray-100 text-gray-600 font-bold rounded-xl hover:bg-gray-200 transition-all">Cancel</button>
+              <button 
+                onClick={() => {
+                  reqService.deleteRequirement(reqToDelete.id, reqToDelete.file_url).then(() => {
+                    loadRequirements(selectedType.id, subType);
+                    setReqToDelete(null);
+                    showToast('Requirement deleted');
+                  });
+                }} 
+                className="flex-1 py-4 bg-red-500 text-white font-bold rounded-xl hover:bg-red-600 transition-all shadow-lg shadow-red-500/30"
+              >
+                Delete
+              </button>
             </div>
           </div>
         </div>

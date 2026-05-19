@@ -3,32 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import * as subService from '../services/submissionService';
 import * as reqService from '../services/requirementService';
+import { supabase } from '../supabaseClient';
 import { 
-  FileText, 
-  Upload, 
-  Send, 
-  Save, 
-  ArrowLeft, 
-  CheckCircle2, 
-  AlertCircle, 
-  Loader2, 
-  Info,
-  Calendar,
-  User,
-  MapPin,
-  Clock,
-  Users,
-  Search,
-  ChevronRight,
-  RefreshCcw,
-  X,
-  FileCheck,
-  Download,
-  Eye,
-  Trash2,
-  File as FileIcon,
-  Eraser,
-  Check
+  FileText, Upload, Send, Save, ArrowLeft, CheckCircle2, 
+  AlertCircle, Loader2, Info, Calendar, User, MapPin, 
+  Clock, Users, Search, ChevronRight, RefreshCcw, X, 
+  FileCheck, Download, Eye, Trash2, File as FileIcon, 
+  Eraser, Check, CheckSquare
 } from 'lucide-react';
 
 const SubmitNewDocument = () => {
@@ -39,46 +20,30 @@ const SubmitNewDocument = () => {
   const [view, setView] = useState('dashboard'); // 'dashboard' or 'form'
   const [loading, setLoading] = useState(true);
   const [docTypes, setDocTypes] = useState([]);
+  const [reqCounts, setReqCounts] = useState({}); // Dynamic counts
   const [selectedType, setSelectedType] = useState(null);
   const [subType, setSubType] = useState('');
   const [requirements, setRequirements] = useState([]);
-  const [submission, setSubmission] = useState(null);
-  const [version, setVersion] = useState(null);
   
   // UI States
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [uploading, setUploading] = useState(null);
+  const [showClearModal, setShowClearModal] = useState(false);
+  const [showUnsavedModal, setShowUnsavedModal] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [toast, setToast] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showUploadModal, setShowUploadModal] = useState(false);
 
   // Form Data
-  const [proposalDetails, setProposalDetails] = useState({
-    activity_number: '',
-    organization_name: '',
-    adviser_name: '',
-    activity_title: '',
-    person_in_charge: '',
-    student_id_no: '',
-    contact_number: '',
-    target_venue: '',
-    target_date: '',
-    target_time: '',
-    duration: '',
-    number_of_students: '',
-    // New fields from Image
-    target_audience: [], // members, bulsuans, public
-    nature_of_activity: '', // co-curricular, extra-curricular
-    objectives: [], // leadership, membership, etc.
-    others_objective: '',
-    satisfaction_goal_1: '',
-    satisfaction_goal_2: '',
-    satisfaction_goal_3: '',
-    partners: '',
-    sponsors: ''
-  });
-
-  const [attachments, setAttachments] = useState({});
+  const defaultForm = {
+    activity_number: '', organization_name: '', adviser_name: '', activity_title: '',
+    person_in_charge: '', student_id_no: '', contact_number: '', target_venue: '', 
+    target_date: '', target_time: '', duration: '', number_of_students: '',
+    target_audience: [], nature_of_activity: '', objectives: [], others_objective: '', 
+    satisfaction_goal_1: '', satisfaction_goal_2: '', satisfaction_goal_3: '', partners: '', sponsors: ''
+  };
+  const [proposalDetails, setProposalDetails] = useState(defaultForm);
+  const [localFiles, setLocalFiles] = useState({}); // Stores actual File objects before uploading
 
   useEffect(() => {
     loadDocumentTypes();
@@ -93,6 +58,17 @@ const SubmitNewDocument = () => {
     try {
       const types = await reqService.fetchDocumentTypes();
       setDocTypes(types || []);
+      
+      // Fetch dynamic requirement counts
+      const reqs = await supabase.from('requirements').select('documentTypeID, proposal_type');
+      const counts = {};
+      if (reqs.data) {
+        reqs.data.forEach(r => {
+          const key = r.proposal_type ? `${r.documentTypeID}-${r.proposal_type}` : r.documentTypeID;
+          counts[key] = (counts[key] || 0) + 1;
+        });
+      }
+      setReqCounts(counts);
     } catch (err) {
       showToast('Failed to load categories', 'error');
     } finally {
@@ -100,25 +76,43 @@ const SubmitNewDocument = () => {
     }
   };
 
+  const getReqCount = (typeId, subName) => {
+    const pType = subName ? subName.toLowerCase().replace(' ', '-') : null;
+    const specificCount = reqCounts[`${typeId}-${pType}`] || 0;
+    const generalCount = reqCounts[typeId] || 0;
+    return pType ? specificCount + generalCount : generalCount;
+  };
+
   const handleSelectType = async (type, subName = '') => {
     setLoading(true);
     try {
-      // 1. Create a draft submission and v1 version
-      const { submission: sub, version: ver } = await subService.startNewSubmission(user.id, type.id, type.name);
-      
-      // 2. Load requirements for this specific type AND subcategory (In-Campus/Off-Campus)
       const isProposal = type.name.toLowerCase().includes('activity proposal');
       const reqs = await subService.getRequirementsForType(type.id, isProposal ? subName : null);
       
-      setSubmission(sub);
-      setVersion(ver);
       setRequirements(reqs || []);
       setSelectedType(type);
       setSubType(subName);
+      setLocalFiles({}); // Reset files
       
-      // Auto-generate Activity Number
-      const dateStr = new Date().getFullYear() + '-' + (new Date().getMonth() + 1).toString().padStart(2, '0');
-      setProposalDetails(prev => ({ ...prev, activity_number: `AP-${dateStr}-001` }));
+      if (isProposal) {
+        const dateStr = new Date().getFullYear() + '-' + (new Date().getMonth() + 1).toString().padStart(2, '0');
+        setProposalDetails(prev => ({ 
+          ...defaultForm, 
+          activity_number: `AP-${dateStr}-001`,
+          organization_name: user?.org_name || '',
+          adviser_name: user?.adviser_name || '',
+          person_in_charge: user?.full_name || '',
+          student_id_no: user?.student_no || ''
+        }));
+      } else {
+        setProposalDetails({
+          ...defaultForm,
+          organization_name: user?.org_name || '',
+          adviser_name: user?.adviser_name || '',
+          person_in_charge: user?.full_name || '',
+          student_id_no: user?.student_no || ''
+        });
+      }
       
       setView('form');
     } catch (err) {
@@ -129,40 +123,102 @@ const SubmitNewDocument = () => {
     }
   };
 
-  const handleFileUpload = async (reqId, file) => {
+  const handleFileUpload = (reqId, file) => {
     if (!file) return;
-    setUploading(reqId);
+    setLocalFiles(prev => ({ ...prev, [reqId]: file }));
+  };
+
+  useEffect(() => {
+    // Detect if the user has made any meaningful unsaved changes
+    const isDirty = Object.keys(localFiles).length > 0 || 
+                    proposalDetails.activity_title.trim() !== '' || 
+                    proposalDetails.target_date !== '' || 
+                    proposalDetails.target_venue !== '' || 
+                    proposalDetails.nature_of_activity !== '';
+    setHasUnsavedChanges(isDirty);
+  }, [proposalDetails, localFiles]);
+
+  const processUploadsAndSave = async (status) => {
+    setIsSaving(true);
     try {
-      // Include subType (In-Campus/Off-Campus) in the upload path
-      const path = await subService.uploadSubmissionFile(file, selectedType.name, submission.id, version.version_number, subType);
-      const record = await subService.saveAttachmentRecord(version.id, reqId, file.name, path);
-      setAttachments(prev => ({ ...prev, [reqId]: record }));
+      // 1. Create submission and version records first
+      const { submission, version } = await subService.startNewSubmission(user.id, selectedType.id, selectedType.name);
+
+      // 2. Upload all local files to bucket
+      for (const [reqId, file] of Object.entries(localFiles)) {
+        const path = await subService.uploadSubmissionFile(file, selectedType.name, submission.id, version.version_number, subType);
+        await subService.saveAttachmentRecord(version.id, reqId, file.name, path);
+      }
+
+      // 3. Save Proposal Details if it's an Activity Proposal
+      const isProposal = selectedType.name.toLowerCase().includes('activity proposal');
+      if (isProposal) {
+        await subService.saveProposalDetails(version.id, proposalDetails, subType);
+      }
+
+      // 4. If status is 'submitted', finalize it
+      if (status === 'submitted') {
+        await subService.submitForReview(submission.id, version.id, user.id);
+        showToast('Document Registered Successfully!');
+        setTimeout(() => navigate('/my-submissions'), 2000);
+      } else {
+        showToast('Progress Saved as Draft!', 'success');
+        setTimeout(() => navigate('/my-submissions'), 2000);
+      }
     } catch (err) {
-      console.error('Upload error details:', err);
-      showToast(err.message || 'Upload failed', 'error');
+      console.error('Registration error:', err);
+      showToast('Action failed: ' + (err.message || ''), 'error');
     } finally {
-      setUploading(null);
+      setIsSaving(false);
     }
   };
 
-  const handleRegisterDocument = async () => {
+  const handleRegisterDocument = (e) => {
+    e.preventDefault();
     if (isSaving) return;
-    
-    setIsSaving(true);
-    try {
-      if (selectedType.name.toLowerCase().includes('activity proposal')) {
-        // Pass subType (In-Campus/Off-Campus) as the mandatory proposal_type
-        await subService.saveProposalDetails(version.id, proposalDetails, subType);
+
+    // Validate form inputs if proposal
+    const isProposal = selectedType.name.toLowerCase().includes('activity proposal');
+    if (isProposal) {
+      if (!proposalDetails.activity_title || !proposalDetails.target_date || !proposalDetails.target_time) {
+        showToast('Please fill in all required form fields.', 'error');
+        return;
       }
-      await subService.submitForReview(submission.id, version.id, user.id);
-      
-      showToast('Document Registered Successfully!');
-      setTimeout(() => navigate('/my-submissions'), 2000);
-    } catch (err) {
-      console.error('Registration error:', err);
-      showToast('Registration failed: ' + (err.message || ''), 'error');
-    } finally {
-      setIsSaving(false);
+    }
+
+    // Validate all requirements are attached
+    if (Object.keys(localFiles).length < requirements.length) {
+      showToast(`Please attach all ${requirements.length} required documents before registering.`, 'error');
+      return;
+    }
+
+    processUploadsAndSave('submitted');
+  };
+
+  const handleSaveDraft = () => {
+    if (isSaving) return;
+    if (Object.keys(localFiles).length === 0 && !hasUnsavedChanges) {
+      showToast('Nothing to save yet.', 'error');
+      return;
+    }
+    processUploadsAndSave('draft');
+  };
+
+  const handleBackNavigation = () => {
+    if (hasUnsavedChanges) {
+      setShowUnsavedModal(true);
+    } else {
+      clearFormOptions('both', true);
+      setView('dashboard');
+    }
+  };
+
+  const clearFormOptions = (type, silent = false) => {
+    if (type === 'details' || type === 'both') setProposalDetails(defaultForm);
+    if (type === 'attachments' || type === 'both') setLocalFiles({});
+    setShowClearModal(false);
+    if (!silent) {
+      showToast('Cleared successfully', 'info');
     }
   };
 
@@ -181,491 +237,513 @@ const SubmitNewDocument = () => {
     return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-primary-green" size={48} /></div>;
   }
 
+  const isProposal = selectedType?.name.toLowerCase().includes('activity proposal');
+
   return (
-    <div className="min-h-screen bg-[#F8F9FA] text-gray-700 font-sans pb-20">
-      {/* Toast */}
+    <div className="min-h-screen bg-[#F8F9FA] text-gray-700 font-sans pb-32 relative">
       {toast && (
-        <div className={`fixed top-10 right-10 z-[200] flex items-center gap-4 px-8 py-5 rounded-2xl shadow-2xl animate-in slide-in-from-right-full ${
+        <div className={`fixed top-10 right-10 z-[200] flex items-center gap-4 px-6 py-4 rounded-xl shadow-xl animate-in slide-in-from-right-full ${
           toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-primary-green text-white'
         }`}>
-          {toast.type === 'error' ? <AlertCircle size={24} /> : <CheckCircle2 size={24} />}
-          <span className="font-bold">{toast.message}</span>
+          {toast.type === 'error' ? <AlertCircle size={20} /> : <CheckCircle2 size={20} />}
+          <span className="font-bold text-sm">{toast.message}</span>
         </div>
       )}
 
       {/* DASHBOARD VIEW */}
       {view === 'dashboard' && (
-        <div className="p-10 max-w-[1400px] mx-auto animate-in fade-in duration-500">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-16 gap-6">
+        <div className="p-8 max-w-7xl mx-auto animate-in fade-in duration-500">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
             <div className="flex items-center gap-5">
-              <div className="p-4 bg-primary-green rounded-2xl shadow-xl shadow-primary-green/20">
-                <FileCheck className="text-white" size={36} />
+              <div className="p-3 bg-primary-green rounded-xl shadow-lg">
+                <FileCheck className="text-white" size={28} />
               </div>
               <div>
-                <h1 className="text-4xl font-bold text-gray-800 tracking-tight">Submit New Document</h1>
-                <p className="text-gray-400 font-medium text-lg">List of Required Documents and Information</p>
+                <h1 className="text-3xl font-black text-gray-800 tracking-tight">Submit New Document</h1>
+                <p className="text-gray-400 font-bold text-sm">Select a category to start your submission</p>
               </div>
             </div>
-            <div className="relative w-full max-w-md">
+            <div className="relative w-full max-w-sm">
               <input 
                 type="text" placeholder="Search"
-                className="w-full pl-6 pr-14 py-4 bg-white border border-gray-200 rounded-xl focus:border-primary-green outline-none transition-all shadow-sm font-medium"
+                className="w-full pl-5 pr-10 py-3 bg-white border border-gray-200 rounded-lg focus:border-primary-green outline-none transition-all shadow-sm text-sm font-bold"
                 value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
               />
-              <Search className="absolute right-6 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+              <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             </div>
           </div>
 
-          <h2 className="text-2xl font-bold text-gray-800 mb-10 tracking-tight">Document Categories</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-10 mb-20">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
             {/* Activity Proposal */}
-            <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden flex flex-col group">
-              <div className="p-10 flex items-start gap-6">
-                <div className="w-16 h-16 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center shadow-inner shrink-0">
-                  <FileText size={32} />
+            {docTypes.find(t => t.name.toLowerCase().includes('activity proposal')) && (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
+                <div className="p-6 flex items-start gap-4">
+                  <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-xl flex items-center justify-center shrink-0">
+                    <FileText size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-gray-800 uppercase">Activity Proposal</h3>
+                    <p className="text-gray-400 text-xs font-bold mt-1">Requirements for activity proposals</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-2xl font-black text-gray-800 mb-2 uppercase tracking-tighter">Activity Proposal</h3>
-                  <p className="text-gray-400 text-sm font-bold leading-relaxed">Requirements for student organization activity proposals</p>
+                <div className="mt-auto border-t border-gray-50 bg-gray-50/30">
+                  {['In Campus', 'Off Campus'].map((sub, i) => {
+                    const typeObj = docTypes.find(t => t.name.toLowerCase().includes('activity proposal'));
+                    return (
+                      <button 
+                        key={sub}
+                        onClick={() => handleSelectType(typeObj, sub)}
+                        className={`w-full px-6 py-4 flex items-center justify-between hover:bg-white transition-all group/btn ${i === 0 ? 'border-b border-gray-50' : ''}`}
+                      >
+                        <div className="flex items-center gap-6">
+                          <span className="text-sm font-bold text-gray-500 group-hover/btn:text-primary-green">{sub}</span>
+                          <span className="text-[10px] font-black text-gray-300 uppercase">• {getReqCount(typeObj.id, sub)} Reqs</span>
+                        </div>
+                        <ChevronRight size={18} className="text-gray-300 group-hover/btn:text-primary-green" />
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-              <div className="mt-auto border-t border-gray-50 bg-gray-50/30">
-                {['In Campus', 'Off Campus'].map((sub, i) => (
-                  <button 
-                    key={sub}
-                    onClick={() => handleSelectType(docTypes.find(t => t.name.toLowerCase().includes('activity proposal')), sub)}
-                    className={`w-full px-10 py-6 flex items-center justify-between hover:bg-white transition-all group/btn ${i === 0 ? 'border-b border-gray-100' : ''}`}
-                  >
-                    <div className="flex items-center gap-10">
-                      <span className="text-lg font-bold text-gray-500 group-hover/btn:text-primary-green transition-colors">{sub}</span>
-                      <span className="text-xs font-black text-gray-300 uppercase tracking-widest">• 10 Requirements</span>
-                    </div>
-                    <ChevronRight size={24} className="text-gray-300 group-hover/btn:text-primary-green transition-all" />
-                  </button>
-                ))}
-              </div>
-            </div>
+            )}
 
             {/* Year End Report */}
-            <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
-              <div className="p-10 flex items-start gap-6">
-                <div className="w-16 h-16 bg-orange-50 text-orange-500 rounded-2xl flex items-center justify-center shadow-inner shrink-0">
-                  <Calendar size={32} />
+            {docTypes.find(t => t.name.toLowerCase().includes('report')) && (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
+                <div className="p-6 flex items-start gap-4">
+                  <div className="w-12 h-12 bg-orange-50 text-orange-500 rounded-xl flex items-center justify-center shrink-0">
+                    <Calendar size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-gray-800 uppercase">Reports</h3>
+                    <p className="text-gray-400 text-xs font-bold mt-1">Annual & Mid-year summaries</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-2xl font-black text-gray-800 mb-2 uppercase tracking-tighter">Year End Report</h3>
-                  <p className="text-gray-400 text-sm font-bold leading-relaxed">Annual organizational reports and summaries</p>
+                <div className="mt-auto border-t border-gray-50 bg-gray-50/30">
+                  {['Mid-Year Report', 'Year-End Report'].map((sub, i) => {
+                    const typeObj = docTypes.find(t => t.name.toLowerCase().includes(sub.toLowerCase()));
+                    if (!typeObj) return null;
+                    return (
+                      <button 
+                        key={sub}
+                        onClick={() => handleSelectType(typeObj, sub)}
+                        className={`w-full px-6 py-4 flex items-center justify-between hover:bg-white transition-all group/btn ${i === 0 ? 'border-b border-gray-50' : ''}`}
+                      >
+                        <div className="flex items-center gap-6">
+                          <span className="text-sm font-bold text-gray-500 group-hover/btn:text-primary-green">{sub}</span>
+                          <span className="text-[10px] font-black text-gray-300 uppercase">• {getReqCount(typeObj.id, null)} Reqs</span>
+                        </div>
+                        <ChevronRight size={18} className="text-gray-300 group-hover/btn:text-primary-green" />
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-              <div className="mt-auto border-t border-gray-50 bg-gray-50/30">
-                {['Mid-Year Report', 'Year-End Report'].map((sub, i) => (
-                  <button 
-                    key={sub}
-                    onClick={() => handleSelectType(docTypes.find(t => t.name.toLowerCase().includes(sub.toLowerCase())), sub)}
-                    className={`w-full px-10 py-6 flex items-center justify-between hover:bg-white transition-all group/btn ${i === 0 ? 'border-b border-gray-100' : ''}`}
-                  >
-                    <div className="flex items-center gap-10">
-                      <span className="text-lg font-bold text-gray-500 group-hover/btn:text-primary-green transition-colors">{sub}</span>
-                      <span className="text-xs font-black text-gray-300 uppercase tracking-widest">• 10 Requirements</span>
-                    </div>
-                    <ChevronRight size={24} className="text-gray-300 group-hover/btn:text-primary-green transition-all" />
-                  </button>
-                ))}
-              </div>
-            </div>
+            )}
 
             {/* Renewal */}
-            <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden flex flex-col group">
-              <div className="p-10 flex items-start gap-6">
-                <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-2xl flex items-center justify-center shadow-inner shrink-0">
-                  <RefreshCcw size={32} />
-                </div>
-                <div>
-                  <h3 className="text-2xl font-black text-gray-800 mb-2 uppercase tracking-tighter">Renewal Document</h3>
-                  <p className="text-gray-400 text-sm font-bold leading-relaxed">Annual organizational reports and summaries</p>
-                </div>
-              </div>
-              <div className="mt-auto border-t border-gray-50 bg-gray-50/30 h-full flex items-center justify-between px-10 py-10 group cursor-pointer hover:bg-white transition-all"
-                onClick={() => handleSelectType(docTypes.find(t => t.name.toLowerCase().includes('renewal')), 'Renewal Document')}
-              >
-                <span className="text-xs font-black text-gray-400 uppercase tracking-widest">10 Requirements</span>
-                <ChevronRight size={32} className="text-gray-300 group-hover:text-primary-green transition-all" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-[#FEF9E7] p-12 rounded-[3rem] border border-[#F9E79F] relative animate-in slide-in-from-bottom-10 delay-300">
-            <div className="flex items-start gap-8">
-              <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center text-amber-500 shadow-sm shrink-0 border border-[#F9E79F]">
-                <AlertCircle size={32} />
-              </div>
-              <div>
-                <h4 className="text-2xl font-black text-amber-900 mb-4 uppercase tracking-tighter">Common Mistakes to Avoid</h4>
-                <p className="text-amber-700/70 font-bold text-lg mb-12">Please review these frequent issues to ensure your document is processed without delays:</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-24 gap-y-8">
-                  <div className="flex items-center gap-4 text-amber-700 font-bold">
-                    <div className="w-2 h-2 bg-amber-500 rounded-full" />
-                    Missing required documents or attachments
+            {docTypes.find(t => t.name.toLowerCase().includes('renewal')) && (() => {
+              const typeObj = docTypes.find(t => t.name.toLowerCase().includes('renewal'));
+              return (
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col group">
+                  <div className="p-6 flex items-start gap-4">
+                    <div className="w-12 h-12 bg-amber-50 text-amber-500 rounded-xl flex items-center justify-center shrink-0">
+                      <RefreshCcw size={24} />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-gray-800 uppercase">Renewal Document</h3>
+                      <p className="text-gray-400 text-xs font-bold mt-1">Requirements for org renewal</p>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-4 text-amber-700 font-bold">
-                    <div className="w-2 h-2 bg-amber-500 rounded-full" />
-                    Incomplete information in form fields
-                  </div>
-                  <div className="flex items-center gap-4 text-amber-700 font-bold">
-                    <div className="w-2 h-2 bg-amber-500 rounded-full" />
-                    Incorrect file format (must be PDF or Word document)
-                  </div>
-                  <div className="flex items-center gap-4 text-amber-700 font-bold">
-                    <div className="w-2 h-2 bg-amber-500 rounded-full" />
-                    Invalid, corrupted, or unclear attachments
-                  </div>
-                  <div className="flex items-center gap-4 text-amber-700 font-bold">
-                    <div className="w-2 h-2 bg-amber-500 rounded-full" />
-                    Submitting without reviewing the required checklist
+                  <div className="mt-auto border-t border-gray-50 bg-gray-50/30 h-full flex items-center justify-between px-6 py-6 cursor-pointer hover:bg-white transition-all"
+                    onClick={() => handleSelectType(typeObj, 'Renewal Document')}
+                  >
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{getReqCount(typeObj.id, null)} Requirements</span>
+                    <ChevronRight size={24} className="text-gray-300 group-hover:text-primary-green transition-all" />
                   </div>
                 </div>
-              </div>
-            </div>
+              )
+            })()}
           </div>
         </div>
       )}
 
       {/* FORM VIEW */}
       {view === 'form' && (
-        <div className="min-h-screen flex flex-col animate-in fade-in duration-500">
-          <div className="p-8 border-b border-gray-100 bg-white flex items-center justify-between sticky top-0 z-50 shadow-sm">
-            <div className="flex items-center gap-8">
-              <button onClick={() => setView('dashboard')} className="p-4 hover:bg-gray-50 rounded-2xl transition-all">
-                <ArrowLeft size={36} className="text-gray-400" />
+        <form onSubmit={handleRegisterDocument} className="flex flex-col animate-in fade-in duration-500 relative min-h-screen">
+          {/* Header - Stretches full width */}
+          <div className="fixed top-16 left-64 right-0 z-40 bg-white border-b border-gray-100 px-8 py-5 flex items-center justify-between shadow-sm">
+            <div className="flex items-center gap-6">
+              <button type="button" onClick={handleBackNavigation} className="p-2 hover:bg-gray-50 rounded-lg transition-all">
+                <ArrowLeft size={24} className="text-gray-500" />
               </button>
-              <div className="flex items-center gap-6">
-                <div className="p-4 bg-primary-green rounded-2xl shadow-lg">
-                  <FileText className="text-white" size={36} />
+              <div className="flex items-center gap-4">
+                <div className="p-2 bg-primary-green rounded-lg">
+                  <FileText className="text-white" size={24} />
                 </div>
                 <div>
-                  <h1 className="text-3xl font-black text-gray-800 uppercase tracking-tighter">{selectedType.name} Form</h1>
-                  <p className="text-gray-400 font-black text-xs uppercase tracking-[0.3em]">{subType}</p>
+                  <h1 className="text-xl font-black text-gray-800 uppercase">{selectedType.name}</h1>
+                  <p className="text-gray-400 font-bold text-[10px] uppercase tracking-widest">{subType}</p>
                 </div>
               </div>
             </div>
-          </div>
-
-          <div className="flex-1 p-12 bg-gray-50/50">
-            <div className="max-w-6xl mx-auto bg-white p-16 rounded-[4rem] shadow-xl border border-gray-50 space-y-16">
-              
-              {/* Form Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
-                <div className="space-y-4">
-                  <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">Activity Number</label>
-                  <input type="text" className="w-full px-8 py-5 bg-gray-50 border border-transparent rounded-2xl font-black outline-none focus:bg-white focus:border-primary-green transition-all" value={proposalDetails.activity_number} readOnly />
-                </div>
-                <div className="space-y-4">
-                  <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">Oganization</label>
-                  <input type="text" className="w-full px-8 py-5 bg-gray-50 border border-transparent rounded-2xl font-black outline-none focus:bg-white focus:border-primary-green transition-all" placeholder="ASICS" value={proposalDetails.organization_name} onChange={e => setProposalDetails({...proposalDetails, organization_name: e.target.value})} />
-                </div>
-                <div className="space-y-4">
-                  <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">Adviser</label>
-                  <input type="text" className="w-full px-8 py-5 bg-gray-50 border border-transparent rounded-2xl font-black outline-none focus:bg-white focus:border-primary-green transition-all" placeholder="Robin Esteban" value={proposalDetails.adviser_name} onChange={e => setProposalDetails({...proposalDetails, adviser_name: e.target.value})} />
-                </div>
-
-                <div className="md:col-span-3 space-y-4">
-                  <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">Document Title</label>
-                  <input type="text" className="w-full px-8 py-5 bg-gray-50 border border-transparent rounded-2xl font-black outline-none focus:bg-white focus:border-primary-green transition-all italic placeholder:text-gray-300" placeholder="e.g., Annual Budget Proposal 2024" value={proposalDetails.activity_title} onChange={e => setProposalDetails({...proposalDetails, activity_title: e.target.value})} />
-                </div>
-
-                <div className="md:col-span-2 space-y-4">
-                  <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">Person In-Charge</label>
-                  <input type="text" className="w-full px-8 py-5 bg-gray-50 border border-transparent rounded-2xl font-black outline-none focus:bg-white focus:border-primary-green transition-all" placeholder="Lance Amiel Samaniego" value={proposalDetails.person_in_charge} onChange={e => setProposalDetails({...proposalDetails, person_in_charge: e.target.value})} />
-                </div>
-                <div className="space-y-4">
-                  <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">Student ID No.:</label>
-                  <input type="text" className="w-full px-8 py-5 bg-gray-50 border border-transparent rounded-2xl font-black outline-none focus:bg-white focus:border-primary-green transition-all" placeholder="2023200438" value={proposalDetails.student_id_no} onChange={e => setProposalDetails({...proposalDetails, student_id_no: e.target.value})} />
-                </div>
-
-                <div className="md:col-span-2 space-y-4">
-                  <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">Contact Number of Person-in-Charge:</label>
-                  <input type="text" className="w-full px-8 py-5 bg-gray-50 border border-transparent rounded-2xl font-black outline-none focus:bg-white focus:border-primary-green transition-all" placeholder="0987654321" value={proposalDetails.contact_number} onChange={e => setProposalDetails({...proposalDetails, contact_number: e.target.value})} />
-                </div>
-                <div className="space-y-4">
-                  <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">Target Date:</label>
-                  <div className="relative">
-                    <Calendar className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" size={20} />
-                    <input 
-                      type="date" 
-                      className="w-full pl-16 pr-8 py-5 bg-gray-50 border border-transparent rounded-2xl font-black outline-none focus:bg-white focus:border-primary-green transition-all appearance-none" 
-                      value={proposalDetails.target_date} 
-                      onChange={e => setProposalDetails({...proposalDetails, target_date: e.target.value})} 
-                    />
-                  </div>
-                </div>
-                <div className="space-y-4">
-                  <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">Target Time:</label>
-                  <div className="relative">
-                    <Clock className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" size={20} />
-                    <input 
-                      type="time" 
-                      className="w-full pl-16 pr-8 py-5 bg-gray-50 border border-transparent rounded-2xl font-black outline-none focus:bg-white focus:border-primary-green transition-all appearance-none" 
-                      value={proposalDetails.target_time} 
-                      onChange={e => setProposalDetails({...proposalDetails, target_time: e.target.value})} 
-                    />
-                  </div>
-                </div>
-
-                <div className="md:col-span-2 space-y-4">
-                  <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">Duration</label>
-                  <input type="text" className="w-full px-8 py-5 bg-gray-50 border border-transparent rounded-2xl font-black outline-none focus:bg-white focus:border-primary-green transition-all" placeholder="4 Hours" value={proposalDetails.duration} onChange={e => setProposalDetails({...proposalDetails, duration: e.target.value})} />
-                </div>
-                <div className="space-y-4">
-                  <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">Number of Student Involved:</label>
-                  <input type="text" className="w-full px-8 py-5 bg-gray-50 border border-transparent rounded-2xl font-black outline-none focus:bg-white focus:border-primary-green transition-all" placeholder="67" value={proposalDetails.number_of_students} onChange={e => setProposalDetails({...proposalDetails, number_of_students: e.target.value})} />
-                </div>
-              </div>
-
-              {/* Checkboxes Section */}
-              <div className="space-y-16 pt-10 border-t border-gray-100">
-                
-                {/* Target Audience */}
-                <div className="space-y-8">
-                  <h3 className="text-2xl font-black text-gray-800 uppercase tracking-tighter">Target Audience/Participants:</h3>
-                  <div className="flex flex-wrap gap-12">
-                    {['Members only', 'BulSUans only', 'Open to the public'].map(opt => (
-                      <button 
-                        key={opt}
-                        onClick={() => toggleArrayField('target_audience', opt)}
-                        className="flex items-center gap-4 group cursor-pointer"
-                      >
-                        <div className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center transition-all ${proposalDetails.target_audience.includes(opt) ? 'bg-primary-green border-primary-green' : 'border-gray-200 group-hover:border-primary-green/30'}`}>
-                          {proposalDetails.target_audience.includes(opt) && <Check size={18} className="text-white" />}
-                        </div>
-                        <span className={`font-bold text-lg ${proposalDetails.target_audience.includes(opt) ? 'text-gray-800' : 'text-gray-400'}`}>{opt}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Nature of Activity */}
-                <div className="space-y-8">
-                  <h3 className="text-2xl font-black text-gray-800 uppercase tracking-tighter">Nature of Activity:</h3>
-                  <div className="flex flex-wrap gap-12">
-                    {['Co-Curricular', 'Extra-Curricular'].map(opt => (
-                      <button 
-                        key={opt}
-                        onClick={() => setProposalDetails({...proposalDetails, nature_of_activity: opt})}
-                        className="flex items-center gap-4 group cursor-pointer"
-                      >
-                        <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all ${proposalDetails.nature_of_activity === opt ? 'bg-primary-green border-primary-green' : 'border-gray-200 group-hover:border-primary-green/30'}`}>
-                          {proposalDetails.nature_of_activity === opt && <div className="w-3 h-3 bg-white rounded-full" />}
-                        </div>
-                        <span className={`font-bold text-lg ${proposalDetails.nature_of_activity === opt ? 'text-gray-800' : 'text-gray-400'}`}>{opt}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Objectives */}
-                <div className="space-y-8">
-                  <h3 className="text-2xl font-black text-gray-800 uppercase tracking-tighter">Objectives of the Activity:</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    {[
-                      'Leadership Development and Formation',
-                      'Membership Development and Formation',
-                      'Organizational Program Management',
-                      'Values Enrichment',
-                      'Skills Enhancement',
-                      'Others:'
-                    ].map(opt => (
-                      <div key={opt} className="flex items-start gap-4">
-                        <button 
-                          onClick={() => toggleArrayField('objectives', opt)}
-                          className={`w-8 h-8 mt-1 rounded-lg border-2 flex items-center justify-center transition-all shrink-0 ${proposalDetails.objectives.includes(opt) ? 'bg-primary-green border-primary-green' : 'border-gray-200'}`}
-                        >
-                          {proposalDetails.objectives.includes(opt) && <Check size={18} className="text-white" />}
-                        </button>
-                        <div className="flex-1">
-                          <span className={`font-bold text-lg ${proposalDetails.objectives.includes(opt) ? 'text-gray-800' : 'text-gray-400'}`}>{opt}</span>
-                          {opt === 'Others:' && (
-                            <input 
-                              type="text" 
-                              className="w-full mt-4 border-b-2 border-gray-100 outline-none focus:border-primary-green font-bold py-2 italic text-gray-500"
-                              placeholder="Please specify..."
-                              value={proposalDetails.others_objective}
-                              onChange={e => setProposalDetails({...proposalDetails, others_objective: e.target.value})}
-                            />
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Satisfaction Goals */}
-                <div className="space-y-12">
-                  <p className="text-gray-400 font-bold text-lg italic leading-relaxed">
-                    Describe how this activity will satisfy the needs of the organization and how it will help the organization achieve its goals:
-                  </p>
-                  <div className="space-y-8 pl-6">
-                    {[1, 2, 3].map(num => (
-                      <div key={num} className="flex items-center gap-6">
-                        <span className="text-2xl font-black text-gray-300">{num}.</span>
-                        <input 
-                          type="text"
-                          className="flex-1 border-b-2 border-gray-100 py-3 outline-none focus:border-primary-green font-bold text-lg"
-                          value={proposalDetails[`satisfaction_goal_${num}`]}
-                          onChange={e => setProposalDetails({...proposalDetails, [`satisfaction_goal_${num}`]: e.target.value})}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Partners & Sponsors */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-12 pt-10">
-                  <div className="space-y-4">
-                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">Name of Partners (if any):</label>
-                    <input type="text" className="w-full border-b-2 border-gray-100 py-3 outline-none focus:border-primary-green font-bold text-lg" value={proposalDetails.partners} onChange={e => setProposalDetails({...proposalDetails, partners: e.target.value})} />
-                  </div>
-                  <div className="space-y-4">
-                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">Name of Sponsors (if any):</label>
-                    <input type="text" className="w-full border-b-2 border-gray-100 py-3 outline-none focus:border-primary-green font-bold text-lg" value={proposalDetails.sponsors} onChange={e => setProposalDetails({...proposalDetails, sponsors: e.target.value})} />
-                  </div>
-                </div>
-
-              </div>
-            </div>
-          </div>
-
-          {/* Form Footer Action Bar */}
-          <div className="p-8 border-t border-gray-100 bg-white flex items-center justify-between sticky bottom-0 z-50 shadow-[0_-10px_30px_rgba(0,0,0,0.03)] px-12">
-            <button 
-              onClick={() => {
-                setProposalDetails({
-                  activity_number: proposalDetails.activity_number,
-                  organization_name: '', adviser_name: '', activity_title: '',
-                  person_in_charge: '', student_id_no: '', contact_number: '',
-                  target_venue: '', target_date: '', target_time: '',
-                  duration: '', number_of_students: '',
-                  target_audience: [], nature_of_activity: '', objectives: [],
-                  others_objective: '', satisfaction_goal_1: '', satisfaction_goal_2: '',
-                  satisfaction_goal_3: '', partners: '', sponsors: ''
-                });
-                showToast('Form Cleared', 'info');
-              }}
-              className="px-10 py-4 bg-white border-2 border-gray-100 text-gray-500 font-black rounded-2xl hover:bg-gray-50 transition-all flex items-center gap-3 uppercase tracking-widest text-sm"
-            >
-              <Eraser size={20} />
-              Clear Form
-            </button>
             
-            <div className="flex items-center gap-5">
-              <button 
-                onClick={() => setIsModalOpen(true)}
-                className={`px-12 py-5 rounded-2xl font-black flex items-center gap-4 transition-all shadow-xl uppercase tracking-widest text-sm ${
-                  Object.keys(attachments).length === requirements.length
-                    ? 'bg-green-100 text-green-700 border-2 border-green-200' 
-                    : 'bg-[#F9B916] text-white shadow-amber-500/20'
-                }`}
-              >
-                <Upload size={22} />
-                {Object.keys(attachments).length === requirements.length 
-                  ? 'All Files Attached' 
-                  : `Upload Requirements (${Object.keys(attachments).length}/${requirements.length})`
-                }
-              </button>
-
-              <button 
-                onClick={() => showToast('Progress Saved as Draft!', 'success')}
-                className="px-10 py-5 bg-white border-2 border-[#F9B916] text-[#F9B916] font-black rounded-2xl hover:bg-[#F9B916]/5 transition-all flex items-center gap-3 uppercase tracking-widest text-sm"
-              >
-                <Save size={20} />
-                Save As Draft
-              </button>
-              
-              <button 
-                onClick={handleRegisterDocument}
-                disabled={isSaving}
-                className="px-14 py-5 bg-primary-green text-white font-black rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-primary-green/30 flex items-center gap-4 uppercase tracking-widest text-sm disabled:opacity-50"
-              >
-                {isSaving ? <Loader2 className="animate-spin" size={22} /> : <CheckCircle2 size={22} />}
-                Register Document
-              </button>
+            <div className="text-xs font-bold text-gray-400 uppercase tracking-widest bg-gray-50 px-4 py-2 rounded-lg border border-gray-100">
+              Draft Mode
             </div>
           </div>
-        </div>
-      )}
 
-      {/* UPLOAD MODAL */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-10 bg-black/50 backdrop-blur-md animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-4xl rounded-[3.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
-            <div className="p-12 border-b border-gray-50 flex items-center justify-between bg-gray-50/30">
-              <div className="flex items-center gap-8">
-                <div className="w-16 h-16 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center shadow-inner">
-                  <FileText size={32} />
-                </div>
-                <div>
-                  <h3 className="text-3xl font-black text-gray-800 tracking-tighter uppercase">Upload {selectedType.name} Requirements</h3>
-                  <p className="text-gray-400 font-bold text-sm tracking-widest uppercase">Version 1.0 • Secure Attachment Module</p>
-                </div>
-              </div>
-              <button onClick={() => setIsModalOpen(false)} className="p-6 hover:bg-gray-100 rounded-full transition-colors group">
-                <X size={40} className="text-gray-300 group-hover:text-gray-800" />
-              </button>
-            </div>
-
-            <div className="p-12 max-h-[55vh] overflow-y-auto space-y-8 bg-white">
-              {requirements.map((req, i) => (
-                <div key={req.id} className="flex items-center gap-10 p-10 bg-gray-50/50 rounded-[2.5rem] border-2 border-transparent hover:border-amber-100 transition-all group">
-                  <div className="w-16 h-16 bg-green-100 text-green-700 font-black text-3xl flex items-center justify-center rounded-2xl shrink-0">
-                    {i + 1}
-                  </div>
-                  <div className="flex-1">
-                    <h4 className="text-2xl font-black text-gray-800 mb-2">{req.title}</h4>
-                    <p className="text-base font-bold text-gray-400 mb-2 leading-relaxed line-clamp-1">{req.description || 'Official document from authorized signatory'}</p>
-                    <span className="text-xs font-black text-gray-300 uppercase tracking-widest">{req.referenceCode}</span>
+          <div className="flex-1 p-8 pb-32 pt-28 bg-gray-50/20">
+            <div className={`w-full max-w-5xl mx-auto space-y-8`}>
+              
+              {/* Conditional Proposal Form */}
+              {isProposal && (
+                <div className="space-y-8">
+                  <div className="bg-white p-10 rounded-2xl shadow-sm border border-gray-100 space-y-8">
+                  <div className="text-center pb-8 border-b border-gray-100">
+                    <h2 className="text-2xl font-black text-gray-800 uppercase tracking-widest">Activity Proposal Form</h2>
                   </div>
                   
-                  {attachments[req.id] ? (
-                    <div className="flex flex-col items-end gap-3 animate-in slide-in-from-right-4">
-                      <div className="px-6 py-2 bg-green-500 text-white text-xs font-black rounded-full shadow-lg shadow-green-500/20">UPLOADED</div>
-                      <button onClick={() => setAttachments(prev => {
-                        const next = {...prev};
-                        delete next[req.id];
-                        return next;
-                      })} className="text-xs font-black text-red-400 hover:text-red-600 transition-colors uppercase tracking-widest flex items-center gap-2">
-                        <Trash2 size={16} /> Remove
+                  <div className="space-y-6">
+                    {/* Basic Info */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+                      <div className="space-y-2 md:col-span-2">
+                        <label className="text-xs font-black text-gray-600 uppercase">Name of Student Organization <span className="text-red-500">*</span></label>
+                        <input type="text" required className="w-full px-4 py-3 bg-gray-100 border-b-2 border-gray-200 text-gray-500 font-bold text-sm outline-none cursor-not-allowed" value={proposalDetails.organization_name} readOnly />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-black text-gray-600 uppercase">Name of Adviser <span className="text-red-500">*</span></label>
+                        <input type="text" required className="w-full px-4 py-3 bg-gray-100 border-b-2 border-gray-200 text-gray-500 font-bold text-sm outline-none cursor-not-allowed" value={proposalDetails.adviser_name} readOnly />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-black text-gray-600 uppercase">Activity Number</label>
+                        <input type="text" className="w-full px-4 py-3 bg-gray-100 text-gray-500 border-b-2 border-gray-200 font-bold text-sm outline-none" value={proposalDetails.activity_number} readOnly />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <label className="text-xs font-black text-gray-600 uppercase">Activity Title <span className="text-red-500">*</span></label>
+                        <input type="text" required className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.activity_title} onChange={e => setProposalDetails({...proposalDetails, activity_title: e.target.value})} />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-black text-gray-600 uppercase">Name of Person-In-Charge <span className="text-red-500">*</span></label>
+                        <input type="text" required className="w-full px-4 py-3 bg-gray-100 border-b-2 border-gray-200 text-gray-500 font-bold text-sm outline-none cursor-not-allowed" value={proposalDetails.person_in_charge} readOnly />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-black text-gray-600 uppercase">Student ID No. <span className="text-red-500">*</span></label>
+                        <input type="text" required className="w-full px-4 py-3 bg-gray-100 border-b-2 border-gray-200 text-gray-500 font-bold text-sm outline-none cursor-not-allowed" value={proposalDetails.student_id_no} readOnly />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <label className="text-xs font-black text-gray-600 uppercase">Contact Number of Person-In-Charge <span className="text-red-500">*</span></label>
+                        <input type="text" required className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.contact_number} onChange={e => setProposalDetails({...proposalDetails, contact_number: e.target.value})} />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <label className="text-xs font-black text-gray-600 uppercase">Target Venue <span className="text-red-500">*</span></label>
+                        <input type="text" required className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.target_venue} onChange={e => setProposalDetails({...proposalDetails, target_venue: e.target.value})} />
+                      </div>
+                      
+                      {/* Date & Time combined visually */}
+                      <div className="space-y-2 md:col-span-2">
+                        <label className="text-xs font-black text-gray-600 uppercase">Target Date and Time <span className="text-red-500">*</span></label>
+                        <div className="flex gap-4">
+                          <input type="date" required className="flex-1 px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.target_date} onChange={e => setProposalDetails({...proposalDetails, target_date: e.target.value})} />
+                          <input type="time" required className="flex-1 px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.target_time} onChange={e => setProposalDetails({...proposalDetails, target_time: e.target.value})} />
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <label className="text-xs font-black text-gray-600 uppercase">Duration</label>
+                        <input type="text" className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.duration} onChange={e => setProposalDetails({...proposalDetails, duration: e.target.value})} />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-black text-gray-600 uppercase">Number of Student Involved</label>
+                        <input type="number" className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.number_of_students} onChange={e => setProposalDetails({...proposalDetails, number_of_students: e.target.value})} />
+                      </div>
+                    </div>
+
+                    {/* Checkboxes Section */}
+                    <div className="pt-6 border-t border-gray-100 space-y-6">
+                      <div className="space-y-3">
+                        <label className="text-xs font-black text-gray-800 uppercase">Target Audience/Participants:</label>
+                        <div className="flex flex-wrap gap-8">
+                          {['Members only', 'BulSUans only', 'Open to the public'].map(opt => (
+                            <label key={opt} className="flex items-center gap-3 cursor-pointer group">
+                              <div className={`w-5 h-5 rounded flex items-center justify-center border-2 ${proposalDetails.target_audience.includes(opt) ? 'bg-primary-green border-primary-green text-white' : 'border-gray-300 group-hover:border-primary-green'}`}>
+                                {proposalDetails.target_audience.includes(opt) && <Check size={14} strokeWidth={3} />}
+                              </div>
+                              <span className="text-sm font-bold text-gray-600">{opt}</span>
+                              <input type="checkbox" className="hidden" checked={proposalDetails.target_audience.includes(opt)} onChange={() => toggleArrayField('target_audience', opt)} />
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <label className="text-xs font-black text-gray-800 uppercase">Nature of Activity:</label>
+                        <div className="flex flex-wrap gap-8">
+                          {['Co-Curricular', 'Extra-Curricular'].map(opt => (
+                            <label key={opt} className="flex items-center gap-3 cursor-pointer group">
+                              <div className={`w-5 h-5 rounded-full flex items-center justify-center border-2 ${proposalDetails.nature_of_activity === opt ? 'border-primary-green' : 'border-gray-300 group-hover:border-primary-green'}`}>
+                                {proposalDetails.nature_of_activity === opt && <div className="w-2.5 h-2.5 bg-primary-green rounded-full" />}
+                              </div>
+                              <span className="text-sm font-bold text-gray-600">{opt}</span>
+                              <input type="radio" name="nature" className="hidden" checked={proposalDetails.nature_of_activity === opt} onChange={() => setProposalDetails({...proposalDetails, nature_of_activity: opt})} />
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <label className="text-xs font-black text-gray-800 uppercase">Objectives of the Activity:</label>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {[
+                            'Leadership Development and Formation',
+                            'Membership Development and Formation',
+                            'Organizational Program Management',
+                            'Values Enrichment',
+                            'Skills Enhancement'
+                          ].map(opt => (
+                            <label key={opt} className="flex items-center gap-3 cursor-pointer group">
+                              <div className={`w-5 h-5 rounded flex items-center justify-center border-2 shrink-0 ${proposalDetails.objectives.includes(opt) ? 'bg-primary-green border-primary-green text-white' : 'border-gray-300 group-hover:border-primary-green'}`}>
+                                {proposalDetails.objectives.includes(opt) && <Check size={14} strokeWidth={3} />}
+                              </div>
+                              <span className="text-sm font-bold text-gray-600 leading-tight">{opt}</span>
+                              <input type="checkbox" className="hidden" checked={proposalDetails.objectives.includes(opt)} onChange={() => toggleArrayField('objectives', opt)} />
+                            </label>
+                          ))}
+                          <div className="flex items-center gap-3 col-span-1 md:col-span-2">
+                            <label className="flex items-center gap-3 cursor-pointer group shrink-0">
+                              <div className={`w-5 h-5 rounded flex items-center justify-center border-2 ${proposalDetails.objectives.includes('Others') ? 'bg-primary-green border-primary-green text-white' : 'border-gray-300 group-hover:border-primary-green'}`}>
+                                {proposalDetails.objectives.includes('Others') && <Check size={14} strokeWidth={3} />}
+                              </div>
+                              <span className="text-sm font-bold text-gray-600">Others:</span>
+                              <input type="checkbox" className="hidden" checked={proposalDetails.objectives.includes('Others')} onChange={() => toggleArrayField('objectives', 'Others')} />
+                            </label>
+                            <input type="text" className="flex-1 px-4 py-2 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.others_objective} onChange={e => setProposalDetails({...proposalDetails, others_objective: e.target.value})} disabled={!proposalDetails.objectives.includes('Others')} />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Needs and Goals */}
+                    <div className="pt-6 border-t border-gray-100 space-y-4">
+                      <label className="text-xs font-bold text-gray-600 italic">
+                        Describe how this activity will satisfy the needs of the organization and how it will help the organization achieve its goals:
+                      </label>
+                      <div className="space-y-3">
+                        <div className="flex items-start gap-4">
+                          <span className="font-bold text-gray-600 mt-2">1.</span>
+                          <input type="text" className="flex-1 px-4 py-2 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.satisfaction_goal_1} onChange={e => setProposalDetails({...proposalDetails, satisfaction_goal_1: e.target.value})} />
+                        </div>
+                        <div className="flex items-start gap-4">
+                          <span className="font-bold text-gray-600 mt-2">2.</span>
+                          <input type="text" className="flex-1 px-4 py-2 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.satisfaction_goal_2} onChange={e => setProposalDetails({...proposalDetails, satisfaction_goal_2: e.target.value})} />
+                        </div>
+                        <div className="flex items-start gap-4">
+                          <span className="font-bold text-gray-600 mt-2">3.</span>
+                          <input type="text" className="flex-1 px-4 py-2 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.satisfaction_goal_3} onChange={e => setProposalDetails({...proposalDetails, satisfaction_goal_3: e.target.value})} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Partners & Sponsors */}
+                    <div className="pt-6 border-t border-gray-100 space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-xs font-black text-gray-600 uppercase">Name of Partners (if any):</label>
+                        <input type="text" className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.partners} onChange={e => setProposalDetails({...proposalDetails, partners: e.target.value})} />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-black text-gray-600 uppercase">Name of Sponsors (if any):</label>
+                        <input type="text" className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.sponsors} onChange={e => setProposalDetails({...proposalDetails, sponsors: e.target.value})} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            </div>
+          </div>
+
+          {/* Fixed Bottom Action Bar */}
+          <div className="fixed bottom-0 left-64 right-0 bg-white border-t border-gray-100 shadow-[0_-5px_20px_rgba(0,0,0,0.05)] z-50 p-4 flex justify-center w-[calc(100%-16rem)]">
+            <div className="max-w-[90rem] w-full flex items-center justify-end gap-4 px-4">
+              
+              {/* Action Buttons */}
+              <div className="flex items-center gap-3">
+                <button 
+                  type="button"
+                  onClick={() => setShowUploadModal(true)}
+                  className="px-5 py-2.5 bg-blue-50 text-blue-600 border border-blue-200 font-black rounded-lg hover:bg-blue-100 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
+                >
+                  <Upload size={14} /> Upload Requirements ({Object.keys(localFiles).length}/{requirements.length})
+                </button>
+                <div className="h-6 w-px bg-gray-200 mx-2"></div>
+                <button 
+                  type="button"
+                  onClick={() => setShowClearModal(true)}
+                  className="px-4 py-2.5 bg-white border border-gray-200 text-gray-500 font-black rounded-lg hover:bg-gray-50 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
+                >
+                  <Eraser size={14} /> Clear Form
+                </button>
+                <button 
+                  type="button"
+                  onClick={handleSaveDraft}
+                  disabled={isSaving}
+                  className="px-5 py-2.5 bg-amber-50 text-amber-600 border border-amber-200 font-black rounded-lg hover:bg-amber-100 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
+                >
+                  <Save size={14} /> Save Draft
+                </button>
+                <button 
+                  type="submit"
+                  disabled={isSaving}
+                  className="px-6 py-2.5 bg-primary-green text-white font-black rounded-lg hover:bg-green-700 hover:scale-105 active:scale-95 transition-all shadow-md shadow-green-600/20 flex items-center gap-2 text-[11px] uppercase disabled:opacity-50 tracking-widest"
+                >
+                  {isSaving ? <Loader2 className="animate-spin" size={14} /> : <Send size={14} />} 
+                  Register
+                </button>
+              </div>
+            </div>
+          </div>
+        </form>
+      )}
+
+      {/* Upload Requirements Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col animate-in zoom-in-95">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <div>
+                <h2 className="text-xl font-black text-gray-800 uppercase">Required Attachments</h2>
+                <p className="text-xs font-bold text-gray-400 mt-1">Please provide all necessary documents below</p>
+              </div>
+              <div className="flex items-center gap-4">
+                <span className="text-xs font-black text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg uppercase tracking-widest">
+                  {Object.keys(localFiles).length} / {requirements.length} attached
+                </span>
+                <button type="button" onClick={() => setShowUploadModal(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-all text-gray-400 hover:text-gray-600">
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50/50">
+              {requirements.map((req, i) => (
+                <div key={req.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-white rounded-xl shadow-sm border border-gray-100 hover:border-blue-200 transition-all">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-gray-50 text-gray-500 font-black text-sm flex items-center justify-center rounded-lg shrink-0 border border-gray-100">
+                      {i + 1}
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-gray-800 leading-tight">{req.title}</h4>
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{req.referenceCode || 'REQ'}</span>
+                    </div>
+                  </div>
+                  
+                  {localFiles[req.id] ? (
+                    <div className="flex items-center gap-3 bg-green-50 px-4 py-2 rounded-lg border border-green-100 self-start sm:self-auto shrink-0">
+                      <Check className="text-green-600" size={16} />
+                      <span className="text-xs font-bold text-green-700 max-w-[150px] truncate" title={localFiles[req.id].name}>
+                        {localFiles[req.id].name}
+                      </span>
+                      <button type="button" onClick={() => setLocalFiles(prev => {
+                        const next = {...prev}; delete next[req.id]; return next;
+                      })} className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all ml-2">
+                        <Trash2 size={14} />
                       </button>
                     </div>
                   ) : (
                     <button 
-                      disabled={uploading === req.id}
-                      onClick={() => document.getElementById(`modal-up-${req.id}`).click()}
-                      className={`px-10 py-5 rounded-2xl font-black flex items-center gap-3 shadow-xl transition-all uppercase tracking-widest text-xs ${
-                        uploading === req.id ? 'bg-gray-200 text-gray-400' : 'bg-[#F9B916] text-white shadow-amber-500/20 hover:scale-105'
-                      }`}
+                      type="button"
+                      onClick={() => document.getElementById(`modal-file-${req.id}`).click()}
+                      className="px-5 py-2.5 bg-white border-2 border-dashed border-gray-200 text-gray-500 font-bold rounded-xl hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600 transition-all text-xs flex items-center justify-center gap-2 self-start sm:self-auto shrink-0"
                     >
-                      {uploading === req.id ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                      {uploading === req.id ? 'Attaching...' : 'Attach File'}
+                      <Upload size={14} /> Attach File
                       <input 
-                        type="file" id={`modal-up-${req.id}`} className="hidden" accept=".pdf"
+                        type="file" id={`modal-file-${req.id}`} className="hidden" accept=".pdf,.docx"
                         onChange={(e) => handleFileUpload(req.id, e.target.files[0])}
                       />
                     </button>
                   )}
                 </div>
               ))}
+              {requirements.length === 0 && (
+                <div className="py-12 flex flex-col items-center justify-center text-gray-400">
+                  <FileText size={48} className="mb-4 opacity-20" />
+                  <p className="font-bold text-sm">No requirements found for this category.</p>
+                </div>
+              )}
             </div>
 
-            <div className="p-12 bg-gray-50/50 border-t border-gray-50">
+            <div className="p-6 border-t border-gray-100 flex justify-end bg-white rounded-b-2xl">
               <button 
-                onClick={() => setIsModalOpen(false)}
-                className="w-full py-8 bg-[#F9B916] text-white font-black rounded-[2.5rem] shadow-[0_20px_50px_rgba(249,185,22,0.3)] hover:translate-y-[-4px] active:translate-y-[2px] transition-all text-2xl uppercase tracking-[0.2em]"
+                type="button" 
+                onClick={() => setShowUploadModal(false)}
+                className="px-6 py-2.5 bg-gray-900 text-white font-black rounded-lg hover:bg-black transition-all shadow-md text-xs uppercase tracking-widest"
               >
-                Back to Form
+                Done
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Clear Modal */}
+      {showClearModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center animate-in zoom-in-95">
+            <h3 className="text-lg font-black text-gray-800 mb-4 uppercase">Clear Progress</h3>
+            <p className="text-sm font-bold text-gray-500 mb-6">What would you like to clear?</p>
+            <div className="space-y-3">
+              {isProposal && (
+                <button type="button" onClick={() => clearFormOptions('details')} className="w-full py-3 bg-gray-50 hover:bg-gray-100 font-bold rounded-lg text-sm transition-all text-gray-700">Clear Form Details Only</button>
+              )}
+              <button type="button" onClick={() => clearFormOptions('attachments')} className="w-full py-3 bg-gray-50 hover:bg-gray-100 font-bold rounded-lg text-sm transition-all text-gray-700">Remove All Attachments</button>
+              <button type="button" onClick={() => clearFormOptions('both')} className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 font-bold rounded-lg text-sm transition-all">Clear Everything</button>
+              <button type="button" onClick={() => setShowClearModal(false)} className="w-full py-3 text-gray-400 font-bold text-sm hover:text-gray-600 transition-all mt-2">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Unsaved Changes Warning Modal */}
+      {showUnsavedModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8 text-center animate-in zoom-in-95">
+            <AlertCircle size={56} className="text-amber-500 mx-auto mb-6" />
+            <h3 className="text-2xl font-black text-gray-800 mb-2 uppercase tracking-tight">Unsaved Progress</h3>
+            <p className="text-sm font-bold text-gray-500 mb-8">You have unsaved changes. Would you like to save them as a draft before leaving?</p>
+            <div className="flex flex-col gap-3">
+              <button 
+                type="button" 
+                onClick={() => {
+                  setShowUnsavedModal(false);
+                  handleSaveDraft();
+                }} 
+                className="w-full py-3.5 bg-primary-green text-white font-black rounded-xl hover:bg-green-700 transition-all uppercase tracking-widest text-sm shadow-lg shadow-green-600/20"
+              >
+                Save as Draft
+              </button>
+              <button 
+                type="button" 
+                onClick={() => {
+                  setShowUnsavedModal(false);
+                  clearFormOptions('both', true);
+                  setView('dashboard');
+                }} 
+                className="w-full py-3.5 bg-red-50 text-red-600 hover:bg-red-100 font-black rounded-xl transition-all uppercase tracking-widest text-sm"
+              >
+                Discard Changes
+              </button>
+              <button 
+                type="button" 
+                onClick={() => setShowUnsavedModal(false)} 
+                className="w-full py-3 text-gray-400 font-bold text-sm hover:text-gray-600 transition-all mt-2 uppercase tracking-widest"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

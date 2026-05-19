@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 /**
  * LOGGING SERVICE
  */
-export const createLog = async (submissionId, userId, action, description) => {
+export const createLog = async (submissionId, userId, action, description, versionId = null, workflowPhase = null, actionType = null) => {
   try {
     const { error } = await supabase
       .from('submission_logs')
@@ -12,6 +12,9 @@ export const createLog = async (submissionId, userId, action, description) => {
         user_id: userId,
         action,
         description,
+        submission_version_id: versionId,
+        workflow_phase: workflowPhase,
+        action_type: actionType,
         created_at: new Date().toISOString()
       }]);
 
@@ -63,7 +66,7 @@ export const startNewSubmission = async (userId, typeId, typeName = 'Document') 
 
   if (updateErr) throw updateErr;
 
-  await createLog(sub.id, userId, 'CREATED', `Started new submission for ${typeName}`);
+  await createLog(sub.id, userId, 'CREATED', `Started new submission for ${typeName}`, version.id, 'submission', 'created');
 
   return { submission: sub, version };
 };
@@ -181,5 +184,5 @@ export const submitForReview = async (submissionId, versionId, userId) => {
 
   if (subErr) throw subErr;
 
-  await createLog(submissionId, userId, 'SUBMITTED', 'Document submitted for review.');
+  await createLog(submissionId, userId, 'SUBMITTED', 'Document submitted for review.', versionId, 'submission', 'submitted');
 };
