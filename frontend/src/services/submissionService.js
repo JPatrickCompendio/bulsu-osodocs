@@ -55,6 +55,14 @@ export const startNewSubmission = async (userId, typeId, typeName = 'Document') 
 
   if (verErr) throw verErr;
 
+  // Link the version back to the submission
+  const { error: updateErr } = await supabase
+    .from('submissions')
+    .update({ current_version_id: version.id })
+    .eq('id', sub.id);
+
+  if (updateErr) throw updateErr;
+
   await createLog(sub.id, userId, 'CREATED', `Started new submission for ${typeName}`);
 
   return { submission: sub, version };
@@ -166,7 +174,8 @@ export const submitForReview = async (submissionId, versionId, userId) => {
     .from('submissions')
     .update({ 
       status: 'submitted', 
-      submitted_at: new Date().toISOString() 
+      submitted_at: new Date().toISOString(),
+      current_version_id: versionId
     })
     .eq('id', submissionId);
 

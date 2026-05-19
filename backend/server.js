@@ -392,6 +392,14 @@ app.post('/api/submissions/start', async (req, res) => {
 
         if (verErr) throw verErr;
 
+        // Update submission with current version ID
+        const { error: updateErr } = await supabase
+            .from('submissions')
+            .update({ current_version_id: version.id })
+            .eq('id', sub.id);
+
+        if (updateErr) throw updateErr;
+
         res.json({
             success: true,
             submission: sub,
@@ -471,7 +479,8 @@ app.post('/api/submissions/register', async (req, res) => {
             .from('submissions')
             .update({
                 status: 'submitted',
-                submitted_at: new Date().toISOString()
+                submitted_at: new Date().toISOString(),
+                current_version_id: version_id
             })
             .eq('id', submission_id);
 
