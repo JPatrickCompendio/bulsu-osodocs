@@ -153,7 +153,13 @@ app.post('/api/users', async (req, res) => {
         status,
         profile_image,
         email,
-        password
+        password,
+        org_name,
+        no_member,
+        adviser_name,
+        joined_date,
+        contact_no,
+        student_no
     } = req.body;
 
     if (!full_name || !role || !email || !password) {
@@ -187,7 +193,13 @@ app.post('/api/users', async (req, res) => {
                         full_name,
                         role,
                         status: status || 'Active',
-                        profile_image: profile_image || null
+                        profile_image: profile_image || null,
+                        org_name: org_name || null,
+                        no_member: no_member || null,
+                        adviser_name: adviser_name || null,
+                        joined_date: joined_date || null,
+                        contact_no: contact_no || null,
+                        student_no: student_no || null
                     }
                 ])
                 .select();
@@ -206,6 +218,98 @@ app.post('/api/users', async (req, res) => {
         });
     }
 });
+
+// Update User
+app.put('/api/users/:id', async (req, res) => {
+    const { id } = req.params;
+    const {
+        full_name,
+        role,
+        status,
+        profile_image,
+        org_name,
+        no_member,
+        adviser_name,
+        joined_date,
+        contact_no,
+        student_no
+    } = req.body;
+
+    try {
+        const { data, error } = await supabase
+            .from('users')
+            .update({
+                full_name,
+                role,
+                status: status || 'Active',
+                profile_image: profile_image || null,
+                org_name: org_name || null,
+                no_member: no_member || null,
+                adviser_name: adviser_name || null,
+                joined_date: joined_date || null,
+                contact_no: contact_no || null,
+                student_no: student_no || null
+            })
+            .eq('id', id)
+            .select();
+
+        if (error) throw error;
+
+        res.json({
+            success: true,
+            user: data[0]
+        });
+    } catch (err) {
+        console.error('Error updating user:', err);
+        res.status(500).json({
+            error: 'Failed to update user',
+            details: err.message
+        });
+    }
+});
+
+// Delete User
+app.delete('/api/users/:id', async (req, res) => {
+    const { id } = req.params;
+    const { adminEmail, adminPassword } = req.body;
+
+    try {
+        if (adminEmail && adminPassword) {
+            const { error: authError } = await supabase.auth.signInWithPassword({
+                email: adminEmail,
+                password: adminPassword
+            });
+
+            if (authError) {
+                return res.status(401).json({ error: 'Invalid admin credentials' });
+            }
+        }
+
+        // Delete from auth.users (this deletes the auth user)
+        const { error: deleteAuthError } = await supabase.auth.admin.deleteUser(id);
+        if (deleteAuthError) throw deleteAuthError;
+
+        // Delete from users profile table
+        const { error: deleteProfileError } = await supabase
+            .from('users')
+            .delete()
+            .eq('id', id);
+
+        if (deleteProfileError) throw deleteProfileError;
+
+        res.json({
+            success: true,
+            message: 'User deleted successfully'
+        });
+    } catch (err) {
+        console.error('Error deleting user:', err);
+        res.status(500).json({
+            error: 'Failed to delete user',
+            details: err.message
+        });
+    }
+});
+
 
 // --- REQUIREMENTS CRUD ---
 

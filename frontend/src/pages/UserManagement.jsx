@@ -51,7 +51,9 @@ const UserManagement = () => {
     org_name: '',
     no_member: '',
     adviser_name: '',
-    joined_date: ''
+    joined_date: '',
+    contact_no: '',
+    student_no: ''
   });
 
   const fetchUsers = async () => {
@@ -95,7 +97,9 @@ const UserManagement = () => {
       org_name: '',
       no_member: '',
       adviser_name: '',
-      joined_date: ''
+      joined_date: '',
+      contact_no: '',
+      student_no: ''
     });
     generatePassword(newUserType);
     setIsModalOpen(true);
@@ -112,7 +116,9 @@ const UserManagement = () => {
       org_name: user.org_name || '',
       no_member: user.no_member || '',
       adviser_name: user.adviser_name || '',
-      joined_date: user.joined_date || ''
+      joined_date: user.joined_date || '',
+      contact_no: user.contact_no || '',
+      student_no: user.student_no || ''
     });
     setIsModalOpen(true);
   };
@@ -245,7 +251,9 @@ const UserManagement = () => {
       org_name: formData.org_name || null,
       no_member: formData.no_member || null,
       adviser_name: formData.adviser_name || null,
-      joined_date: formData.joined_date || null
+      joined_date: formData.joined_date || null,
+      contact_no: formData.contact_no || null,
+      student_no: formData.student_no || null
     };
     
     if (!isEditMode) {
@@ -378,7 +386,14 @@ const UserManagement = () => {
                         </div>
                         <div>
                           <div className="font-semibold text-gray-800">{user.full_name}</div>
-                          <div className="text-[10px] text-gray-400 font-mono">{user.id.substring(0, 8)}</div>
+                          <div className="text-[10px] text-gray-400 font-mono">
+                            {user.student_no ? `SN: ${user.student_no} | ` : ''}ID: {user.id.substring(0, 8)}
+                          </div>
+                          {user.contact_no && (
+                            <div className="text-[11px] text-gray-500 font-medium mt-0.5 flex items-center gap-1">
+                              <span>📞 {user.contact_no}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -502,6 +517,28 @@ const UserManagement = () => {
                       />
                     </div>
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Student Number</label>
+                    <input 
+                      type="text" 
+                      required
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-green text-gray-800" 
+                      placeholder="e.g. 2021-123456"
+                      value={formData.student_no}
+                      onChange={(e) => setFormData({...formData, student_no: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Contact Number</label>
+                    <input 
+                      type="text" 
+                      required
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-green text-gray-800" 
+                      placeholder="e.g. 09123456789"
+                      value={formData.contact_no}
+                      onChange={(e) => setFormData({...formData, contact_no: e.target.value})}
+                    />
+                  </div>
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Organization Name</label>
                     <div className="relative">
@@ -624,6 +661,16 @@ const UserManagement = () => {
                         onChange={(e) => setFormData({...formData, email: e.target.value})}
                       />
                     </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Contact Number</label>
+                    <input 
+                      type="text" 
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-green text-gray-800" 
+                      placeholder="e.g. 09123456789"
+                      value={formData.contact_no}
+                      onChange={(e) => setFormData({...formData, contact_no: e.target.value})}
+                    />
                   </div>
                   {!isEditMode && (
                     <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 animate-shine">
