@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
+import * as subService from '../services/submissionService';
 import { 
   Search, 
   Filter, 
@@ -27,10 +28,16 @@ export const MyDocuments = () => {
 
   // Detail View State
   const [selectedDoc, setSelectedDoc] = React.useState(null);
+  const [selectedVersionId, setSelectedVersionId] = React.useState(null);
   const [isFilesOpen, setIsFilesOpen] = React.useState(true);
   const [previewFile, setPreviewFile] = React.useState(null);
   const [filePreviewUrl, setFilePreviewUrl] = React.useState('');
   const [timelineLogs, setTimelineLogs] = React.useState([]);
+
+  // Resubmit State
+  const [isResubmitModalOpen, setIsResubmitModalOpen] = React.useState(false);
+  const [resubmitFiles, setResubmitFiles] = React.useState({});
+  const [isResubmitting, setIsResubmitting] = React.useState(false);
 
   // Action Modals State
   const [isReturnModalOpen, setIsReturnModalOpen] = React.useState(false);
@@ -118,7 +125,7 @@ export const MyDocuments = () => {
             *,
             users (org_name, student_no),
             documentType (name),
-            submission_versions!current_version_id (
+            submission_versions!submission_id (
               *,
               activity_proposal_details (*),
               submission_attachments (*)
@@ -138,7 +145,7 @@ export const MyDocuments = () => {
               *,
               users (org_name, student_no),
               documentType (name),
-              submission_versions (
+              submission_versions!submission_id (
                 *,
                 activity_proposal_details (*),
                 submission_attachments (*)
@@ -209,6 +216,59 @@ export const MyDocuments = () => {
       alert('Failed to return submission.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResubmit = async () => {
+    if (!selectedDoc) return;
+    try {
+      setIsResubmitting(true);
+      
+      const currentVersion = Array.isArray(selectedDoc.raw?.submission_versions)
+        ? (selectedDoc.raw?.submission_versions.find(v => v.id === selectedDoc.raw?.current_version_id) || selectedDoc.raw?.submission_versions[0])
+        : selectedDoc.raw?.submission_versions;
+
+      const oldVersionId = currentVersion.id;
+      const submissionId = selectedDoc.id;
+
+      // Find returned attachments
+      const returnedAttachments = currentVersion.submission_attachments?.filter(file => {
+        const fileLog = timelineLogs.find(log => log.attachment_id === file.id);
+        return fileLog && fileLog.review_action !== 'approved';
+      }) || [];
+      
+      const returnedAttachmentIds = returnedAttachments.map(a => a.id);
+
+      // Validate all returned files have replacements
+      if (Object.keys(resubmitFiles).length < returnedAttachments.length) {
+        alert('Please upload all required replacements.');
+        return;
+      }
+
+      // 1. Create new version
+      const newVersion = await subService.createNewVersion(submissionId, oldVersionId, user.id);
+      
+      // 2. Copy over approved attachments
+      await subService.copyApprovedAttachments(oldVersionId, newVersion.id, returnedAttachmentIds, submissionId);
+
+      // 3. Upload new attachments
+      for (const reqId of Object.keys(resubmitFiles)) {
+        const file = resubmitFiles[reqId];
+        const proposalType = selectedDoc.proposal_type || null;
+        const path = await subService.uploadSubmissionFile(file, selectedDoc.type, submissionId, newVersion.version_number, proposalType);
+        await subService.saveAttachmentRecord(newVersion.id, reqId, file.name, path);
+      }
+
+      setIsResubmitModalOpen(false);
+      setResubmitFiles({});
+      setSelectedDoc(null);
+      await fetchHandledLogs();
+      alert('Document resubmitted successfully!');
+    } catch (err) {
+      console.error('Error resubmitting:', err);
+      alert('Failed to resubmit document.');
+    } finally {
+      setIsResubmitting(false);
     }
   };
 
@@ -368,12 +428,15 @@ export const MyDocuments = () => {
     const ra = latestLog.review_action || '';
     const subStatus = (submission.status || '').toLowerCase();
     
-    if (subStatus === 'to forward') {
+    if (subStatus === 'returned') {
+      category = 'Returned';
+    } else if (subStatus === 'to forward') {
       category = 'To Forward';
     } else if (subStatus === 'sds coordinator review' || wp === 'sds-review') {
       category = 'SDS Review';
     } else if (wp === 'dean-review') category = 'Dean Review';
     else if (wp === 'external-review') category = 'External Review';
+    else if (wp === 'Chairman Review' || wp === 'chairman-review') category = 'Chairman Review';
     else if (ra === 'ready-for-hardcopy') category = 'To Forward';
     else if (ra === 'approved') category = 'Approved';
     else if (ra === 'returned') category = 'Returned';
@@ -435,6 +498,7 @@ export const MyDocuments = () => {
   // Tabs layout
   const tabs = [
     { name: 'All', count: mappedDocs.length },
+    ...(user?.role === 'chairman' ? [{ name: 'Chairman Review', count: mappedDocs.filter(d => d.category === 'Chairman Review').length }] : []),
     { name: 'SDS Review', count: mappedDocs.filter(d => d.category === 'SDS Review').length },
     { name: 'Dean Review', count: mappedDocs.filter(d => d.category === 'Dean Review').length },
     { name: 'External Review', count: mappedDocs.filter(d => d.category === 'External Review').length },
@@ -446,27 +510,55 @@ export const MyDocuments = () => {
   if (selectedDoc) {
     const isActivityProposal = selectedDoc.isActivityProposal;
 
-    const currentVersion = Array.isArray(selectedDoc.raw?.submission_versions)
-      ? (selectedDoc.raw?.submission_versions.find(v => v.id === selectedDoc.raw?.current_version_id) || selectedDoc.raw?.submission_versions[0])
-      : selectedDoc.raw?.submission_versions;
+    const allVersions = Array.isArray(selectedDoc.raw?.submission_versions) 
+      ? [...selectedDoc.raw.submission_versions].sort((a, b) => b.version_number - a.version_number)
+      : [selectedDoc.raw?.submission_versions].filter(Boolean);
+
+    const currentVersionIdToUse = selectedVersionId || selectedDoc.raw?.current_version_id;
+    const currentVersion = allVersions.find(v => v.id === currentVersionIdToUse) || allVersions[0];
     const attachments = currentVersion?.submission_attachments || [];
 
     return (
       <div className="animate-in fade-in duration-500 max-w-7xl mx-auto px-4 py-8 pb-32">
         {/* Detail Header */}
-        <div className="flex items-start gap-4 mb-8">
-          <button 
-            onClick={() => setSelectedDoc(null)}
-            className="mt-1 p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-gray-800"
-          >
-            <ChevronLeft size={24} />
-          </button>
-          <div>
-            <h1 className="text-3xl font-bold text-gray-800 tracking-tight">
-              {selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title}
-            </h1>
-            <p className="text-gray-400 font-mono text-sm mt-1">{selectedDoc.ref}</p>
+        <div className="flex items-start justify-between mb-8">
+          <div className="flex items-start gap-4">
+            <button 
+              onClick={() => { setSelectedDoc(null); setSelectedVersionId(null); }}
+              className="mt-1 p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-gray-800"
+            >
+              <ChevronLeft size={24} />
+            </button>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-800 tracking-tight flex items-center gap-3">
+                {selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title}
+                {allVersions.length > 0 && (
+                  <span className="px-3 py-1 bg-gray-100 text-gray-500 text-sm font-bold rounded-lg uppercase tracking-widest">
+                    V{currentVersion?.version_number}
+                  </span>
+                )}
+              </h1>
+              <p className="text-gray-400 font-mono text-sm mt-1">{selectedDoc.ref}</p>
+            </div>
           </div>
+
+          {/* Version Selector */}
+          {allVersions.length > 1 && (
+            <div className="flex items-center gap-3 bg-white border border-gray-100 px-4 py-2 rounded-xl shadow-sm">
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Version:</span>
+              <select 
+                value={currentVersion?.id || ''}
+                onChange={(e) => setSelectedVersionId(e.target.value)}
+                className="bg-gray-50 border-none rounded-lg px-3 py-1.5 text-sm font-bold text-gray-700 outline-none cursor-pointer focus:ring-2 focus:ring-primary-green/20"
+              >
+                {allVersions.map(v => (
+                  <option key={v.id} value={v.id}>
+                    Version {v.version_number} {v.id === selectedDoc.raw.current_version_id ? '(Latest)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Summary Cards */}
@@ -656,12 +748,17 @@ export const MyDocuments = () => {
                   return (
                     <div key={idx} className={`${containerBg} rounded-xl p-4 flex items-center justify-between group hover:brightness-110 transition-all`}>
                       <div className="flex items-center gap-4">
-                        <div className={`w-10 h-10 ${iconStyle} rounded-lg flex items-center justify-center`}>
+                        <div className={`w-10 h-10 ${iconStyle} rounded-lg flex items-center justify-center shrink-0`}>
                           <Paperclip size={20} />
                         </div>
                         <div>
                           <p className={`${textColor} font-semibold text-sm`}>{fileName}</p>
                           <p className={`${subtitleColor} text-[10px] uppercase`}>Attached Document</p>
+                          {fileLog?.comment && (
+                            <p className="mt-1 text-xs italic font-medium opacity-90 max-w-lg">
+                              Chairman's Comment: "{fileLog.comment}"
+                            </p>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
@@ -787,6 +884,19 @@ export const MyDocuments = () => {
             })()}
           </div>
         </div>
+
+        {/* Action buttons (Org President only - Bottom of the page) */}
+        {user?.role !== 'chairman' && selectedDoc.category === 'Returned' && (
+          <div className="flex items-center justify-center gap-4 mt-10 p-6 bg-gray-50 border border-gray-100 rounded-3xl shadow-sm max-w-xl mx-auto">
+            <button
+              onClick={() => setIsResubmitModalOpen(true)}
+              className="flex items-center justify-center gap-3 px-8 py-3.5 bg-blue-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-blue-600/20 uppercase tracking-widest animate-in"
+            >
+              <RotateCcw size={16} />
+              <span>Resubmit Document</span>
+            </button>
+          </div>
+        )}
 
         {/* Action buttons (Chairman only - Bottom of the page) */}
         {user?.role === 'chairman' && (
@@ -1064,6 +1174,89 @@ export const MyDocuments = () => {
             </div>
           </div>
         )}
+
+        {/* Resubmit Modal Overlay */}
+        {isResubmitModalOpen && (() => {
+          const returnedAttachments = attachments.filter(file => {
+            const fileLog = timelineLogs.find(log => log.attachment_id === file.id);
+            return fileLog && fileLog.review_action !== 'approved';
+          });
+
+          return (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
+              <div className="bg-white rounded-3xl w-full max-w-2xl p-8 flex flex-col shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300 max-h-[80vh]">
+                <div className="flex items-center justify-between mb-6 border-b border-gray-100 pb-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
+                      <RotateCcw size={24} />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-gray-800 text-lg">Resubmit Document</h3>
+                      <p className="text-gray-500 text-sm">Upload new files for the returned attachments.</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setIsResubmitModalOpen(false)} className="text-gray-400 hover:text-gray-800 p-2">
+                    <X size={20} />
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto pr-2 space-y-4 mb-6">
+                  {returnedAttachments.length > 0 ? returnedAttachments.map(file => {
+                    const reqId = file.requirement_id;
+                    const fileLog = timelineLogs.find(log => log.attachment_id === file.id);
+                    return (
+                      <div key={file.id} className="p-4 bg-gray-50 border border-amber-200 rounded-xl space-y-3">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-bold text-gray-800 text-sm">{file.file_name}</p>
+                            {fileLog?.comment && (
+                              <p className="text-xs text-amber-700 italic mt-1">Comment: "{fileLog.comment}"</p>
+                            )}
+                          </div>
+                          {resubmitFiles[reqId] ? (
+                            <span className="px-3 py-1 bg-green-100 text-green-700 rounded text-xs font-bold uppercase">Ready</span>
+                          ) : (
+                            <span className="px-3 py-1 bg-amber-100 text-amber-700 rounded text-xs font-bold uppercase">Action Required</span>
+                          )}
+                        </div>
+                        <div className="mt-2">
+                          <input 
+                            type="file" 
+                            accept=".pdf,.docx"
+                            className="block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+                            onChange={(e) => {
+                              if(e.target.files[0]) {
+                                setResubmitFiles(prev => ({...prev, [reqId]: e.target.files[0]}));
+                              }
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  }) : (
+                    <div className="text-center py-8 text-gray-500 italic">No returned attachments found to replace.</div>
+                  )}
+                </div>
+
+                <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                  <button 
+                    onClick={() => setIsResubmitModalOpen(false)}
+                    className="px-6 py-3 border border-gray-200 text-gray-500 hover:bg-gray-50 rounded-xl font-bold transition-all text-xs uppercase"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={handleResubmit}
+                    disabled={isResubmitting || Object.keys(resubmitFiles).length < returnedAttachments.length}
+                    className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all text-xs uppercase shadow-md disabled:opacity-50"
+                  >
+                    {isResubmitting ? 'Submitting...' : 'Confirm Resubmit'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     );
   }

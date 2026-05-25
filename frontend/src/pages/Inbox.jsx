@@ -38,6 +38,7 @@ export const Inbox = () => {
   const [selectedDocs, setSelectedDocs] = React.useState([]);
   const [viewMode, setViewMode] = React.useState('inbox'); // 'inbox' or 'archive'
   const [selectedDoc, setSelectedDoc] = React.useState(null);
+  const [selectedVersionId, setSelectedVersionId] = React.useState(null);
   const [isFilesOpen, setIsFilesOpen] = React.useState(true);
   const [previewFile, setPreviewFile] = React.useState(null);
   const [filePreviewUrl, setFilePreviewUrl] = React.useState('');
@@ -149,7 +150,7 @@ export const Inbox = () => {
             id,
             name
           ),
-          submission_versions!current_version_id (
+          submission_versions!submission_id (
             id,
             version_number,
             status,
@@ -187,7 +188,7 @@ export const Inbox = () => {
               id,
               name
             ),
-            submission_versions (
+            submission_versions!submission_id (
               id,
               version_number,
               status,
@@ -643,10 +644,12 @@ export const Inbox = () => {
     // Temporary debugging logs
     console.log("FULL DETAILS DATA:", selectedDoc.raw);
 
-    // Safe extraction of nested structures for the active document view
-    const activeVersion = Array.isArray(selectedDoc?.raw?.submission_versions)
-      ? (selectedDoc?.raw?.submission_versions.find(v => v.id === selectedDoc?.raw?.current_version_id) || selectedDoc?.raw?.submission_versions[0])
-      : selectedDoc?.raw?.submission_versions;
+    const allVersions = Array.isArray(selectedDoc.raw?.submission_versions) 
+      ? [...selectedDoc.raw.submission_versions].sort((a, b) => b.version_number - a.version_number)
+      : [selectedDoc.raw?.submission_versions].filter(Boolean);
+
+    const currentVersionIdToUse = selectedVersionId || selectedDoc.raw?.current_version_id;
+    const activeVersion = allVersions.find(v => v.id === currentVersionIdToUse) || allVersions[0];
 
     const details = Array.isArray(activeVersion?.activity_proposal_details)
       ? activeVersion?.activity_proposal_details[0]
@@ -655,22 +658,50 @@ export const Inbox = () => {
     const documentTypeName = selectedDoc?.raw?.documentType?.name || selectedDoc?.type || "";
     const isActivityProposal = documentTypeName.toLowerCase() === "activity proposal" || documentTypeName.toLowerCase().includes("proposal") || !!details;
 
+    // We MUST pass activeVersion's attachments to the map later
+    selectedDoc.attachments = activeVersion?.submission_attachments || [];
+
     return (
       <div className="animate-in fade-in slide-in-from-right-8 duration-500 pb-24 text-gray-800">
         {/* Detail Header */}
-        <div className="flex items-start gap-4 mb-8">
-          <button 
-            onClick={() => setSelectedDoc(null)}
-            className="mt-1 p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-gray-800"
-          >
-            <ChevronLeft size={24} />
-          </button>
-          <div>
-            <h1 className="text-3xl font-bold text-gray-800 tracking-tight">
-              {selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title}
-            </h1>
-            <p className="text-gray-400 font-mono text-sm mt-1">{selectedDoc.ref}</p>
+        <div className="flex items-start justify-between mb-8">
+          <div className="flex items-start gap-4">
+            <button 
+              onClick={() => { setSelectedDoc(null); setSelectedVersionId(null); }}
+              className="mt-1 p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-gray-800"
+            >
+              <ChevronLeft size={24} />
+            </button>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-800 tracking-tight flex items-center gap-3">
+                {selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title}
+                {allVersions.length > 0 && (
+                  <span className="px-3 py-1 bg-gray-100 text-gray-500 text-sm font-bold rounded-lg uppercase tracking-widest">
+                    V{activeVersion?.version_number}
+                  </span>
+                )}
+              </h1>
+              <p className="text-gray-400 font-mono text-sm mt-1">{selectedDoc.ref}</p>
+            </div>
           </div>
+          
+          {/* Version Selector */}
+          {allVersions.length > 1 && (
+            <div className="flex items-center gap-3 bg-white border border-gray-100 px-4 py-2 rounded-xl shadow-sm">
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Version:</span>
+              <select 
+                value={activeVersion?.id || ''}
+                onChange={(e) => setSelectedVersionId(e.target.value)}
+                className="bg-gray-50 border-none rounded-lg px-3 py-1.5 text-sm font-bold text-gray-700 outline-none cursor-pointer focus:ring-2 focus:ring-primary-green/20"
+              >
+                {allVersions.map(v => (
+                  <option key={v.id} value={v.id}>
+                    Version {v.version_number} {v.id === selectedDoc.raw.current_version_id ? '(Latest)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Summary Cards */}
@@ -999,10 +1030,17 @@ export const Inbox = () => {
 
         {/* Enhanced Fixed Footer Actions connected to Supabase */}
         {(() => {
-          const hasReturnedFile = selectedDoc?.attachments?.some(file => {
-            const fileLog = timelineLogs.find(log => log.attachment_id === file.id);
-            return fileLog && fileLog.review_action !== 'approved';
-          });
+          const attachments = selectedDoc?.attachments || [];
+          const allVersions = Array.isArray(selectedDoc.raw?.submission_versions) 
+            ? [...selectedDoc.raw.submission_versions].sort((a, b) => b.version_number - a.version_number)
+            : [selectedDoc.raw?.submission_versions].filter(Boolean);
+          const currentVersionIdToUse = selectedVersionId || selectedDoc.raw?.current_version_id;
+          const activeVersion = allVersions.find(v => v.id === currentVersionIdToUse) || allVersions[0];
+          const isLatestVersion = activeVersion?.id === selectedDoc.raw?.current_version_id;
+
+          const allFilesReviewed = attachments.length > 0 
+            ? attachments.every(file => timelineLogs.some(log => log.attachment_id === file.id && log.action_type === 'attachment_review' && log.submission_version_id === activeVersion?.id))
+            : true;
 
           return (
             <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50">
@@ -1013,7 +1051,7 @@ export const Inbox = () => {
                     setReturnComments('');
                     setIsReturnModalOpen(true);
                   }}
-                  disabled={hasReturnedFile}
+                  disabled={!allFilesReviewed || !isLatestVersion}
                   className="flex items-center gap-3 px-8 py-3.5 bg-primary-green text-white rounded-2xl font-bold hover:scale-105 active:scale-95 transition-all shadow-lg shadow-primary-green/20 group disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
                 >
                   <CheckCircle size={20} className="group-hover:rotate-12 transition-transform" />
@@ -1028,7 +1066,8 @@ export const Inbox = () => {
                     setReturnComments('');
                     setIsReturnModalOpen(true);
                   }}
-                  className="flex items-center gap-3 px-8 py-3.5 bg-amber-500 text-white rounded-2xl font-bold hover:scale-105 active:scale-95 transition-all shadow-lg shadow-amber-500/20 group"
+                  disabled={!allFilesReviewed || !isLatestVersion}
+                  className="flex items-center gap-3 px-8 py-3.5 bg-amber-500 text-white rounded-2xl font-bold hover:scale-105 active:scale-95 transition-all shadow-lg shadow-amber-500/20 group disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
                 >
                   <RotateCcw size={20} className="group-hover:-rotate-45 transition-transform" />
                   <span className="uppercase text-xs tracking-widest">Return</span>
@@ -1040,7 +1079,8 @@ export const Inbox = () => {
                     setReturnComments('');
                     setIsReturnModalOpen(true);
                   }}
-                  className="flex items-center gap-3 px-8 py-3.5 bg-red-600 text-white rounded-2xl font-bold hover:scale-105 active:scale-95 transition-all shadow-lg shadow-red-600/20 group"
+                  disabled={!allFilesReviewed || !isLatestVersion}
+                  className="flex items-center gap-3 px-8 py-3.5 bg-red-600 text-white rounded-2xl font-bold hover:scale-105 active:scale-95 transition-all shadow-lg shadow-red-600/20 group disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
                 >
                   <X size={20} className="group-hover:scale-110 transition-transform" />
                   <span className="uppercase text-xs tracking-widest">Disapprove</span>

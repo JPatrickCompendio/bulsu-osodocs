@@ -186,3 +186,147 @@ export const submitForReview = async (submissionId, versionId, userId) => {
 
   await createLog(submissionId, userId, 'SUBMITTED', 'Document submitted for review.', versionId, 'submission', 'submitted');
 };
+
+/**
+ * VERSIONING & RESUBMISSION
+ */
+
+export const createNewVersion = async (submissionId, oldVersionId, userId) => {
+  // 1. Get the current version to find the version number
+  const { data: oldVersion, error: oldVerErr } = await supabase
+    .from('submission_versions')
+    .select('version_number')
+    .eq('id', oldVersionId)
+    .single();
+
+  if (oldVerErr) throw oldVerErr;
+
+  const newVersionNumber = oldVersion.version_number + 1;
+
+  // 2. Create the new version record
+  const { data: newVersion, error: newVerErr } = await supabase
+    .from('submission_versions')
+    .insert([{
+      submission_id: submissionId,
+      version_number: newVersionNumber,
+      status: 'submitted',
+      submitted_by: userId
+    }])
+    .select()
+    .single();
+
+  if (newVerErr) throw newVerErr;
+
+  // 3. Duplicate Activity Proposal Details if they exist
+  const { data: oldDetails, error: detailsErr } = await supabase
+    .from('activity_proposal_details')
+    .select('*')
+    .eq('submission_version_id', oldVersionId);
+
+  if (!detailsErr && oldDetails && oldDetails.length > 0) {
+    const detailsToCopy = { ...oldDetails[0] };
+    delete detailsToCopy.id;
+    delete detailsToCopy.submission_version_id;
+    detailsToCopy.submission_version_id = newVersion.id;
+
+    await supabase.from('activity_proposal_details').insert([detailsToCopy]);
+  }
+
+  // 4. Update the main submissions table to point to the new version and reset status
+  const { error: updateSubErr } = await supabase
+    .from('submissions')
+    .update({ 
+      current_version_id: newVersion.id,
+      status: 'submitted',
+      remarks: `Resubmitted as Version ${newVersionNumber}`
+    })
+    .eq('id', submissionId);
+
+  if (updateSubErr) throw updateSubErr;
+
+  // 5. Log the resubmission
+  await createLog(
+    submissionId, 
+    userId, 
+    'RESUBMITTED', 
+    `Document resubmitted as Version ${newVersionNumber}.`, 
+    newVersion.id, 
+    'submission', 
+    'resubmitted'
+  );
+
+  return newVersion;
+};
+
+export const copyApprovedAttachments = async (oldVersionId, newVersionId, returnedAttachmentIds, submissionId) => {
+  // Fetch all attachments from the old version
+  const { data: oldAttachments, error: getErr } = await supabase
+    .from('submission_attachments')
+    .select('*')
+    .eq('submission_version_id', oldVersionId);
+
+  if (getErr || !oldAttachments) return;
+
+  // Filter out the ones that were returned (so the user uploads new ones for those)
+  const validOldAttachments = oldAttachments.filter(att => !returnedAttachmentIds.includes(att.id));
+  
+  if (validOldAttachments.length === 0) return;
+
+  const attachmentsToCopy = validOldAttachments.map(att => {
+    const copy = { ...att };
+    delete copy.id;
+    copy.submission_version_id = newVersionId;
+    copy.uploaded_at = new Date().toISOString();
+    return copy;
+  });
+
+  if (attachmentsToCopy.length > 0) {
+    const { data: insertedAttachments, error: insertErr } = await supabase
+      .from('submission_attachments')
+      .insert(attachmentsToCopy)
+      .select();
+      
+    if (insertErr) {
+      console.error('Error copying approved attachments:', insertErr);
+      throw insertErr;
+    }
+
+    if (!submissionId) return; // Safely exit if not provided
+
+    // Find the old logs for these approved attachments
+    const oldIds = validOldAttachments.map(a => a.id);
+    const { data: oldLogs } = await supabase
+      .from('submission_logs')
+      .select('*')
+      .in('attachment_id', oldIds)
+      .eq('action_type', 'attachment_review')
+      .eq('review_action', 'approved');
+
+    if (oldLogs && oldLogs.length > 0) {
+      const logsToInsert = oldLogs.map(oldLog => {
+        const oldAtt = validOldAttachments.find(a => a.id === oldLog.attachment_id);
+        const newAtt = insertedAttachments.find(a => a.requirement_id === oldAtt.requirement_id && a.file_name === oldAtt.file_name);
+
+        if (!newAtt) return null;
+
+        return {
+          submission_id: oldLog.submission_id,
+          submission_version_id: newVersionId,
+          attachment_id: newAtt.id,
+          user_id: oldLog.user_id, // Keep the original reviewer's user_id
+          workflow_phase: oldLog.workflow_phase,
+          action_type: oldLog.action_type,
+          review_action: oldLog.review_action,
+          action: oldLog.action,
+          description: oldLog.description,
+          comment: oldLog.comment,
+          created_at: new Date().toISOString()
+        };
+      }).filter(Boolean);
+
+      if (logsToInsert.length > 0) {
+        await supabase.from('submission_logs').insert(logsToInsert);
+      }
+    }
+  }
+};
