@@ -332,51 +332,76 @@ export const Inbox = () => {
 
       // 1. Update submissions table status and remarks
       const formattedRemarks = comments || 'Approved by Chairman';
+      const isSdsCoordinatorStage = (selectedDoc.raw?.status || '').toLowerCase() === 'sds coordinator review' || (selectedDoc.status || '').toLowerCase().includes('sds');
+
+      // If admin is approving an SDS coordinator-stage item, don't force status to 'to forward' so
+      // the log's workflow_phase ('dean-review') can determine the My Documents category.
+      const updatePayload = isSdsCoordinatorStage && user?.role === 'admin'
+        ? { status: 'dean review', remarks: formattedRemarks }
+        : { status: 'to forward', remarks: formattedRemarks };
+
       const { error: subErr } = await supabase
         .from('submissions')
-        .update({ 
-          status: 'to forward',
-          remarks: formattedRemarks
-        })
+        .update(updatePayload)
         .eq('id', selectedDoc.id);
 
       if (subErr) throw subErr;
 
-      // 2. Insert workflow action log 1 (Approved) into submission_logs
-      const { error: logErr1 } = await supabase
-        .from('submission_logs')
-        .insert([{
-          submission_id: selectedDoc.id,
-          submission_version_id: activeVersionId,
-          user_id: user.id,
-          workflow_phase: 'Chairman Review',
-          action_type: 'approved',
-          review_action: 'approved',
-          action: 'approved',
-          description: comments || 'Approved by Chairman',
-          comment: comments || null,
-          created_at: new Date().toISOString()
-        }]);
+      // 2. Insert workflow action log(s)
+      // Special case: admin approving right after SDS Coordinator review
+      if (user?.role === 'admin' && isSdsCoordinatorStage) {
+        const { error: sdsLogErr } = await supabase
+          .from('submission_logs')
+          .insert([{
+            submission_id: selectedDoc.id,
+            submission_version_id: activeVersionId,
+            user_id: user.id,
+            workflow_phase: 'dean-review',
+            action_type: 'approved',
+            review_action: 'approved',
+            action: 'approved',
+            description: comments || 'Approved by SDS Coordinator',
+            comment: comments || null,
+            created_at: new Date().toISOString()
+          }]);
 
-      if (logErr1) throw logErr1;
+        if (sdsLogErr) throw sdsLogErr;
+      } else {
+        const { error: logErr1 } = await supabase
+          .from('submission_logs')
+          .insert([{
+            submission_id: selectedDoc.id,
+            submission_version_id: activeVersionId,
+            user_id: user.id,
+            workflow_phase: 'Chairman Review',
+            action_type: 'approved',
+            review_action: 'approved',
+            action: 'approved',
+            description: comments || 'Approved by Chairman',
+            comment: comments || null,
+            created_at: new Date().toISOString()
+          }]);
 
-      // 3. Insert workflow action log 2 (Ready for hardcopy) into submission_logs
-      const { error: logErr2 } = await supabase
-        .from('submission_logs')
-        .insert([{
-          submission_id: selectedDoc.id,
-          submission_version_id: activeVersionId,
-          user_id: user.id,
-          workflow_phase: 'Chairman Review',
-          action_type: 'ready_for_hardcopy',
-          review_action: 'ready-for-hardcopy',
-          action: 'ready-for-hardcopy',
-          description: 'Ready for hardcopy submission',
-          comment: null,
-          created_at: new Date(Date.now() + 1000).toISOString()
-        }]);
+        if (logErr1) throw logErr1;
 
-      if (logErr2) throw logErr2;
+        // 3. Insert workflow action log 2 (Ready for hardcopy) into submission_logs
+        const { error: logErr2 } = await supabase
+          .from('submission_logs')
+          .insert([{
+            submission_id: selectedDoc.id,
+            submission_version_id: activeVersionId,
+            user_id: user.id,
+            workflow_phase: 'Chairman Review',
+            action_type: 'ready_for_hardcopy',
+            review_action: 'ready-for-hardcopy',
+            action: 'ready-for-hardcopy',
+            description: 'Ready for hardcopy submission',
+            comment: null,
+            created_at: new Date(Date.now() + 1000).toISOString()
+          }]);
+
+        if (logErr2) throw logErr2;
+      }
 
       // Close modal inputs, triggers and refresh list
       setPreviewFile(null);
@@ -1129,6 +1154,12 @@ export const Inbox = () => {
                           src={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=Fit` : ''} 
                           className="w-full h-full border-0 rounded-2xl" 
                           title="PDF Preview"
+                        />
+                      ) : previewFile.file_name?.toLowerCase().endsWith('.docx') || previewFile.file_url?.toLowerCase().includes('.docx') ? (
+                        <iframe 
+                          src={filePreviewUrl ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(filePreviewUrl)}` : ''} 
+                          className="w-full h-full border-0 rounded-2xl" 
+                          title="DOCX Preview"
                         />
                       ) : (
                         <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">

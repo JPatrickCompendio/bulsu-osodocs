@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import * as reqService from '../services/requirementService';
+import { supabase } from '../supabaseClient';
 import { 
   Plus, 
   Search, 
@@ -24,7 +25,7 @@ import {
   CheckCircle2,
   LayoutGrid,
   Settings2,
-  MoreVertical,
+  Paperclip,
   MoreHorizontal
 } from 'lucide-react';
 
@@ -50,6 +51,8 @@ const ListOfRequirements = () => {
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState(null);
   const [reqToDelete, setReqToDelete] = useState(null);
+  const [previewFile, setPreviewFile] = useState(null);
+  const [filePreviewUrl, setFilePreviewUrl] = useState('');
   
   // Form state
   const [formData, setFormData] = useState({
@@ -73,6 +76,40 @@ const ListOfRequirements = () => {
   useEffect(() => {
     loadDocumentTypes();
   }, []);
+
+  useEffect(() => {
+    const fetchUrl = async () => {
+      if (!previewFile) {
+        setFilePreviewUrl('');
+        return;
+      }
+      let finalPath = previewFile.url || '';
+      if (finalPath.startsWith('documents/')) {
+        finalPath = finalPath.replace('documents/', '');
+      }
+      
+      try {
+        const { data } = await supabase.storage
+          .from('documents')
+          .createSignedUrl(finalPath, 3600);
+        
+        if (data?.signedUrl) {
+          setFilePreviewUrl(data.signedUrl);
+          return;
+        }
+      } catch (e) {
+        console.error('Failed to get signed URL:', e);
+      }
+
+      // Fallback
+      const { data } = supabase.storage
+        .from('documents')
+        .getPublicUrl(finalPath);
+      
+      setFilePreviewUrl(data?.publicUrl || '');
+    };
+    fetchUrl();
+  }, [previewFile]);
 
   // Fetch requirements when type or subType changes
   useEffect(() => {
@@ -310,13 +347,13 @@ const ListOfRequirements = () => {
           </div>
         </div>
         
-        <div className="flex flex-col md:flex-row items-center gap-6 w-full xl:max-w-3xl">
+        <div className="flex flex-col md:flex-row items-center gap-6 w-full xl:max-w-md">
           <div className="relative flex-1 w-full group">
-            <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-primary-green transition-all" size={24} />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-primary-green transition-all" size={20} />
             <input 
               type="text" 
               placeholder="Search by title, code, or content..."
-              className="w-full pl-12 pr-6 py-3.5 bg-white border border-gray-200 rounded-xl focus:border-primary-green focus:ring-0 outline-none transition-all shadow-sm font-bold text-gray-700 text-sm"
+              className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:border-primary-green focus:ring-0 outline-none transition-all shadow-sm font-bold text-gray-700 text-sm"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -457,11 +494,13 @@ const ListOfRequirements = () => {
                         </td>
                         <td className="px-6 py-4">
                           {req.file_url ? (
-                            <div className="flex items-center gap-2 text-primary-green">
-                              <FileText size={16} />
-                              <span className="font-black text-xs truncate max-w-[150px]">
-                                {req.file_url.split('/').pop()}
-                              </span>
+                            <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-2 text-primary-green">
+                                <FileText size={16} />
+                                <span className="font-black text-xs truncate max-w-[150px]">
+                                  {req.file_url.split('/').pop()}
+                                </span>
+                              </div>
                             </div>
                           ) : (
                             <span className="font-black text-xs text-gray-400 uppercase">None</span>
@@ -469,22 +508,27 @@ const ListOfRequirements = () => {
                         </td>
                         <td className="px-6 py-4 relative">
                           <div className="flex justify-end relative">
-                            <button 
-                              onClick={() => setActiveDropdown(activeDropdown === req.id ? null : req.id)}
-                              className="p-2 text-gray-400 hover:text-primary-green hover:bg-gray-100 rounded-lg transition-all"
-                            >
-                              <MoreHorizontal size={20} />
-                            </button>
+                              {/* Direct Preview Button */}
+                              <button 
+                                onClick={() => setPreviewFile({ title: req.title, url: req.file_url })}
+                                className="p-2 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-all mr-2"
+                              >
+                                <Eye size={20} />
+                              </button>
+                              <button 
+                                onClick={() => setActiveDropdown(activeDropdown === req.id ? null : req.id)}
+                                className="p-2 text-gray-400 hover:text-primary-green hover:bg-gray-100 rounded-lg transition-all"
+                              >
+                                <MoreHorizontal size={20} />
+                              </button>
                             
                             {activeDropdown === req.id && (
                               <div className="absolute right-0 top-10 mt-2 w-48 bg-white rounded-xl shadow-xl border border-gray-100 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                                 {req.file_url && (
                                   <>
-                                    {!req.file_url.toLowerCase().endsWith('.docx') && (
-                                      <button onClick={() => { handlePreview(req.file_url); setActiveDropdown(null); }} className="w-full text-left px-4 py-3 text-sm font-bold text-gray-600 hover:bg-gray-50 hover:text-primary-green flex items-center gap-3">
-                                        <Eye size={16} /> Preview
-                                      </button>
-                                    )}
+                                    <button onClick={() => { setPreviewFile({ title: req.title, url: req.file_url }); setActiveDropdown(null); }} className="w-full text-left px-4 py-3 text-sm font-bold text-gray-600 hover:bg-gray-50 hover:text-primary-green flex items-center gap-3">
+                                      <Eye size={16} /> Preview
+                                    </button>
                                     <button onClick={() => { handleDownload(req.file_url, `${req.title}${req.file_url.toLowerCase().endsWith('.docx') ? '.docx' : '.pdf'}`); setActiveDropdown(null); }} className="w-full text-left px-4 py-3 text-sm font-bold text-gray-600 hover:bg-gray-50 hover:text-primary-green flex items-center gap-3">
                                       <Download size={16} /> Download
                                     </button>
@@ -555,68 +599,68 @@ const ListOfRequirements = () => {
 
       {/* Requirement Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-gray-950/40 backdrop-blur-md animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-3xl rounded-[4rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
-            <div className="p-12 border-b-2 border-gray-50 flex items-center justify-between bg-gray-50/20">
-              <div className="flex items-center gap-6">
-                <div className="w-14 h-14 bg-primary-green rounded-[1.5rem] flex items-center justify-center text-white shadow-xl shadow-primary-green/20">
-                  <Plus size={32} />
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-gray-950/40 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/30">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 bg-primary-green rounded-xl flex items-center justify-center text-white shadow-md shadow-primary-green/20">
+                  <Plus size={20} />
                 </div>
-                <h3 className="text-3xl font-black text-gray-800 uppercase tracking-tighter">
-                  {editingRequirement ? 'Update Document' : 'List Requirement'}
+                <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter truncate max-w-[300px]">
+                  {editingRequirement ? `Edit: ${editingRequirement.title}` : 'Add Requirement'}
                 </h3>
               </div>
-              <button onClick={() => setIsModalOpen(false)} className="p-4 hover:bg-gray-100 rounded-full transition-colors text-gray-400"><X size={32} /></button>
+              <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400"><X size={24} /></button>
             </div>
             
-            <form onSubmit={handleSaveRequirement} className="p-12 space-y-10">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
-                <div className="md:col-span-2 space-y-3">
+            <form onSubmit={handleSaveRequirement} className="p-6 space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                <div className="sm:col-span-2 space-y-2">
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Requirement Title</label>
                   <input 
                     type="text" required placeholder="e.g. Organizational Bylaws"
-                    className="w-full px-8 py-5 bg-gray-50 border-4 border-transparent rounded-[2rem] focus:bg-white focus:border-primary-green/20 outline-none transition-all font-black text-gray-700 text-lg shadow-inner"
+                    className="w-full px-4 py-3 bg-gray-50 border-2 border-transparent rounded-xl focus:bg-white focus:border-primary-green/40 outline-none transition-all font-bold text-gray-700 text-sm shadow-inner"
                     value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})}
                   />
                 </div>
                 
-                <div className="space-y-3">
-                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Reference Code</label>
+                <div className="space-y-2">
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Ref Code</label>
                   <input 
                     type="text" placeholder="e.g. BY-2026"
-                    className="w-full px-8 py-5 bg-gray-50 border-4 border-transparent rounded-[2rem] focus:bg-white focus:border-primary-green/20 outline-none transition-all font-black text-gray-700 text-lg shadow-inner"
+                    className="w-full px-4 py-3 bg-gray-50 border-2 border-transparent rounded-xl focus:bg-white focus:border-primary-green/40 outline-none transition-all font-bold text-gray-700 text-sm shadow-inner"
                     value={formData.referenceCode} onChange={(e) => setFormData({...formData, referenceCode: e.target.value})}
                   />
                 </div>
               </div>
               
-              <div className="space-y-3">
+              <div className="space-y-2">
                 <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Detailed Instructions</label>
                 <textarea 
-                  rows="4" placeholder="How should organizations prepare this document?"
-                  className="w-full px-8 py-5 bg-gray-50 border-4 border-transparent rounded-[2rem] focus:bg-white focus:border-primary-green/20 outline-none transition-all resize-none font-bold text-gray-700 text-lg shadow-inner"
+                  rows="3" placeholder="How should organizations prepare this document?"
+                  className="w-full px-4 py-3 bg-gray-50 border-2 border-transparent rounded-xl focus:bg-white focus:border-primary-green/40 outline-none transition-all resize-none font-bold text-gray-700 text-sm shadow-inner"
                   value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})}
                 ></textarea>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-2">
                 <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Template PDF</label>
                 <div 
                   onClick={() => fileInputRef.current.click()}
-                  className="border-4 border-dashed border-gray-100 rounded-[3rem] p-12 text-center hover:border-primary-green/30 hover:bg-primary-green/5 transition-all cursor-pointer group shadow-inner"
+                  className="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-primary-green/40 hover:bg-primary-green/5 transition-all cursor-pointer group shadow-inner"
                 >
-                  <Upload className="mx-auto text-gray-200 mb-6 group-hover:text-primary-green group-hover:scale-110 transition-all" size={60} />
-                  <p className="text-xl font-black text-gray-400 group-hover:text-primary-green transition-colors">
+                  <Upload className="mx-auto text-gray-300 mb-3 group-hover:text-primary-green transition-all" size={32} />
+                  <p className="text-sm font-bold text-gray-500 group-hover:text-primary-green transition-colors">
                     {formData.file ? formData.file.name : formData.file_url ? 'Template Uploaded' : 'Upload Template (PDF or DOCX)'}
                   </p>
                   <input type="file" ref={fileInputRef} className="hidden" accept=".pdf,.docx" onChange={handleFileChange} />
                 </div>
               </div>
 
-              <div className="pt-8 flex gap-8">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 px-10 py-6 border-4 border-gray-50 text-gray-400 font-black rounded-3xl hover:bg-gray-50 transition-all uppercase tracking-widest">Cancel</button>
-                <button type="submit" disabled={isSaving} className="flex-2 px-10 py-6 bg-primary-green text-white font-black rounded-3xl hover:scale-[1.02] active:scale-[0.98] transition-all shadow-2xl shadow-primary-green/30 flex items-center justify-center gap-4 uppercase tracking-widest">
-                  {isSaving ? <Loader2 size={28} className="animate-spin" /> : editingRequirement ? 'Apply Changes' : 'Publish Requirement'}
+              <div className="pt-4 flex gap-4">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 px-6 py-3 bg-gray-50 text-gray-500 font-black rounded-xl hover:bg-gray-100 transition-all uppercase tracking-widest text-xs">Cancel</button>
+                <button type="submit" disabled={isSaving} className="flex-1 px-6 py-3 bg-primary-green text-white font-black rounded-xl hover:bg-green-700 transition-all shadow-md shadow-primary-green/20 flex items-center justify-center gap-2 uppercase tracking-widest text-xs">
+                  {isSaving ? <Loader2 size={16} className="animate-spin" /> : editingRequirement ? 'Apply Changes' : 'Publish Requirement'}
                 </button>
               </div>
             </form>
@@ -679,6 +723,64 @@ const ListOfRequirements = () => {
           </div>
         </div>
       )}
+
+      {/* PDF Preview Modal Overlay */}
+      {previewFile && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[120] flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="bg-white rounded-3xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300">
+            {/* Header */}
+            <div className="bg-gray-50 border-b border-gray-100 px-8 py-5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
+                  <Paperclip size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-800 text-lg">{previewFile.url.split('/').pop()}</h3>
+                  <p className="text-gray-400 text-xs font-medium">Verify Template Document: {previewFile.title}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setPreviewFile(null)}
+                className="p-2.5 hover:bg-gray-200 rounded-full transition-colors text-gray-400 hover:text-gray-800"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 flex flex-col overflow-hidden bg-gray-100 p-6">
+              <div className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-200/50 relative">
+                {previewFile.url?.toLowerCase().includes('.pdf') ? (
+                  <iframe 
+                    src={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=Fit` : ''} 
+                    className="w-full h-full border-0 rounded-2xl" 
+                    title="PDF Preview"
+                  />
+                ) : previewFile.url?.toLowerCase().includes('.docx') ? (
+                  <iframe 
+                    src={filePreviewUrl ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(filePreviewUrl)}` : ''} 
+                    className="w-full h-full border-0 rounded-2xl" 
+                    title="DOCX Preview"
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
+                    <FileText size={48} className="text-gray-300 mb-4 animate-bounce" />
+                    <h4 className="font-bold text-gray-700 mb-1">Preview is not supported for this file type</h4>
+                    <p className="text-gray-400 text-xs max-w-xs mb-4">You can download it to view locally on your device.</p>
+                    <button 
+                      onClick={() => handleDownload(previewFile.url, `${previewFile.title}${previewFile.url.toLowerCase().endsWith('.docx') ? '.docx' : '.pdf'}`)}
+                      className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-md inline-flex items-center gap-2"
+                    >
+                      <Download size={16} /> Download Template
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

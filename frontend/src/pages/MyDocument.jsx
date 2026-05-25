@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
 import * as subService from '../services/submissionService';
@@ -20,7 +21,10 @@ import {
 } from 'lucide-react';
 
 export const MyDocuments = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
+
+
   const [activeTab, setActiveTab] = React.useState('All');
   const [searchQuery, setSearchQuery] = React.useState('');
   const [loading, setLoading] = React.useState(true);
@@ -42,7 +46,11 @@ export const MyDocuments = () => {
   // Action Modals State
   const [isReturnModalOpen, setIsReturnModalOpen] = React.useState(false);
   const [returnComments, setReturnComments] = React.useState('');
-  const [decisionType, setDecisionType] = React.useState('return'); // 'return' or 'disapprove'
+  const [decisionType, setDecisionType] = React.useState('return'); // 'return' or 'disapprove' or 'approve'
+  const [reviewAction, setReviewAction] = React.useState('');
+  const [reviewComments, setReviewComments] = React.useState('');
+  const [attachmentSaving, setAttachmentSaving] = React.useState(false);
+  const [attachmentSuccessModal, setAttachmentSuccessModal] = React.useState(null);
   const [isForwardModalOpen, setIsForwardModalOpen] = React.useState(false);
 
   // Fetch timeline logs for detailed view
@@ -111,6 +119,8 @@ export const MyDocuments = () => {
   }, [previewFile]);
 
   // Fetch handled logs for current chairman
+
+
   const fetchHandledLogs = async () => {
     if (!user) return;
     try {
@@ -178,6 +188,13 @@ export const MyDocuments = () => {
           ? selectedDoc.raw?.submission_versions[0]?.id 
           : selectedDoc.raw?.submission_versions?.id);
 
+      const currentStatus = (selectedDoc.raw?.status || selectedDoc.status || '').toLowerCase();
+      const workflowPhase = currentStatus.includes('dean review')
+        ? 'dean-review'
+        : currentStatus.includes('sds coordinator review')
+        ? 'sds-review'
+        : 'Chairman Review';
+
       const formattedRemarks = comments || 'Returned for edits by Chairman';
       const { error: subErr } = await supabase
         .from('submissions')
@@ -195,7 +212,7 @@ export const MyDocuments = () => {
           submission_id: selectedDoc.id,
           submission_version_id: activeVersionId,
           user_id: user.id,
-          workflow_phase: 'Chairman Review',
+          workflow_phase: workflowPhase,
           action_type: 'returned',
           review_action: 'returned',
           action: 'returned',
@@ -281,6 +298,13 @@ export const MyDocuments = () => {
           ? selectedDoc.raw?.submission_versions[0]?.id 
           : selectedDoc.raw?.submission_versions?.id);
 
+      const currentStatus = (selectedDoc.raw?.status || selectedDoc.status || '').toLowerCase();
+      const workflowPhase = currentStatus.includes('dean review')
+        ? 'dean-review'
+        : currentStatus.includes('sds coordinator review')
+        ? 'sds-review'
+        : 'Chairman Review';
+
       const formattedRemarks = comments || 'Disapproved by Chairman';
       const { error: subErr } = await supabase
         .from('submissions')
@@ -298,7 +322,7 @@ export const MyDocuments = () => {
           submission_id: selectedDoc.id,
           submission_version_id: activeVersionId,
           user_id: user.id,
-          workflow_phase: 'Chairman Review',
+          workflow_phase: workflowPhase,
           action_type: 'disapproved',
           review_action: 'disapproved',
           action: 'disapproved',
@@ -370,6 +394,131 @@ export const MyDocuments = () => {
     }
   };
 
+  const handleApproveSubmission = async (comments = '') => {
+    if (!selectedDoc) return;
+    try {
+      setLoading(true);
+      const activeVersionId = selectedDoc.raw?.current_version_id || 
+        (Array.isArray(selectedDoc.raw?.submission_versions) 
+          ? selectedDoc.raw?.submission_versions[0]?.id 
+          : selectedDoc.raw?.submission_versions?.id);
+
+      const formattedRemarks = comments || 'Approved';
+      const currentStatus = (selectedDoc.raw?.status || selectedDoc.status || '').toLowerCase();
+      const isSdsCoordinatorStage = currentStatus === 'sds coordinator review' || currentStatus.includes('sds');
+      const isDeanReviewStage = currentStatus.includes('dean review');
+
+      const updatePayload = user?.role === 'admin' && isSdsCoordinatorStage
+        ? { status: 'dean review', remarks: formattedRemarks }
+        : user?.role === 'admin' && isDeanReviewStage
+        ? { status: 'external review', remarks: formattedRemarks }
+        : { status: 'to forward', remarks: formattedRemarks };
+
+      const { error: subErr } = await supabase
+        .from('submissions')
+        .update(updatePayload)
+        .eq('id', selectedDoc.id);
+
+      if (subErr) throw subErr;
+
+      if (user?.role === 'admin' && isSdsCoordinatorStage) {
+        const now = new Date();
+        const { error: logErr } = await supabase
+          .from('submission_logs')
+          .insert([
+            {
+              submission_id: selectedDoc.id,
+              submission_version_id: activeVersionId,
+              user_id: user.id,
+              workflow_phase: 'sds-review',
+              action_type: 'approved',
+              review_action: 'approved',
+              action: 'approved',
+              description: comments || 'Approved by SDS Coordinator',
+              comment: comments || null,
+              created_at: now.toISOString()
+            },
+            {
+              submission_id: selectedDoc.id,
+              submission_version_id: activeVersionId,
+              user_id: user.id,
+              workflow_phase: 'dean-review',
+              action_type: 'pending',
+              review_action: 'pending',
+              action: 'Dean Approval',
+              description: comments || 'Under dean review',
+              comment: comments || null,
+              created_at: new Date(now.getTime() + 1000).toISOString()
+            }
+          ]);
+
+        if (logErr) throw logErr;
+      } else if (user?.role === 'admin' && isDeanReviewStage) {
+        const { error: deanLogErr } = await supabase
+          .from('submission_logs')
+          .insert([{
+            submission_id: selectedDoc.id,
+            submission_version_id: activeVersionId,
+            user_id: user.id,
+            workflow_phase: 'External Review',
+            action_type: 'approved',
+            review_action: 'approved',
+            action: 'approved',
+            description: comments || 'Approved by the Dean',
+            comment: comments || null,
+            created_at: new Date().toISOString()
+          }]);
+
+        if (deanLogErr) throw deanLogErr;
+      } else {
+        const { error: logErr1 } = await supabase
+          .from('submission_logs')
+          .insert([{
+            submission_id: selectedDoc.id,
+            submission_version_id: activeVersionId,
+            user_id: user.id,
+            workflow_phase: 'Chairman Review',
+            action_type: 'approved',
+            review_action: 'approved',
+            action: 'approved',
+            description: comments || 'Approved',
+            comment: comments || null,
+            created_at: new Date().toISOString()
+          }]);
+
+        if (logErr1) throw logErr1;
+
+        const { error: logErr2 } = await supabase
+          .from('submission_logs')
+          .insert([{
+            submission_id: selectedDoc.id,
+            submission_version_id: activeVersionId,
+            user_id: user.id,
+            workflow_phase: 'Chairman Review',
+            action_type: 'ready_for_hardcopy',
+            review_action: 'ready-for-hardcopy',
+            action: 'ready-for-hardcopy',
+            description: 'Ready for hardcopy submission',
+            comment: null,
+            created_at: new Date(Date.now() + 1000).toISOString()
+          }]);
+
+        if (logErr2) throw logErr2;
+      }
+
+      setIsReturnModalOpen(false);
+      setReturnComments('');
+      setSelectedDoc(null);
+      await fetchHandledLogs();
+      alert('Submission approved successfully!');
+    } catch (err) {
+      console.error('Error approving submission:', err);
+      alert('Failed to approve submission.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   React.useEffect(() => {
     fetchHandledLogs();
   }, [user]);
@@ -434,12 +583,16 @@ export const MyDocuments = () => {
       category = 'To Forward';
     } else if (subStatus === 'sds coordinator review' || wp === 'sds-review') {
       category = 'SDS Review';
-    } else if (wp === 'dean-review') category = 'Dean Review';
-    else if (wp === 'external-review') category = 'External Review';
-    else if (wp === 'Chairman Review' || wp === 'chairman-review') category = 'Chairman Review';
-    else if (ra === 'ready-for-hardcopy') category = 'To Forward';
+    } else if (subStatus === 'dean review' || wp === 'dean-review') {
+      category = 'Dean Review';
+    } else if (subStatus === 'external review' || wp === 'external-review') {
+      category = 'External Review';
+    } else if (wp === 'Chairman Review' || wp === 'chairman-review') {
+      category = 'Chairman Review';
+    } else if (ra === 'ready-for-hardcopy') category = 'To Forward';
     else if (ra === 'approved') category = 'Approved';
     else if (ra === 'returned') category = 'Returned';
+
 
     const submittedDate = new Date(submission.created_at).toLocaleDateString('en-US', {
       month: 'short',
@@ -455,6 +608,7 @@ export const MyDocuments = () => {
 
     return {
       id: submission.id,
+
       title: proposalTitle && proposalTitle !== '-' ? proposalTitle : docTypeName,
       ref: `SUB-2026-03-${String(submission.id).padStart(3, '0')}`,
       sender: orgName,
@@ -521,7 +675,7 @@ export const MyDocuments = () => {
     return (
       <div className="animate-in fade-in duration-500 max-w-7xl mx-auto px-4 py-8 pb-32">
         {/* Detail Header */}
-        <div className="flex items-start justify-between mb-8">
+        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-8">
           <div className="flex items-start gap-4">
             <button 
               onClick={() => { setSelectedDoc(null); setSelectedVersionId(null); }}
@@ -542,23 +696,35 @@ export const MyDocuments = () => {
             </div>
           </div>
 
-          {/* Version Selector */}
-          {allVersions.length > 1 && (
-            <div className="flex items-center gap-3 bg-white border border-gray-100 px-4 py-2 rounded-xl shadow-sm">
-              <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Version:</span>
-              <select 
-                value={currentVersion?.id || ''}
-                onChange={(e) => setSelectedVersionId(e.target.value)}
-                className="bg-gray-50 border-none rounded-lg px-3 py-1.5 text-sm font-bold text-gray-700 outline-none cursor-pointer focus:ring-2 focus:ring-primary-green/20"
+          {/* Action Area */}
+          <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">
+            {/* Version Selector */}
+            {allVersions.length > 1 && (
+              <div className="flex items-center gap-3 bg-white border border-gray-100 px-4 py-2 rounded-xl shadow-sm">
+                <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Version:</span>
+                <select 
+                  value={currentVersion?.id || ''}
+                  onChange={(e) => setSelectedVersionId(e.target.value)}
+                  className="bg-gray-50 border-none rounded-lg px-3 py-1.5 text-sm font-bold text-gray-700 outline-none cursor-pointer focus:ring-2 focus:ring-primary-green/20"
+                >
+                  {allVersions.map(v => (
+                    <option key={v.id} value={v.id}>
+                      Version {v.version_number} {v.id === selectedDoc.raw.current_version_id ? '(Latest)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            
+            {(user?.role === 'org-president' && (selectedDoc.status === 'DRAFT' || selectedDoc.status === 'RETURNED')) && (
+              <button
+                onClick={() => navigate(`/submit?submissionId=${selectedDoc.id}`)}
+                className="self-start mt-1 px-5 py-3 bg-primary-green text-white rounded-2xl text-xs font-bold uppercase tracking-widest shadow-lg shadow-primary-green/20 hover:bg-green-700 transition-all"
               >
-                {allVersions.map(v => (
-                  <option key={v.id} value={v.id}>
-                    Version {v.version_number} {v.id === selectedDoc.raw.current_version_id ? '(Latest)' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+                Continue Editing
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Summary Cards */}
@@ -577,6 +743,8 @@ export const MyDocuments = () => {
               {card.badge ? (
                 <span className={`px-4 py-1.5 rounded-lg text-[10px] font-bold shadow-sm uppercase inline-block ${
                   card.value === 'APPROVED' || card.value === 'TO FORWARD' ? 'bg-green-100 text-green-700' :
+                  card.value === 'DEAN REVIEW' ? 'bg-[#DBEAFE] text-[#1E3A8A]' :
+                  card.value === 'EXTERNAL REVIEW' ? 'bg-[#FFF4E5] text-[#D76B0D]' :
                   card.value === 'RETURNED' ? 'bg-amber-100 text-amber-700' :
                   'bg-blue-100 text-blue-700'
                 }`}>
@@ -940,6 +1108,52 @@ export const MyDocuments = () => {
           </div>
         )}
 
+        {/* Admin approve button in My Documents */}
+        {user?.role === 'admin' && (
+          <div className="flex items-center justify-center gap-4 mt-10 p-6 bg-gray-50 border border-gray-100 rounded-3xl shadow-sm max-w-xl mx-auto">
+            <button
+              onClick={() => {
+                setDecisionType('approve');
+                setReturnComments('');
+                setIsReturnModalOpen(true);
+              }}
+              disabled={!(selectedDoc?.category === 'Dean Review' || selectedDoc?.category === 'SDS Review')}
+              className="flex items-center justify-center gap-3 px-8 py-3.5 bg-green-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-lg shadow-green-600/20 uppercase tracking-widest animate-in"
+            >
+              <CheckCircle size={16} />
+              <span>Approve</span>
+            </button>
+          </div>
+        )}
+
+        {user?.role === 'admin' && (selectedDoc?.category === 'Dean Review' || selectedDoc?.category === 'SDS Review') && (
+          <div className="flex items-center justify-center gap-4 mt-10 p-6 bg-gray-50 border border-gray-100 rounded-3xl shadow-sm max-w-xl mx-auto">
+            <button
+              onClick={() => {
+                setDecisionType('return');
+                setReturnComments('');
+                setIsReturnModalOpen(true);
+              }}
+              className="flex items-center justify-center gap-3 px-8 py-3.5 bg-amber-500 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-amber-500/20 uppercase tracking-widest animate-in"
+            >
+              <RotateCcw size={16} />
+              <span>Return</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setDecisionType('disapprove');
+                setReturnComments('');
+                setIsReturnModalOpen(true);
+              }}
+              className="flex items-center justify-center gap-3 px-8 py-3.5 bg-red-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-red-600/20 uppercase tracking-widest animate-in"
+            >
+              <X size={16} />
+              <span>Disapprove</span>
+            </button>
+          </div>
+        )}
+
         {/* PDF Preview Modal Overlay */}
         {previewFile && (() => {
           return (
@@ -975,6 +1189,12 @@ export const MyDocuments = () => {
                           className="w-full h-full border-0 rounded-2xl" 
                           title="PDF Preview"
                         />
+                      ) : previewFile.file_name?.toLowerCase().endsWith('.docx') || previewFile.file_url?.toLowerCase().includes('.docx') ? (
+                        <iframe 
+                          src={filePreviewUrl ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(filePreviewUrl)}` : ''} 
+                          className="w-full h-full border-0 rounded-2xl" 
+                          title="DOCX Preview"
+                        />
                       ) : (
                         <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
                           <FileText size={48} className="text-gray-300 mb-4 animate-bounce" />
@@ -992,44 +1212,157 @@ export const MyDocuments = () => {
                     </div>
                   </div>
 
-                  {/* Right Side: Review Details (Read Only) */}
-                  {(() => {
-                    const fileLog = timelineLogs.find(log => log.attachment_id === previewFile.id);
-                    if (!fileLog) return null;
+                  <div className="w-full md:w-96 bg-white p-8 flex flex-col justify-between overflow-y-auto border-t md:border-t-0 border-gray-100">
+                    {(() => {
+                      const fileLog = timelineLogs.find(log => log.attachment_id === previewFile.id);
+                      const currentStatus = (selectedDoc.raw?.status || selectedDoc.status || '').toLowerCase();
+                      const workflowPhase = currentStatus.includes('dean review')
+                        ? 'dean-review'
+                        : currentStatus.includes('sds coordinator review')
+                        ? 'sds-review'
+                        : 'Chairman Review';
 
-                    return (
-                      <div className="w-full md:w-96 bg-white p-8 flex flex-col overflow-y-auto border-t md:border-t-0 border-gray-100">
-                        <div className="space-y-6">
-                          <div>
-                            <h4 className="font-bold text-gray-800 text-base mb-1">Attachment Review Details</h4>
-                            <p className="text-gray-400 text-xs leading-relaxed">This attachment has been reviewed by the evaluator.</p>
-                          </div>
+                      return (
+                        <>
+                          <div className="space-y-6">
+                            <div>
+                              <h4 className="font-bold text-gray-800 text-base mb-1">Attachment Review Panel</h4>
+                              <p className="text-gray-400 text-xs leading-relaxed">Review or return this attachment as part of the current approval step.</p>
+                            </div>
 
-                          <div className="h-[1px] bg-gray-100"></div>
+                            {fileLog && (
+                              <div className="bg-gray-50 rounded-3xl p-4 border border-gray-100">
+                                <p className="text-[11px] uppercase tracking-widest text-gray-400 mb-2">Latest attachment status</p>
+                                <div className="flex flex-wrap gap-2 items-center">
+                                  <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-[10px] uppercase font-bold">
+                                    {fileLog.review_action?.replace('-', ' ') || fileLog.action || 'Reviewed'}
+                                  </span>
+                                  <span className="text-xs text-gray-500">{fileLog.description || fileLog.comment || 'No comments yet'}</span>
+                                </div>
+                              </div>
+                            )}
 
-                          {/* Review Action Display */}
-                          <div className="space-y-2">
-                            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block font-bold text-gray-500">Review Status / Action</label>
-                            <div className={`px-4 py-3 rounded-xl border text-sm font-semibold uppercase ${
-                              fileLog.review_action === 'approved' || fileLog.action === 'approved'
-                                ? 'bg-green-50 border-green-200 text-green-700'
-                                : 'bg-amber-50 border-amber-200 text-amber-700'
-                            }`}>
-                              {fileLog.review_action?.replace('-', ' ') || fileLog.action || 'Approved'}
+                            <div className="space-y-2">
+                              <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block">Review Action</label>
+                              <select
+                                value={reviewAction}
+                                onChange={(e) => setReviewAction(e.target.value)}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-700 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer"
+                              >
+                                <option value="">Approve</option>
+                                <option value="missing-requirements">Missing Requirements</option>
+                                <option value="incorrect-format">Incorrect Format</option>
+                                <option value="incomplete-information">Incomplete Information</option>
+                              </select>
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block">Review Comments</label>
+                              <textarea
+                                value={reviewComments}
+                                onChange={(e) => setReviewComments(e.target.value)}
+                                placeholder="Enter review comments..."
+                                rows={4}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-none"
+                              />
                             </div>
                           </div>
 
-                          {/* Comments Display */}
-                          <div className="space-y-2">
-                            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block font-bold text-gray-500">Review Comments</label>
-                            <div className="bg-gray-50 rounded-xl p-4 text-xs font-medium text-gray-600 border border-gray-100 italic leading-relaxed">
-                              "{fileLog.comment || fileLog.description || 'No comments provided.'}"
-                            </div>
+                          <div className="space-y-3 pt-6 border-t border-gray-100 mt-6">
+                            <button
+                              onClick={async () => {
+                                if (!previewFile || !selectedDoc) return;
+                                setAttachmentSaving(true);
+                                try {
+                                  const activeVersionId = selectedDoc.raw?.current_version_id ||
+                                    (Array.isArray(selectedDoc.raw?.submission_versions)
+                                      ? selectedDoc.raw?.submission_versions[0]?.id
+                                      : selectedDoc.raw?.submission_versions?.id);
+
+                                  const { error } = await supabase
+                                    .from('submission_logs')
+                                    .insert([{
+                                      submission_id: selectedDoc.id,
+                                      submission_version_id: activeVersionId,
+                                      attachment_id: previewFile.id,
+                                      user_id: user.id,
+                                      workflow_phase: workflowPhase,
+                                      action_type: 'attachment_review',
+                                      review_action: 'approved',
+                                      action: 'approved',
+                                      description: reviewComments || 'Attachment approved',
+                                      comment: reviewComments || null,
+                                      created_at: new Date().toISOString()
+                                    }] );
+
+                                  if (error) throw error;
+
+                                  setPreviewFile(null);
+                                  await fetchTimelineLogs(selectedDoc.id);
+                                  alert('Attachment approved successfully!');
+                                } catch (err) {
+                                  console.error('Error approving attachment:', err);
+                                  alert('Failed to approve attachment.');
+                                } finally {
+                                  setAttachmentSaving(false);
+                                }
+                              }}
+                              disabled={attachmentSaving}
+                              className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-all shadow-lg shadow-green-600/10 uppercase text-xs tracking-wider disabled:opacity-40"
+                            >
+                              <CheckCircle size={16} />
+                              <span>{attachmentSaving ? 'Saving...' : 'Approve Attachment'}</span>
+                            </button>
+
+                            <button
+                              onClick={async () => {
+                                if (!previewFile || !selectedDoc) return;
+                                setAttachmentSaving(true);
+                                try {
+                                  const activeVersionId = selectedDoc.raw?.current_version_id ||
+                                    (Array.isArray(selectedDoc.raw?.submission_versions)
+                                      ? selectedDoc.raw?.submission_versions[0]?.id
+                                      : selectedDoc.raw?.submission_versions?.id);
+
+                                  const { error } = await supabase
+                                    .from('submission_logs')
+                                    .insert([{
+                                      submission_id: selectedDoc.id,
+                                      submission_version_id: activeVersionId,
+                                      attachment_id: previewFile.id,
+                                      user_id: user.id,
+                                      workflow_phase: workflowPhase,
+                                      action_type: 'attachment_review',
+                                      review_action: reviewAction || 'returned',
+                                      action: reviewAction || 'returned',
+                                      description: reviewComments || 'Attachment returned for edits',
+                                      comment: reviewComments || null,
+                                      created_at: new Date().toISOString()
+                                    }] );
+
+                                  if (error) throw error;
+
+                                  setPreviewFile(null);
+                                  await fetchTimelineLogs(selectedDoc.id);
+                                  alert('Attachment returned for edits successfully!');
+                                } catch (err) {
+                                  console.error('Error returning attachment:', err);
+                                  alert('Failed to return attachment.');
+                                } finally {
+                                  setAttachmentSaving(false);
+                                }
+                              }}
+                              disabled={!reviewAction || !reviewComments.trim() || attachmentSaving}
+                              className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 transition-all shadow-lg shadow-amber-500/10 uppercase text-xs tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              <RotateCcw size={16} />
+                              <span>{attachmentSaving ? 'Saving...' : 'Return Attachment'}</span>
+                            </button>
                           </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
+                        </>
+                      );
+                    })()}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1052,6 +1385,23 @@ export const MyDocuments = () => {
           let confirmBtnText = 'Confirm Return';
           let confirmBtnBg = 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/10';
           let onConfirm = () => handleReturnSubmission(returnComments);
+
+          if (decisionType === 'approve') {
+            modalIcon = <CheckCircle size={24} />;
+            modalIconBg = 'bg-green-50 text-green-600';
+            modalTitle = 'Approve Submission';
+            modalDescription = (
+              <>
+                Are you sure you want to approve this submission? 
+                This will update the status to <strong className="text-green-600">Approved</strong>.
+              </>
+            );
+            placeholderText = 'Enter optional approval comments...';
+            ringClass = 'focus:ring-green-500/20 focus:border-green-500';
+            confirmBtnText = 'Confirm Approve';
+            confirmBtnBg = 'bg-green-600 hover:bg-green-700 shadow-green-600/10';
+            onConfirm = () => handleApproveSubmission(returnComments);
+          }
 
           if (decisionType === 'disapprove') {
             modalIcon = <X size={24} />;
@@ -1339,10 +1689,12 @@ export const MyDocuments = () => {
                 {filteredDocs.map((doc) => (
                   <tr 
                     key={doc.id} 
-                    onClick={() => setSelectedDoc(doc)}
-                    className="group transition-all duration-300 hover:bg-gray-50/50 cursor-pointer"
+                    className="group transition-all duration-300 hover:bg-gray-50/50"
                   >
-                    <td className="px-6 py-5">
+                    <td 
+                      className="px-6 py-5 cursor-pointer"
+                      onClick={() => setSelectedDoc(doc)}
+                    >
                       <div className="flex items-center gap-3">
                         <FileText className="text-secondary-gold opacity-50" size={20} />
                         <div>
@@ -1367,15 +1719,15 @@ export const MyDocuments = () => {
                     <td className="px-6 py-5 text-center">
                       <span className={`px-4 py-1.5 rounded-full text-[10px] font-bold shadow-sm inline-block min-w-[120px] transition-all uppercase text-white ${
                         (doc.status === 'APPROVED' || doc.status === 'TO FORWARD') ? 'bg-green-600' : 
+                        doc.status === 'DEAN REVIEW' ? 'bg-[#1E3A8A]' :
+                        doc.status === 'EXTERNAL REVIEW' ? 'bg-[#D76B0D]' :
                         doc.status === 'RETURNED' ? 'bg-amber-500' : 
                         'bg-blue-500'
                       }`}>
                         {doc.status}
                       </span>
                     </td>
-                    <td className="px-6 py-5 text-right text-sm text-gray-500 font-medium">
-                      {doc.lastAction}
-                    </td>
+                      <td className="px-6 py-5 text-right text-sm text-gray-500 font-medium">{doc.lastAction}</td>
                   </tr>
                 ))}
               </tbody>

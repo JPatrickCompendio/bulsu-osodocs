@@ -71,6 +71,83 @@ export const startNewSubmission = async (userId, typeId, typeName = 'Document') 
   return { submission: sub, version };
 };
 
+const getCurrentVersion = (submission) => {
+  if (!submission) return null;
+  const versions = submission.submission_versions;
+  if (Array.isArray(versions)) {
+    return versions.find(v => v.id === submission.current_version_id) || versions[0];
+  }
+  return versions;
+};
+
+const normalizeProposalType = (proposalType) => proposalType ? proposalType.toLowerCase().replace(/\s+/g, '-') : null;
+
+export const getDraftSubmission = async (userId, typeId, proposalType = null) => {
+  const formattedType = normalizeProposalType(proposalType);
+  // First fetch the submission record (latest draft)
+  const { data: subs, error: subErr } = await supabase
+    .from('submissions')
+    .select('*, documentType (*)')
+    .eq('user_id', userId)
+    .eq('document_type_id', typeId)
+    .eq('status', 'draft')
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (subErr) throw subErr;
+  const submission = subs?.[0] || null;
+  if (!submission) return null;
+
+  // Fetch versions separately to avoid ambiguous embedding
+  const { data: versions, error: verErr } = await supabase
+    .from('submission_versions')
+    .select('*, activity_proposal_details (*), submission_attachments (*)')
+    .eq('submission_id', submission.id)
+    .order('created_at', { ascending: false });
+
+  if (verErr) throw verErr;
+
+  submission.submission_versions = versions;
+
+  // pick matching version
+  let version = getCurrentVersion(submission);
+  if (formattedType && Array.isArray(versions)) {
+    const matchingVersion = versions.find(v => {
+      const details = Array.isArray(v.activity_proposal_details)
+        ? v.activity_proposal_details[0]
+        : v.activity_proposal_details;
+      return details?.proposal_type === formattedType;
+    });
+    if (matchingVersion) version = matchingVersion;
+  }
+
+  return { submission, version };
+};
+
+export const getSubmissionById = async (submissionId) => {
+  const { data: subs, error: subErr } = await supabase
+    .from('submissions')
+    .select('*, documentType (*)')
+    .eq('id', submissionId)
+    .single();
+
+  if (subErr) throw subErr;
+  const submission = subs;
+  if (!submission) return null;
+
+  const { data: versions, error: verErr } = await supabase
+    .from('submission_versions')
+    .select('*, activity_proposal_details (*), submission_attachments (*)')
+    .eq('submission_id', submission.id)
+    .order('created_at', { ascending: false });
+
+  if (verErr) throw verErr;
+
+  submission.submission_versions = versions;
+  const version = getCurrentVersion(submission);
+  return { submission, version };
+};
+
 // Fetch requirements for a specific type and optional proposal_type
 export const getRequirementsForType = async (typeId, proposalType = null) => {
   let query = supabase
