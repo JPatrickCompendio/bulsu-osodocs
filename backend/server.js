@@ -618,6 +618,52 @@ app.post('/api/submissions/register', async (req, res) => {
     }
 });
 
+// Approve Dean Route (Bypasses RLS using service_role key to update pending log)
+app.post('/api/submissions/approve-dean', async (req, res) => {
+    const { submissionId, userId, comments } = req.body;
+
+    if (!submissionId || !userId) {
+        return res.status(400).json({ error: 'Submission ID and User ID are required' });
+    }
+
+    try {
+        // 1. Update submissions table status to 'external review'
+        const { error: subErr } = await supabase
+            .from('submissions')
+            .update({ 
+                status: 'external review', 
+                remarks: comments || 'Approved by the Dean' 
+            })
+            .eq('id', submissionId);
+
+        if (subErr) throw subErr;
+
+        // 2. Update the pending log in submission_logs table
+        const { error: deanLogErr } = await supabase
+            .from('submission_logs')
+            .update({
+                user_id: userId,
+                workflow_phase: 'dean-review',
+                action_type: 'approved',
+                review_action: 'approved',
+                action: 'approved',
+                description: comments || 'Approved by the Dean',
+                comment: comments || null,
+                created_at: new Date().toISOString()
+            })
+            .eq('submission_id', submissionId)
+            .eq('workflow_phase', 'dean-review')
+            .eq('action_type', 'pending');
+
+        if (deanLogErr) throw deanLogErr;
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('[Backend] Error in approve-dean:', err);
+        res.status(500).json({ error: 'Failed to approve via backend', details: err.message });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`Backend server running on http://localhost:${PORT}`);
 });

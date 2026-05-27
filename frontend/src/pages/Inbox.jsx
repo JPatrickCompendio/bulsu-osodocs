@@ -30,6 +30,38 @@ import {
   X
 } from 'lucide-react';
 
+const getStatusColor = (status) => {
+  const s = (status || '').toLowerCase().trim();
+  if (s.includes('to forward') || s.includes('hardcopy submission')) {
+    return '#db2777';
+  }
+  if (s.includes('chairman') || s.includes('vice chairman') || s.includes('oso staff review') || s.includes('oso staff') || s.includes('pending')) {
+    return '#c2bc13';
+  }
+  if (s.includes('sds coordinator review') || s.includes('sds review') || s.includes('sds')) {
+    return '#6366f1';
+  }
+  if (s.includes('dean review')) {
+    return '#1e3a8a';
+  }
+  if (s.includes('external review')) {
+    return '#d76b0d';
+  }
+  if (s === 'approved') {
+    return '#105220';
+  }
+  if (s.includes('disapproved') || s.includes('rejected')) {
+    return '#ef4444';
+  }
+  if (s === 'returned') {
+    return '#f59e0b';
+  }
+  if (s === 'completed') {
+    return '#22b814';
+  }
+  return '#6366f1'; // Default
+};
+
 export const Inbox = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -50,6 +82,7 @@ export const Inbox = () => {
   const [decisionType, setDecisionType] = React.useState('return'); // 'approve', 'return', 'disapprove'
   const [attachmentSaving, setAttachmentSaving] = React.useState(false);
   const [attachmentSuccessModal, setAttachmentSuccessModal] = React.useState(null);
+  const [locallyApproved, setLocallyApproved] = React.useState([]);
 
   const fetchTimelineLogs = async (submissionId) => {
     try {
@@ -75,8 +108,10 @@ export const Inbox = () => {
   React.useEffect(() => {
     if (selectedDoc) {
       fetchTimelineLogs(selectedDoc.id);
+      setLocallyApproved([]);
     } else {
       setTimelineLogs([]);
+      setLocallyApproved([]);
     }
   }, [selectedDoc]);
 
@@ -244,13 +279,15 @@ export const Inbox = () => {
         }
 
         // Map status value to correct friendly label for UI filtering
-        let statusLabel = 'Pending';
+        let statusLabel = 'OSO Staff Review';
         if (sub.status === 'approved') {
           statusLabel = 'Approved';
         } else if (sub.status === 'disapproved' || sub.status === 'rejected') {
           statusLabel = 'Rejected';
         } else if (sub.status === 'submitted') {
-          statusLabel = 'Pending';
+          statusLabel = 'OSO Staff Review';
+        } else if (sub.status === 'to forward') {
+          statusLabel = user?.role === 'org-president' ? 'Hardcopy Submission' : 'To Forward';
         } else if (sub.status === 'SDS coordinator review') {
           statusLabel = 'SDS coordinator review';
         } else if (sub.status === 'draft') {
@@ -350,20 +387,35 @@ export const Inbox = () => {
       // 2. Insert workflow action log(s)
       // Special case: admin approving right after SDS Coordinator review
       if (user?.role === 'admin' && isSdsCoordinatorStage) {
+        const now = new Date();
         const { error: sdsLogErr } = await supabase
           .from('submission_logs')
-          .insert([{
-            submission_id: selectedDoc.id,
-            submission_version_id: activeVersionId,
-            user_id: user.id,
-            workflow_phase: 'dean-review',
-            action_type: 'approved',
-            review_action: 'approved',
-            action: 'approved',
-            description: comments || 'Approved by SDS Coordinator',
-            comment: comments || null,
-            created_at: new Date().toISOString()
-          }]);
+          .insert([
+            {
+              submission_id: selectedDoc.id,
+              submission_version_id: activeVersionId,
+              user_id: user.id,
+              workflow_phase: 'sds-review',
+              action_type: 'approved',
+              review_action: 'approved',
+              action: 'approved',
+              description: comments || 'Approved by SDS Coordinator',
+              comment: comments || null,
+              created_at: now.toISOString()
+            },
+            {
+              submission_id: selectedDoc.id,
+              submission_version_id: activeVersionId,
+              user_id: user.id,
+              workflow_phase: 'dean-review',
+              action_type: 'pending',
+              review_action: 'pending',
+              action: 'Dean Approval',
+              description: 'Awaiting Dean’s Wet Signature',
+              comment: null,
+              created_at: new Date(now.getTime() + 1000).toISOString()
+            }
+          ]);
 
         if (sdsLogErr) throw sdsLogErr;
       } else {
@@ -572,29 +624,8 @@ export const Inbox = () => {
     if (!previewFile || !selectedDoc) return;
     try {
       setAttachmentSaving(true);
-      const activeVersionId = selectedDoc.raw.current_version_id || 
-        (Array.isArray(selectedDoc.raw.submission_versions) 
-          ? selectedDoc.raw.submission_versions[0]?.id 
-          : selectedDoc.raw.submission_versions?.id);
-
-      const { error } = await supabase
-        .from('submission_logs')
-        .insert([{
-          submission_id: selectedDoc.id,
-          submission_version_id: activeVersionId,
-          attachment_id: previewFile.id,
-          user_id: user.id,
-          workflow_phase: 'Chairman Review',
-          action_type: 'attachment_review',
-          review_action: 'approved',
-          action: 'approved',
-          description: reviewComments || 'Attachment approved',
-          comment: reviewComments || null,
-          created_at: new Date().toISOString()
-        }]);
-
-      if (error) throw error;
-
+      setLocallyApproved(prev => [...prev, previewFile.id]);
+ 
       setAttachmentSuccessModal({
         type: 'approved',
         fileName: previewFile.file_name || 'Attachment'
@@ -647,7 +678,7 @@ export const Inbox = () => {
     // 1. Status Filter
     if (filterType !== 'All') {
       const isPendingMatch = filterType.toLowerCase() === 'pending' && 
-        (item.status.toLowerCase() === 'pending' || item.status.toLowerCase() === 'sds coordinator review');
+        (item.status.toLowerCase() === 'pending' || item.status.toLowerCase() === 'oso staff review' || item.status.toLowerCase() === 'sds coordinator review');
       if (!isPendingMatch && item.status.toLowerCase() !== filterType.toLowerCase()) {
         return false;
       }
@@ -743,11 +774,13 @@ export const Inbox = () => {
                 <span>{card.label}</span>
               </div>
               {card.badge ? (
-                <span className={`px-4 py-1.5 rounded-lg text-[10px] font-bold shadow-sm uppercase inline-block ${
-                  card.value === 'Approved' ? 'bg-green-100 text-green-700' :
-                  card.value === 'Rejected' ? 'bg-red-100 text-red-700' :
-                  'bg-blue-50 text-[#1447ea] border border-blue-100'
-                }`}>
+                <span 
+                  style={{
+                    backgroundColor: `${getStatusColor(card.value)}1a`,
+                    color: getStatusColor(card.value)
+                  }}
+                  className="px-4 py-1.5 rounded-lg text-[10px] font-bold shadow-sm uppercase inline-block"
+                >
                   {card.value}
                 </span>
               ) : (
@@ -892,8 +925,14 @@ export const Inbox = () => {
                   const fileUrl = data?.publicUrl || '#';
 
                   const fileLog = timelineLogs.find(log => log.attachment_id === file.id);
-                  const isApproved = fileLog && (fileLog.review_action === 'approved' || fileLog.action === 'approved');
-                  const hasRevision = fileLog && !isApproved;
+                  const hasRevision = fileLog && fileLog.review_action !== 'approved';
+                  
+                  const docStatus = (selectedDoc.raw?.status || selectedDoc.status || '').toLowerCase();
+                  const isChairmanStage = docStatus === 'submitted' || docStatus === 'oso staff review' || docStatus === 'pending';
+                  
+                  const isApproved = isChairmanStage 
+                    ? (locallyApproved.includes(file.id) || (fileLog && (fileLog.review_action === 'approved' || fileLog.action === 'approved')))
+                    : !hasRevision;
 
                   // Dynamic styles based on review status
                   let containerBg = 'bg-[#525252]';
@@ -1064,7 +1103,11 @@ export const Inbox = () => {
           const isLatestVersion = activeVersion?.id === selectedDoc.raw?.current_version_id;
 
           const allFilesReviewed = attachments.length > 0 
-            ? attachments.every(file => timelineLogs.some(log => log.attachment_id === file.id && log.action_type === 'attachment_review' && log.submission_version_id === activeVersion?.id))
+            ? attachments.every(file => {
+                const fileLog = timelineLogs.find(log => log.attachment_id === file.id);
+                const hasRevision = fileLog && fileLog.review_action !== 'approved';
+                return locallyApproved.includes(file.id) || hasRevision;
+              })
             : true;
 
           return (
@@ -1076,7 +1119,7 @@ export const Inbox = () => {
                     setReturnComments('');
                     setIsReturnModalOpen(true);
                   }}
-                  disabled={!allFilesReviewed || !isLatestVersion}
+                  disabled={(user?.role !== 'admin' && !allFilesReviewed) || !isLatestVersion}
                   className="flex items-center gap-3 px-8 py-3.5 bg-primary-green text-white rounded-2xl font-bold hover:scale-105 active:scale-95 transition-all shadow-lg shadow-primary-green/20 group disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
                 >
                   <CheckCircle size={20} className="group-hover:rotate-12 transition-transform" />
@@ -1084,27 +1127,27 @@ export const Inbox = () => {
                 </button>
                 
                 <div className="h-10 w-[1px] bg-gray-200/50"></div>
-
+ 
                 <button 
                   onClick={() => {
                     setDecisionType('return');
                     setReturnComments('');
                     setIsReturnModalOpen(true);
                   }}
-                  disabled={!allFilesReviewed || !isLatestVersion}
+                  disabled={(user?.role !== 'admin' && !allFilesReviewed) || !isLatestVersion}
                   className="flex items-center gap-3 px-8 py-3.5 bg-amber-500 text-white rounded-2xl font-bold hover:scale-105 active:scale-95 transition-all shadow-lg shadow-amber-500/20 group disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
                 >
                   <RotateCcw size={20} className="group-hover:-rotate-45 transition-transform" />
                   <span className="uppercase text-xs tracking-widest">Return</span>
                 </button>
-
+ 
                 <button 
                   onClick={() => {
                     setDecisionType('disapprove');
                     setReturnComments('');
                     setIsReturnModalOpen(true);
                   }}
-                  disabled={!allFilesReviewed || !isLatestVersion}
+                  disabled={(user?.role !== 'admin' && !allFilesReviewed) || !isLatestVersion}
                   className="flex items-center gap-3 px-8 py-3.5 bg-red-600 text-white rounded-2xl font-bold hover:scale-105 active:scale-95 transition-all shadow-lg shadow-red-600/20 group disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
                 >
                   <X size={20} className="group-hover:scale-110 transition-transform" />
@@ -1219,18 +1262,20 @@ export const Inbox = () => {
 
                     {/* Actions Buttons */}
                     <div className="space-y-3 pt-6 border-t border-gray-100 mt-6">
-                      <button 
-                        onClick={handleApproveAttachment}
-                        disabled={attachmentSaving}
-                        className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-all shadow-lg shadow-green-600/10 uppercase text-xs tracking-wider disabled:opacity-40"
-                      >
-                        <CheckCircle size={16} />
-                        <span>{attachmentSaving ? 'Saving...' : 'Approve Submission'}</span>
-                      </button>
+                      {user?.role !== 'admin' && (
+                        <button 
+                          onClick={handleApproveAttachment}
+                          disabled={!!reviewAction || attachmentSaving}
+                          className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-all shadow-lg shadow-green-600/10 uppercase text-xs tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          <CheckCircle size={16} />
+                          <span>{attachmentSaving ? 'Saving...' : 'Approve Submission'}</span>
+                        </button>
+                      )}
                       
                       <button 
                         onClick={handleSaveAttachmentFeedback}
-                        disabled={!reviewAction || !reviewComments.trim() || attachmentSaving}
+                        disabled={!reviewAction || attachmentSaving}
                         className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 transition-all shadow-lg shadow-amber-500/10 uppercase text-xs tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <RotateCcw size={16} />
@@ -1323,7 +1368,8 @@ export const Inbox = () => {
                 </button>
                 <button 
                   onClick={onConfirm}
-                  className={`flex-1 px-5 py-3 ${confirmBtnBg} text-white rounded-xl font-bold transition-all text-xs uppercase tracking-wider shadow-md`}
+                  disabled={loading}
+                  className={`flex-1 px-5 py-3 ${confirmBtnBg} text-white rounded-xl font-bold transition-all text-xs uppercase tracking-wider shadow-md disabled:opacity-50`}
                 >
                   {confirmBtnText}
                 </button>
@@ -1508,7 +1554,7 @@ export const Inbox = () => {
             <span className="text-primary-green">{selectedDocs.length} Selected</span>
           ) : (
             <>
-              <span className="text-secondary-gold font-bold">{filteredData.filter(d => d.status === 'Pending' || d.status === 'SDS coordinator review').length} Pending</span>
+              <span className="text-secondary-gold font-bold">{filteredData.filter(d => d.status === 'Pending' || d.status === 'OSO Staff Review' || d.status === 'SDS coordinator review').length} Pending</span>
               <span className="text-gray-300 mx-2">•</span>
               <span>{filteredData.length} Total</span>
             </>
@@ -1587,11 +1633,12 @@ export const Inbox = () => {
                       {item.time}
                     </td>
                     <td className="px-6 py-5 text-center">
-                      <span className={`px-4 py-1.5 rounded-full text-[10px] font-bold shadow-sm inline-block min-w-[120px] transition-all uppercase ${
-                        item.status === 'Approved' ? 'bg-green-100 text-green-700' :
-                        item.status === 'Rejected' ? 'bg-red-100 text-red-700' :
-                        'bg-blue-50 text-[#1447ea] border border-blue-100'
-                      }`}>
+                      <span 
+                        style={{
+                          backgroundColor: getStatusColor(item.status)
+                        }}
+                        className="px-4 py-1.5 rounded-full text-[10px] font-bold shadow-sm inline-block min-w-[120px] transition-all uppercase text-white"
+                      >
                         {item.status}
                       </span>
                     </td>

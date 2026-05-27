@@ -20,6 +20,38 @@ import {
   Calendar
 } from 'lucide-react';
 
+const getStatusColor = (status) => {
+  const s = (status || '').toLowerCase().trim();
+  if (s.includes('to forward') || s.includes('hardcopy submission')) {
+    return '#db2777';
+  }
+  if (s.includes('chairman') || s.includes('vice chairman') || s.includes('oso staff review') || s.includes('oso staff') || s.includes('pending')) {
+    return '#c2bc13';
+  }
+  if (s.includes('sds coordinator review') || s.includes('sds review') || s.includes('sds')) {
+    return '#6366f1';
+  }
+  if (s.includes('dean review')) {
+    return '#1e3a8a';
+  }
+  if (s.includes('external review')) {
+    return '#d76b0d';
+  }
+  if (s === 'approved') {
+    return '#105220';
+  }
+  if (s.includes('disapproved') || s.includes('rejected')) {
+    return '#ef4444';
+  }
+  if (s === 'returned') {
+    return '#f59e0b';
+  }
+  if (s === 'completed') {
+    return '#22b814';
+  }
+  return '#6366f1'; // Default
+};
+
 export const MyDocuments = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -37,6 +69,7 @@ export const MyDocuments = () => {
   const [previewFile, setPreviewFile] = React.useState(null);
   const [filePreviewUrl, setFilePreviewUrl] = React.useState('');
   const [timelineLogs, setTimelineLogs] = React.useState([]);
+  const [locallyApproved, setLocallyApproved] = React.useState([]);
 
   // Resubmit State
   const [isResubmitModalOpen, setIsResubmitModalOpen] = React.useState(false);
@@ -78,8 +111,10 @@ export const MyDocuments = () => {
   React.useEffect(() => {
     if (selectedDoc) {
       fetchTimelineLogs(selectedDoc.id);
+      setLocallyApproved([]);
     } else {
       setTimelineLogs([]);
+      setLocallyApproved([]);
     }
   }, [selectedDoc]);
 
@@ -414,96 +449,98 @@ export const MyDocuments = () => {
         ? { status: 'external review', remarks: formattedRemarks }
         : { status: 'to forward', remarks: formattedRemarks };
 
-      const { error: subErr } = await supabase
-        .from('submissions')
-        .update(updatePayload)
-        .eq('id', selectedDoc.id);
+      if (user?.role === 'admin' && isDeanReviewStage) {
+        const response = await fetch('http://localhost:5000/api/submissions/approve-dean', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            submissionId: selectedDoc.id,
+            userId: user.id,
+            comments: comments
+          })
+        });
 
-      if (subErr) throw subErr;
+        const resData = await response.json();
+        if (!response.ok || !resData.success) {
+          throw new Error(resData.error || 'Failed to approve via backend');
+        }
+      } else {
+        const { error: subErr } = await supabase
+          .from('submissions')
+          .update(updatePayload)
+          .eq('id', selectedDoc.id);
 
-      if (user?.role === 'admin' && isSdsCoordinatorStage) {
-        const now = new Date();
-        const { error: logErr } = await supabase
-          .from('submission_logs')
-          .insert([
-            {
+        if (subErr) throw subErr;
+
+        if (user?.role === 'admin' && isSdsCoordinatorStage) {
+          const now = new Date();
+          const { error: logErr } = await supabase
+            .from('submission_logs')
+            .insert([
+              {
+                submission_id: selectedDoc.id,
+                submission_version_id: activeVersionId,
+                user_id: user.id,
+                workflow_phase: 'sds-review',
+                action_type: 'approved',
+                review_action: 'approved',
+                action: 'approved',
+                description: comments || 'Approved by SDS Coordinator',
+                comment: comments || null,
+                created_at: now.toISOString()
+              },
+              {
+                submission_id: selectedDoc.id,
+                submission_version_id: activeVersionId,
+                user_id: user.id,
+                workflow_phase: 'dean-review',
+                action_type: 'pending',
+                review_action: 'pending',
+                action: 'Dean Approval',
+                description: 'Awaiting Dean’s Wet Signature',
+                comment: null,
+                created_at: new Date(now.getTime() + 1000).toISOString()
+              }
+            ]);
+
+          if (logErr) throw logErr;
+        } else {
+          const { error: logErr1 } = await supabase
+            .from('submission_logs')
+            .insert([{
               submission_id: selectedDoc.id,
               submission_version_id: activeVersionId,
               user_id: user.id,
-              workflow_phase: 'sds-review',
+              workflow_phase: 'Chairman Review',
               action_type: 'approved',
               review_action: 'approved',
               action: 'approved',
-              description: comments || 'Approved by SDS Coordinator',
+              description: comments || 'Approved',
               comment: comments || null,
-              created_at: now.toISOString()
-            },
-            {
+              created_at: new Date().toISOString()
+            }]);
+
+          if (logErr1) throw logErr1;
+
+          const { error: logErr2 } = await supabase
+            .from('submission_logs')
+            .insert([{
               submission_id: selectedDoc.id,
               submission_version_id: activeVersionId,
               user_id: user.id,
-              workflow_phase: 'dean-review',
-              action_type: 'pending',
-              review_action: 'pending',
-              action: 'Dean Approval',
-              description: comments || 'Under dean review',
-              comment: comments || null,
-              created_at: new Date(now.getTime() + 1000).toISOString()
-            }
-          ]);
+              workflow_phase: 'Chairman Review',
+              action_type: 'ready_for_hardcopy',
+              review_action: 'ready-for-hardcopy',
+              action: 'ready-for-hardcopy',
+              description: 'Ready for hardcopy submission',
+              comment: null,
+              created_at: new Date(Date.now() + 1000).toISOString()
+            }]);
 
-        if (logErr) throw logErr;
-      } else if (user?.role === 'admin' && isDeanReviewStage) {
-        const { error: deanLogErr } = await supabase
-          .from('submission_logs')
-          .insert([{
-            submission_id: selectedDoc.id,
-            submission_version_id: activeVersionId,
-            user_id: user.id,
-            workflow_phase: 'External Review',
-            action_type: 'approved',
-            review_action: 'approved',
-            action: 'approved',
-            description: comments || 'Approved by the Dean',
-            comment: comments || null,
-            created_at: new Date().toISOString()
-          }]);
-
-        if (deanLogErr) throw deanLogErr;
-      } else {
-        const { error: logErr1 } = await supabase
-          .from('submission_logs')
-          .insert([{
-            submission_id: selectedDoc.id,
-            submission_version_id: activeVersionId,
-            user_id: user.id,
-            workflow_phase: 'Chairman Review',
-            action_type: 'approved',
-            review_action: 'approved',
-            action: 'approved',
-            description: comments || 'Approved',
-            comment: comments || null,
-            created_at: new Date().toISOString()
-          }]);
-
-        if (logErr1) throw logErr1;
-
-        const { error: logErr2 } = await supabase
-          .from('submission_logs')
-          .insert([{
-            submission_id: selectedDoc.id,
-            submission_version_id: activeVersionId,
-            user_id: user.id,
-            workflow_phase: 'Chairman Review',
-            action_type: 'ready_for_hardcopy',
-            review_action: 'ready-for-hardcopy',
-            action: 'ready-for-hardcopy',
-            description: 'Ready for hardcopy submission',
-            comment: null,
-            created_at: new Date(Date.now() + 1000).toISOString()
-          }]);
-
-        if (logErr2) throw logErr2;
+          if (logErr2) throw logErr2;
+        }
       }
 
       setIsReturnModalOpen(false);
@@ -580,7 +617,9 @@ export const MyDocuments = () => {
     if (subStatus === 'returned') {
       category = 'Returned';
     } else if (subStatus === 'to forward') {
-      category = 'To Forward';
+      category = user?.role === 'org-president' ? 'OSO Staff review' : 'To Forward';
+    } else if (subStatus === 'submitted' || subStatus === 'pending') {
+      category = 'OSO Staff review';
     } else if (subStatus === 'sds coordinator review' || wp === 'sds-review') {
       category = 'SDS Review';
     } else if (subStatus === 'dean review' || wp === 'dean-review') {
@@ -589,7 +628,7 @@ export const MyDocuments = () => {
       category = 'External Review';
     } else if (wp === 'Chairman Review' || wp === 'chairman-review') {
       category = 'Chairman Review';
-    } else if (ra === 'ready-for-hardcopy') category = 'To Forward';
+    } else if (ra === 'ready-for-hardcopy') category = user?.role === 'org-president' ? 'OSO Staff review' : 'To Forward';
     else if (ra === 'approved') category = 'Approved';
     else if (ra === 'returned') category = 'Returned';
 
@@ -614,7 +653,11 @@ export const MyDocuments = () => {
       sender: orgName,
       type: docTypeName,
       submittedDate,
-      status: submission.status ? submission.status.toUpperCase() : 'PENDING',
+      status: submission.status === 'submitted' 
+        ? 'OSO STAFF REVIEW' 
+        : (submission.status === 'to forward' 
+          ? (user?.role === 'org-president' ? 'HARDCOPY SUBMISSION' : 'TO FORWARD')
+          : (submission.status ? submission.status.toUpperCase() : 'PENDING')),
       lastAction: lastActionDate,
       category,
       
@@ -652,6 +695,7 @@ export const MyDocuments = () => {
   // Tabs layout
   const tabs = [
     { name: 'All', count: mappedDocs.length },
+    ...(user?.role === 'org-president' ? [{ name: 'OSO Staff review', count: mappedDocs.filter(d => d.category === 'OSO Staff review').length }] : []),
     ...(user?.role === 'chairman' ? [{ name: 'Chairman Review', count: mappedDocs.filter(d => d.category === 'Chairman Review').length }] : []),
     { name: 'SDS Review', count: mappedDocs.filter(d => d.category === 'SDS Review').length },
     { name: 'Dean Review', count: mappedDocs.filter(d => d.category === 'Dean Review').length },
@@ -741,13 +785,13 @@ export const MyDocuments = () => {
                 <span>{card.label}</span>
               </div>
               {card.badge ? (
-                <span className={`px-4 py-1.5 rounded-lg text-[10px] font-bold shadow-sm uppercase inline-block ${
-                  card.value === 'APPROVED' || card.value === 'TO FORWARD' ? 'bg-green-100 text-green-700' :
-                  card.value === 'DEAN REVIEW' ? 'bg-[#DBEAFE] text-[#1E3A8A]' :
-                  card.value === 'EXTERNAL REVIEW' ? 'bg-[#FFF4E5] text-[#D76B0D]' :
-                  card.value === 'RETURNED' ? 'bg-amber-100 text-amber-700' :
-                  'bg-blue-100 text-blue-700'
-                }`}>
+                <span 
+                  style={{
+                    backgroundColor: `${getStatusColor(card.value)}1a`,
+                    color: getStatusColor(card.value)
+                  }}
+                  className="px-4 py-1.5 rounded-lg text-[10px] font-bold shadow-sm uppercase inline-block"
+                >
                   {card.value}
                 </span>
               ) : (
@@ -892,8 +936,14 @@ export const MyDocuments = () => {
                   const fileUrl = data?.publicUrl || '#';
 
                   const fileLog = timelineLogs.find(log => log.attachment_id === file.id);
-                  const isApproved = fileLog && (fileLog.review_action === 'approved' || fileLog.action === 'approved');
-                  const hasRevision = fileLog && !isApproved;
+                  const hasRevision = fileLog && fileLog.review_action !== 'approved';
+                  
+                  const docStatus = (selectedDoc.raw?.status || selectedDoc.status || '').toLowerCase();
+                  const isChairmanStage = docStatus === 'submitted' || docStatus === 'oso staff review' || docStatus === 'pending';
+                  
+                  const isApproved = isChairmanStage 
+                    ? (locallyApproved.includes(file.id) || (fileLog && (fileLog.review_action === 'approved' || fileLog.action === 'approved')))
+                    : !hasRevision;
 
                   // Dynamic styles based on review status
                   let containerBg = 'bg-[#525252]';
@@ -1242,123 +1292,115 @@ export const MyDocuments = () => {
                               </div>
                             )}
 
-                            <div className="space-y-2">
-                              <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block">Review Action</label>
-                              <select
-                                value={reviewAction}
-                                onChange={(e) => setReviewAction(e.target.value)}
-                                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-700 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer"
+                            {user?.role !== 'org-president' && (
+                              <>
+                                <div className="space-y-2">
+                                  <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block">Review Action</label>
+                                  <select
+                                    value={reviewAction}
+                                    onChange={(e) => setReviewAction(e.target.value)}
+                                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-700 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer"
+                                  >
+                                    <option value="">Approve</option>
+                                    <option value="missing-requirements">Missing Requirements</option>
+                                    <option value="incorrect-format">Incorrect Format</option>
+                                    <option value="incomplete-information">Incomplete Information</option>
+                                  </select>
+                                </div>
+
+                                <div className="space-y-2">
+                                  <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block">Review Comments</label>
+                                  <textarea
+                                    value={reviewComments}
+                                    onChange={(e) => setReviewComments(e.target.value)}
+                                    placeholder="Enter review comments..."
+                                    rows={4}
+                                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-none"
+                                  />
+                                </div>
+                              </>
+                            )}
+                          </div>
+
+                          {user?.role !== 'org-president' && (
+                            <div className="space-y-3 pt-6 border-t border-gray-100 mt-6">
+                              {user?.role !== 'admin' && (
+                                <button
+                                  onClick={async () => {
+                                    if (!previewFile || !selectedDoc) return;
+                                    setAttachmentSaving(true);
+                                    try {
+                                      const activeVersionId = selectedDoc.raw?.current_version_id ||
+                                        (Array.isArray(selectedDoc.raw?.submission_versions)
+                                          ? selectedDoc.raw?.submission_versions[0]?.id
+                                          : selectedDoc.raw?.submission_versions?.id);
+
+                                      // Simulated attachment approval without database write to optimize DB usage
+                                      setLocallyApproved(prev => [...prev, previewFile.id]);
+                                      setPreviewFile(null);
+                                      await fetchTimelineLogs(selectedDoc.id);
+                                      alert('Attachment approved successfully!');
+                                    } catch (err) {
+                                      console.error('Error approving attachment:', err);
+                                      alert('Failed to approve attachment.');
+                                    } finally {
+                                      setAttachmentSaving(false);
+                                    }
+                                  }}
+                                  disabled={!!reviewAction || attachmentSaving}
+                                  className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-all shadow-lg shadow-green-600/10 uppercase text-xs tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                  <CheckCircle size={16} />
+                                  <span>{attachmentSaving ? 'Saving...' : 'Approve Attachment'}</span>
+                                </button>
+                              )}
+
+                              <button
+                                onClick={async () => {
+                                  if (!previewFile || !selectedDoc) return;
+                                  setAttachmentSaving(true);
+                                  try {
+                                    const activeVersionId = selectedDoc.raw?.current_version_id ||
+                                      (Array.isArray(selectedDoc.raw?.submission_versions)
+                                        ? selectedDoc.raw?.submission_versions[0]?.id
+                                        : selectedDoc.raw?.submission_versions?.id);
+
+                                    const { error } = await supabase
+                                      .from('submission_logs')
+                                      .insert([{
+                                        submission_id: selectedDoc.id,
+                                        submission_version_id: activeVersionId,
+                                        attachment_id: previewFile.id,
+                                        user_id: user.id,
+                                        workflow_phase: workflowPhase,
+                                        action_type: 'attachment_review',
+                                        review_action: reviewAction || 'returned',
+                                        action: reviewAction || 'returned',
+                                        description: reviewComments || 'Attachment returned for edits',
+                                        comment: reviewComments || null,
+                                        created_at: new Date().toISOString()
+                                      }] );
+
+                                    if (error) throw error;
+
+                                    setPreviewFile(null);
+                                    await fetchTimelineLogs(selectedDoc.id);
+                                    alert('Attachment returned for edits successfully!');
+                                  } catch (err) {
+                                    console.error('Error returning attachment:', err);
+                                    alert('Failed to return attachment.');
+                                  } finally {
+                                    setAttachmentSaving(false);
+                                  }
+                                }}
+                                disabled={!reviewAction || attachmentSaving}
+                                className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 transition-all shadow-lg shadow-amber-500/10 uppercase text-xs tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
                               >
-                                <option value="">Approve</option>
-                                <option value="missing-requirements">Missing Requirements</option>
-                                <option value="incorrect-format">Incorrect Format</option>
-                                <option value="incomplete-information">Incomplete Information</option>
-                              </select>
+                                <RotateCcw size={16} />
+                                <span>{attachmentSaving ? 'Saving...' : 'Return Attachment'}</span>
+                              </button>
                             </div>
-
-                            <div className="space-y-2">
-                              <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block">Review Comments</label>
-                              <textarea
-                                value={reviewComments}
-                                onChange={(e) => setReviewComments(e.target.value)}
-                                placeholder="Enter review comments..."
-                                rows={4}
-                                className="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-none"
-                              />
-                            </div>
-                          </div>
-
-                          <div className="space-y-3 pt-6 border-t border-gray-100 mt-6">
-                            <button
-                              onClick={async () => {
-                                if (!previewFile || !selectedDoc) return;
-                                setAttachmentSaving(true);
-                                try {
-                                  const activeVersionId = selectedDoc.raw?.current_version_id ||
-                                    (Array.isArray(selectedDoc.raw?.submission_versions)
-                                      ? selectedDoc.raw?.submission_versions[0]?.id
-                                      : selectedDoc.raw?.submission_versions?.id);
-
-                                  const { error } = await supabase
-                                    .from('submission_logs')
-                                    .insert([{
-                                      submission_id: selectedDoc.id,
-                                      submission_version_id: activeVersionId,
-                                      attachment_id: previewFile.id,
-                                      user_id: user.id,
-                                      workflow_phase: workflowPhase,
-                                      action_type: 'attachment_review',
-                                      review_action: 'approved',
-                                      action: 'approved',
-                                      description: reviewComments || 'Attachment approved',
-                                      comment: reviewComments || null,
-                                      created_at: new Date().toISOString()
-                                    }] );
-
-                                  if (error) throw error;
-
-                                  setPreviewFile(null);
-                                  await fetchTimelineLogs(selectedDoc.id);
-                                  alert('Attachment approved successfully!');
-                                } catch (err) {
-                                  console.error('Error approving attachment:', err);
-                                  alert('Failed to approve attachment.');
-                                } finally {
-                                  setAttachmentSaving(false);
-                                }
-                              }}
-                              disabled={attachmentSaving}
-                              className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-all shadow-lg shadow-green-600/10 uppercase text-xs tracking-wider disabled:opacity-40"
-                            >
-                              <CheckCircle size={16} />
-                              <span>{attachmentSaving ? 'Saving...' : 'Approve Attachment'}</span>
-                            </button>
-
-                            <button
-                              onClick={async () => {
-                                if (!previewFile || !selectedDoc) return;
-                                setAttachmentSaving(true);
-                                try {
-                                  const activeVersionId = selectedDoc.raw?.current_version_id ||
-                                    (Array.isArray(selectedDoc.raw?.submission_versions)
-                                      ? selectedDoc.raw?.submission_versions[0]?.id
-                                      : selectedDoc.raw?.submission_versions?.id);
-
-                                  const { error } = await supabase
-                                    .from('submission_logs')
-                                    .insert([{
-                                      submission_id: selectedDoc.id,
-                                      submission_version_id: activeVersionId,
-                                      attachment_id: previewFile.id,
-                                      user_id: user.id,
-                                      workflow_phase: workflowPhase,
-                                      action_type: 'attachment_review',
-                                      review_action: reviewAction || 'returned',
-                                      action: reviewAction || 'returned',
-                                      description: reviewComments || 'Attachment returned for edits',
-                                      comment: reviewComments || null,
-                                      created_at: new Date().toISOString()
-                                    }] );
-
-                                  if (error) throw error;
-
-                                  setPreviewFile(null);
-                                  await fetchTimelineLogs(selectedDoc.id);
-                                  alert('Attachment returned for edits successfully!');
-                                } catch (err) {
-                                  console.error('Error returning attachment:', err);
-                                  alert('Failed to return attachment.');
-                                } finally {
-                                  setAttachmentSaving(false);
-                                }
-                              }}
-                              disabled={!reviewAction || !reviewComments.trim() || attachmentSaving}
-                              className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 transition-all shadow-lg shadow-amber-500/10 uppercase text-xs tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
-                            >
-                              <RotateCcw size={16} />
-                              <span>{attachmentSaving ? 'Saving...' : 'Return Attachment'}</span>
-                            </button>
-                          </div>
+                          )}
                         </>
                       );
                     })()}
@@ -1717,13 +1759,12 @@ export const MyDocuments = () => {
                       {doc.submittedDate}
                     </td>
                     <td className="px-6 py-5 text-center">
-                      <span className={`px-4 py-1.5 rounded-full text-[10px] font-bold shadow-sm inline-block min-w-[120px] transition-all uppercase text-white ${
-                        (doc.status === 'APPROVED' || doc.status === 'TO FORWARD') ? 'bg-green-600' : 
-                        doc.status === 'DEAN REVIEW' ? 'bg-[#1E3A8A]' :
-                        doc.status === 'EXTERNAL REVIEW' ? 'bg-[#D76B0D]' :
-                        doc.status === 'RETURNED' ? 'bg-amber-500' : 
-                        'bg-blue-500'
-                      }`}>
+                      <span 
+                        style={{
+                          backgroundColor: getStatusColor(doc.status)
+                        }}
+                        className="px-4 py-1.5 rounded-full text-[10px] font-bold shadow-sm inline-block min-w-[120px] transition-all uppercase text-white"
+                      >
                         {doc.status}
                       </span>
                     </td>
