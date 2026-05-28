@@ -368,42 +368,5 @@ export const copyApprovedAttachments = async (oldVersionId, newVersionId, return
       throw insertErr;
     }
 
-    if (!submissionId) return; // Safely exit if not provided
-
-    // Find the old logs for these approved attachments
-    const oldIds = validOldAttachments.map(a => a.id);
-    const { data: oldLogs } = await supabase
-      .from('submission_logs')
-      .select('*')
-      .in('attachment_id', oldIds)
-      .eq('action_type', 'attachment_review')
-      .eq('review_action', 'approved');
-
-    if (oldLogs && oldLogs.length > 0) {
-      const logsToInsert = oldLogs.map(oldLog => {
-        const oldAtt = validOldAttachments.find(a => a.id === oldLog.attachment_id);
-        const newAtt = insertedAttachments.find(a => a.requirement_id === oldAtt.requirement_id && a.file_name === oldAtt.file_name);
-
-        if (!newAtt) return null;
-
-        return {
-          submission_id: oldLog.submission_id,
-          submission_version_id: newVersionId,
-          attachment_id: newAtt.id,
-          user_id: oldLog.user_id, // Keep the original reviewer's user_id
-          workflow_phase: oldLog.workflow_phase,
-          action_type: oldLog.action_type,
-          review_action: oldLog.review_action,
-          action: oldLog.action,
-          description: oldLog.description,
-          comment: oldLog.comment,
-          created_at: new Date().toISOString()
-        };
-      }).filter(Boolean);
-
-      if (logsToInsert.length > 0) {
-        await supabase.from('submission_logs').insert(logsToInsert);
-      }
-    }
   }
 };

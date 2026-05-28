@@ -618,9 +618,9 @@ app.post('/api/submissions/register', async (req, res) => {
     }
 });
 
-// Approve Dean Route (Bypasses RLS using service_role key to update pending log)
+// Approve Dean Route (creates explicit Dean approval log entry)
 app.post('/api/submissions/approve-dean', async (req, res) => {
-    const { submissionId, userId, comments } = req.body;
+    const { submissionId, userId, comments, activeVersionId } = req.body;
 
     if (!submissionId || !userId) {
         return res.status(400).json({ error: 'Submission ID and User ID are required' });
@@ -630,30 +630,29 @@ app.post('/api/submissions/approve-dean', async (req, res) => {
         // 1. Update submissions table status to 'external review'
         const { error: subErr } = await supabase
             .from('submissions')
-            .update({ 
-                status: 'external review', 
-                remarks: comments || 'Approved by the Dean' 
+            .update({
+                status: 'external review',
+                remarks: comments || 'Approved by the Dean'
             })
             .eq('id', submissionId);
 
         if (subErr) throw subErr;
 
-        // 2. Update the pending log in submission_logs table
+        // 2. Insert a new Dean approval log entry for the lifecycle timeline
         const { error: deanLogErr } = await supabase
             .from('submission_logs')
-            .update({
+            .insert([{
+                submission_id: submissionId,
+                submission_version_id: activeVersionId || null,
                 user_id: userId,
                 workflow_phase: 'dean-review',
                 action_type: 'approved',
-                review_action: 'approved',
+                review_action: null,
                 action: 'approved',
                 description: comments || 'Approved by the Dean',
                 comment: comments || null,
                 created_at: new Date().toISOString()
-            })
-            .eq('submission_id', submissionId)
-            .eq('workflow_phase', 'dean-review')
-            .eq('action_type', 'pending');
+            }]);
 
         if (deanLogErr) throw deanLogErr;
 

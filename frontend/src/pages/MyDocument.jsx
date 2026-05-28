@@ -17,7 +17,8 @@ import {
   Paperclip,
   X,
   RotateCcw,
-  Calendar
+  Calendar,
+  Eye
 } from 'lucide-react';
 
 const getStatusColor = (status) => {
@@ -85,11 +86,84 @@ export const MyDocuments = () => {
   const [attachmentSaving, setAttachmentSaving] = React.useState(false);
   const [attachmentSuccessModal, setAttachmentSuccessModal] = React.useState(null);
   const [isForwardModalOpen, setIsForwardModalOpen] = React.useState(false);
+  const normalizeRole = (role) => String(role || '').toLowerCase().replace('-', ' ').trim();
+  const sameRole = (a, b) => normalizeRole(a) === normalizeRole(b);
+  const normalizeCategory = (value) =>
+    String(value || '')
+      .toLowerCase()
+      .replace(/[_-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const getActiveVersionId = (doc, versionOverride = null) => {
+    if (!doc?.raw) return null;
+    return (
+      versionOverride ||
+      selectedVersionId ||
+      doc.raw.current_version_id ||
+      (Array.isArray(doc.raw.submission_versions)
+        ? doc.raw.submission_versions[0]?.id
+        : doc.raw.submission_versions?.id) ||
+      null
+    );
+  };
+
+  const attachmentRequiresReview = (file, doc, activeVersion, allVersions, logs, approvedIds) => {
+    const fileLog = logs.find((log) => log.attachment_id === file.id);
+    const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
+    const isReturnedAttachment = ['missing-requirements', 'incorrect-format', 'incomplete-information'].includes(reviewActionValue);
+
+    const currentVersionNumber = activeVersion?.version_number || 1;
+    const isResubmittedVersion = currentVersionNumber > 1;
+    const previousVersion = allVersions.find(
+      (v) => (v?.version_number || 0) === (currentVersionNumber - 1)
+    );
+    const previousVersionAttachments = Array.isArray(previousVersion?.submission_attachments)
+      ? previousVersion.submission_attachments
+      : [];
+    const prevAttachmentByRequirement = previousVersionAttachments.find((att) => {
+      if (att?.requirement_id && file?.requirement_id) {
+        return att.requirement_id === file.requirement_id;
+      }
+      // Fallback for attachments without requirement_id
+      return !!att?.file_name && !!file?.file_name && att.file_name === file.file_name;
+    });
+    const existedInPreviousVersion = !!prevAttachmentByRequirement;
+    const isModifiedInResubmission =
+      existedInPreviousVersion && prevAttachmentByRequirement.file_url !== file.file_url;
+    const unchangedFromPrevious = existedInPreviousVersion && !isModifiedInResubmission;
+    const hasRevision = isReturnedAttachment || isModifiedInResubmission;
+
+    // Use selected version status when browsing old versions
+    const viewingLatestVersion = activeVersion?.id === doc.raw?.current_version_id;
+    const docStatus = (viewingLatestVersion
+      ? (doc.raw?.status || doc.status || '')
+      : (activeVersion?.status || doc.raw?.status || doc.status || '')
+    ).toLowerCase();
+    const isChairmanStage =
+      docStatus === 'submitted' ||
+      docStatus === 'oso staff review' ||
+      docStatus === 'pending' ||
+      docStatus === 'returned';
+
+    const isApproved = approvedIds.includes(file.id) || (isChairmanStage
+      ? (
+          (fileLog && fileLog.action === 'approved') ||
+          (isResubmittedVersion && unchangedFromPrevious && !hasRevision)
+        )
+      : !hasRevision);
+
+    return !isApproved;
+  };
 
   // Fetch timeline logs for detailed view
-  const fetchTimelineLogs = async (submissionId) => {
+  const fetchTimelineLogs = async (submissionId, versionId = null) => {
     try {
-      const { data, error } = await supabase
+      const resolvedVersionId =
+        versionId ||
+        (selectedDoc?.id === submissionId ? getActiveVersionId(selectedDoc) : null);
+
+      let query = supabase
         .from('submission_logs')
         .select(`
           *,
@@ -98,8 +172,13 @@ export const MyDocuments = () => {
             role
           )
         `)
-        .eq('submission_id', submissionId)
-        .order('created_at', { ascending: false });
+        .eq('submission_id', submissionId);
+
+      if (resolvedVersionId) {
+        query = query.eq('submission_version_id', resolvedVersionId);
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false });
 
       if (error) throw error;
       setTimelineLogs(data || []);
@@ -110,13 +189,18 @@ export const MyDocuments = () => {
 
   React.useEffect(() => {
     if (selectedDoc) {
-      fetchTimelineLogs(selectedDoc.id);
+      const allVersions = Array.isArray(selectedDoc.raw?.submission_versions)
+        ? [...selectedDoc.raw.submission_versions]
+        : [selectedDoc.raw?.submission_versions].filter(Boolean);
+      const currentVersionIdToUse = selectedVersionId || selectedDoc.raw?.current_version_id;
+      const activeVersion = allVersions.find(v => v.id === currentVersionIdToUse) || allVersions[0];
+      fetchTimelineLogs(selectedDoc.id, activeVersion?.id || null);
       setLocallyApproved([]);
     } else {
       setTimelineLogs([]);
       setLocallyApproved([]);
     }
-  }, [selectedDoc]);
+  }, [selectedDoc, selectedVersionId]);
 
   // Fetch signed URL for preview
   React.useEffect(() => {
@@ -162,6 +246,40 @@ export const MyDocuments = () => {
       setLoading(true);
       let data = [];
       
+      // Org President view: show their own submissions (not only their logs)
+      if (String(user?.role || '').toLowerCase() === 'org-president') {
+        const { data: subs, error: subsErr } = await supabase
+          .from('submissions')
+          .select(`
+            *,
+            users (org_name, student_no, full_name, role),
+            documentType (name),
+            submission_versions!submission_id (
+              *,
+              activity_proposal_details (*),
+              submission_attachments (*)
+            )
+          `)
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (subsErr) throw subsErr;
+
+        // Normalize into the same shape expected by the existing mapper (logsData items with `.submissions`)
+        data = (subs || []).map((sub) => ({
+          id: `sub-${sub.id}`,
+          submission_id: sub.id,
+          created_at: sub.updated_at || sub.created_at,
+          workflow_phase: null,
+          review_action: null,
+          action_type: null,
+          submissions: sub
+        }));
+
+        setLogsData(data);
+        return;
+      }
+
         const { data: primaryData, error } = await supabase
         .from('submission_logs')
         .select(`
@@ -249,7 +367,7 @@ export const MyDocuments = () => {
           user_id: user.id,
           workflow_phase: workflowPhase,
           action_type: 'returned',
-          review_action: 'returned',
+          review_action: null,
           action: 'returned',
           description: comments || 'Returned for edits by Chairman',
           comment: comments || null,
@@ -359,7 +477,7 @@ export const MyDocuments = () => {
           user_id: user.id,
           workflow_phase: workflowPhase,
           action_type: 'disapproved',
-          review_action: 'disapproved',
+          review_action: null,
           action: 'disapproved',
           description: comments || 'Disapproved by Chairman',
           comment: comments || null,
@@ -408,7 +526,7 @@ export const MyDocuments = () => {
           user_id: user.id,
           workflow_phase: 'sds-review',
           action_type: 'forwarded',
-          review_action: 'forwarded',
+          review_action: null,
           action: 'forwarded',
           description: 'Forwarded to SDS Coordinator (Admin) by Chairman',
           comment: 'Forwarded to SDS Coordinator (Admin) by Chairman',
@@ -457,6 +575,7 @@ export const MyDocuments = () => {
           },
           body: JSON.stringify({
             submissionId: selectedDoc.id,
+            activeVersionId: activeVersionId,
             userId: user.id,
             comments: comments
           })
@@ -485,23 +604,11 @@ export const MyDocuments = () => {
                 user_id: user.id,
                 workflow_phase: 'sds-review',
                 action_type: 'approved',
-                review_action: 'approved',
+                review_action: null,
                 action: 'approved',
                 description: comments || 'Approved by SDS Coordinator',
                 comment: comments || null,
                 created_at: now.toISOString()
-              },
-              {
-                submission_id: selectedDoc.id,
-                submission_version_id: activeVersionId,
-                user_id: user.id,
-                workflow_phase: 'dean-review',
-                action_type: 'pending',
-                review_action: 'pending',
-                action: 'Dean Approval',
-                description: 'Awaiting Dean’s Wet Signature',
-                comment: null,
-                created_at: new Date(now.getTime() + 1000).toISOString()
               }
             ]);
 
@@ -515,7 +622,7 @@ export const MyDocuments = () => {
               user_id: user.id,
               workflow_phase: 'Chairman Review',
               action_type: 'approved',
-              review_action: 'approved',
+              review_action: null,
               action: 'approved',
               description: comments || 'Approved',
               comment: comments || null,
@@ -532,7 +639,7 @@ export const MyDocuments = () => {
               user_id: user.id,
               workflow_phase: 'Chairman Review',
               action_type: 'ready_for_hardcopy',
-              review_action: 'ready-for-hardcopy',
+              review_action: null,
               action: 'ready-for-hardcopy',
               description: 'Ready for hardcopy submission',
               comment: null,
@@ -612,25 +719,43 @@ export const MyDocuments = () => {
     let category = 'All';
     const wp = latestLog.workflow_phase || '';
     const ra = latestLog.review_action || '';
-    const subStatus = (submission.status || '').toLowerCase();
+    const normalizeText = (value) =>
+      String(value || '')
+        .toLowerCase()
+        .replace(/[_-]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const subStatus = normalizeText(submission.status);
+    const wpNorm = normalizeText(wp);
     
+    // STATUS-FIRST mapping (authoritative): prevents stale workflow_phase values
+    // from forcing wrong tabs on admin side.
     if (subStatus === 'returned') {
       category = 'Returned';
     } else if (subStatus === 'to forward') {
       category = user?.role === 'org-president' ? 'OSO Staff review' : 'To Forward';
     } else if (subStatus === 'submitted' || subStatus === 'pending') {
       category = 'OSO Staff review';
-    } else if (subStatus === 'sds coordinator review' || wp === 'sds-review') {
+    } else if (subStatus.includes('sds')) {
       category = 'SDS Review';
-    } else if (subStatus === 'dean review' || wp === 'dean-review') {
+    } else if (subStatus.includes('dean review')) {
       category = 'Dean Review';
-    } else if (subStatus === 'external review' || wp === 'external-review') {
+    } else if (subStatus.includes('external review')) {
       category = 'External Review';
-    } else if (wp === 'Chairman Review' || wp === 'chairman-review') {
-      category = 'Chairman Review';
-    } else if (ra === 'ready-for-hardcopy') category = user?.role === 'org-president' ? 'OSO Staff review' : 'To Forward';
-    else if (ra === 'approved') category = 'Approved';
-    else if (ra === 'returned') category = 'Returned';
+    } else if (subStatus === 'approved') {
+      category = 'Approved';
+    } else if (subStatus.includes('disapproved') || subStatus.includes('rejected')) {
+      category = 'Returned';
+    } else {
+      // Fallback to logs only when status is missing/unknown
+      if (wpNorm === 'sds review') category = 'SDS Review';
+      else if (wpNorm === 'dean review') category = 'Dean Review';
+      else if (wpNorm === 'external review') category = 'External Review';
+      else if (wpNorm === 'chairman review') category = 'Chairman Review';
+      else if (ra === 'ready-for-hardcopy') category = user?.role === 'org-president' ? 'OSO Staff review' : 'To Forward';
+      else if (ra === 'approved') category = 'Approved';
+      else if (ra === 'returned') category = 'Returned';
+    }
 
 
     const submittedDate = new Date(submission.created_at).toLocaleDateString('en-US', {
@@ -682,8 +807,18 @@ export const MyDocuments = () => {
 
   // Filter items matching activeTab & searchQuery
   const query = searchQuery.toLowerCase().trim();
-  const filteredDocs = mappedDocs.filter(doc => {
-    const matchesTab = activeTab === 'All' || doc.category === activeTab;
+  const visibleDocs = mappedDocs.filter(doc => {
+    // Chairman should handle newly resubmitted ("OSO Staff review") items in Inbox, not My Documents.
+    if (user?.role === 'chairman' && doc.category === 'OSO Staff review') {
+      return false;
+    }
+    return true;
+  });
+
+  const filteredDocs = visibleDocs.filter(doc => {
+    const matchesTab =
+      activeTab === 'All' ||
+      normalizeCategory(doc.category) === normalizeCategory(activeTab);
     const matchesSearch = !query || 
       doc.title.toLowerCase().includes(query) ||
       doc.sender.toLowerCase().includes(query) ||
@@ -693,16 +828,19 @@ export const MyDocuments = () => {
   });
 
   // Tabs layout
+  const countByTab = (tabName) =>
+    visibleDocs.filter(d => normalizeCategory(d.category) === normalizeCategory(tabName)).length;
+
   const tabs = [
-    { name: 'All', count: mappedDocs.length },
-    ...(user?.role === 'org-president' ? [{ name: 'OSO Staff review', count: mappedDocs.filter(d => d.category === 'OSO Staff review').length }] : []),
-    ...(user?.role === 'chairman' ? [{ name: 'Chairman Review', count: mappedDocs.filter(d => d.category === 'Chairman Review').length }] : []),
-    { name: 'SDS Review', count: mappedDocs.filter(d => d.category === 'SDS Review').length },
-    { name: 'Dean Review', count: mappedDocs.filter(d => d.category === 'Dean Review').length },
-    { name: 'External Review', count: mappedDocs.filter(d => d.category === 'External Review').length },
-    { name: 'Approved', count: mappedDocs.filter(d => d.category === 'Approved').length },
-    ...(user?.role === 'chairman' ? [{ name: 'To Forward', count: mappedDocs.filter(d => d.category === 'To Forward').length }] : []),
-    { name: 'Returned', count: mappedDocs.filter(d => d.category === 'Returned').length }
+    { name: 'All', count: visibleDocs.length },
+    ...(user?.role === 'org-president' ? [{ name: 'OSO Staff review', count: countByTab('OSO Staff review') }] : []),
+    ...(user?.role === 'chairman' ? [{ name: 'Chairman Review', count: countByTab('Chairman Review') }] : []),
+    ...(user?.role !== 'admin' ? [{ name: 'SDS Review', count: countByTab('SDS Review') }] : []),
+    { name: 'Dean Review', count: countByTab('Dean Review') },
+    { name: 'External Review', count: countByTab('External Review') },
+    { name: 'Approved', count: countByTab('Approved') },
+    ...(user?.role === 'chairman' ? [{ name: 'To Forward', count: countByTab('To Forward') }] : []),
+    { name: 'Returned', count: countByTab('Returned') }
   ];
 
   if (selectedDoc) {
@@ -716,6 +854,568 @@ export const MyDocuments = () => {
     const currentVersion = allVersions.find(v => v.id === currentVersionIdToUse) || allVersions[0];
     const attachments = currentVersion?.submission_attachments || [];
 
+    // ORG PRESIDENT DETAIL VIEW – activity proposal style layout
+    if (user?.role === 'org-president') {
+      const details = isActivityProposal
+        ? (Array.isArray(currentVersion?.activity_proposal_details)
+            ? currentVersion.activity_proposal_details[0]
+            : currentVersion?.activity_proposal_details)
+        : null;
+
+      const formattedSubmittedAt = new Date(selectedDoc.raw?.created_at || selectedDoc.submittedDate).toLocaleDateString(
+        'en-US',
+        { month: 'short', day: 'numeric', year: 'numeric' }
+      );
+
+      const submittedByName = user?.full_name || selectedDoc.pic || '—';
+      const submittedByRole = user?.role ? String(user.role).replace('-', ' ') : null;
+
+      const timelineLogsForTimeline = timelineLogs.filter(
+        log =>
+          !log.attachment_id &&
+          log.action_type !== 'attachment_review' &&
+          log.action_type !== 'created' &&
+          log.action_type !== 'viewed'
+      );
+
+      const lastTimelineLog = timelineLogsForTimeline[0] || null;
+      const systemRemarksText =
+        lastTimelineLog?.comment ||
+        lastTimelineLog?.description ||
+        selectedDoc.raw?.remarks ||
+        'No remarks yet.';
+
+      const allowedViewerRoles = new Set(['admin', 'chairman', 'vice chairman', 'vice-chairman']);
+      const lastViewerLog =
+        timelineLogs.find(
+          l =>
+            l.action_type === 'viewed' &&
+            l.users?.role &&
+            allowedViewerRoles.has(String(l.users.role).toLowerCase())
+        ) || null;
+
+      const lastViewerName = lastViewerLog?.users?.full_name || null;
+      const lastViewerRole = lastViewerLog?.users?.role || null;
+      const lastViewerTime = lastViewerLog?.created_at
+        ? new Date(lastViewerLog.created_at).toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+          })
+        : null;
+
+      const docTitle = selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title;
+
+      const isReturnedStatus =
+        String(selectedDoc?.status || '').toLowerCase() === 'returned' ||
+        String(selectedDoc?.raw?.status || '').toLowerCase() === 'returned' ||
+        selectedDoc?.category === 'Returned';
+
+      return (
+        <div className="animate-in fade-in duration-500 max-w-6xl mx-auto px-6 py-10 pb-28">
+          <button
+            onClick={() => { setSelectedDoc(null); setSelectedVersionId(null); }}
+            className="mb-6 inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-white border border-gray-200 text-xs font-extrabold uppercase tracking-widest text-gray-700 hover:border-primary-green hover:text-primary-green hover:bg-green-50/40 transition-all shadow-sm"
+          >
+            <ChevronLeft size={16} />
+            <span>Back to Documents</span>
+          </button>
+
+          <div className="mb-8 rounded-[2rem] border border-gray-100 bg-gradient-to-br from-white to-gray-50/60 px-8 py-7 shadow-sm">
+            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-5">
+              <div>
+                <p className="text-[11px] font-mono uppercase tracking-widest text-gray-400">
+                  {selectedDoc.ref}
+                </p>
+                <h1 className="mt-1 text-2xl md:text-3xl font-extrabold tracking-tight text-gray-900">
+                  {docTitle}
+                </h1>
+                {isActivityProposal && (
+                  <p className="mt-2 text-sm font-semibold text-gray-500">Activity Proposal Form</p>
+                )}
+              </div>
+
+              {/* Removed redundant status/date pill row (already in Document Details). */}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2.3fr)_minmax(0,1fr)] gap-8 items-start">
+            <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 p-10 space-y-7">
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                {[
+                  { label: 'Person In-Charge', value: selectedDoc.pic },
+                  { label: 'Student ID No.', value: selectedDoc.studentId },
+                  { label: 'Contact Number', value: selectedDoc.contact },
+                  {
+                    label: 'Target Date and Time',
+                    value:
+                      selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-'
+                        ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}`
+                        : selectedDoc.targetDate
+                  },
+                  { label: 'Duration', value: selectedDoc.duration },
+                  { label: 'Number of Students', value: selectedDoc.students },
+                  { label: 'Nature of Activity', value: selectedDoc.nature }
+                ].map((item) => (
+                  <div key={item.label} className="bg-gray-50/80 border border-gray-100 rounded-2xl px-5 py-3.5">
+                    <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 mb-1">
+                      {item.label}
+                    </p>
+                    <p className="font-bold text-gray-800 leading-snug break-words">
+                      {item.value || '—'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-6 space-y-4">
+                <div>
+                  <p className="font-bold text-sm mb-2">Objectives of the Activity:</p>
+                  {selectedDoc.objectives ? (
+                    <div className="bg-gray-50 p-6 rounded-2xl text-sm leading-relaxed text-gray-700 border border-gray-100">
+                      {selectedDoc.objectives}
+                    </div>
+                  ) : (
+                    <ul className="list-disc pl-5 space-y-1 text-sm text-gray-600">
+                      <li>Leadership Development and Formation</li>
+                      <li>Membership Development and Formation</li>
+                      <li>Organizational Program Management</li>
+                      <li>Values Enrichment</li>
+                      <li>Technical Skills Development and Industry Exposure</li>
+                    </ul>
+                  )}
+                </div>
+
+                <div>
+                  <p className="font-bold text-sm mb-1">
+                    Target Audience / Participants: <span className="font-normal">BulSUans Only</span>
+                  </p>
+                </div>
+
+                <div>
+                  <p className="font-bold text-sm mb-2">
+                    Describe how this activity will satisfy the needs of the organization and how it will help the organization achieve its goals:
+                  </p>
+                  <div className="bg-gray-50 p-6 rounded-2xl text-sm leading-relaxed text-gray-700 border border-gray-100">
+                    {isActivityProposal && selectedDoc.satisfy_goals && selectedDoc.satisfy_goals.length > 0 ? (
+                      <ol className="list-decimal pl-5 space-y-2">
+                        {selectedDoc.satisfy_goals.map((goal, idx) => (
+                          <li key={idx}>{goal}</li>
+                        ))}
+                      </ol>
+                    ) : (
+                      <span>
+                        {selectedDoc.satisfy_needs ||
+                          '"The activity aims to connect students with experienced professionals and industry experts who will share their knowledge, career experiences and current trends in the field of information technology."'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Attached Files Section - Collapsible with Live Data (same design as old) */}
+              <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 mb-10 transition-all duration-500">
+                <button 
+                  onClick={() => setIsFilesOpen(!isFilesOpen)}
+                  className="w-full bg-[#525252] text-white px-8 py-4 flex items-center justify-between hover:brightness-110 transition-all outline-none"
+                >
+                  <div className="flex items-center gap-3">
+                    <Paperclip size={20} className="text-white opacity-80" />
+                    <span className="text-xs font-bold uppercase tracking-widest">Attached File</span>
+                  </div>
+                  <ChevronDown size={20} className={`transition-transform duration-500 ${isFilesOpen ? 'rotate-180' : ''}`} />
+                </button>
+                
+                {isFilesOpen && (
+                  <div className="p-6 space-y-3 animate-in slide-in-from-top-4 duration-500">
+                    {attachments && attachments.length > 0 ? (
+                      attachments.map((file, idx) => {
+                        const fileName = file.file_name || 'Attached File';
+                        let finalPath = file.file_url || '';
+                        if (finalPath.startsWith('documents/')) {
+                          finalPath = finalPath.replace('documents/', '');
+                        }
+                        const { data } = supabase.storage.from('documents').getPublicUrl(finalPath);
+                        const fileUrl = data?.publicUrl || '#';
+
+                        const fileLog = timelineLogs.find(log => log.attachment_id === file.id);
+                        
+                        // Only show "returned" (orange) during chairman-stage review.
+                        // For later phases (e.g., dean review), old chairman return reasons should not force orange.
+                        const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
+                        const isReturnedAttachment = ['missing-requirements', 'incorrect-format', 'incomplete-information'].includes(reviewActionValue);
+                        const viewingLatestVersion = currentVersion?.id === selectedDoc.raw?.current_version_id;
+                        const docStatus = (viewingLatestVersion
+                          ? (selectedDoc.raw?.status || selectedDoc.status || '')
+                          : (currentVersion?.status || selectedDoc.raw?.status || selectedDoc.status || '')
+                        ).toLowerCase();
+                        const isChairmanStage = docStatus === 'submitted' || docStatus === 'oso staff review' || docStatus === 'pending' || docStatus === 'returned';
+                        const historicalChairmanVersion = !viewingLatestVersion && isChairmanStage;
+
+                        const hasRevision = isChairmanStage && isReturnedAttachment && !locallyApproved.includes(file.id);
+                        const isApproved = locallyApproved.includes(file.id) || (historicalChairmanVersion ? !isReturnedAttachment : !hasRevision);
+
+                        let containerBg = 'bg-[#525252]';
+                        let textColor = 'text-white';
+                        let subtitleColor = 'text-gray-400';
+                        let iconStyle = 'bg-white/10 text-white/80';
+
+                        if (isApproved) {
+                          containerBg = 'bg-green-600';
+                          textColor = 'text-white';
+                          subtitleColor = 'text-green-100';
+                          iconStyle = 'bg-white/20 text-white';
+                        } else if (hasRevision) {
+                          containerBg = 'bg-[#f59e0b]';
+                          textColor = 'text-[#451a03]';
+                          subtitleColor = 'text-[#78350f]';
+                          iconStyle = 'bg-[#78350f]/10 text-[#78350f]';
+                        }
+
+                        return (
+                          <div key={file.id || idx} className={`${containerBg} rounded-xl p-4 flex items-center justify-between group hover:brightness-110 transition-all`}>
+                            <div className="flex items-center gap-4">
+                              <div className={`w-10 h-10 ${iconStyle} rounded-lg flex items-center justify-center shrink-0`}>
+                                <Paperclip size={20} />
+                              </div>
+                              <div>
+                                <p className={`${textColor} font-semibold text-sm`}>{fileName}</p>
+                                <p className={`${subtitleColor} text-[10px] uppercase`}>Attached Document</p>
+                                {fileLog?.comment && (
+                                  <p className="mt-1 text-xs italic font-medium opacity-90 max-w-lg">
+                                    {(fileLog?.users?.full_name || fileLog?.users?.role || 'Reviewer')}'s Comment: "{fileLog.comment}"
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                              <button 
+                                onClick={() => {
+                                  setPreviewFile(file);
+                                }}
+                                className="bg-secondary-gold text-white px-6 py-2 rounded-lg text-xs font-bold hover:brightness-110 transition-all shadow-lg inline-block text-center"
+                              >
+                                view
+                              </button>
+                              <a 
+                                href={fileUrl} 
+                                download
+                                className="bg-secondary-gold text-white px-6 py-2 rounded-lg text-xs font-bold hover:brightness-110 transition-all shadow-lg inline-block text-center"
+                              >
+                                Download
+                              </a>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="text-center py-6 text-gray-500 text-sm italic">
+                        No dynamic attachments uploaded for this submission.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Timeline Log Section (same design as old "Submission Lifecycle & Timeline") */}
+              <div className="mb-12 text-gray-800 bg-gray-50/50 rounded-3xl p-8 border border-gray-100">
+                <div className="flex items-center justify-between mb-8">
+                  <div>
+                    <h4 className="text-sm font-bold text-gray-800 uppercase tracking-wider">Submission Lifecycle & Timeline</h4>
+                    <p className="text-xs text-gray-400 mt-1">Full chronological audit history of reviews, actions and comments</p>
+                  </div>
+                  <span className="px-3 py-1 bg-white border border-gray-200 text-gray-400 text-[10px] font-bold rounded-lg uppercase tracking-wider shadow-sm">
+                    {(() => {
+                      const filteredLogs = timelineLogs.filter(log => !log.attachment_id && log.action_type !== 'attachment_review' && log.action_type !== 'created' && log.action_type !== 'viewed');
+                      return filteredLogs.length;
+                    })()} History Logs
+                  </span>
+                </div>
+
+                <div className="relative border-l-2 border-dashed border-gray-200 pl-8 ml-3 space-y-8">
+                  {(() => {
+                    const filteredLogs = timelineLogs.filter(log => !log.attachment_id && log.action_type !== 'attachment_review' && log.action_type !== 'created' && log.action_type !== 'viewed');
+                    return filteredLogs.length > 0 ? (
+                      filteredLogs.map((log, idx) => {
+                        const isApprove = log.action_type === 'approved' || log.review_action === 'approved';
+                        const isReturn = log.action_type === 'returned' || log.review_action === 'returned';
+                        const isAttachReview = log.action_type === 'attachment_review';
+
+                        const formattedTime = new Date(log.created_at).toLocaleString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                          hour12: true
+                        });
+
+                        return (
+                          <div key={log.id || idx} className="relative group animate-in fade-in duration-300">
+                            <div className={`absolute -left-[41px] top-1 w-6 h-6 rounded-full border-4 border-white flex items-center justify-center shadow-sm z-10 ${
+                              isApprove ? 'bg-green-500' : isReturn ? 'bg-amber-500' : isAttachReview ? 'bg-indigo-500' : 'bg-blue-500'
+                            }`}>
+                              <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
+                            </div>
+
+                            <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+                              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                                <div className="flex items-center gap-3">
+                                  <span className="text-sm font-bold text-gray-800">
+                                    {log.workflow_phase === 'dean-review' ? 'Dean Approval' : (log.users?.full_name || 'System')}
+                                  </span>
+                                  <span className="px-2 py-0.5 bg-gray-100 text-gray-400 text-[10px] font-bold rounded uppercase tracking-wider">
+                                    {log.workflow_phase === 'dean-review' ? 'Dean' : (log.users?.role || 'System')}
+                                  </span>
+                                </div>
+                                <span className="text-[10px] text-gray-400 font-semibold">{formattedTime}</span>
+                              </div>
+
+                              <div className="flex flex-wrap gap-2 mb-3">
+                                <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                  isApprove ? 'bg-green-50 text-green-700' : 
+                                  isReturn ? 'bg-amber-50 text-amber-700' : 
+                                  isAttachReview ? 'bg-indigo-50 text-indigo-700' : 
+                                  'bg-blue-50 text-blue-700'
+                                }`}>
+                                  {(log.review_action || log.action_type || log.action || 'updated').replace('-', ' ')}
+                                </span>
+
+                                {log.attachment_id && (
+                                  <span className="px-2 py-0.5 bg-slate-50 border border-slate-100 text-slate-500 text-[10px] font-bold rounded uppercase flex items-center gap-1">
+                                    <Paperclip size={10} /> Attachment
+                                  </span>
+                                )}
+                              </div>
+
+                              {log.comment ? (
+                                <div className="bg-gray-50 rounded-xl p-4 text-xs font-medium text-gray-600 border border-gray-100 italic leading-relaxed">
+                                  "{log.comment}"
+                                </div>
+                              ) : log.description ? (
+                                <div className="bg-gray-50 rounded-xl p-4 text-xs font-medium text-gray-600 border border-gray-100 italic leading-relaxed">
+                                  "{log.description}"
+                                </div>
+                              ) : (
+                                <p className="text-gray-400 text-xs italic font-medium">No comments provided.</p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="relative pl-2 py-4">
+                        <p className="text-gray-400 text-xs font-semibold italic">No actions have been logged yet for this submission.</p>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4 lg:sticky lg:top-6 self-start">
+              {/* Viewed By + Controls (match screenshot format) */}
+              <div className="bg-gradient-to-r from-[#e9ad00] to-[#d89b00] rounded-2xl p-4 text-white shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
+                      <Eye size={18} />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-widest opacity-90">Viewed by</p>
+                      <p className="text-sm font-semibold leading-tight">
+                        {lastViewerName || '—'}
+                      </p>
+                      {lastViewerRole && (
+                        <span className="mt-1 inline-flex px-2 py-0.5 rounded-full bg-white/20 text-[10px] font-medium uppercase tracking-wider">
+                          {lastViewerRole}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {lastViewerTime && (
+                    <span className="shrink-0 mt-1 px-3 py-1 rounded-full bg-white/20 text-[10px] font-medium uppercase tracking-wider">
+                      {lastViewerTime}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <div className="relative">
+                    <select
+                      value={currentVersion?.id || ''}
+                      onChange={(e) => setSelectedVersionId(e.target.value)}
+                      className="w-full bg-white border border-gray-200 rounded-xl pl-4 pr-10 py-3 text-sm font-medium text-gray-700 outline-none cursor-pointer focus:ring-2 focus:ring-primary-green/20 appearance-none"
+                    >
+                      {allVersions.map(v => (
+                        <option key={v.id} value={v.id}>
+                          {v.id === selectedDoc.raw?.current_version_id ? 'Current Version' : `Version ${v.version_number}`}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  </div>
+                </div>
+                <button
+                  onClick={() => window.print()}
+                  className="px-5 py-3 rounded-xl text-xs font-semibold uppercase tracking-wider text-white bg-primary-green hover:brightness-110 active:scale-[0.98] transition-all shadow-lg shadow-primary-green/20"
+                >
+                  Generate Report
+                </button>
+              </div>
+
+              <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 space-y-4">
+                <h3 className="text-sm font-semibold text-gray-800 uppercase tracking-widest">
+                  Document Details
+                </h3>
+                <div className="space-y-3 text-sm">
+                  <div>
+                    <span className="block text-gray-500 mb-1">Document Title</span>
+                    <p className="text-sm font-medium text-gray-800 leading-snug">
+                      {selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title}
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-500 inline-flex items-center gap-1.5"><AlertCircle size={14} /> Status</span>
+                    <span
+                      className="px-3 py-1 rounded-full text-[11px] font-semibold uppercase text-white"
+                      style={{ backgroundColor: getStatusColor(selectedDoc.status) }}
+                    >
+                      {selectedDoc.status}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-500 inline-flex items-center gap-1.5"><Calendar size={14} /> Date</span>
+                    <span className="text-gray-800 font-medium">{formattedSubmittedAt}</span>
+                  </div>
+                  <div>
+                    <span className="block text-gray-500 mb-1 inline-flex items-center gap-1.5"><User size={14} /> Submitted By</span>
+                    <p className="text-sm font-medium text-gray-800">{submittedByName}</p>
+                    {submittedByRole && (
+                      <p className="text-[11px] text-gray-500">{submittedByRole}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-amber-50 rounded-2xl border border-amber-100 p-4 flex items-start gap-3">
+                <div className="mt-1">
+                  <Clock size={18} className="text-amber-500" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-amber-800 uppercase tracking-widest">
+                    System Remarks
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-amber-900">
+                    {systemRemarksText}
+                  </p>
+                </div>
+              </div>
+
+              {isReturnedStatus && (
+                <button
+                  onClick={() => setIsResubmitModalOpen(true)}
+                  className="w-full px-5 py-3.5 bg-amber-500 text-white rounded-xl text-sm font-semibold hover:bg-amber-600 transition-all shadow-sm"
+                >
+                  Resubmit
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Resubmit Modal Overlay (Org President) */}
+          {isResubmitModalOpen && (() => {
+            const returnedAttachments = attachments.filter(file => {
+              const fileLog = timelineLogs.find(log => log.attachment_id === file.id);
+              return fileLog && fileLog.review_action !== 'approved';
+            });
+
+            return (
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
+                <div className="bg-white rounded-3xl w-full max-w-2xl p-8 flex flex-col shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300 max-h-[80vh]">
+                  <div className="flex items-center justify-between mb-6 border-b border-gray-100 pb-4">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
+                        <RotateCcw size={24} />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-gray-800 text-lg">Resubmit Document</h3>
+                        <p className="text-gray-500 text-sm">Upload new files for the returned attachments.</p>
+                      </div>
+                    </div>
+                    <button onClick={() => setIsResubmitModalOpen(false)} className="text-gray-400 hover:text-gray-800 p-2">
+                      <X size={20} />
+                    </button>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto pr-2 space-y-4 mb-6">
+                    {returnedAttachments.length > 0 ? returnedAttachments.map(file => {
+                      const reqId = file.requirement_id;
+                      const fileLog = timelineLogs.find(log => log.attachment_id === file.id);
+                      return (
+                        <div key={file.id} className="p-4 bg-gray-50 border border-amber-200 rounded-xl space-y-3">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="font-bold text-gray-800 text-sm">{file.file_name}</p>
+                              {fileLog?.comment && (
+                                <p className="text-xs text-amber-700 italic mt-1">Comment: "{fileLog.comment}"</p>
+                              )}
+                            </div>
+                            {resubmitFiles[reqId] ? (
+                              <span className="px-3 py-1 bg-green-100 text-green-700 rounded text-xs font-bold uppercase">Ready</span>
+                            ) : (
+                              <span className="px-3 py-1 bg-amber-100 text-amber-700 rounded text-xs font-bold uppercase">Action Required</span>
+                            )}
+                          </div>
+                          <div className="mt-2">
+                            <input 
+                              type="file" 
+                              accept=".pdf,.docx"
+                              className="block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+                              onChange={(e) => {
+                                if (e.target.files[0]) {
+                                  setResubmitFiles(prev => ({ ...prev, [reqId]: e.target.files[0] }));
+                                }
+                              }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    }) : (
+                      <div className="text-center py-8 text-gray-500 italic">No returned attachments found to replace.</div>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                    <button 
+                      onClick={() => setIsResubmitModalOpen(false)}
+                      className="px-6 py-3 border border-gray-200 text-gray-500 hover:bg-gray-50 rounded-xl font-bold transition-all text-xs uppercase"
+                    >
+                      Cancel
+                    </button>
+                    <button 
+                      onClick={handleResubmit}
+                      disabled={isResubmitting || Object.keys(resubmitFiles).length < returnedAttachments.length}
+                      className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all text-xs uppercase shadow-md disabled:opacity-50"
+                    >
+                      {isResubmitting ? 'Submitting...' : 'Confirm Resubmit'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      );
+    }
+
+    // Default detail view for chairman/admin and others
     return (
       <div className="animate-in fade-in duration-500 max-w-7xl mx-auto px-4 py-8 pb-32">
         {/* Detail Header */}
@@ -936,14 +1636,33 @@ export const MyDocuments = () => {
                   const fileUrl = data?.publicUrl || '#';
 
                   const fileLog = timelineLogs.find(log => log.attachment_id === file.id);
-                  const hasRevision = fileLog && fileLog.review_action !== 'approved';
+                  const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
+                  const isReturnedAttachment = ['missing-requirements', 'incorrect-format', 'incomplete-information'].includes(reviewActionValue);
                   
-                  const docStatus = (selectedDoc.raw?.status || selectedDoc.status || '').toLowerCase();
-                  const isChairmanStage = docStatus === 'submitted' || docStatus === 'oso staff review' || docStatus === 'pending';
+                  // IMPORTANT: when viewing an older version, do NOT use the latest submission status
+                  // (it will corrupt historical attachment colors). Prefer the selected version's status.
+                  const viewingLatestVersion = currentVersion?.id === selectedDoc.raw?.current_version_id;
+                  const docStatus = (viewingLatestVersion
+                    ? (selectedDoc.raw?.status || selectedDoc.status || '')
+                    : (currentVersion?.status || selectedDoc.raw?.status || selectedDoc.status || '')
+                  ).toLowerCase();
+                  const isChairmanStage =
+                    docStatus === 'submitted' ||
+                    docStatus === 'oso staff review' ||
+                    docStatus === 'pending' ||
+                    docStatus === 'returned';
                   
-                  const isApproved = isChairmanStage 
-                    ? (locallyApproved.includes(file.id) || (fileLog && (fileLog.review_action === 'approved' || fileLog.action === 'approved')))
-                    : !hasRevision;
+                  const historicalChairmanVersion = !viewingLatestVersion && isChairmanStage;
+                  const isReturnByCurrentReviewer = isReturnedAttachment && sameRole(fileLog?.users?.role, user?.role);
+                  const returnedForDisplay = isChairmanStage ? isReturnedAttachment : isReturnByCurrentReviewer;
+                  const hasRevision = isChairmanStage && returnedForDisplay && !locallyApproved.includes(file.id);
+                  const isApproved = locallyApproved.includes(file.id) || (
+                    historicalChairmanVersion
+                      ? !returnedForDisplay
+                      : (isChairmanStage
+                          ? (fileLog && (fileLog.review_action === 'approved' || fileLog.action === 'approved')) || !hasRevision
+                          : true)
+                  );
 
                   // Dynamic styles based on review status
                   let containerBg = 'bg-[#525252]';
@@ -956,7 +1675,7 @@ export const MyDocuments = () => {
                     textColor = 'text-white';
                     subtitleColor = 'text-green-100';
                     iconStyle = 'bg-white/20 text-white';
-                  } else if (hasRevision) {
+                  } else if (returnedForDisplay) {
                     containerBg = 'bg-[#f59e0b]';
                     textColor = 'text-[#451a03]';
                     subtitleColor = 'text-[#78350f]';
@@ -974,7 +1693,7 @@ export const MyDocuments = () => {
                           <p className={`${subtitleColor} text-[10px] uppercase`}>Attached Document</p>
                           {fileLog?.comment && (
                             <p className="mt-1 text-xs italic font-medium opacity-90 max-w-lg">
-                              Chairman's Comment: "{fileLog.comment}"
+                              {(fileLog?.users?.full_name || fileLog?.users?.role || 'Reviewer')}'s Comment: "{fileLog.comment}"
                             </p>
                           )}
                         </div>
@@ -1017,7 +1736,7 @@ export const MyDocuments = () => {
             </div>
             <span className="px-3 py-1 bg-white border border-gray-200 text-gray-400 text-[10px] font-bold rounded-lg uppercase tracking-wider shadow-sm">
               {(() => {
-                const filteredLogs = timelineLogs.filter(log => !log.attachment_id && log.action_type !== 'attachment_review' && log.action_type !== 'created');
+                const filteredLogs = timelineLogs.filter(log => !log.attachment_id && log.action_type !== 'attachment_review' && log.action_type !== 'created' && log.action_type !== 'viewed');
                 return filteredLogs.length;
               })()} History Logs
             </span>
@@ -1025,7 +1744,7 @@ export const MyDocuments = () => {
 
           <div className="relative border-l-2 border-dashed border-gray-200 pl-8 ml-3 space-y-8">
             {(() => {
-              const filteredLogs = timelineLogs.filter(log => !log.attachment_id && log.action_type !== 'attachment_review' && log.action_type !== 'created');
+              const filteredLogs = timelineLogs.filter(log => !log.attachment_id && log.action_type !== 'attachment_review' && log.action_type !== 'created' && log.action_type !== 'viewed');
               return filteredLogs.length > 0 ? (
                 filteredLogs.map((log, idx) => {
                   const isApprove = log.action_type === 'approved' || log.review_action === 'approved';
@@ -1052,9 +1771,11 @@ export const MyDocuments = () => {
                       <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
                         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                           <div className="flex items-center gap-3">
-                            <span className="text-sm font-bold text-gray-800">{log.users?.full_name || 'System'}</span>
+                            <span className="text-sm font-bold text-gray-800">
+                              {log.workflow_phase === 'dean-review' ? 'Dean Approval' : (log.users?.full_name || 'System')}
+                            </span>
                             <span className="px-2 py-0.5 bg-gray-100 text-gray-400 text-[10px] font-bold rounded uppercase tracking-wider">
-                              {log.users?.role || 'System'}
+                              {log.workflow_phase === 'dean-review' ? 'Dean' : (log.users?.role || 'System')}
                             </span>
                           </div>
                           <span className="text-[10px] text-gray-400 font-semibold">{formattedTime}</span>
@@ -1067,7 +1788,7 @@ export const MyDocuments = () => {
                             isAttachReview ? 'bg-indigo-50 text-indigo-700' : 
                             'bg-blue-50 text-blue-700'
                           }`}>
-                            {log.review_action?.replace('-', ' ')}
+                            {(log.review_action || log.action_type || log.action || 'updated').replace('-', ' ')}
                           </span>
                           
 
@@ -1104,7 +1825,7 @@ export const MyDocuments = () => {
         </div>
 
         {/* Action buttons (Org President only - Bottom of the page) */}
-        {user?.role !== 'chairman' && selectedDoc.category === 'Returned' && (
+        {user?.role === 'org-president' && selectedDoc.category === 'Returned' && (
           <div className="flex items-center justify-center gap-4 mt-10 p-6 bg-gray-50 border border-gray-100 rounded-3xl shadow-sm max-w-xl mx-auto">
             <button
               onClick={() => setIsResubmitModalOpen(true)}
@@ -1206,6 +1927,15 @@ export const MyDocuments = () => {
 
         {/* PDF Preview Modal Overlay */}
         {previewFile && (() => {
+          const requiresReview = attachmentRequiresReview(
+            previewFile,
+            selectedDoc,
+            currentVersion,
+            allVersions,
+            timelineLogs,
+            locallyApproved
+          );
+
           return (
             <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
               <div className="bg-white rounded-3xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300">
@@ -1265,6 +1995,10 @@ export const MyDocuments = () => {
                   <div className="w-full md:w-96 bg-white p-8 flex flex-col justify-between overflow-y-auto border-t md:border-t-0 border-gray-100">
                     {(() => {
                       const fileLog = timelineLogs.find(log => log.attachment_id === previewFile.id);
+                      const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
+                      const alreadyReturned =
+                        ['missing-requirements', 'incorrect-format', 'incomplete-information'].includes(reviewActionValue) &&
+                        !locallyApproved.includes(previewFile.id);
                       const currentStatus = (selectedDoc.raw?.status || selectedDoc.status || '').toLowerCase();
                       const workflowPhase = currentStatus.includes('dean review')
                         ? 'dean-review'
@@ -1324,21 +2058,24 @@ export const MyDocuments = () => {
 
                           {user?.role !== 'org-president' && (
                             <div className="space-y-3 pt-6 border-t border-gray-100 mt-6">
-                              {user?.role !== 'admin' && (
+                              {!requiresReview && (
+                                <div className="bg-green-50 border border-green-100 rounded-xl p-4 text-center">
+                                  <CheckCircle size={20} className="text-green-600 mx-auto mb-2" />
+                                  <p className="text-xs font-bold text-green-700 uppercase tracking-wider">Already Approved</p>
+                                  <p className="text-xs text-green-600 mt-1">No re-approval needed. You can still return this file if you find an issue.</p>
+                                </div>
+                              )}
+
+                              {requiresReview && (
                                 <button
                                   onClick={async () => {
                                     if (!previewFile || !selectedDoc) return;
                                     setAttachmentSaving(true);
                                     try {
-                                      const activeVersionId = selectedDoc.raw?.current_version_id ||
-                                        (Array.isArray(selectedDoc.raw?.submission_versions)
-                                          ? selectedDoc.raw?.submission_versions[0]?.id
-                                          : selectedDoc.raw?.submission_versions?.id);
-
-                                      // Simulated attachment approval without database write to optimize DB usage
                                       setLocallyApproved(prev => [...prev, previewFile.id]);
+                                      setReviewAction('');
+                                      setReviewComments('');
                                       setPreviewFile(null);
-                                      await fetchTimelineLogs(selectedDoc.id);
                                       alert('Attachment approved successfully!');
                                     } catch (err) {
                                       console.error('Error approving attachment:', err);
@@ -1347,7 +2084,7 @@ export const MyDocuments = () => {
                                       setAttachmentSaving(false);
                                     }
                                   }}
-                                  disabled={!!reviewAction || attachmentSaving}
+                                  disabled={attachmentSaving}
                                   className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-all shadow-lg shadow-green-600/10 uppercase text-xs tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
                                   <CheckCircle size={16} />
@@ -1360,6 +2097,9 @@ export const MyDocuments = () => {
                                   if (!previewFile || !selectedDoc) return;
                                   setAttachmentSaving(true);
                                   try {
+                                    // If user previously marked this attachment approved locally,
+                                    // returning it should immediately flip it back to "needs revision" (orange).
+                                    setLocallyApproved(prev => prev.filter(id => id !== previewFile.id));
                                     const activeVersionId = selectedDoc.raw?.current_version_id ||
                                       (Array.isArray(selectedDoc.raw?.submission_versions)
                                         ? selectedDoc.raw?.submission_versions[0]?.id
@@ -1374,7 +2114,7 @@ export const MyDocuments = () => {
                                         user_id: user.id,
                                         workflow_phase: workflowPhase,
                                         action_type: 'attachment_review',
-                                        review_action: reviewAction || 'returned',
+                                        review_action: reviewAction || null,
                                         action: reviewAction || 'returned',
                                         description: reviewComments || 'Attachment returned for edits',
                                         comment: reviewComments || null,
@@ -1384,7 +2124,7 @@ export const MyDocuments = () => {
                                     if (error) throw error;
 
                                     setPreviewFile(null);
-                                    await fetchTimelineLogs(selectedDoc.id);
+                                    await fetchTimelineLogs(selectedDoc.id, activeVersionId);
                                     alert('Attachment returned for edits successfully!');
                                   } catch (err) {
                                     console.error('Error returning attachment:', err);
@@ -1393,7 +2133,7 @@ export const MyDocuments = () => {
                                     setAttachmentSaving(false);
                                   }
                                 }}
-                                disabled={!reviewAction || attachmentSaving}
+                                disabled={!reviewAction || attachmentSaving || alreadyReturned}
                                 className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 transition-all shadow-lg shadow-amber-500/10 uppercase text-xs tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
                               >
                                 <RotateCcw size={16} />
