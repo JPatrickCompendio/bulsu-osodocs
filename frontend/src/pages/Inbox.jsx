@@ -1128,7 +1128,10 @@ export const Inbox = () => {
                     docStatus === 'oso staff review' ||
                     docStatus === 'pending' ||
                     docStatus === 'returned';
-                  const isReturnByCurrentReviewer = isReturnedAttachment && sameRole(fileLog?.users?.role, user?.role);
+                  const isReturnByCurrentReviewer =
+                    isReturnedAttachment &&
+                    ((fileLog?.user_id && fileLog.user_id === user?.id) ||
+                      sameRole(fileLog?.users?.role, user?.role));
                   const returnedForDisplay = isChairmanStage ? isReturnedAttachment : isReturnByCurrentReviewer;
                   const hasRevision = returnedForDisplay || (isChairmanStage && isModifiedInResubmission);
                   
@@ -1179,11 +1182,6 @@ export const Inbox = () => {
                           {isApproved && latestReturnByAdmin && sameRole(user?.role, 'admin') && (
                             <p className="mt-1 text-[10px] uppercase tracking-wider font-bold text-amber-200 flex items-center gap-1">
                               <RotateCcw size={10} /> Returned by you before: {(latestReturnByAdmin.review_action || '').replace('-', ' ')}
-                            </p>
-                          )}
-                          {isApproved && latestReturnByAdmin?.comment && sameRole(user?.role, 'admin') && (
-                            <p className="mt-1 text-xs italic font-medium opacity-90 max-w-lg">
-                              Your previous comment: "{latestReturnByAdmin.comment}"
                             </p>
                           )}
                         </div>

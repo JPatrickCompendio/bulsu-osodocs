@@ -1056,8 +1056,13 @@ export const MyDocuments = () => {
                         const isChairmanStage = docStatus === 'submitted' || docStatus === 'oso staff review' || docStatus === 'pending' || docStatus === 'returned';
                         const historicalChairmanVersion = !viewingLatestVersion && isChairmanStage;
 
-                        const hasRevision = isChairmanStage && isReturnedAttachment && !locallyApproved.includes(file.id);
-                        const isApproved = locallyApproved.includes(file.id) || (historicalChairmanVersion ? !isReturnedAttachment : !hasRevision);
+                        const isReturnByCurrentReviewer =
+                          isReturnedAttachment &&
+                          ((fileLog?.user_id && fileLog.user_id === user?.id) ||
+                            sameRole(fileLog?.users?.role, user?.role));
+                        const returnedForDisplay = isChairmanStage ? isReturnedAttachment : isReturnByCurrentReviewer;
+                        const hasRevision = isChairmanStage && returnedForDisplay && !locallyApproved.includes(file.id);
+                        const isApproved = locallyApproved.includes(file.id) || (historicalChairmanVersion ? !returnedForDisplay : !hasRevision);
 
                         let containerBg = 'bg-[#525252]';
                         let textColor = 'text-white';
@@ -1085,7 +1090,7 @@ export const MyDocuments = () => {
                               <div>
                                 <p className={`${textColor} font-semibold text-sm`}>{fileName}</p>
                                 <p className={`${subtitleColor} text-[10px] uppercase`}>Attached Document</p>
-                                {fileLog?.comment && (
+                                {returnedForDisplay && fileLog?.comment && (
                                   <p className="mt-1 text-xs italic font-medium opacity-90 max-w-lg">
                                     {(fileLog?.users?.full_name || fileLog?.users?.role || 'Reviewer')}'s Comment: "{fileLog.comment}"
                                   </p>
@@ -1653,7 +1658,10 @@ export const MyDocuments = () => {
                     docStatus === 'returned';
                   
                   const historicalChairmanVersion = !viewingLatestVersion && isChairmanStage;
-                  const isReturnByCurrentReviewer = isReturnedAttachment && sameRole(fileLog?.users?.role, user?.role);
+                  const isReturnByCurrentReviewer =
+                    isReturnedAttachment &&
+                    ((fileLog?.user_id && fileLog.user_id === user?.id) ||
+                      sameRole(fileLog?.users?.role, user?.role));
                   const returnedForDisplay = isChairmanStage ? isReturnedAttachment : isReturnByCurrentReviewer;
                   const hasRevision = isChairmanStage && returnedForDisplay && !locallyApproved.includes(file.id);
                   const isApproved = locallyApproved.includes(file.id) || (
@@ -1691,7 +1699,7 @@ export const MyDocuments = () => {
                         <div>
                           <p className={`${textColor} font-semibold text-sm`}>{fileName}</p>
                           <p className={`${subtitleColor} text-[10px] uppercase`}>Attached Document</p>
-                          {fileLog?.comment && (
+                          {returnedForDisplay && fileLog?.comment && (
                             <p className="mt-1 text-xs italic font-medium opacity-90 max-w-lg">
                               {(fileLog?.users?.full_name || fileLog?.users?.role || 'Reviewer')}'s Comment: "{fileLog.comment}"
                             </p>
