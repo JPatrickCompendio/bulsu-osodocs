@@ -428,8 +428,10 @@ app.post('/api/logs', async (req, res) => {
     const {
         submission_id,
         user_id,
-        action,
-        description
+        action_type,
+        description,
+        workflow_phase,
+        submission_version_id
     } = req.body;
 
     try {
@@ -439,8 +441,10 @@ app.post('/api/logs', async (req, res) => {
                 {
                     submission_id,
                     user_id,
-                    action,
+                    action_type: action_type || null,
                     description,
+                    workflow_phase: workflow_phase || null,
+                    submission_version_id: submission_version_id || null,
                     created_at: new Date().toISOString()
                 }
             ])
@@ -597,8 +601,9 @@ app.post('/api/submissions/register', async (req, res) => {
                 {
                     submission_id,
                     user_id,
-                    action: 'SUBMITTED',
+                    action_type: 'submitted',
                     description: 'Document submitted for review.',
+                    workflow_phase: 'submission',
                     created_at: new Date().toISOString()
                 }
             ]);
@@ -627,11 +632,11 @@ app.post('/api/submissions/approve-dean', async (req, res) => {
     }
 
     try {
-        // 1. Update submissions table status to 'external review'
+        // 1. Update submissions table status to 'dean approved'
         const { error: subErr } = await supabase
             .from('submissions')
             .update({
-                status: 'external review',
+                status: 'dean approved',
                 remarks: comments || 'Approved by the Dean'
             })
             .eq('id', submissionId);
@@ -648,7 +653,6 @@ app.post('/api/submissions/approve-dean', async (req, res) => {
                 workflow_phase: 'dean-review',
                 action_type: 'approved',
                 review_action: null,
-                action: 'approved',
                 description: comments || 'Approved by the Dean',
                 comment: comments || null,
                 created_at: new Date().toISOString()

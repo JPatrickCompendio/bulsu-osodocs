@@ -91,13 +91,4 @@ import SubmitNewDocumentComponent from './SubmitNewDocument';
 
 export const ListOfRequirements = ListOfRequirementsComponent;
 
-export const Completed = () => (
-  <div>
-    <PageHeader title="Completed" />
-    <Card>
-      <p className="text-gray-600">List of all completed document processes.</p>
-    </Card>
-  </div>
-);
-
 export const SubmitNewDocuments = SubmitNewDocumentComponent;

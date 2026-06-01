@@ -9,9 +9,9 @@ import {
   Inbox, 
   MyDocuments, 
   ListOfRequirements, 
-  Completed, 
   SubmitNewDocuments 
 } from './pages/Pages';
+import Completed from './pages/Completed';
 import UserManagement from './pages/UserManagement';
 
 const App = () => {
@@ -42,7 +42,7 @@ const App = () => {
 
             {/* Role specific */}
             <Route path="/completed" element={
-              <ProtectedRoute allowedRoles={['chairman', 'vice-chairman', 'org-president']}>
+              <ProtectedRoute allowedRoles={['chairman', 'vice-chairman', 'org-president', 'admin']}>
                 <Completed />
               </ProtectedRoute>
             } />

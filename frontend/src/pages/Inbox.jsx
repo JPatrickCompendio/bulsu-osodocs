@@ -2,6 +2,7 @@ import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
 import { useNavigate } from 'react-router-dom';
+import SubmissionTimeline from '../components/SubmissionTimeline';
 import { 
   Search, 
   Filter, 
@@ -74,7 +75,7 @@ export const Inbox = () => {
   const [isFilesOpen, setIsFilesOpen] = React.useState(true);
   const [previewFile, setPreviewFile] = React.useState(null);
   const [filePreviewUrl, setFilePreviewUrl] = React.useState('');
-  const [reviewAction, setReviewAction] = React.useState('missing-requirements');
+  const [reviewAction, setReviewAction] = React.useState('');
   const [reviewComments, setReviewComments] = React.useState('');
   const [timelineLogs, setTimelineLogs] = React.useState([]);
   const [isReturnModalOpen, setIsReturnModalOpen] = React.useState(false);
@@ -83,9 +84,18 @@ export const Inbox = () => {
   const [attachmentSaving, setAttachmentSaving] = React.useState(false);
   const [attachmentSuccessModal, setAttachmentSuccessModal] = React.useState(null);
   const [locallyApproved, setLocallyApproved] = React.useState([]);
+  const [locallyReturned, setLocallyReturned] = React.useState({});
   const [attachmentReturnLogs, setAttachmentReturnLogs] = React.useState([]);
+  const RETURN_REASONS = ['missing-requirements', 'incorrect-format', 'incomplete-information'];
   const normalizeRole = (role) => String(role || '').toLowerCase().replace('-', ' ').trim();
   const sameRole = (a, b) => normalizeRole(a) === normalizeRole(b);
+  const formatReviewerRoleLabel = (role) => {
+    const r = normalizeRole(role);
+    if (r === 'admin') return 'SDS Coordinator';
+    if (r === 'chairman') return 'Chairman';
+    if (r.includes('vice chairman')) return 'Vice Chairman';
+    return String(role || 'Reviewer').replace('-', ' ');
+  };
 
   const getFileHistoryAttachmentIds = (file, allVersions) => {
     const ids = [];
@@ -125,10 +135,30 @@ export const Inbox = () => {
     );
   };
 
-  const attachmentRequiresReview = (file, doc, activeVersion, allVersions, logs, approvedIds) => {
-    const fileLog = logs.find((log) => log.attachment_id === file.id);
+  const getLatestAttachmentLog = (logs, attachmentId) =>
+    (logs || []).find((log) => log.attachment_id === attachmentId);
+
+  const getInboxAttachmentDisplay = (file, doc, activeVersion, allVersions, logs, approvedIds, returnedMap, currentUser) => {
+    if (returnedMap[file.id]) {
+      return {
+        isApproved: false,
+        returnedForDisplay: true,
+        fileLog: null,
+        localReturn: returnedMap[file.id]
+      };
+    }
+
+    if (approvedIds.includes(file.id)) {
+      return {
+        isApproved: true,
+        returnedForDisplay: false,
+        fileLog: getLatestAttachmentLog(logs, file.id)
+      };
+    }
+
+    const fileLog = getLatestAttachmentLog(logs, file.id);
     const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
-    const isReturnedAttachment = ['missing-requirements', 'incorrect-format', 'incomplete-information'].includes(reviewActionValue);
+    const isReturnedAttachment = RETURN_REASONS.includes(reviewActionValue);
 
     const currentVersionNumber = activeVersion?.version_number || 1;
     const isResubmittedVersion = currentVersionNumber > 1;
@@ -161,18 +191,79 @@ export const Inbox = () => {
       docStatus === 'oso staff review' ||
       docStatus === 'pending' ||
       docStatus === 'returned';
-    const isReturnByCurrentReviewer = isReturnedAttachment && sameRole(fileLog?.users?.role, user?.role);
+    const isReturnByCurrentReviewer =
+      isReturnedAttachment &&
+      ((fileLog?.user_id && fileLog.user_id === currentUser?.id) ||
+        sameRole(fileLog?.users?.role, currentUser?.role));
     const returnedForDisplay = isChairmanStage ? isReturnedAttachment : isReturnByCurrentReviewer;
     const hasRevision = returnedForDisplay || (isChairmanStage && isModifiedInResubmission);
 
-    const isApproved = approvedIds.includes(file.id) || (isChairmanStage
-      ? (
-          (fileLog && fileLog.action === 'approved') ||
-          (isResubmittedVersion && unchangedFromPrevious && !hasRevision)
-        )
-      : !returnedForDisplay);
+    const historicalChairmanVersion = !viewingLatestVersion && isChairmanStage;
+    const isApproved = historicalChairmanVersion
+      ? !returnedForDisplay
+      : (isChairmanStage
+          ? (
+              (fileLog && fileLog.review_action === 'approved') ||
+              (isResubmittedVersion && unchangedFromPrevious && !hasRevision)
+            )
+          : !returnedForDisplay);
 
+    return { isApproved, returnedForDisplay, hasRevision, fileLog };
+  };
+
+  const attachmentRequiresReview = (file, doc, activeVersion, allVersions, logs, approvedIds, returnedMap) => {
+    const { isApproved } = getInboxAttachmentDisplay(
+      file,
+      doc,
+      activeVersion,
+      allVersions,
+      logs,
+      approvedIds,
+      returnedMap,
+      user
+    );
     return !isApproved;
+  };
+
+  const persistLocalAttachmentReviews = async (activeVersionId, mode) => {
+    const now = new Date().toISOString();
+    const logsToInsert = [];
+
+    if (mode === 'approve') {
+      locallyApproved.forEach((attachmentId) => {
+        logsToInsert.push({
+          submission_id: selectedDoc.id,
+          submission_version_id: activeVersionId,
+          attachment_id: attachmentId,
+          user_id: user.id,
+          workflow_phase: 'Chairman Review',
+          action_type: 'attachment_review',
+          review_action: 'approved',
+          description: 'Attachment approved',
+          comment: null,
+          created_at: now
+        });
+      });
+    } else if (mode === 'return') {
+      Object.entries(locallyReturned).forEach(([attachmentId, payload]) => {
+        logsToInsert.push({
+          submission_id: selectedDoc.id,
+          submission_version_id: activeVersionId,
+          attachment_id: attachmentId,
+          user_id: user.id,
+          workflow_phase: 'Chairman Review',
+          action_type: 'attachment_review',
+          review_action: payload.reviewAction,
+          description: payload.comment || 'Attachment reviewed',
+          comment: payload.comment || null,
+          created_at: now
+        });
+      });
+    }
+
+    if (logsToInsert.length === 0) return;
+    const { error } = await supabase.from('submission_logs').insert(logsToInsert);
+    if (error) throw error;
   };
 
   const logDocumentViewed = async (doc) => {
@@ -195,7 +286,6 @@ export const Inbox = () => {
         workflow_phase: 'view',
         action_type: 'viewed',
         review_action: null,
-        action: 'viewed',
         description: 'Viewed the document',
         comment: null,
         created_at: new Date().toISOString()
@@ -206,33 +296,35 @@ export const Inbox = () => {
     }
   };
 
-  const fetchTimelineLogs = async (submissionId, versionId = null) => {
+  const fetchTimelineLogs = async (submissionId) => {
     try {
-      const resolvedVersionId =
-        versionId ||
-        (selectedDoc?.id === submissionId ? getActiveVersionId(selectedDoc) : null);
-
-      let query = supabase
+      const { data, error } = await supabase
         .from('submission_logs')
         .select(`
-          *,
+          id,
+          submission_id,
+          submission_version_id,
+          attachment_id,
+          user_id,
+          workflow_phase,
+          action_type,
+          review_action,
+          description,
+          comment,
+          created_at,
           users (
             full_name,
             role
           )
         `)
-        .eq('submission_id', submissionId);
-
-      if (resolvedVersionId) {
-        query = query.eq('submission_version_id', resolvedVersionId);
-      }
-
-      const { data, error } = await query.order('created_at', { ascending: false });
+        .eq('submission_id', submissionId)
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
       setTimelineLogs(data || []);
     } catch (err) {
       console.error('Error fetching timeline logs:', err);
+      setTimelineLogs([]);
     }
   };
 
@@ -278,13 +370,15 @@ export const Inbox = () => {
         : [selectedDoc.raw?.submission_versions].filter(Boolean);
       const currentVersionIdToUse = selectedVersionId || selectedDoc.raw?.current_version_id;
       const activeVersion = allVersions.find(v => v.id === currentVersionIdToUse) || allVersions[0];
-      fetchTimelineLogs(selectedDoc.id, activeVersion?.id || null);
+      fetchTimelineLogs(selectedDoc.id);
       fetchAttachmentReturnLogs(selectedDoc.id);
       setLocallyApproved([]);
+      setLocallyReturned({});
     } else {
       setTimelineLogs([]);
       setAttachmentReturnLogs([]);
       setLocallyApproved([]);
+      setLocallyReturned({});
     }
   }, [selectedDoc, selectedVersionId]);
 
@@ -541,7 +635,7 @@ export const Inbox = () => {
           : selectedDoc.raw.submission_versions?.id);
 
       // 1. Update submissions table status and remarks
-      const formattedRemarks = comments || 'Approved by Chairman';
+      const formattedRemarks = comments || `Approved by ${formatReviewerRoleLabel(user?.role)}`;
       const isSdsCoordinatorStage = (selectedDoc.raw?.status || '').toLowerCase() === 'sds coordinator review' || (selectedDoc.status || '').toLowerCase().includes('sds');
 
       // If admin is approving an SDS coordinator-stage item, don't force status to 'to forward' so
@@ -557,6 +651,8 @@ export const Inbox = () => {
 
       if (subErr) throw subErr;
 
+      await persistLocalAttachmentReviews(activeVersionId, 'approve');
+
       // 2. Insert workflow action log(s)
       // Special case: admin approving right after SDS Coordinator review
       if (user?.role === 'admin' && isSdsCoordinatorStage) {
@@ -571,7 +667,6 @@ export const Inbox = () => {
               workflow_phase: 'sds-review',
               action_type: 'approved',
               review_action: null,
-              action: 'approved',
               description: comments || 'Approved by SDS Coordinator',
               comment: comments || null,
               created_at: now.toISOString()
@@ -589,8 +684,7 @@ export const Inbox = () => {
             workflow_phase: 'Chairman Review',
             action_type: 'approved',
             review_action: null,
-            action: 'approved',
-            description: comments || 'Approved by Chairman',
+            description: comments || `Approved by ${formatReviewerRoleLabel(user?.role)}`,
             comment: comments || null,
             created_at: new Date().toISOString()
           }]);
@@ -607,7 +701,6 @@ export const Inbox = () => {
             workflow_phase: 'Chairman Review',
             action_type: 'ready_for_hardcopy',
             review_action: null,
-            action: 'ready-for-hardcopy',
             description: 'Ready for hardcopy submission',
             comment: null,
             created_at: new Date(Date.now() + 1000).toISOString()
@@ -618,6 +711,8 @@ export const Inbox = () => {
 
       // Close modal inputs, triggers and refresh list
       setPreviewFile(null);
+      setLocallyApproved([]);
+      setLocallyReturned({});
       await fetchSubmissions();
       setSelectedDoc(null);
       alert('Submission approved successfully!');
@@ -640,7 +735,7 @@ export const Inbox = () => {
           : selectedDoc.raw.submission_versions?.id);
 
       // 1. Update submissions table status and remarks
-      const formattedRemarks = comments || 'Returned for edits by Chairman';
+      const formattedRemarks = comments || `Returned for edits by ${formatReviewerRoleLabel(user?.role)}`;
       const { error: subErr } = await supabase
         .from('submissions')
         .update({ 
@@ -650,6 +745,8 @@ export const Inbox = () => {
         .eq('id', selectedDoc.id);
 
       if (subErr) throw subErr;
+
+      await persistLocalAttachmentReviews(activeVersionId, 'return');
 
       // 2. Insert workflow action log into submission_logs
       const { error: logErr } = await supabase
@@ -661,8 +758,7 @@ export const Inbox = () => {
           workflow_phase: 'Chairman Review',
           action_type: 'returned',
           review_action: null,
-          action: 'returned',
-          description: comments || 'Returned for edits by Chairman',
+          description: comments || `Returned for edits by ${formatReviewerRoleLabel(user?.role)}`,
           comment: comments || null,
           created_at: new Date().toISOString()
         }]);
@@ -673,6 +769,8 @@ export const Inbox = () => {
       setPreviewFile(null);
       setIsReturnModalOpen(false);
       setReturnComments('');
+      setLocallyApproved([]);
+      setLocallyReturned({});
       await fetchSubmissions();
       setSelectedDoc(null);
       alert('Submission returned for edits successfully!');
@@ -695,7 +793,7 @@ export const Inbox = () => {
           : selectedDoc.raw.submission_versions?.id);
 
       // 1. Update submissions table status and remarks
-      const formattedRemarks = comments || 'Disapproved by Chairman';
+      const formattedRemarks = comments || `Disapproved by ${formatReviewerRoleLabel(user?.role)}`;
       const { error: subErr } = await supabase
         .from('submissions')
         .update({ 
@@ -716,8 +814,7 @@ export const Inbox = () => {
           workflow_phase: 'Chairman Review',
           action_type: 'disapproved',
           review_action: null,
-          action: 'disapproved',
-          description: comments || 'Disapproved by Chairman',
+          description: comments || `Disapproved by ${formatReviewerRoleLabel(user?.role)}`,
           comment: comments || null,
           created_at: new Date().toISOString()
         }]);
@@ -728,10 +825,11 @@ export const Inbox = () => {
       setPreviewFile(null);
       setIsReturnModalOpen(false);
       setReturnComments('');
+      const disapprovedId = selectedDoc.id;
       await fetchSubmissions();
       setSelectedDoc(null);
       alert('Submission disapproved successfully!');
-      navigate('/completed');
+      navigate('/completed', { state: { openDocId: disapprovedId } });
     } catch (err) {
       console.error('Error disapproving submission:', err);
       alert('Failed to disapprove submission.');
@@ -740,69 +838,40 @@ export const Inbox = () => {
     }
   };
 
-  const handleSaveAttachmentFeedback = async () => {
-    if (!previewFile || !selectedDoc) return;
-    try {
-      setAttachmentSaving(true);
-      // If user previously marked this attachment approved locally,
-      // returning it should immediately flip it back to "needs revision" (orange).
-      setLocallyApproved(prev => prev.filter(id => id !== previewFile.id));
-      const activeVersionId = selectedDoc.raw.current_version_id || 
-        (Array.isArray(selectedDoc.raw.submission_versions) 
-          ? selectedDoc.raw.submission_versions[0]?.id 
-          : selectedDoc.raw.submission_versions?.id);
-
-      const { error } = await supabase
-        .from('submission_logs')
-        .insert([{
-          submission_id: selectedDoc.id,
-          submission_version_id: activeVersionId,
-          attachment_id: previewFile.id,
-          user_id: user.id,
-          workflow_phase: 'Chairman Review',
-          action_type: 'attachment_review',
-          review_action: reviewAction,
-          action: reviewAction || 'attachment_review',
-          description: reviewComments || 'Attachment reviewed',
-          comment: reviewComments || null,
-          created_at: new Date().toISOString()
-        }]);
-
-      if (error) throw error;
-
-      setAttachmentSuccessModal({
-        type: 'returned',
-        fileName: previewFile.file_name || 'Attachment'
-      });
-      setPreviewFile(null); // Close preview modal
-      await fetchTimelineLogs(selectedDoc.id, getActiveVersionId(selectedDoc));
-    } catch (err) {
-      console.error('Error saving attachment feedback:', err);
-      alert('Failed to save attachment feedback.');
-    } finally {
-      setAttachmentSaving(false);
-    }
+  const handleSaveAttachmentFeedback = () => {
+    if (!previewFile || !selectedDoc || !reviewAction) return;
+    setLocallyReturned((prev) => ({
+      ...prev,
+      [previewFile.id]: {
+        reviewAction,
+        comment: reviewComments
+      }
+    }));
+    setLocallyApproved((prev) => prev.filter((id) => id !== previewFile.id));
+    setAttachmentSuccessModal({
+      type: 'returned',
+      fileName: previewFile.file_name || 'Attachment'
+    });
+    setReviewAction('');
+    setReviewComments('');
+    setPreviewFile(null);
   };
 
-  const handleApproveAttachment = async () => {
+  const handleApproveAttachment = () => {
     if (!previewFile || !selectedDoc) return;
-    try {
-      setAttachmentSaving(true);
-      setLocallyApproved(prev => [...prev, previewFile.id]);
-      setReviewAction('');
-      setReviewComments('');
- 
-      setAttachmentSuccessModal({
-        type: 'approved',
-        fileName: previewFile.file_name || 'Attachment'
-      });
-      setPreviewFile(null); // Close preview modal
-    } catch (err) {
-      console.error('Error approving attachment:', err);
-      alert('Failed to approve attachment.');
-    } finally {
-      setAttachmentSaving(false);
-    }
+    setLocallyApproved((prev) => [...new Set([...prev, previewFile.id])]);
+    setLocallyReturned((prev) => {
+      const next = { ...prev };
+      delete next[previewFile.id];
+      return next;
+    });
+    setReviewAction('');
+    setReviewComments('');
+    setAttachmentSuccessModal({
+      type: 'approved',
+      fileName: previewFile.file_name || 'Attachment'
+    });
+    setPreviewFile(null);
   };
 
   const toggleSelectAll = () => {
@@ -871,7 +940,6 @@ export const Inbox = () => {
 
     const currentVersionIdToUse = selectedVersionId || selectedDoc.raw?.current_version_id;
     const activeVersion = allVersions.find(v => v.id === currentVersionIdToUse) || allVersions[0];
-
     const details = Array.isArray(activeVersion?.activity_proposal_details)
       ? activeVersion?.activity_proposal_details[0]
       : activeVersion?.activity_proposal_details;
@@ -1089,66 +1157,15 @@ export const Inbox = () => {
                   const { data } = supabase.storage.from('documents').getPublicUrl(finalPath);
                   const fileUrl = data?.publicUrl || '#';
 
-                  const fileLog = timelineLogs.find(log => log.attachment_id === file.id);
-                  const returnHistory = getFileReturnHistory(file, allVersions, attachmentReturnLogs);
-                  const latestHistoricalReturn = returnHistory[0] || null;
-                  const latestReturnByAdmin = returnHistory.find((log) => sameRole(log?.users?.role, 'admin')) || null;
-                  const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
-                  const isReturnedAttachment = ['missing-requirements', 'incorrect-format', 'incomplete-information'].includes(reviewActionValue);
-
-                  const currentVersionNumber = activeVersion?.version_number || 1;
-                  const isResubmittedVersion = currentVersionNumber > 1;
-                  const previousVersion = allVersions.find(
-                    (v) => (v?.version_number || 0) === (currentVersionNumber - 1)
-                  );
-                  const previousVersionAttachments = Array.isArray(previousVersion?.submission_attachments)
-                    ? previousVersion.submission_attachments
-                    : [];
-                  const prevAttachmentByRequirement = previousVersionAttachments.find((att) => {
-                    if (att?.requirement_id && file?.requirement_id) {
-                      return att.requirement_id === file.requirement_id;
-                    }
-                    // Fallback for attachments without requirement_id
-                    return !!att?.file_name && !!file?.file_name && att.file_name === file.file_name;
-                  });
-                  const existedInPreviousVersion = !!prevAttachmentByRequirement;
-                  const isModifiedInResubmission =
-                    existedInPreviousVersion && prevAttachmentByRequirement.file_url !== file.file_url;
-                  const unchangedFromPrevious = existedInPreviousVersion && !isModifiedInResubmission;
-
-                  // IMPORTANT: when viewing an older version, do NOT use the latest submission status
-                  // (it will corrupt historical attachment colors). Prefer the selected version's status.
-                  const viewingLatestVersion = activeVersion?.id === selectedDoc.raw?.current_version_id;
-                  const docStatus = (viewingLatestVersion
-                    ? (selectedDoc.raw?.status || selectedDoc.status || '')
-                    : (activeVersion?.status || selectedDoc.raw?.status || selectedDoc.status || '')
-                  ).toLowerCase();
-                  const isChairmanStage =
-                    docStatus === 'submitted' ||
-                    docStatus === 'oso staff review' ||
-                    docStatus === 'pending' ||
-                    docStatus === 'returned';
-                  const isReturnByCurrentReviewer =
-                    isReturnedAttachment &&
-                    ((fileLog?.user_id && fileLog.user_id === user?.id) ||
-                      sameRole(fileLog?.users?.role, user?.role));
-                  const returnedForDisplay = isChairmanStage ? isReturnedAttachment : isReturnByCurrentReviewer;
-                  const hasRevision = returnedForDisplay || (isChairmanStage && isModifiedInResubmission);
-                  
-                  const historicalChairmanVersion = !viewingLatestVersion && isChairmanStage;
-                  // Color rules:
-                  // - Historical chairman-stage versions should preserve returned marks (orange),
-                  //   and show all other files as approved (green).
-                  // - Latest chairman-stage version uses live review state.
-                  const isApproved = locallyApproved.includes(file.id) || (
-                    historicalChairmanVersion
-                      ? !returnedForDisplay
-                      : (isChairmanStage
-                          ? (
-                              (fileLog && fileLog.action === 'approved') ||
-                              (isResubmittedVersion && unchangedFromPrevious && !hasRevision)
-                            )
-                          : !returnedForDisplay)
+                  const { isApproved, returnedForDisplay, fileLog } = getInboxAttachmentDisplay(
+                    file,
+                    selectedDoc,
+                    activeVersion,
+                    allVersions,
+                    timelineLogs,
+                    locallyApproved,
+                    locallyReturned,
+                    user
                   );
 
                   // Dynamic styles based on review status
@@ -1179,9 +1196,9 @@ export const Inbox = () => {
                         <div>
                           <p className={`${textColor} font-semibold text-sm`}>{fileName}</p>
                           <p className={`${subtitleColor} text-[10px] uppercase`}>Attached Document</p>
-                          {isApproved && latestReturnByAdmin && sameRole(user?.role, 'admin') && (
-                            <p className="mt-1 text-[10px] uppercase tracking-wider font-bold text-amber-200 flex items-center gap-1">
-                              <RotateCcw size={10} /> Returned by you before: {(latestReturnByAdmin.review_action || '').replace('-', ' ')}
+                          {returnedForDisplay && (locallyReturned[file.id]?.comment || fileLog?.comment) && (
+                            <p className="mt-1 text-xs italic font-medium opacity-90 max-w-lg">
+                              {(fileLog?.users?.full_name || fileLog?.users?.role || user?.role || 'Reviewer')}'s Comment: "{locallyReturned[file.id]?.comment || fileLog?.comment}"
                             </p>
                           )}
                         </div>
@@ -1190,15 +1207,8 @@ export const Inbox = () => {
                         <button 
                           onClick={() => {
                             setPreviewFile(file);
-                            const hasLocalApproval = locallyApproved.includes(file.id);
-                            const effectiveLog = fileLog || latestHistoricalReturn;
-                            if (effectiveLog && !hasLocalApproval) {
-                              setReviewAction(effectiveLog.review_action || '');
-                              setReviewComments(effectiveLog.comment || '');
-                            } else {
-                              setReviewAction('');
-                              setReviewComments('');
-                            }
+                            setReviewAction('');
+                            setReviewComments('');
                           }}
                           className="bg-secondary-gold text-white px-6 py-2 rounded-lg text-xs font-bold hover:brightness-110 transition-all shadow-lg inline-block text-center"
                         >
@@ -1224,100 +1234,13 @@ export const Inbox = () => {
           )}
         </div>
 
-        {/* Timeline Log Section */}
-        <div className="mb-12 text-gray-800 bg-gray-50/50 rounded-3xl p-8 border border-gray-100">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h4 className="text-sm font-bold text-gray-800 uppercase tracking-wider">Submission Lifecycle & Timeline</h4>
-              <p className="text-xs text-gray-400 mt-1">Full chronological audit history of reviews, actions and comments</p>
-            </div>
-            <span className="px-3 py-1 bg-white border border-gray-200 text-gray-400 text-[10px] font-bold rounded-lg uppercase tracking-wider shadow-sm">
-              {timelineLogs.filter(log => !log.attachment_id && log.action_type !== 'attachment_review' && log.action_type !== 'created' && log.action_type !== 'viewed').length} History Logs
-            </span>
-          </div>
-
-          <div className="relative border-l-2 border-dashed border-gray-205 pl-8 ml-3 space-y-8">
-            {(() => {
-              const filteredLogs = timelineLogs.filter(log => !log.attachment_id && log.action_type !== 'attachment_review' && log.action_type !== 'created' && log.action_type !== 'viewed');
-              return filteredLogs.length > 0 ? (
-                filteredLogs.map((log, idx) => {
-                  const isApprove = log.action_type === 'approved' || log.review_action === 'approved';
-                  const isReturn = log.action_type === 'returned' || log.review_action === 'returned';
-                  const isAttachReview = log.action_type === 'attachment_review';
-
-                  const formattedTime = new Date(log.created_at).toLocaleString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                    hour: 'numeric',
-                    minute: '2-digit',
-                    hour12: true
-                  });
-
-                  return (
-                    <div key={log.id || idx} className="relative group animate-in fade-in duration-300">
-                      {/* Circle Indicator on vertical track */}
-                      <div className={`absolute -left-[41px] top-1 w-6 h-6 rounded-full border-4 border-white flex items-center justify-center shadow-sm z-10 ${
-                        isApprove ? 'bg-green-500' : isReturn ? 'bg-amber-500' : isAttachReview ? 'bg-indigo-500' : 'bg-blue-500'
-                      }`}>
-                        <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
-                      </div>
-
-                      <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-                        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm font-bold text-gray-800">
-                              {log.workflow_phase === 'dean-review' ? 'Dean Approval' : (log.users?.full_name || 'System')}
-                            </span>
-                            <span className="px-2 py-0.5 bg-gray-100 text-gray-400 text-[10px] font-bold rounded uppercase tracking-wider">
-                              {log.workflow_phase === 'dean-review' ? 'Dean' : (log.users?.role || 'System')}
-                            </span>
-                          </div>
-                          <span className="text-[10px] text-gray-400 font-semibold">{formattedTime}</span>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2 mb-3">
-                          <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase ${
-                            isApprove ? 'bg-green-50 text-green-700' : 
-                            isReturn ? 'bg-amber-50 text-amber-700' : 
-                            isAttachReview ? 'bg-indigo-50 text-indigo-700' : 
-                            'bg-blue-50 text-blue-700'
-                          }`}>
-                            {(log.review_action || log.action_type || log.action || 'updated').replace('-', ' ')}
-                          </span>
-                          
-
-
-                          {log.attachment_id && (
-                            <span className="px-2 py-0.5 bg-slate-50 border border-slate-100 text-slate-500 text-[10px] font-bold rounded uppercase flex items-center gap-1">
-                              <Paperclip size={10} /> Attachment
-                            </span>
-                          )}
-                        </div>
-
-                        {log.comment ? (
-                          <div className="bg-gray-50 rounded-xl p-4 text-xs font-medium text-gray-600 border border-gray-100 italic leading-relaxed">
-                            "{log.comment}"
-                          </div>
-                        ) : log.description ? (
-                          <div className="bg-gray-50 rounded-xl p-4 text-xs font-medium text-gray-600 border border-gray-100 italic leading-relaxed">
-                            "{log.description}"
-                          </div>
-                        ) : (
-                          <p className="text-gray-400 text-xs italic font-medium">No comments provided.</p>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="relative pl-2 py-4">
-                  <p className="text-gray-400 text-xs font-semibold italic">No actions have been logged yet for this submission.</p>
-                </div>
-              );
-            })()}
-          </div>
-        </div>
+        <SubmissionTimeline
+          timelineLogs={timelineLogs}
+          submissionStatus={selectedDoc.raw?.status || selectedDoc.status}
+          allVersions={allVersions}
+          viewingVersionId={activeVersion?.id}
+          currentVersionId={selectedDoc.raw?.current_version_id}
+        />
 
         {/* Enhanced Fixed Footer Actions connected to Supabase */}
         {(() => {
@@ -1341,7 +1264,7 @@ export const Inbox = () => {
             ? attachments.every(file => {
                 const fileLog = timelineLogs.find(log => log.attachment_id === file.id);
                 const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
-                const isReturnedAttachment = ['missing-requirements', 'incorrect-format', 'incomplete-information'].includes(reviewActionValue);
+                const isReturnedAttachment = RETURN_REASONS.includes(reviewActionValue);
 
                 const prevAttachmentByRequirement = previousVersionAttachments.find((att) => {
                   if (att?.requirement_id && file?.requirement_id) {
@@ -1356,20 +1279,29 @@ export const Inbox = () => {
                 const unchangedFromPrevious = existedInPreviousVersion && !isModifiedInResubmission;
 
                 const consideredAlreadyChecked =
-                  (fileLog && fileLog.action === 'approved') ||
+                  (fileLog && fileLog.review_action === 'approved') ||
                   (isResubmittedVersion && unchangedFromPrevious && !isReturnedAttachment && !isModifiedInResubmission);
 
-                // "Reviewed" means either explicitly touched (approved/returned) OR safely carried-over unchanged from previous approved version.
-                return locallyApproved.includes(file.id) || isReturnedAttachment || consideredAlreadyChecked;
+                // "Reviewed" means explicitly touched (approved/returned locally or in DB) OR safely carried-over.
+                return (
+                  locallyApproved.includes(file.id) ||
+                  locallyReturned[file.id] ||
+                  isReturnedAttachment ||
+                  consideredAlreadyChecked
+                );
               })
             : true;
 
+          const hasLocallyReturnedAttachments = Object.keys(locallyReturned).length > 0;
           const statusLower = (selectedDoc.raw?.status || selectedDoc.status || '').toLowerCase();
           const isReturnedDoc = statusLower === 'returned';
           const requireAllReviewed = user?.role !== 'admin' || isReturnedDoc;
           const disabledByReview = requireAllReviewed && !allFilesReviewed;
           const disabledByVersion = !isLatestVersion;
           const disableActions = disabledByReview || disabledByVersion;
+          const disableApprove = disableActions || hasLocallyReturnedAttachments;
+
+          if (!isLatestVersion) return null;
 
           return (
             <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50">
@@ -1380,10 +1312,10 @@ export const Inbox = () => {
                     setReturnComments('');
                     setIsReturnModalOpen(true);
                   }}
-                  disabled={disableActions}
+                  disabled={disableApprove}
                   className={`flex items-center gap-3 px-8 py-3.5 bg-primary-green text-white rounded-2xl font-bold transition-all shadow-lg shadow-primary-green/20 group ${
-                    disableActions
-                      ? (disabledByReview
+                    disableApprove
+                      ? (disabledByReview || hasLocallyReturnedAttachments
                           ? 'opacity-40 cursor-not-allowed'
                           : 'cursor-not-allowed')
                       : 'hover:scale-105 active:scale-95'
@@ -1445,16 +1377,15 @@ export const Inbox = () => {
             activeVersion,
             allVersions,
             timelineLogs,
-            locallyApproved
+            locallyApproved,
+            locallyReturned
           );
-          const fileLog = timelineLogs.find((log) => log.attachment_id === previewFile.id);
+          const fileLog = getLatestAttachmentLog(timelineLogs, previewFile.id);
           const previewReturnHistory = getFileReturnHistory(previewFile, allVersions, attachmentReturnLogs);
           const latestPreviewReturn = previewReturnHistory[0] || null;
-          const previewDisplayLog = fileLog || latestPreviewReturn;
-          const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
-          const alreadyReturned =
-            ['missing-requirements', 'incorrect-format', 'incomplete-information'].includes(reviewActionValue) &&
-            !locallyApproved.includes(previewFile.id);
+          const previewDisplayLog =
+            latestPreviewReturn ||
+            (RETURN_REASONS.includes(String(fileLog?.review_action || '').toLowerCase()) ? fileLog : null);
 
           return (
             <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
@@ -1593,7 +1524,7 @@ export const Inbox = () => {
                       
                       <button 
                         onClick={handleSaveAttachmentFeedback}
-                        disabled={!reviewAction || attachmentSaving || alreadyReturned}
+                        disabled={!reviewAction || attachmentSaving}
                         className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 transition-all shadow-lg shadow-amber-500/10 uppercase text-xs tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <RotateCcw size={16} />

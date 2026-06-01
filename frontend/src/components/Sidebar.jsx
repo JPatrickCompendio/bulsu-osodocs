@@ -20,6 +20,7 @@ const Sidebar = () => {
       { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
       { name: 'Inbox', path: '/inbox', icon: <Inbox size={20} /> },
       { name: 'My Documents', path: '/my-documents', icon: <Files size={20} /> },
+      { name: 'Completed', path: '/completed', icon: <CheckCircle size={20} /> },
       { name: 'User Management', path: '/users', icon: <Users size={20} /> },
       { name: 'List of Requirements', path: '/requirements', icon: <ListChecks size={20} /> },
     ],
