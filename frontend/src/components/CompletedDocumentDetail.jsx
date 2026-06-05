@@ -9,7 +9,8 @@ import {
   Paperclip,
   CheckCircle,
   Eye,
-  Download
+  Download,
+  X
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import SubmissionTimeline from './SubmissionTimeline';
@@ -95,8 +96,55 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
   const [loading, setLoading] = React.useState(true);
   const [submission, setSubmission] = React.useState(null);
   const [timelineLogs, setTimelineLogs] = React.useState([]);
+  const [accomplishmentReport, setAccomplishmentReport] = React.useState(null);
+  const [accomplishmentImages, setAccomplishmentImages] = React.useState([]);
+  const [externalProofs, setExternalProofs] = React.useState([]);
   const [isFilesOpen, setIsFilesOpen] = React.useState(true);
   const [previewUrl, setPreviewUrl] = React.useState(null);
+
+  const resolveExternalProofUrl = async (storagePath) => {
+    const cleanPath = String(storagePath || '').replace(/^proof_path:/i, '').trim();
+    if (!cleanPath) return '';
+    try {
+      const { data, error } = await supabase.storage.from('documents').createSignedUrl(cleanPath, 3600);
+      if (!error && data?.signedUrl) return data.signedUrl;
+    } catch (err) {
+      console.error('Failed to resolve external proof URL:', err);
+    }
+    return '';
+  };
+
+  const extractProofPath = (value) => {
+    const match = String(value || '').match(/proof_path:\s*([^\s\n]+)/i);
+    return match?.[1] || null;
+  };
+
+  const findDeliveryProofPath = () => {
+    const candidates = [
+      submission?.remarks,
+      submission?.description,
+      ...(timelineLogs || []).map((log) => `${log?.comment || ''}\n${log?.description || ''}`)
+    ];
+
+    for (const candidate of candidates) {
+      const proofPath = extractProofPath(candidate);
+      if (proofPath) return proofPath;
+    }
+    return null;
+  };
+
+  const proofStoragePath = findDeliveryProofPath();
+
+  const handleViewDeliveryProof = async (proofPath) => {
+    if (externalProofs && externalProofs.length > 0) {
+      setPreviewUrl(externalProofs[0].url);
+    } else if (proofPath) {
+      const signedUrl = await resolveExternalProofUrl(proofPath);
+      if (signedUrl) {
+        setPreviewUrl(signedUrl);
+      }
+    }
+  };
 
   React.useEffect(() => {
     const load = async () => {
@@ -120,6 +168,71 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
 
         if (error) throw error;
         setSubmission(data);
+
+        const { data: accomReport, error: accomErr } = await supabase
+          .from('activity_accomplishments')
+          .select('id, submission_id, submitted_by, problems_encountered, submitted_at, created_at, updated_at')
+          .eq('submission_id', submissionId)
+          .maybeSingle();
+
+        if (!accomErr) {
+          setAccomplishmentReport(accomReport || null);
+          if (accomReport) {
+            const { data: files, error: listErr } = await supabase.storage
+              .from('documents')
+              .list(`accom-report/${submissionId}`);
+
+            if (!listErr) {
+              const imageFiles = (files || []).filter((file) => /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(file.name));
+              const imageUrls = await Promise.all(
+                imageFiles.map(async (file) => {
+                  const path = `accom-report/${submissionId}/${file.name}`;
+                  try {
+                    const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600);
+                    if (data?.signedUrl) return { ...file, url: data.signedUrl, path };
+                  } catch (error) {
+                    console.warn('Signed URL unavailable for accomplishment image:', error);
+                  }
+                  return { ...file, url: getStoragePublicUrl(path), path };
+                })
+              );
+              setAccomplishmentImages(imageUrls.filter(Boolean));
+            }
+          } else {
+            setAccomplishmentImages([]);
+          }
+        } else {
+          console.error('Error fetching accomplishment report:', accomErr);
+        }
+
+        // Fetch External Proofs
+        try {
+          const { data: extFiles, error: extListErr } = await supabase.storage
+            .from('documents')
+            .list(`external-proof/${submissionId}`);
+
+          if (!extListErr) {
+            const proofFiles = (extFiles || []).filter((file) => /\.(jpg|jpeg|png|gif|webp|bmp|pdf)$/i.test(file.name));
+            const proofUrls = await Promise.all(
+              proofFiles.map(async (file) => {
+                const path = `external-proof/${submissionId}/${file.name}`;
+                try {
+                  const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600);
+                  if (data?.signedUrl) return { ...file, url: data.signedUrl, path };
+                } catch (error) {
+                  console.warn('Signed URL unavailable for external proof:', error);
+                }
+                return { ...file, url: getStoragePublicUrl(path), path };
+              })
+            );
+            setExternalProofs(proofUrls.filter(Boolean));
+          } else {
+            setExternalProofs([]);
+          }
+        } catch (extErr) {
+          console.error('Error fetching external proofs:', extErr);
+          setExternalProofs([]);
+        }
 
         const { data: logs, error: logsErr } = await supabase
           .from('submission_logs')
@@ -187,6 +300,7 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
   const proofFromRemarks = parseProofUrls(submission.remarks);
   const proofFromAttachments = allAttachments.filter(isImageProof);
   const proofImages = [
+    ...accomplishmentImages.map((file, idx) => ({ id: `accom-${file.path || idx}`, file_url: file.url, file_name: file.name || `Accomplishment proof ${idx + 1}` })),
     ...proofFromRemarks.map((url, i) => ({ id: `remark-${i}`, file_url: url, file_name: `Proof ${i + 1}` })),
     ...proofFromAttachments
   ];
@@ -412,6 +526,16 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
           )}
         </div>
 
+        {accomplishmentReport && (
+          <div className="rounded-2xl border border-blue-100 bg-blue-50/80 p-5">
+            <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider mb-2">Accomplishment Report</h3>
+            <p className="text-xs uppercase tracking-widest text-blue-700">Submitted {formatSubmittedLabel(accomplishmentReport.submitted_at || accomplishmentReport.created_at)}</p>
+            <p className="mt-3 text-sm text-blue-900 whitespace-pre-wrap">{accomplishmentReport.problems_encountered || 'No problems encountered were provided.'}</p>
+          </div>
+        )}
+
+
+
         <div>
           <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider mb-4">
             Proof of Activity Implementation
@@ -446,7 +570,9 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
 
         <SubmissionTimeline
           timelineLogs={timelineLogs}
-          submissionStatus={submission.status}
+          submissionStatus={submission?.status}
+          hasDeliveryProof={(externalProofs && externalProofs.length > 0) || !!proofStoragePath}
+          onViewDeliveryProof={() => handleViewDeliveryProof(proofStoragePath)}
           className="bg-gray-50/80 rounded-3xl p-6 md:p-8 border border-gray-100"
           title="Submission Lifecycle & Timeline Logs"
           emptyMessage="No timeline logs recorded yet."
@@ -455,18 +581,35 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
 
       {previewUrl && (
         <div
-          className="fixed inset-0 bg-slate-900/80 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 bg-slate-900/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm"
           onClick={() => setPreviewUrl(null)}
         >
-          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-auto p-4" onClick={(e) => e.stopPropagation()}>
-            <iframe src={previewUrl} title="Preview" className="w-full h-[70vh] rounded-lg" />
-            <button
-              type="button"
-              onClick={() => setPreviewUrl(null)}
-              className="mt-4 w-full py-2 text-sm font-bold text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50"
-            >
-              Close
-            </button>
+          <div className="bg-white rounded-3xl max-w-5xl w-full shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 bg-white shrink-0">
+              <div>
+                <h3 className="text-lg font-bold text-gray-800">Document Preview</h3>
+                <p className="text-xs font-medium text-gray-500 mt-1">File Attachment Viewer</p>
+              </div>
+              <button
+                onClick={() => setPreviewUrl(null)}
+                className="rounded-full p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 bg-gray-50/50 flex flex-col items-center justify-center overflow-auto h-full min-h-[500px]">
+              <div className="w-full flex justify-center">
+                {/\.(png|jpe?g|webp|gif|bmp|svg)(?:\?.*)?$/i.test(previewUrl) ? (
+                  <img
+                    src={previewUrl}
+                    alt="Document Preview"
+                    className="max-h-[70vh] rounded-xl shadow-md border border-gray-200 object-contain"
+                  />
+                ) : (
+                  <iframe src={previewUrl} title="Preview" className="w-full h-[70vh] rounded-xl shadow-sm border border-gray-200 bg-white" />
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}

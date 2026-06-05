@@ -103,9 +103,14 @@ export const MyDocuments = () => {
   const [isForwardModalOpen, setIsForwardModalOpen] = React.useState(false);
   const [externalProofFile, setExternalProofFile] = React.useState(null);
   const [externalProofUploading, setExternalProofUploading] = React.useState(false);
+  const [isDeliveryProofModalOpen, setIsDeliveryProofModalOpen] = React.useState(false);
+  const [deliveryProofUrl, setDeliveryProofUrl] = React.useState('');
   const [isAccomReportModalOpen, setIsAccomReportModalOpen] = React.useState(false);
-  const [accomReportFile, setAccomReportFile] = React.useState(null);
+  const [accomReportFiles, setAccomReportFiles] = React.useState([]);
   const [accomReportComments, setAccomReportComments] = React.useState('');
+  const [accomplishmentReport, setAccomplishmentReport] = React.useState(null);
+  const [accomplishmentImages, setAccomplishmentImages] = React.useState([]);
+  const [externalProofs, setExternalProofs] = React.useState([]);
   const [isDeanApproveSuccessModalOpen, setIsDeanApproveSuccessModalOpen] = React.useState(false);
   const normalizeRole = (role) => String(role || '').toLowerCase().replace('-', ' ').trim();
   const sameRole = (a, b) => normalizeRole(a) === normalizeRole(b);
@@ -139,6 +144,20 @@ export const MyDocuments = () => {
 
   const isWaitingForAccomplishmentReport = (doc) =>
     getDocStatusLower(doc).includes('waiting for accomplishment report');
+
+  const isImageUrl = (value) => /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(String(value || ''));
+
+  const resolveExternalProofUrl = async (storagePath) => {
+    const cleanPath = String(storagePath || '').replace(/^proof_path:/i, '').trim();
+    if (!cleanPath) return '';
+    try {
+      const { data, error } = await supabase.storage.from('documents').createSignedUrl(cleanPath, 3600);
+      if (!error && data?.signedUrl) return data.signedUrl;
+    } catch (err) {
+      console.error('Failed to resolve external proof URL:', err);
+    }
+    return '';
+  };
 
   const getActiveVersionId = (doc, versionOverride = null) => {
     if (!doc?.raw) return null;
@@ -179,6 +198,100 @@ export const MyDocuments = () => {
     return (logs || [])
       .filter((log) => ids.has(log.attachment_id))
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  };
+
+  const getStoragePath = (filePath) => String(filePath || '').replace(/^documents\//, '');
+
+  const getStoragePublicUrl = (filePath) => {
+    const cleanPath = getStoragePath(filePath);
+    const { data } = supabase.storage.from('documents').getPublicUrl(cleanPath);
+    return data?.publicUrl || '';
+  };
+
+  const loadAccomplishmentReport = async (submissionId) => {
+    if (!submissionId) {
+      setAccomplishmentReport(null);
+      setAccomplishmentImages([]);
+      return;
+    }
+
+    try {
+      const { data: report, error: reportErr } = await supabase
+        .from('activity_accomplishments')
+        .select('id, submission_id, submitted_by, problems_encountered, submitted_at, created_at, updated_at')
+        .eq('submission_id', submissionId)
+        .maybeSingle();
+
+      if (reportErr) throw reportErr;
+      setAccomplishmentReport(report || null);
+
+      if (!report) {
+        setAccomplishmentImages([]);
+        return;
+      }
+
+      const { data: files, error: listErr } = await supabase.storage
+        .from('documents')
+        .list(`accom-report/${submissionId}`);
+
+      if (listErr) throw listErr;
+
+      const imageFiles = (files || []).filter((file) => /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(file.name));
+      const imageUrls = await Promise.all(
+        imageFiles.map(async (file) => {
+          const path = `accom-report/${submissionId}/${file.name}`;
+          try {
+            const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600);
+            if (data?.signedUrl) return { ...file, url: data.signedUrl, path };
+          } catch (signedErr) {
+            console.warn('Signed URL unavailable for accomplishment image:', signedErr);
+          }
+          return { ...file, url: getStoragePublicUrl(path), path };
+        })
+      );
+
+      setAccomplishmentImages(imageUrls.filter((item) => item.url));
+    } catch (err) {
+      console.error('Error loading accomplishment report details:', err);
+      setAccomplishmentReport(null);
+      setAccomplishmentImages([]);
+    }
+  };
+
+  const loadExternalProofs = async (submissionId) => {
+    if (!submissionId) {
+      setExternalProofs([]);
+      return;
+    }
+
+    try {
+      const { data: files, error: listErr } = await supabase.storage
+        .from('documents')
+        .list(`external-proof/${submissionId}`);
+
+      if (listErr) throw listErr;
+
+      // Filter valid image and document files
+      const proofFiles = (files || []).filter((file) => /\.(jpg|jpeg|png|gif|webp|bmp|pdf)$/i.test(file.name));
+      
+      const fileUrls = await Promise.all(
+        proofFiles.map(async (file) => {
+          const path = `external-proof/${submissionId}/${file.name}`;
+          try {
+            const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600);
+            if (data?.signedUrl) return { ...file, url: data.signedUrl, path };
+          } catch (signedErr) {
+            console.warn('Signed URL unavailable for external proof:', signedErr);
+          }
+          return { ...file, url: getStoragePublicUrl(path), path };
+        })
+      );
+
+      setExternalProofs(fileUrls.filter((item) => item.url));
+    } catch (err) {
+      console.error('Error loading external proofs:', err);
+      setExternalProofs([]);
+    }
   };
 
   const getAttachmentWorkflowPhase = (doc) => {
@@ -451,6 +564,8 @@ export const MyDocuments = () => {
 
   React.useEffect(() => {
     if (selectedDoc) {
+      loadAccomplishmentReport(selectedDoc.id);
+      loadExternalProofs(selectedDoc.id);
       const allVersions = Array.isArray(selectedDoc.raw?.submission_versions)
         ? [...selectedDoc.raw.submission_versions]
         : [selectedDoc.raw?.submission_versions].filter(Boolean);
@@ -465,6 +580,9 @@ export const MyDocuments = () => {
       setAttachmentReturnLogs([]);
       setLocallyApproved([]);
       setLocallyReturned({});
+      setAccomplishmentReport(null);
+      setAccomplishmentImages([]);
+      setExternalProofs([]);
     }
   }, [selectedDoc, selectedVersionId]);
 
@@ -835,7 +953,6 @@ export const MyDocuments = () => {
           ? selectedDoc.raw?.submission_versions[0]?.id
           : selectedDoc.raw?.submission_versions?.id);
 
-      let proofUrl = null;
       if (externalProofFile) {
         const safeFileName = externalProofFile.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
         const filePath = `external-proof/${selectedDoc.id}/${Date.now()}-${safeFileName}`;
@@ -845,23 +962,16 @@ export const MyDocuments = () => {
           .upload(filePath, externalProofFile, { cacheControl: '3600', upsert: false });
 
         if (uploadErr) throw uploadErr;
-
-        const { data: publicUrlData } = supabase.storage
-          .from('documents')
-          .getPublicUrl(filePath);
-
-        proofUrl = publicUrlData?.publicUrl || null;
       }
 
-      const finalComments = [comments?.trim(), proofUrl ? `Proof attachment: ${proofUrl}` : null]
-        .filter(Boolean)
-        .join('\n');
+      const adminComment = comments?.trim() || '';
+      const finalRemarks = adminComment || null;
 
       const { error: subErr } = await supabase
         .from('submissions')
         .update({
           status: 'external review',
-          remarks: finalComments || 'Sent to External Campus for Approval'
+          remarks: finalRemarks || null
         })
         .eq('id', selectedDoc.id);
 
@@ -876,8 +986,8 @@ export const MyDocuments = () => {
           workflow_phase: 'external-review',
           action_type: 'forwarded',
           review_action: 'forwarded',
-          description: finalComments || 'Sent to external campus for approval',
-          comment: finalComments || null,
+          description: adminComment || 'Documents Sent to Main Campus for Review',
+          comment: adminComment || null,
           created_at: new Date().toISOString()
         }]);
 
@@ -1303,6 +1413,40 @@ export const MyDocuments = () => {
     const isLatestVersion = currentVersion?.id === selectedDoc.raw?.current_version_id;
     const disableVersionActions = !isLatestVersion;
 
+    const extractProofPath = (value) => {
+      const match = String(value || '').match(/proof_path:\s*([^\s\n]+)/i);
+      return match?.[1] || null;
+    };
+
+    const findDeliveryProofPath = () => {
+      const candidates = [
+        selectedDoc?.raw?.remarks,
+        selectedDoc?.raw?.description,
+        ...(timelineLogs || []).map((log) => `${log?.comment || ''}\n${log?.description || ''}`)
+      ];
+
+      for (const candidate of candidates) {
+        const proofPath = extractProofPath(candidate);
+        if (proofPath) return proofPath;
+      }
+      return null;
+    };
+
+    const proofStoragePath = findDeliveryProofPath();
+
+    const handleViewDeliveryProof = async (proofPath) => {
+      if (externalProofs && externalProofs.length > 0) {
+        setDeliveryProofUrl(externalProofs[0].url);
+        setIsDeliveryProofModalOpen(true);
+      } else if (proofPath) {
+        const signedUrl = await resolveExternalProofUrl(proofPath);
+        if (signedUrl) {
+          setDeliveryProofUrl(signedUrl);
+          setIsDeliveryProofModalOpen(true);
+        }
+      }
+    };
+
     // ORG PRESIDENT DETAIL VIEW – activity proposal style layout
     if (user?.role === 'org-president') {
       const details = isActivityProposal
@@ -1322,11 +1466,26 @@ export const MyDocuments = () => {
       const timelineLogsForTimeline = versionScopedTimelineLogs(timelineLogs);
 
       const lastTimelineLog = timelineLogsForTimeline[0] || null;
-      const systemRemarksText =
-        lastTimelineLog?.comment ||
-        lastTimelineLog?.description ||
-        selectedDoc.raw?.remarks ||
-        'No remarks yet.';
+      const sanitizeSystemRemarks = (value) =>
+        String(value || '')
+          .replace(/\bproof_path:[^\s\n]+/gi, '')
+          .replace(/\s{2,}/g, ' ')
+          .replace(/\s+([,.!?])/g, '$1')
+          .trim();
+      const isExternalReviewStatus = docStatusLower.includes('external review');
+      let systemRemarksText = '';
+      if (isExternalReviewStatus) {
+        systemRemarksText = 'Sent to Main Campus\nWaiting for Main Campus Approval';
+      } else if (docStatusLower === 'waiting for accomplishment report') {
+        systemRemarksText = 'Document retrieved by Organization President\nAwaiting Accomplishment Report Submission';
+      } else {
+        systemRemarksText = sanitizeSystemRemarks(
+          lastTimelineLog?.comment ||
+          lastTimelineLog?.description ||
+          selectedDoc.raw?.remarks ||
+          'No remarks yet.'
+        ) || 'No remarks yet.';
+      }
 
       const allowedViewerRoles = new Set(['admin', 'chairman', 'vice chairman', 'vice-chairman']);
       const lastViewerLog =
@@ -1625,6 +1784,8 @@ export const MyDocuments = () => {
                 allVersions={allVersions}
                 viewingVersionId={currentVersion?.id}
                 currentVersionId={selectedDoc.raw?.current_version_id}
+                hasDeliveryProof={(externalProofs && externalProofs.length > 0) || !!proofStoragePath}
+                onViewDeliveryProof={() => handleViewDeliveryProof(proofStoragePath)}
               />
             </div>
 
@@ -1696,9 +1857,9 @@ export const MyDocuments = () => {
                     <span className="text-gray-500 inline-flex items-center gap-1.5"><AlertCircle size={14} /> Status</span>
                     <span
                       className="px-3 py-1 rounded-full text-[11px] font-semibold uppercase text-white"
-                      style={{ backgroundColor: getStatusColor(selectedDoc.status) }}
+                      style={{ backgroundColor: getStatusColor(docStatusLower === 'waiting for accomplishment report' ? 'approved' : selectedDoc.status) }}
                     >
-                      {selectedDoc.status}
+                      {docStatusLower === 'waiting for accomplishment report' ? 'approved' : selectedDoc.status}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
@@ -1723,9 +1884,18 @@ export const MyDocuments = () => {
                   <p className="text-xs font-semibold text-amber-800 uppercase tracking-widest">
                     System Remarks
                   </p>
-                  <p className="mt-1 text-sm font-medium text-amber-900">
+                  <p className="mt-1 text-sm font-medium text-amber-900 whitespace-pre-wrap">
                     {systemRemarksText}
                   </p>
+                  {isExternalReviewStatus && ((externalProofs && externalProofs.length > 0) || proofStoragePath) ? (
+                    <button
+                      type="button"
+                      onClick={() => handleViewDeliveryProof(proofStoragePath)}
+                      className="mt-3 w-full px-5 py-3.5 bg-amber-500 text-white rounded-xl text-sm font-semibold hover:bg-amber-600 transition-all shadow-sm"
+                    >
+                      View Proof Of Delivery
+                    </button>
+                  ) : null}
                 </div>
               </div>
 
@@ -1801,8 +1971,25 @@ export const MyDocuments = () => {
                   onClick={() => setIsAccomReportModalOpen(true)}
                   className="hidden md:block w-full px-5 py-3.5 bg-blue-700 text-white rounded-xl text-sm font-semibold hover:bg-blue-800 transition-all shadow-sm mt-2"
                 >
-                  Submit Accomplishment Report
+                  {accomplishmentReport ? 'View Accomplishment Report' : 'Submit Accomplishment Report'}
                 </button>
+              )}
+
+              {accomplishmentReport && (
+                <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50/80 p-4 text-sm text-blue-900 shadow-sm">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-blue-700">Accomplishment Report</p>
+                  <p className="mt-2 font-semibold">Submitted on {new Date(accomplishmentReport.submitted_at || accomplishmentReport.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                  <p className="mt-2 whitespace-pre-wrap text-blue-800">{accomplishmentReport.problems_encountered || 'No problems encountered were provided.'}</p>
+                  {accomplishmentImages.length > 0 && (
+                    <div className="mt-3 grid grid-cols-2 gap-3">
+                      {accomplishmentImages.map((image, idx) => (
+                        <a key={image.path || idx} href={image.url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-xl border border-blue-100 bg-white shadow-sm">
+                          <img src={image.url} alt={image.name || `Accomplishment proof ${idx + 1}`} className="h-24 w-full object-cover" />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -1813,7 +2000,7 @@ export const MyDocuments = () => {
                 onClick={() => setIsAccomReportModalOpen(true)}
                 className="w-full px-5 py-3.5 bg-blue-700 text-white rounded-xl text-sm font-semibold hover:bg-blue-800 transition-all shadow-lg"
               >
-                Submit Accomplishment Report
+                {accomplishmentReport ? 'View Accomplishment Report' : 'Submit Accomplishment Report'}
               </button>
             </div>
           )}
@@ -1846,15 +2033,16 @@ export const MyDocuments = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Attach proof of activity</label>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Attach proof images</label>
                     <div className="w-full border-2 border-dashed border-gray-300 rounded-xl p-6 flex flex-col items-center justify-center hover:border-blue-400 transition-all">
                       <input
                         type="file"
-                        accept=".pdf,.docx,.jpg,.jpeg,.png"
-                        onChange={(e) => setAccomReportFile(e.target.files?.[0] || null)}
+                        accept=".jpg,.jpeg,.png,.gif,.webp"
+                        multiple
+                        onChange={(e) => setAccomReportFiles(Array.from(e.target.files || []))}
                         className="w-full text-xs text-gray-500"
                       />
-                      <span className="mt-2 text-xs text-gray-400">Upload PDF or image proof of activity</span>
+                      <span className="mt-2 text-xs text-gray-400">Upload one or more proof images to the accomplishment report folder.</span>
                     </div>
                   </div>
                 </div>
@@ -1867,29 +2055,75 @@ export const MyDocuments = () => {
                   </button>
                   <button
                     onClick={async () => {
-                      if (!accomReportFile) {
-                        alert('Please attach proof of activity.');
+                      if (!selectedDoc) {
+                        alert('No activity proposal selected.');
                         return;
                       }
+                      if (accomplishmentReport) {
+                        setIsAccomReportModalOpen(false);
+                        return;
+                      }
+                      if (accomReportFiles.length === 0) {
+                        alert('Please attach at least one proof image.');
+                        return;
+                      }
+
                       setLoading(true);
                       try {
-                        const safeFileName = accomReportFile.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
-                        const filePath = `accom-report/${selectedDoc.id}/${Date.now()}-${safeFileName}`;
-                        const { error: uploadErr } = await supabase.storage
-                          .from('documents')
-                          .upload(filePath, accomReportFile, { cacheControl: '3600', upsert: false });
-                        if (uploadErr) throw uploadErr;
+                        const submissionId = selectedDoc.id;
+                        const { data: existingSubmission, error: submissionCheckErr } = await supabase
+                          .from('submissions')
+                          .select('id, status')
+                          .eq('id', submissionId)
+                          .maybeSingle();
 
-                        const { data: publicUrlData } = supabase.storage.from('documents').getPublicUrl(filePath);
-                        const proofUrl = publicUrlData?.publicUrl || null;
+                        if (submissionCheckErr) throw submissionCheckErr;
+                        if (!existingSubmission) throw new Error('Activity proposal not found.');
+
+                        const currentStatus = String(existingSubmission.status || '').toLowerCase();
+                        if (!currentStatus.includes('waiting for accomplishment report')) {
+                          throw new Error('This activity proposal is not ready for an accomplishment report submission.');
+                        }
+
+                        const { data: existingReport, error: accomCheckErr } = await supabase
+                          .from('activity_accomplishments')
+                          .select('id')
+                          .eq('submission_id', submissionId)
+                          .maybeSingle();
+
+                        if (accomCheckErr) throw accomCheckErr;
+                        if (existingReport) {
+                          alert('An accomplishment report already exists for this activity proposal.');
+                          return;
+                        }
+
+                        await Promise.all(
+                          accomReportFiles.map((file, index) => {
+                            const safeFileName = file.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
+                            const filePath = `accom-report/${submissionId}/${Date.now()}-${index}-${safeFileName}`;
+                            return supabase.storage
+                              .from('documents')
+                              .upload(filePath, file, { cacheControl: '3600', upsert: false });
+                          })
+                        );
+
+                        const { error: accomErr } = await supabase
+                          .from('activity_accomplishments')
+                          .insert([{
+                            submission_id: submissionId,
+                            submitted_by: user.id,
+                            problems_encountered: accomReportComments || null
+                          }]);
+
+                        if (accomErr) throw accomErr;
 
                         const { error: subErr } = await supabase
                           .from('submissions')
                           .update({
                             status: 'completed',
-                            remarks: accomReportComments + (proofUrl ? `\nProof: ${proofUrl}` : '')
+                            remarks: 'Accomplishment report submitted'
                           })
-                          .eq('id', selectedDoc.id);
+                          .eq('id', submissionId);
 
                         if (subErr) throw subErr;
 
@@ -1898,31 +2132,34 @@ export const MyDocuments = () => {
                             ? selectedDoc.raw?.submission_versions[0]?.id
                             : selectedDoc.raw?.submission_versions?.id);
 
-                        await supabase.from('submission_logs').insert([{
-                          submission_id: selectedDoc.id,
+                        const { error: logErr } = await supabase.from('submission_logs').insert([{
+                          submission_id: submissionId,
                           submission_version_id: activeVersionId,
                           user_id: user.id,
-                          workflow_phase: 'approved',
-                          action_type: 'accomplishment_report',
-                          review_action: 'accomplishment-report-submitted',
-                          description: accomReportComments || 'Accomplishment report submitted',
+                          workflow_phase: 'accomplishment',
+                          action_type: 'submitted',
+                          review_action: 'completed',
+                          description: 'Activity accomplishment report submitted',
                           comment: accomReportComments || null,
                           created_at: new Date().toISOString()
                         }]);
 
-                        const completedSubmissionId = selectedDoc.id;
+                        if (logErr) throw logErr;
+
+                        await loadAccomplishmentReport(submissionId);
+
                         setSelectedDoc(null);
                         setSelectedVersionId(null);
                         setSearchQuery('');
                         setIsAccomReportModalOpen(false);
-                        setAccomReportFile(null);
+                        setAccomReportFiles([]);
                         setAccomReportComments('');
                         await fetchHandledLogs();
                         alert('Accomplishment report submitted!');
-                        navigate('/completed', { state: { openDocId: completedSubmissionId } });
+                        navigate('/completed', { state: { openDocId: submissionId } });
                       } catch (err) {
                         console.error('Error submitting accomplishment report:', err);
-                        alert('Failed to submit accomplishment report.');
+                        alert(err?.message || 'Failed to submit accomplishment report.');
                       } finally {
                         setLoading(false);
                       }
@@ -2325,6 +2562,8 @@ export const MyDocuments = () => {
           allVersions={allVersions}
           viewingVersionId={currentVersion?.id}
           currentVersionId={selectedDoc.raw?.current_version_id}
+          hasDeliveryProof={(externalProofs && externalProofs.length > 0) || !!proofStoragePath}
+          onViewDeliveryProof={() => handleViewDeliveryProof(proofStoragePath)}
         />
 
         {/* Action buttons (Org President only - Bottom of the page) */}
@@ -3090,6 +3329,62 @@ export const MyDocuments = () => {
           )}
         </div>
       </div>
+
+      {isDeliveryProofModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-5xl rounded-3xl bg-white shadow-2xl border border-gray-100 overflow-hidden">
+            <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+              <div>
+                <h3 className="text-lg font-bold text-gray-800">Proof of Delivery</h3>
+                <p className="text-xs font-medium text-gray-500 mt-1">External Campus Submission Proof</p>
+              </div>
+              <button
+                onClick={() => setIsDeliveryProofModalOpen(false)}
+                className="rounded-full p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 bg-gray-50/50 flex flex-col items-center justify-center min-h-[500px]">
+              {externalProofs && externalProofs.length > 0 ? (
+                externalProofs.map((proof, idx) => (
+                  <div key={idx} className="mb-4 w-full flex justify-center">
+                    {isImageUrl(proof.name) ? (
+                      <img
+                        src={proof.url}
+                        alt={`Delivery Proof ${idx + 1}`}
+                        className="max-h-[70vh] rounded-xl shadow-md border border-gray-200 object-contain"
+                      />
+                    ) : (
+                      <iframe
+                        src={`${proof.url}#toolbar=0`}
+                        className="h-[70vh] w-full rounded-xl shadow-md border border-gray-200 bg-white"
+                        title={`Delivery Proof PDF ${idx + 1}`}
+                      />
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="mb-4 w-full flex justify-center">
+                  {isImageUrl(deliveryProofUrl) ? (
+                    <img
+                      src={deliveryProofUrl}
+                      alt="Delivery Proof"
+                      className="max-h-[70vh] rounded-xl shadow-md border border-gray-200 object-contain"
+                    />
+                  ) : (
+                    <iframe
+                      src={deliveryProofUrl ? `${deliveryProofUrl}#toolbar=0` : ''}
+                      className="h-[70vh] w-full rounded-xl shadow-md border border-gray-200 bg-white"
+                      title="Delivery Proof PDF"
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
