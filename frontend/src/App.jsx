@@ -9,7 +9,8 @@ import {
   Inbox, 
   MyDocuments, 
   ListOfRequirements, 
-  SubmitNewDocuments 
+  SubmitNewDocuments,
+  AnnouncementManagement
 } from './pages/Pages';
 import Completed from './pages/Completed';
 import UserManagement from './pages/UserManagement';
@@ -37,6 +38,11 @@ const App = () => {
             <Route path="/users" element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <UserManagement />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/announcements" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AnnouncementManagement />
               </ProtectedRoute>
             } />
 

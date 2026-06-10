@@ -8,7 +8,8 @@ import {
   ListChecks, 
   FilePlus, 
   CheckCircle,
-  LogOut 
+  LogOut,
+  Megaphone
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -23,6 +24,7 @@ const Sidebar = () => {
       { name: 'Completed', path: '/completed', icon: <CheckCircle size={20} /> },
       { name: 'User Management', path: '/users', icon: <Users size={20} /> },
       { name: 'List of Requirements', path: '/requirements', icon: <ListChecks size={20} /> },
+      { name: 'Announcements', path: '/admin/announcements', icon: <Megaphone size={20} /> },
     ],
     chairman: [
       { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },

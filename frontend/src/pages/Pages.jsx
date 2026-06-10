@@ -89,6 +89,10 @@ import ListOfRequirementsComponent from './ListOfRequirements';
 
 import SubmitNewDocumentComponent from './SubmitNewDocument';
 
+import AnnouncementManagementComponent from './AnnouncementManagement';
+
 export const ListOfRequirements = ListOfRequirementsComponent;
 
 export const SubmitNewDocuments = SubmitNewDocumentComponent;
+
+export const AnnouncementManagement = AnnouncementManagementComponent;

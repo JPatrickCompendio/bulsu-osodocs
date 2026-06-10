@@ -667,6 +667,190 @@ app.post('/api/submissions/approve-dean', async (req, res) => {
     }
 });
 
+// --- ANNOUNCEMENTS CRUD ---
+
+// Get Announcements
+app.get('/api/announcements', async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('announcements')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        res.json({ success: true, data });
+    } catch (err) {
+        console.error('Error fetching announcements:', err);
+        res.status(500).json({ error: 'Failed to fetch announcements', details: err.message });
+    }
+});
+
+// Create Announcement
+app.post('/api/announcements', async (req, res) => {
+    const { title, content, target_audience, is_active, created_by } = req.body;
+    
+    if (!title || !content || !target_audience) {
+        return res.status(400).json({ error: 'Title, content, and target_audience are required' });
+    }
+
+    try {
+        const { data, error } = await supabase
+            .from('announcements')
+            .insert([{ title, content, target_audience, is_active: is_active ?? true, created_by, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }])
+            .select();
+
+        if (error) throw error;
+        res.json({ success: true, data: data[0] });
+    } catch (err) {
+        console.error('Error creating announcement:', err);
+        res.status(500).json({ error: 'Failed to create announcement', details: err.message });
+    }
+});
+
+// Update Announcement
+app.put('/api/announcements/:id', async (req, res) => {
+    const { id } = req.params;
+    const { title, content, target_audience, is_active } = req.body;
+
+    try {
+        const { data, error } = await supabase
+            .from('announcements')
+            .update({ title, content, target_audience, is_active, updated_at: new Date().toISOString() })
+            .eq('id', id)
+            .select();
+
+        if (error) throw error;
+        res.json({ success: true, data: data[0] });
+    } catch (err) {
+        console.error('Error updating announcement:', err);
+        res.status(500).json({ error: 'Failed to update announcement', details: err.message });
+    }
+});
+
+// Delete Announcement
+app.delete('/api/announcements/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        // Delete all files in the announcement's storage folder
+        const folderPath = `announcements/${id}`;
+        const { data: existingFiles } = await supabase.storage.from('documents').list(folderPath);
+        if (existingFiles && existingFiles.length > 0) {
+            const filesToRemove = existingFiles.map(x => `${folderPath}/${x.name}`);
+            await supabase.storage.from('documents').remove(filesToRemove);
+        }
+
+        const { error } = await supabase.from('announcements').delete().eq('id', id);
+        if (error) throw error;
+        res.json({ success: true, message: 'Announcement deleted successfully' });
+    } catch (err) {
+        console.error('Error deleting announcement:', err);
+        res.status(500).json({ error: 'Failed to delete announcement', details: err.message });
+    }
+});
+
+
+// --- NOTIFICATIONS ---
+app.get('/api/notifications', async (req, res) => {
+    const { userId, role, orgName } = req.query;
+
+    if (!userId || !role) {
+        return res.status(400).json({ error: 'UserId and role are required' });
+    }
+
+    try {
+        let notifications = [];
+
+        // 1. Fetch Announcements
+        let annQuery = supabase.from('announcements').select('*').eq('is_active', true);
+        
+        if (role !== 'admin') {
+            const audiences = [];
+            if (role === 'org-president') {
+                audiences.push('all-orgs');
+                if (orgName) audiences.push(`org:${orgName}`);
+            } else if (role === 'chairman') {
+                audiences.push('oso-staff', 'chairman');
+            } else if (role === 'vice-chairman') {
+                audiences.push('oso-staff', 'vice-chairman');
+            } else if (role === 'oso-staff') {
+                audiences.push('oso-staff');
+            }
+            annQuery = annQuery.in('target_audience', audiences);
+        }
+
+        const { data: announcementsData, error: annError } = await annQuery;
+        if (!annError && announcementsData) {
+            const mappedAnns = announcementsData.map(a => ({
+                id: `ann_${a.id}`,
+                type: 'announcement',
+                title: a.title,
+                message: a.content,
+                timestamp: a.created_at,
+                source: a
+            }));
+            notifications = [...notifications, ...mappedAnns];
+        }
+
+        // 2. Fetch Workflow Updates
+        // Supabase inner join to filter by submission user_id
+        // We will fetch necessary logs and map them.
+        
+        let logsData = [];
+        if (role === 'admin') {
+            const { data } = await supabase.from('submission_logs')
+                .select('*, submissions(document_type_id, user_id, id)')
+                .order('created_at', { ascending: false })
+                .limit(50);
+            logsData = data || [];
+        } else if (role === 'org-president') {
+            const { data } = await supabase.from('submission_logs')
+                .select('*, submissions!inner(id, user_id)')
+                .eq('submissions.user_id', userId)
+                .order('created_at', { ascending: false })
+                .limit(50);
+            logsData = data || [];
+        } else {
+            // Staff roles: map role to action types that trigger their review
+            let triggerActions = [];
+            if (role === 'oso-staff') triggerActions = ['submitted'];
+            else if (role === 'sds-coordinator') triggerActions = ['oso approved'];
+            else if (role === 'chairman') triggerActions = ['sds approved'];
+            else if (role === 'vice-chairman') triggerActions = ['chairman approved'];
+            else if (role === 'external') triggerActions = ['vice chairman approved'];
+            else if (role === 'dean') triggerActions = ['external approved'];
+
+            if (triggerActions.length > 0) {
+                const { data } = await supabase.from('submission_logs')
+                    .select('*, submissions(id)')
+                    .in('action_type', triggerActions)
+                    .order('created_at', { ascending: false })
+                    .limit(50);
+                logsData = data || [];
+            }
+        }
+
+        if (logsData.length > 0) {
+            const mappedLogs = logsData.map(l => ({
+                id: `log_${l.id}`,
+                type: 'workflow',
+                title: l.action_type ? l.action_type.replace(/_/g, ' ').toUpperCase() : 'Workflow Update',
+                message: l.description || 'Status changed',
+                timestamp: l.created_at,
+                source: l
+            }));
+            notifications = [...notifications, ...mappedLogs];
+        }
+
+        // Sort descending by timestamp
+        notifications.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+        res.json({ success: true, data: notifications });
+    } catch (err) {
+        console.error('Error fetching notifications:', err);
+        res.status(500).json({ error: 'Failed to fetch notifications', details: err.message });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`Backend server running on http://localhost:${PORT}`);
 });
