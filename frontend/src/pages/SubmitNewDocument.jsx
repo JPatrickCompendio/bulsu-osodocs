@@ -4,12 +4,13 @@ import { useAuth } from '../context/AuthContext';
 import * as subService from '../services/submissionService';
 import * as reqService from '../services/requirementService';
 import { supabase } from '../supabaseClient';
+import axios from 'axios';
 import { 
   FileText, Upload, Send, Save, ArrowLeft, CheckCircle2, 
   AlertCircle, Loader2, Info, Calendar, User, MapPin, 
   Clock, Users, Search, ChevronRight, RefreshCcw, X, 
   FileCheck, Download, Eye, Trash2, File as FileIcon, 
-  Eraser, Check, CheckSquare
+  Eraser, Check, CheckSquare, Lock
 } from 'lucide-react';
 
 const SubmitNewDocument = () => {
@@ -21,6 +22,9 @@ const SubmitNewDocument = () => {
   const [loading, setLoading] = useState(true);
   const [docTypes, setDocTypes] = useState([]);
   const [reqCounts, setReqCounts] = useState({}); // Dynamic counts
+  const [availability, setAvailability] = useState({}); // Document availability from system
+  const [blockedEvents, setBlockedEvents] = useState([]); // Blocked activity dates
+  const [globalWarning, setGlobalWarning] = useState(''); // School Year bounds warning
   const [selectedType, setSelectedType] = useState(null);
   const [subType, setSubType] = useState('');
   const [requirements, setRequirements] = useState([]);
@@ -38,7 +42,8 @@ const SubmitNewDocument = () => {
   const defaultForm = {
     activity_number: '', organization_name: '', adviser_name: '', activity_title: '',
     person_in_charge: '', student_id_no: '', contact_number: '', target_venue: '', 
-    target_date: '', target_time: '', duration: '', number_of_students: '',
+    target_date: '', target_time: '', target_end_time: '', duration: '', is_indefinite_end_time: false, number_of_students: '',
+    activity_dates: [], // Multi-date selection
     target_audience: '', nature_of_activity: '', objectives: [], others_objective: '', 
     satisfaction_goal_1: '', satisfaction_goal_2: '', satisfaction_goal_3: '', partners: '', sponsors: ''
   };
@@ -73,6 +78,17 @@ const SubmitNewDocument = () => {
         });
       }
       setReqCounts(counts);
+      // Fetch document availability
+      if (user?.id) {
+        const availRes = await axios.get(`http://localhost:5000/api/system/document-availability?userId=${user.id}`);
+        if (availRes.data?.success) {
+          setAvailability(availRes.data.availability || {});
+          setBlockedEvents(availRes.data.blockedEvents || []);
+          if (!availRes.data.activeSchoolYear || availRes.data.message === 'The current date is outside the active School Year.') {
+            setGlobalWarning(availRes.data.message || 'No active school year configured.');
+          }
+        }
+      }
     } catch (err) {
       showToast('Failed to load categories', 'error');
     } finally {
@@ -104,9 +120,8 @@ const SubmitNewDocument = () => {
       console.debug('Loaded submission for editing:', { submission, version });
       const type = submission.documentType;
       const isProposal = type?.name?.toLowerCase().includes('activity proposal');
-      const details = Array.isArray(version?.activity_proposal_details)
-        ? version.activity_proposal_details[0]
-        : version?.activity_proposal_details || {};
+      const rawDetails = version?.activity_proposal_details;
+      const details = (Array.isArray(rawDetails) ? rawDetails[0] : rawDetails) || {};
       const proposalType = isProposal ? humanizeProposalType(details?.proposal_type) : '';
       const reqs = await subService.getRequirementsForType(type.id, isProposal ? proposalType : null);
 
@@ -166,9 +181,8 @@ const SubmitNewDocument = () => {
       setDraftNotice('');
 
       if (draft?.submission && draft?.version) {
-        const details = Array.isArray(draft.version.activity_proposal_details)
-          ? draft.version.activity_proposal_details[0]
-          : draft.version.activity_proposal_details || {};
+        const rawDetails = draft.version.activity_proposal_details;
+        const details = (Array.isArray(rawDetails) ? rawDetails[0] : rawDetails) || {};
         setExistingAttachments(draft.version.submission_attachments || []);
         setActiveDraft({ submissionId: draft.submission.id, versionId: draft.version.id });
         setDraftNotice('Continuing an existing draft for this category.');
@@ -322,7 +336,7 @@ const SubmitNewDocument = () => {
     // Validate form inputs if proposal
     const isProposal = selectedType.name.toLowerCase().includes('activity proposal');
     if (isProposal) {
-      if (!proposalDetails.activity_title || !proposalDetails.target_date || !proposalDetails.target_time) {
+      if (!proposalDetails.activity_title || proposalDetails.activity_dates.length === 0 || !proposalDetails.target_time || (!proposalDetails.is_indefinite_end_time && !proposalDetails.target_end_time)) {
         showToast('Please fill in all required form fields.', 'error');
         return;
       }
@@ -376,6 +390,59 @@ const SubmitNewDocument = () => {
     });
   };
 
+  const handleAddDate = (dateStr) => {
+    if (!dateStr) return;
+    
+    // Check if blocked
+    const dateObj = new Date(dateStr);
+    // To properly compare dates without time zone offsets messing it up
+    dateObj.setHours(0,0,0,0);
+    
+    const blockedEvent = blockedEvents.find(e => {
+      if (e.document_type_id && e.document_type_id !== selectedType?.id) return false;
+      const start = e.start_date ? new Date(e.start_date) : null;
+      const end = e.end_date ? new Date(e.end_date) : null;
+      
+      if (start) start.setHours(0,0,0,0);
+      if (end) end.setHours(0,0,0,0);
+
+      if (start && end) return dateObj >= start && dateObj <= end;
+      if (start) return dateObj >= start;
+      if (end) return dateObj <= end;
+      return false;
+    });
+
+    if (blockedEvent) {
+      showToast(`Cannot select ${dateStr}: Blocked by "${blockedEvent.title}"`, 'error');
+      return;
+    }
+
+    if (!proposalDetails.activity_dates.includes(dateStr)) {
+      setProposalDetails(prev => ({
+        ...prev,
+        activity_dates: [...prev.activity_dates, dateStr].sort()
+      }));
+    }
+  };
+
+  const handleRemoveDate = (dateStr) => {
+    setProposalDetails(prev => ({
+      ...prev,
+      activity_dates: prev.activity_dates.filter(d => d !== dateStr)
+    }));
+  };
+
+  // Auto calculate duration
+  useEffect(() => {
+    if (proposalDetails.target_time && proposalDetails.target_end_time && !proposalDetails.is_indefinite_end_time) {
+      const start = new Date(`1970-01-01T${proposalDetails.target_time}`);
+      const end = new Date(`1970-01-01T${proposalDetails.target_end_time}`);
+      let diff = (end - start) / (1000 * 60 * 60);
+      if (diff < 0) diff += 24; // Cross midnight
+      setProposalDetails(prev => ({ ...prev, duration: diff.toFixed(1) }));
+    }
+  }, [proposalDetails.target_time, proposalDetails.target_end_time, proposalDetails.is_indefinite_end_time]);
+
   if (loading && view === 'dashboard') {
     return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-primary-green" size={48} /></div>;
   }
@@ -416,96 +483,133 @@ const SubmitNewDocument = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
-            {/* Activity Proposal */}
-            {docTypes.find(t => t.name.toLowerCase().includes('activity proposal')) && (
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
-                <div className="p-6 flex items-start gap-4">
-                  <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-xl flex items-center justify-center shrink-0">
-                    <FileText size={24} />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-black text-gray-800 uppercase">Activity Proposal</h3>
-                    <p className="text-gray-400 text-xs font-bold mt-1">Requirements for activity proposals</p>
-                  </div>
-                </div>
-                <div className="mt-auto border-t border-gray-50 bg-gray-50/30">
-                  {['In Campus', 'Off Campus'].map((sub, i) => {
-                    const typeObj = docTypes.find(t => t.name.toLowerCase().includes('activity proposal'));
-                    return (
-                      <button 
-                        key={sub}
-                        onClick={() => handleSelectType(typeObj, sub)}
-                        className={`w-full px-6 py-4 flex items-center justify-between hover:bg-white transition-all group/btn ${i === 0 ? 'border-b border-gray-50' : ''}`}
-                      >
-                        <div className="flex items-center gap-6">
-                          <span className="text-sm font-bold text-gray-500 group-hover/btn:text-primary-green">{sub}</span>
-                          <span className="text-[10px] font-black text-gray-300 uppercase">• {getReqCount(typeObj.id, sub)} Reqs</span>
-                        </div>
-                        <ChevronRight size={18} className="text-gray-300 group-hover/btn:text-primary-green" />
-                      </button>
-                    );
-                  })}
-                </div>
+          {globalWarning && (
+            <div className="mb-8 p-6 bg-red-50 border-2 border-red-200 rounded-2xl flex items-start gap-4">
+              <div className="p-3 bg-red-100 text-red-600 rounded-xl">
+                <AlertCircle size={24} />
               </div>
-            )}
-
-            {/* Year End Report */}
-            {docTypes.find(t => t.name.toLowerCase().includes('report')) && (
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
-                <div className="p-6 flex items-start gap-4">
-                  <div className="w-12 h-12 bg-orange-50 text-orange-500 rounded-xl flex items-center justify-center shrink-0">
-                    <Calendar size={24} />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-black text-gray-800 uppercase">Reports</h3>
-                    <p className="text-gray-400 text-xs font-bold mt-1">Annual & Mid-year summaries</p>
-                  </div>
-                </div>
-                <div className="mt-auto border-t border-gray-50 bg-gray-50/30">
-                  {['Mid-Year Report', 'Year-End Report'].map((sub, i) => {
-                    const typeObj = docTypes.find(t => t.name.toLowerCase().includes(sub.toLowerCase()));
-                    if (!typeObj) return null;
-                    return (
-                      <button 
-                        key={sub}
-                        onClick={() => handleSelectType(typeObj, sub)}
-                        className={`w-full px-6 py-4 flex items-center justify-between hover:bg-white transition-all group/btn ${i === 0 ? 'border-b border-gray-50' : ''}`}
-                      >
-                        <div className="flex items-center gap-6">
-                          <span className="text-sm font-bold text-gray-500 group-hover/btn:text-primary-green">{sub}</span>
-                          <span className="text-[10px] font-black text-gray-300 uppercase">• {getReqCount(typeObj.id, null)} Reqs</span>
-                        </div>
-                        <ChevronRight size={18} className="text-gray-300 group-hover/btn:text-primary-green" />
-                      </button>
-                    );
-                  })}
-                </div>
+              <div>
+                <h3 className="text-lg font-black text-red-800 uppercase">System Unavailable</h3>
+                <p className="text-red-600 font-bold text-sm mt-1">{globalWarning}</p>
+                <p className="text-red-500 font-bold text-xs mt-2">Document submissions are currently disabled. Please contact your system administrator to configure the active School Year.</p>
               </div>
-            )}
+            </div>
+          )}
 
-            {/* Renewal */}
-            {docTypes.find(t => t.name.toLowerCase().includes('renewal')) && (() => {
-              const typeObj = docTypes.find(t => t.name.toLowerCase().includes('renewal'));
-              return (
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col group">
-                  <div className="p-6 flex items-start gap-4">
-                    <div className="w-12 h-12 bg-amber-50 text-amber-500 rounded-xl flex items-center justify-center shrink-0">
-                      <RefreshCcw size={24} />
+          <div className={`grid grid-cols-1 md:grid-cols-3 gap-6 mb-16 ${globalWarning ? 'opacity-50 pointer-events-none' : ''}`}>
+            {/* Helper for rendering item */}
+            {(() => {
+              const renderCategoryItem = (typeObj, subName, isLast = false) => {
+                if (!typeObj) return null;
+                const avail = availability[typeObj.id];
+                const isLocked = avail && !avail.isAvailable;
+
+                if (isLocked) {
+                  return (
+                    <div key={subName} className={`w-full px-6 py-4 flex items-center justify-between bg-gray-50/50 ${!isLast ? 'border-b border-gray-100' : ''}`}>
+                      <div className="flex items-center gap-4">
+                        <Lock size={16} className="text-gray-400" />
+                        <div className="flex flex-col items-start text-left">
+                          <span className="text-sm font-bold text-gray-400 line-through">{subName}</span>
+                          <span className="text-[10px] font-bold text-red-500 mt-0.5">{avail.lockedReason}</span>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="text-lg font-black text-gray-800 uppercase">Renewal Document</h3>
-                      <p className="text-gray-400 text-xs font-bold mt-1">Requirements for org renewal</p>
-                    </div>
-                  </div>
-                  <div className="mt-auto border-t border-gray-50 bg-gray-50/30 h-full flex items-center justify-between px-6 py-6 cursor-pointer hover:bg-white transition-all"
-                    onClick={() => handleSelectType(typeObj, 'Renewal Document')}
+                  );
+                }
+
+                return (
+                  <button 
+                    key={subName}
+                    onClick={() => handleSelectType(typeObj, subName)}
+                    className={`w-full px-6 py-4 flex items-center justify-between hover:bg-white transition-all group/btn ${!isLast ? 'border-b border-gray-50' : ''}`}
                   >
-                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{getReqCount(typeObj.id, null)} Requirements</span>
-                    <ChevronRight size={24} className="text-gray-300 group-hover:text-primary-green transition-all" />
-                  </div>
-                </div>
-              )
+                    <div className="flex items-center gap-6">
+                      <span className="text-sm font-bold text-gray-500 group-hover/btn:text-primary-green">{subName}</span>
+                      <span className="text-[10px] font-black text-gray-300 uppercase">• {getReqCount(typeObj.id, subName === 'Renewal Document' ? null : subName)} Reqs</span>
+                    </div>
+                    <ChevronRight size={18} className="text-gray-300 group-hover/btn:text-primary-green" />
+                  </button>
+                );
+              };
+
+              return (
+                <>
+                  {/* Activity Proposal */}
+                  {docTypes.find(t => t.name.toLowerCase().includes('activity proposal')) && (
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
+                      <div className="p-6 flex items-start gap-4">
+                        <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-xl flex items-center justify-center shrink-0">
+                          <FileText size={24} />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-black text-gray-800 uppercase">Activity Proposal</h3>
+                          <p className="text-gray-400 text-xs font-bold mt-1">Requirements for activity proposals</p>
+                        </div>
+                      </div>
+                      <div className="mt-auto border-t border-gray-50 bg-gray-50/30">
+                        {(() => {
+                          const typeObj = docTypes.find(t => t.name.toLowerCase().includes('activity proposal'));
+                          return (
+                            <>
+                              {renderCategoryItem(typeObj, 'In Campus', false)}
+                              {renderCategoryItem(typeObj, 'Off Campus', true)}
+                            </>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Year End Report */}
+                  {docTypes.find(t => t.name.toLowerCase().includes('report')) && (
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
+                      <div className="p-6 flex items-start gap-4">
+                        <div className="w-12 h-12 bg-orange-50 text-orange-500 rounded-xl flex items-center justify-center shrink-0">
+                          <Calendar size={24} />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-black text-gray-800 uppercase">Reports</h3>
+                          <p className="text-gray-400 text-xs font-bold mt-1">Annual & Mid-year summaries</p>
+                        </div>
+                      </div>
+                      <div className="mt-auto border-t border-gray-50 bg-gray-50/30">
+                        {(() => {
+                          const midYear = docTypes.find(t => t.name.toLowerCase().includes('mid-year'));
+                          const yearEnd = docTypes.find(t => t.name.toLowerCase().includes('year-end'));
+                          return (
+                            <>
+                              {renderCategoryItem(midYear, 'Mid-Year Report', false)}
+                              {renderCategoryItem(yearEnd, 'Year-End Report', true)}
+                            </>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Renewal */}
+                  {docTypes.find(t => t.name.toLowerCase().includes('renewal')) && (() => {
+                    const typeObj = docTypes.find(t => t.name.toLowerCase().includes('renewal'));
+                    return (
+                      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col group">
+                        <div className="p-6 flex items-start gap-4">
+                          <div className="w-12 h-12 bg-amber-50 text-amber-500 rounded-xl flex items-center justify-center shrink-0">
+                            <RefreshCcw size={24} />
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-black text-gray-800 uppercase">Renewal Document</h3>
+                            <p className="text-gray-400 text-xs font-bold mt-1">Requirements for org renewal</p>
+                          </div>
+                        </div>
+                        <div className="mt-auto border-t border-gray-50 bg-gray-50/30 h-full flex flex-col justify-end">
+                          {renderCategoryItem(typeObj, 'Renewal Document', true)}
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </>
+              );
             })()}
           </div>
         </div>
@@ -586,18 +690,59 @@ const SubmitNewDocument = () => {
                         <input type="text" required className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.target_venue} onChange={e => setProposalDetails({...proposalDetails, target_venue: e.target.value})} />
                       </div>
                       
-                      {/* Date & Time combined visually */}
-                      <div className="space-y-2 md:col-span-2">
-                        <label className="text-xs font-black text-gray-600 uppercase">Target Date and Time <span className="text-red-500">*</span></label>
+                      {/* Multi-Date Selection */}
+                      <div className="space-y-3 md:col-span-2">
+                        <label className="text-xs font-black text-gray-600 uppercase">Activity Dates <span className="text-red-500">*</span></label>
                         <div className="flex gap-4">
-                          <input type="date" required className="flex-1 px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.target_date} onChange={e => setProposalDetails({...proposalDetails, target_date: e.target.value})} />
-                          <input type="time" required className="flex-1 px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.target_time} onChange={e => setProposalDetails({...proposalDetails, target_time: e.target.value})} />
+                          <input 
+                            type="date" 
+                            className="flex-1 px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" 
+                            onChange={e => {
+                              handleAddDate(e.target.value);
+                              e.target.value = '';
+                            }} 
+                          />
                         </div>
+                        {proposalDetails.activity_dates.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-3">
+                            {proposalDetails.activity_dates.map(d => (
+                              <div key={d} className="flex items-center gap-2 bg-green-50 text-primary-green px-3 py-1.5 rounded-lg border border-green-200 shadow-sm">
+                                <Calendar size={14} />
+                                <span className="font-bold text-sm">{new Date(d).toLocaleDateString()}</span>
+                                <button type="button" onClick={() => handleRemoveDate(d)} className="p-1 hover:bg-green-100 rounded-full transition-colors">
+                                  <X size={14} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* Time combined visually */}
+                      <div className="space-y-3 md:col-span-2">
+                        <label className="text-xs font-black text-gray-600 uppercase">Target Time <span className="text-red-500">*</span></label>
+                        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
+                          <div className="flex-1 w-full">
+                            <span className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Start Time</span>
+                            <input type="time" required className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.target_time} onChange={e => setProposalDetails({...proposalDetails, target_time: e.target.value})} />
+                          </div>
+                          <div className="flex-1 w-full">
+                            <span className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">End Time</span>
+                            <input type="time" required={!proposalDetails.is_indefinite_end_time} disabled={proposalDetails.is_indefinite_end_time} className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all disabled:opacity-50" value={proposalDetails.target_end_time} onChange={e => setProposalDetails({...proposalDetails, target_end_time: e.target.value})} />
+                          </div>
+                        </div>
+                        <label className="flex items-center gap-2 cursor-pointer group mt-2 w-fit">
+                           <div className={`w-5 h-5 rounded flex items-center justify-center border-2 shrink-0 ${proposalDetails.is_indefinite_end_time ? 'bg-primary-green border-primary-green text-white' : 'border-gray-300 group-hover:border-primary-green'}`}>
+                             {proposalDetails.is_indefinite_end_time && <Check size={14} strokeWidth={3} />}
+                           </div>
+                           <span className="text-sm font-bold text-gray-600">Indefinite End Time</span>
+                           <input type="checkbox" className="hidden" checked={proposalDetails.is_indefinite_end_time} onChange={(e) => setProposalDetails({...proposalDetails, is_indefinite_end_time: e.target.checked, target_end_time: e.target.checked ? '' : proposalDetails.target_end_time})} />
+                        </label>
                       </div>
                       
                       <div className="space-y-2">
                         <label className="text-xs font-black text-gray-600 uppercase">Duration (Hours)</label>
-                        <input type="text" className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.duration} onChange={e => setProposalDetails({...proposalDetails, duration: e.target.value.replace(/[^0-9]/g, '')})} />
+                        <input type="text" readOnly={!proposalDetails.is_indefinite_end_time} className={`w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all ${!proposalDetails.is_indefinite_end_time ? 'opacity-70 cursor-not-allowed bg-gray-100' : ''}`} value={proposalDetails.duration} onChange={e => setProposalDetails({...proposalDetails, duration: e.target.value.replace(/[^0-9.]/g, '')})} />
                       </div>
                       <div className="space-y-2">
                         <label className="text-xs font-black text-gray-600 uppercase">Number of Student Involved</label>

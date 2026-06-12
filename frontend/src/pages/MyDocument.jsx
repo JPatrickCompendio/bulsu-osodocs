@@ -2321,7 +2321,7 @@ export const MyDocuments = () => {
           {[
             { label: 'ORGANIZATION', value: selectedDoc.sender || '-', icon: <User size={18} /> },
             { label: 'TYPE', value: `${selectedDoc.type}`, icon: <FileText size={18} />, color: 'text-blue-500' },
-            { label: 'STATUS', value: selectedDoc.status, icon: <Clock size={18} />, badge: true },
+            { label: 'STATUS', value: selectedDoc.status?.toLowerCase() === 'waiting for accomplishment report' ? 'APPROVED' : selectedDoc.status, icon: <Clock size={18} />, badge: true },
             { label: 'SUBMITTED', value: selectedDoc.submittedDate, icon: <Calendar size={18} /> }
           ].map((card, idx) => (
             <div key={idx} className="bg-gray-100 p-6 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
@@ -3308,11 +3308,11 @@ export const MyDocuments = () => {
                       <td className="px-6 py-5 text-center">
                         <span
                           style={{
-                            backgroundColor: getStatusColor(doc.status)
+                            backgroundColor: getStatusColor(doc.status?.toLowerCase() === 'waiting for accomplishment report' ? 'approved' : doc.status)
                           }}
                           className="px-4 py-1.5 rounded-full text-[10px] font-bold shadow-sm inline-block min-w-[120px] transition-all uppercase text-white"
                         >
-                          {doc.status}
+                          {doc.status?.toLowerCase() === 'waiting for accomplishment report' ? 'APPROVED' : doc.status}
                         </span>
                       </td>
                       <td className="px-6 py-5 text-right text-sm text-gray-500 font-medium">{doc.lastAction}</td>

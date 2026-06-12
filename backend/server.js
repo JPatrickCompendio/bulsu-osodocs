@@ -470,12 +470,67 @@ app.post('/api/submissions/start', async (req, res) => {
     const { user_id, type_id } = req.body;
 
     try {
+        // Find active school year
+        const { data: activeSy, error: syErr } = await supabase
+            .from('school_years')
+            .select('*')
+            .eq('is_active', true)
+            .maybeSingle();
+
+        if (syErr) throw syErr;
+        
+        // If no active school year, throw error
+        if (!activeSy) {
+            return res.status(400).json({ error: 'No active School Year is configured. Please contact an administrator.' });
+        }
+
+        const currentDate = new Date();
+        
+        // Check if current date is within school year bounds
+        const syStart = activeSy.start_date ? new Date(activeSy.start_date) : null;
+        const syEnd = activeSy.end_date ? new Date(activeSy.end_date) : null;
+        
+        let isWithinSy = true;
+        if (syStart && syEnd) isWithinSy = currentDate >= syStart && currentDate <= syEnd;
+        else if (syStart) isWithinSy = currentDate >= syStart;
+        else if (syEnd) isWithinSy = currentDate <= syEnd;
+        
+        if (!isWithinSy) {
+            return res.status(400).json({ error: 'The current date is outside the active School Year.' });
+        }
+
+        // Check document type submission mode and submission window
+        const { data: docType } = await supabase
+            .from('documentType')
+            .select('availability_type, name')
+            .eq('id', type_id)
+            .single();
+            
+        if (!docType) {
+            return res.status(404).json({ error: 'Document type not found.' });
+        }
+
+        if (docType.availability_type === 'scheduled') {
+            const start = docType.active_from ? new Date(docType.active_from) : null;
+            const end = docType.active_until ? new Date(docType.active_until) : null;
+            
+            let isWithin = true;
+            if (start && end) isWithin = currentDate >= start && currentDate <= end;
+            else if (start) isWithin = currentDate >= start;
+            else if (end) isWithin = currentDate <= end;
+
+            if (!isWithin) {
+                return res.status(400).json({ error: 'Submissions are currently closed for this document type.' });
+            }
+        }
+
         const { data: sub, error: subErr } = await supabase
             .from('submissions')
             .insert([
                 {
                     user_id,
                     document_type_id: type_id,
+                    school_year_id: activeSy.id,
                     status: 'draft',
                     remarks: 'Initial draft created'
                 }
@@ -537,8 +592,58 @@ app.post('/api/submissions/register', async (req, res) => {
             `[Backend] START Registration: SubID=${submission_id}, UserID=${user_id}`
         );
 
+        // Fetch submission to get document_type_id and school_year_id
+        const { data: submission } = await supabase
+            .from('submissions')
+            .select('document_type_id, school_year_id')
+            .eq('id', submission_id)
+            .single();
+
+        if (!submission) {
+            return res.status(404).json({ error: 'Submission not found' });
+        }
+
         // Save proposal details
         if (is_proposal && proposal_details) {
+            // Validate against ACTIVITY_BLOCK
+            const targetDateStr = proposal_details.target_date || proposal_details.activity_dates;
+            if (targetDateStr) {
+                // Split multiple dates if comma separated (e.g., from activity_dates)
+                const targetDates = targetDateStr.split(',').map(d => new Date(d.trim()));
+                
+                const { data: blocks } = await supabase
+                    .from('academic_calendar_events')
+                    .select('start_date, end_date')
+                    .eq('document_type_id', submission.document_type_id)
+                    .eq('school_year_id', submission.school_year_id)
+                    .eq('event_type', 'ACTIVITY_BLOCK');
+
+                if (blocks && blocks.length > 0) {
+                    let hasOverlap = false;
+                    for (const targetDate of targetDates) {
+                        for (const block of blocks) {
+                            const bStart = block.start_date ? new Date(block.start_date) : null;
+                            const bEnd = block.end_date ? new Date(block.end_date) : null;
+                            
+                            // To compare properly, set time to midnight
+                            targetDate.setHours(0,0,0,0);
+                            if (bStart) bStart.setHours(0,0,0,0);
+                            if (bEnd) bEnd.setHours(0,0,0,0);
+
+                            if (bStart && bEnd && targetDate >= bStart && targetDate <= bEnd) hasOverlap = true;
+                            else if (bStart && !bEnd && targetDate >= bStart) hasOverlap = true;
+                            else if (!bStart && bEnd && targetDate <= bEnd) hasOverlap = true;
+                            
+                            if (hasOverlap) break;
+                        }
+                        if (hasOverlap) break;
+                    }
+                    if (hasOverlap) {
+                        return res.status(400).json({ error: 'The selected activity date falls within a blocked period. Please choose another date.' });
+                    }
+                }
+            }
+
             const safeProposalData = {
                 submission_version_id: version_id,
                 activity_number: proposal_details.activity_number || null,
@@ -551,6 +656,8 @@ app.post('/api/submissions/register', async (req, res) => {
                 target_venue: proposal_details.target_venue || null,
                 target_date: proposal_details.target_date || null,
                 target_time: proposal_details.target_time || null,
+                target_end_time: proposal_details.target_end_time || null,
+                activity_dates: proposal_details.activity_dates || null,
                 duration: proposal_details.duration || null,
                 number_of_students:
                     parseInt(proposal_details.number_of_students) || 0,
@@ -797,8 +904,10 @@ app.get('/api/notifications', async (req, res) => {
         
         let logsData = [];
         if (role === 'admin') {
+            const adminActions = ['oso approved', 'document_retrieved', 'accomplishment_report_submitted'];
             const { data } = await supabase.from('submission_logs')
                 .select('*, submissions(document_type_id, user_id, id)')
+                .in('action_type', adminActions)
                 .order('created_at', { ascending: false })
                 .limit(50);
             logsData = data || [];
@@ -806,6 +915,10 @@ app.get('/api/notifications', async (req, res) => {
             const { data } = await supabase.from('submission_logs')
                 .select('*, submissions!inner(id, user_id)')
                 .eq('submissions.user_id', userId)
+                .neq('action_type', 'created')
+                .neq('action_type', 'submitted')
+                .neq('action_type', 'attachment_review')
+                .neq('action_type', 'viewed')
                 .order('created_at', { ascending: false })
                 .limit(50);
             logsData = data || [];
@@ -848,6 +961,670 @@ app.get('/api/notifications', async (req, res) => {
     } catch (err) {
         console.error('Error fetching notifications:', err);
         res.status(500).json({ error: 'Failed to fetch notifications', details: err.message });
+    }
+});
+
+// --- ACADEMIC SETTINGS: SCHOOL YEARS ---
+
+// Get all School Years
+app.get('/api/school-years', async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('school_years')
+            .select('*')
+            .order('start_date', { ascending: false });
+
+        if (error) throw error;
+        res.json({ success: true, data });
+    } catch (err) {
+        console.error('Error fetching school years:', err);
+        res.status(500).json({ error: 'Failed to fetch school years', details: err.message });
+    }
+});
+
+// Create School Year
+app.post('/api/school-years', async (req, res) => {
+    const { name, start_date, end_date, is_active } = req.body;
+    
+    if (!name || !start_date || !end_date) {
+        return res.status(400).json({ error: 'Name, start_date, and end_date are required' });
+    }
+
+    try {
+        // If this one is being set as active, we must deactivate others first
+        if (is_active) {
+            await supabase.from('school_years').update({ is_active: false }).neq('id', '00000000-0000-0000-0000-000000000000'); // dummy condition to update all
+        }
+
+        const { data, error } = await supabase
+            .from('school_years')
+            .insert([{ name, start_date, end_date, is_active: is_active || false }])
+            .select();
+
+        if (error) throw error;
+        res.json({ success: true, data: data[0] });
+    } catch (err) {
+        console.error('Error creating school year:', err);
+        res.status(500).json({ error: 'Failed to create school year', details: err.message });
+    }
+});
+
+// Update School Year
+app.put('/api/school-years/:id', async (req, res) => {
+    const { id } = req.params;
+    const { name, start_date, end_date } = req.body;
+    
+    try {
+        const { data, error } = await supabase
+            .from('school_years')
+            .update({ name, start_date, end_date })
+            .eq('id', id)
+            .select();
+
+        if (error) throw error;
+        res.json({ success: true, data: data[0] });
+    } catch (err) {
+        console.error('Error updating school year:', err);
+        res.status(500).json({ error: 'Failed to update school year', details: err.message });
+    }
+});
+
+// Activate School Year
+app.put('/api/school-years/:id/activate', async (req, res) => {
+    const { id } = req.params;
+    
+    try {
+        // Deactivate all
+        await supabase.from('school_years').update({ is_active: false }).neq('id', '00000000-0000-0000-0000-000000000000');
+        
+        // Activate the target
+        const { data, error } = await supabase
+            .from('school_years')
+            .update({ is_active: true })
+            .eq('id', id)
+            .select();
+
+        if (error) throw error;
+        res.json({ success: true, data: data[0] });
+    } catch (err) {
+        console.error('Error activating school year:', err);
+        res.status(500).json({ error: 'Failed to activate school year', details: err.message });
+    }
+});
+
+// Delete School Year
+app.delete('/api/school-years/:id', async (req, res) => {
+    const { id } = req.params;
+    
+    try {
+        // Check if there are any submissions for this school year
+        const { data: submissions, error: subErr } = await supabase
+            .from('submissions')
+            .select('id')
+            .eq('school_year_id', id)
+            .limit(1);
+
+        if (subErr) throw subErr;
+
+        if (submissions && submissions.length > 0) {
+            return res.status(400).json({ error: 'Cannot delete School Year because there are submissions tied to it.' });
+        }
+
+        // Also delete associated academic calendar events, or let cascade handle it?
+        // Cascade usually handles it if configured, otherwise we delete them manually.
+        await supabase.from('academic_calendar_events').delete().eq('school_year_id', id);
+
+        const { error } = await supabase
+            .from('school_years')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+        
+        res.json({ success: true, message: 'School Year deleted successfully.' });
+    } catch (err) {
+        console.error('Error deleting school year:', err);
+        res.status(500).json({ error: 'Failed to delete school year', details: err.message });
+    }
+});
+
+// --- ACADEMIC SETTINGS: ACADEMIC CALENDAR EVENTS ---
+
+app.get('/api/academic-events', async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('academic_calendar_events')
+            .select('*')
+            .order('start_date', { ascending: true });
+
+        if (error) throw error;
+        res.json({ success: true, data });
+    } catch (err) {
+        console.error('Error fetching academic events:', err);
+        res.status(500).json({ error: 'Failed to fetch academic events', details: err.message });
+    }
+});
+
+app.post('/api/academic-events', async (req, res) => {
+    const { school_year_id, title, description, event_type, document_type_id, start_date, end_date, created_by } = req.body;
+    
+    if (!school_year_id || !title || !event_type) {
+        return res.status(400).json({ error: 'school_year_id, title, and event_type are required' });
+    }
+
+    try {
+        const { data, error } = await supabase
+            .from('academic_calendar_events')
+            .insert([{ school_year_id, title, description, event_type, document_type_id, start_date, end_date, created_by }])
+            .select();
+
+        if (error) throw error;
+        res.json({ success: true, data: data[0] });
+    } catch (err) {
+        console.error('Error creating academic event:', err);
+        res.status(500).json({ error: 'Failed to create academic event', details: err.message });
+    }
+});
+
+app.put('/api/academic-events/:id', async (req, res) => {
+    const { id } = req.params;
+    const { title, description, event_type, document_type_id, start_date, end_date } = req.body;
+    
+    try {
+        const { data, error } = await supabase
+            .from('academic_calendar_events')
+            .update({ title, description, event_type, document_type_id, start_date, end_date })
+            .eq('id', id)
+            .select();
+
+        if (error) throw error;
+        res.json({ success: true, data: data[0] });
+    } catch (err) {
+        console.error('Error updating academic event:', err);
+        res.status(500).json({ error: 'Failed to update academic event', details: err.message });
+    }
+});
+
+app.delete('/api/academic-events/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const { error } = await supabase.from('academic_calendar_events').delete().eq('id', id);
+        if (error) throw error;
+        res.json({ success: true, message: 'Event deleted successfully' });
+    } catch (err) {
+        console.error('Error deleting academic event:', err);
+        res.status(500).json({ error: 'Failed to delete academic event', details: err.message });
+    }
+});
+
+// --- SYSTEM: DOCUMENT AVAILABILITY & ELIGIBILITY ---
+
+app.get('/api/system/document-availability', async (req, res) => {
+    const { userId } = req.query;
+
+    try {
+        // 1. Get active school year
+        const { data: activeSy } = await supabase
+            .from('school_years')
+            .select('*')
+            .eq('is_active', true)
+            .single();
+
+        if (!activeSy) {
+            return res.json({
+                success: true,
+                activeSchoolYear: null,
+                availability: {},
+                message: 'No active school year.'
+            });
+        }
+
+        const currentDate = new Date();
+        
+        // 1.5 Check if current date falls within active school year
+        const syStart = activeSy.start_date ? new Date(activeSy.start_date) : null;
+        const syEnd = activeSy.end_date ? new Date(activeSy.end_date) : null;
+        
+        let isWithinSy = true;
+        if (syStart && syEnd) isWithinSy = currentDate >= syStart && currentDate <= syEnd;
+        else if (syStart) isWithinSy = currentDate >= syStart;
+        else if (syEnd) isWithinSy = currentDate <= syEnd;
+        
+        if (!isWithinSy) {
+            return res.json({
+                success: true,
+                activeSchoolYear: activeSy,
+                availability: {},
+                message: 'The current date is outside the active School Year.'
+            });
+        }
+
+        // 2. Get all document types
+        const { data: docTypes } = await supabase.from('documentType').select('*');
+        
+        // 3. Get all events for the current school year
+        const { data: events } = await supabase
+            .from('academic_calendar_events')
+            .select('*')
+            .eq('school_year_id', activeSy.id);
+
+        const blockedEvents = events?.filter(e => e.event_type === 'ACTIVITY_BLOCK') || [];
+
+        const availability = {};
+
+        // Helper to check if current date is within bounds
+        const isWithinBounds = (start_date, end_date) => {
+            if (!start_date && !end_date) return true; // Always Available
+            
+            const start = start_date ? new Date(start_date) : null;
+            const end = end_date ? new Date(end_date) : null;
+            
+            if (start && end) return currentDate >= start && currentDate <= end;
+            if (start) return currentDate >= start;
+            if (end) return currentDate <= end;
+            return false;
+        };
+
+        // 4. Renewal Eligibility Check (if userId provided)
+        let isRenewalEligible = false;
+        let missingRenewalRequirements = [];
+        if (userId) {
+            // Find approved mid-year and year-end for this user & active school year
+            const { data: userSubs } = await supabase
+                .from('submissions')
+                .select('status, documentType:document_type_id(name)')
+                .eq('user_id', userId)
+                .eq('school_year_id', activeSy.id)
+                .eq('status', 'completed'); // Assuming 'completed' means approved in final stage
+
+            const hasApprovedMidYear = userSubs?.some(s => s.documentType?.name?.toLowerCase().includes('mid-year'));
+            const hasApprovedYearEnd = userSubs?.some(s => s.documentType?.name?.toLowerCase().includes('year-end'));
+            
+            if (!hasApprovedMidYear) missingRenewalRequirements.push('Approved Mid-Year Report');
+            if (!hasApprovedYearEnd) missingRenewalRequirements.push('Approved Year-End Report');
+            
+            isRenewalEligible = hasApprovedMidYear && hasApprovedYearEnd;
+        }
+
+        // 5. Evaluate each document type
+        for (const dt of docTypes || []) {
+            let isAvailable = false;
+            let lockedReason = null;
+
+            if (dt.status !== 'active') {
+                lockedReason = 'Document type is inactive';
+            } else if (dt.availability_type === 'scheduled') {
+                if (!dt.active_from && !dt.active_until) {
+                    lockedReason = 'No active submission period configured';
+                } else if (!isWithinBounds(dt.active_from, dt.active_until)) {
+                    lockedReason = 'Submission Period Closed';
+                } else {
+                    isAvailable = true;
+                }
+            } else {
+                // indefinite mode
+                isAvailable = true;
+            }
+
+            // Additional check for Requires Eligibility
+            if (isAvailable && dt.requires_eligibility && dt.name.toLowerCase().includes('renewal')) {
+                if (!isRenewalEligible) {
+                    isAvailable = false;
+                    lockedReason = 'Missing Requirements: ' + missingRenewalRequirements.join(', ');
+                }
+            }
+
+            availability[dt.id] = {
+                isAvailable,
+                lockedReason,
+                requiresEligibility: dt.requires_eligibility
+            };
+        }
+
+        res.json({
+            success: true,
+            activeSchoolYear: activeSy,
+            availability,
+            blockedEvents
+        });
+
+    } catch (err) {
+        console.error('Error checking availability:', err);
+        res.status(500).json({ error: 'Failed to check document availability', details: err.message });
+    }
+});
+// --- ADMIN DASHBOARD ---
+app.get('/api/admin/dashboard', async (req, res) => {
+    try {
+        const currentDate = new Date();
+        const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString();
+        
+        // Active School Year
+        const { data: activeSy } = await supabase
+            .from('school_years')
+            .select('*')
+            .eq('is_active', true)
+            .single();
+
+        const activeSyId = activeSy ? activeSy.id : null;
+
+        // Section 1: Statistics
+        let eligibleForRenewalCount = 0;
+        if (activeSyId) {
+            const { data: orgPresidents } = await supabase
+                .from('users')
+                .select('id, role')
+                .eq('role', 'org-president');
+
+            const { data: approvedReports } = await supabase
+                .from('submissions')
+                .select('user_id, documentType:document_type_id(name)')
+                .eq('school_year_id', activeSyId)
+                .eq('status', 'completed');
+            
+            if (orgPresidents && approvedReports) {
+                let eligibleCount = 0;
+                for (const user of orgPresidents) {
+                    const userReports = approvedReports.filter(r => r.user_id === user.id);
+                    const hasMid = userReports.some(r => r.documentType?.name?.toLowerCase().includes('mid-year'));
+                    const hasEnd = userReports.some(r => r.documentType?.name?.toLowerCase().includes('year-end'));
+                    if (hasMid && hasEnd) {
+                        eligibleCount++;
+                    }
+                }
+                eligibleForRenewalCount = eligibleCount;
+            }
+        }
+
+        const { data: allSubmissions } = await supabase
+            .from('submissions')
+            .select('id, status, school_year_id, user_id, current_version_id, documentType:document_type_id(name, id), users:user_id(org_name, full_name), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title))')
+            .order('created_at', { ascending: false });
+            
+        let allTimeCount = allSubmissions ? allSubmissions.filter(s => s.status !== 'draft').length : 0;
+        let currentSyCount = activeSyId && allSubmissions ? allSubmissions.filter(s => s.school_year_id === activeSyId && s.status !== 'draft').length : 0;
+        
+        const normalizeStatus = (value) => String(value || '').toLowerCase().trim();
+        const activeReviewStatuses = new Set([
+            'oso approved',
+            'sds approved',
+            'chairman approved',
+            'vice chairman approved',
+            'external approved',
+            'dean approved',
+            'approved'
+        ]);
+        const actualActiveReviewCount = allSubmissions
+            ? allSubmissions.filter((s) => activeReviewStatuses.has(normalizeStatus(s.status))).length
+            : 0;
+
+        // Section 2: Active Documents Overview
+        let activeDocumentsOverview = allSubmissions ? allSubmissions.filter(s => 
+            !['draft', 'completed', 'disapproved'].includes(s.status)
+        ) : [];
+
+        // Section 3: Status Breakdown
+        const statusBreakdown = {
+            'to forward and hardcopy submission for org president': 0,
+            'chairman and vice chairman review': 0,
+            'sds coordinator review': 0,
+            'dean review': 0,
+            'external review': 0,
+            'approved': 0,
+            'disapproved': 0,
+            'returned': 0,
+            'completed': 0
+        };
+
+        if (allSubmissions) {
+            allSubmissions.forEach(s => {
+                if (s.status === 'draft') return; // Skip drafts
+
+                let displayStatus = s.status;
+                if (s.status === 'submitted') displayStatus = 'to forward and hardcopy submission for org president';
+                else if (s.status === 'oso approved') displayStatus = 'sds coordinator review';
+                else if (s.status === 'sds approved' || s.status === 'chairman approved') displayStatus = 'chairman and vice chairman review';
+                else if (s.status === 'vice chairman approved') displayStatus = 'external review';
+                else if (s.status === 'external approved') displayStatus = 'dean review';
+                else if (s.status === 'dean approved') displayStatus = 'approved';
+                else if (s.status === 'returned') displayStatus = 'returned';
+                else if (s.status === 'completed') displayStatus = 'completed';
+                else if (s.status === 'disapproved') displayStatus = 'disapproved';
+                
+                const key = displayStatus ? displayStatus.toLowerCase() : 'unknown';
+                if (statusBreakdown[key] !== undefined) {
+                    statusBreakdown[key]++;
+                } else {
+                    statusBreakdown[key] = (statusBreakdown[key] || 0) + 1;
+                }
+            });
+        }
+
+        // Section 4: Common Submission Errors
+        const { data: returnLogs } = await supabase
+            .from('submission_logs')
+            .select('review_action')
+            .eq('action_type', 'attachment_review')
+            .neq('review_action', 'approved');
+            
+        const errorCounts = {};
+        if (returnLogs) {
+            returnLogs.forEach(log => {
+                if (log.review_action && log.review_action.trim() !== '') {
+                    const reason = log.review_action.trim().replace(/-/g, ' ');
+                    const displayReason = reason.charAt(0).toUpperCase() + reason.slice(1);
+                    errorCounts[displayReason] = (errorCounts[displayReason] || 0) + 1;
+                }
+            });
+        }
+        
+        const commonErrors = Object.entries(errorCounts)
+            .map(([reason, count]) => ({ reason, count }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 10);
+
+        // Section 5: Revision Analysis
+        const { data: recentVersions } = await supabase
+            .from('submission_versions')
+            .select('submission_id, version_number')
+            .gte('created_at', startOfMonth);
+            
+        let revisionsThisMonth = 0;
+        if (recentVersions) {
+            revisionsThisMonth = recentVersions.filter(v => v.version_number > 1).length;
+        }
+
+        const { data: allVersions } = await supabase
+            .from('submission_versions')
+            .select('submission_id, version_number');
+            
+        let avgRevisionsPerType = {};
+        if (allVersions && allSubmissions) {
+            const docTypeStats = {};
+            allSubmissions.forEach(sub => {
+                if (sub.documentType && sub.documentType.name) {
+                    if (!docTypeStats[sub.documentType.name]) {
+                        docTypeStats[sub.documentType.name] = { totalRevisions: 0, docCount: 0 };
+                    }
+                    docTypeStats[sub.documentType.name].docCount++;
+                }
+            });
+            
+            allVersions.forEach(v => {
+                if (v.version_number > 1) {
+                    const sub = allSubmissions.find(s => s.id === v.submission_id);
+                    if (sub && sub.documentType && sub.documentType.name) {
+                        docTypeStats[sub.documentType.name].totalRevisions++;
+                    }
+                }
+            });
+            
+            for (const [type, stats] of Object.entries(docTypeStats)) {
+                avgRevisionsPerType[type] = stats.docCount > 0 ? (stats.totalRevisions / stats.docCount).toFixed(2) : 0;
+            }
+        }
+
+        res.json({
+            success: true,
+            data: {
+                statistics: {
+                    eligibleForRenewalCount,
+                    activeReviewCount: actualActiveReviewCount,
+                    currentSyCount,
+                    allTimeCount
+                },
+                activeDocuments: activeDocumentsOverview,
+                statusBreakdown,
+                commonErrors,
+                revisionAnalysis: {
+                    revisionsThisMonth,
+                    avgRevisionsPerType
+                }
+            }
+        });
+
+    } catch (err) {
+        console.error('Error fetching admin dashboard stats:', err);
+        res.status(500).json({ error: 'Failed to fetch dashboard stats', details: err.message });
+    }
+});
+
+// --- ORG DASHBOARD ---
+app.get('/api/org/dashboard', async (req, res) => {
+    try {
+        const userId = req.user ? req.user.id : req.query.userId;
+        if (!userId) return res.status(400).json({ error: 'User ID is required' });
+
+        const { data: user } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', userId)
+            .single();
+
+        const { data: activeSy } = await supabase
+            .from('school_years')
+            .select('*')
+            .eq('is_active', true)
+            .single();
+
+        const { data: announcements } = await supabase
+            .from('announcements')
+            .select('*')
+            .in('target_audience', ['all', 'org-president'])
+            .order('created_at', { ascending: false })
+            .limit(3);
+
+        const { data: userSubmissions } = await supabase
+            .from('submissions')
+            .select('id, status, school_year_id, created_at, documentType:document_type_id(name, id), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title))')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false });
+
+        let underReviewDocs = [];
+        let completedCount = 0;
+        let disapprovedCount = 0;
+        let pendingCount = 0;
+        let approvedCount = 0;
+        let returnedCount = 0;
+
+        let isRenewalEligible = false;
+        let hasMidYear = false;
+        let hasYearEnd = false;
+
+        if (userSubmissions) {
+            userSubmissions.forEach(sub => {
+                const s = sub.status ? sub.status.toLowerCase() : '';
+                
+                if (s === 'completed') {
+                    completedCount++;
+                    if (activeSy && sub.school_year_id === activeSy.id) {
+                        const docName = sub.documentType?.name?.toLowerCase() || '';
+                        if (docName.includes('mid-year') || docName.includes('mid year')) hasMidYear = true;
+                        if (docName.includes('year-end') || docName.includes('year end')) hasYearEnd = true;
+                    }
+                } else if (s === 'disapproved') {
+                    disapprovedCount++;
+                } else if (s === 'returned') {
+                    returnedCount++;
+                } else if (s === 'dean approved') {
+                    approvedCount++;
+                    underReviewDocs.push(sub);
+                } else if (s !== 'draft') {
+                    pendingCount++;
+                    underReviewDocs.push(sub);
+                }
+            });
+            isRenewalEligible = hasMidYear && hasYearEnd;
+        }
+
+        const activeSubIds = underReviewDocs.map(d => d.id);
+        let logsBySubId = {};
+        if (activeSubIds.length > 0) {
+            const { data: logs } = await supabase
+                .from('submission_logs')
+                .select('*')
+                .in('submission_id', activeSubIds)
+                .order('created_at', { ascending: false });
+            
+            if (logs) {
+                logs.forEach(log => {
+                    if (!logsBySubId[log.submission_id]) {
+                        logsBySubId[log.submission_id] = log;
+                    }
+                });
+            }
+        }
+
+        const formattedActiveDocs = underReviewDocs.map(doc => {
+            let docTitle = `Submission #${doc.id.substring(0,6).toUpperCase()}`;
+            if (doc.submission_versions && doc.submission_versions.length > 0) {
+              const latest = doc.submission_versions.reduce((max, v) => (v.version_number > max.version_number ? v : max), doc.submission_versions[0]);
+              const details = Array.isArray(latest.activity_proposal_details) ? latest.activity_proposal_details[0] : latest.activity_proposal_details;
+              if (details?.activity_title) docTitle = details.activity_title;
+              else docTitle = `${doc.documentType?.name || 'Document'} #${doc.id.substring(0,6).toUpperCase()}`;
+            } else {
+              docTitle = `${doc.documentType?.name || 'Document'} #${doc.id.substring(0,6).toUpperCase()}`;
+            }
+
+            return {
+                id: doc.id,
+                title: docTitle,
+                type: doc.documentType?.name || 'Unknown',
+                status: doc.status,
+                latestLog: logsBySubId[doc.id] || null
+            };
+        });
+
+        let totalFinished = completedCount + disapprovedCount;
+        let successRate = totalFinished > 0 ? Math.round((completedCount / totalFinished) * 100) : 100;
+
+        res.json({
+            success: true,
+            data: {
+                hero: {
+                    user: user || {},
+                    activeSy: activeSy || null
+                },
+                statistics: {
+                    pendingCount,
+                    approvedCount,
+                    returnedCount,
+                    completedCount,
+                    successRate
+                },
+                activeDocuments: formattedActiveDocs,
+                announcements: announcements || [],
+                renewal: {
+                    isEligible: isRenewalEligible,
+                    hasMidYear,
+                    hasYearEnd
+                }
+            }
+        });
+
+    } catch (err) {
+        console.error('Error fetching org dashboard stats:', err);
+        res.status(500).json({ error: 'Failed to fetch org dashboard stats', details: err.message });
     }
 });
 

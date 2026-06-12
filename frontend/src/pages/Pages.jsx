@@ -46,6 +46,12 @@ const Card = ({ title, children }) => (
 
 export const Dashboard = () => {
   const { user } = useAuth();
+  if (user?.role === 'admin' || user?.role === 'chairman' || user?.role === 'vice-chairman') {
+    return <AdminDashboardComponent />;
+  }
+  if (user?.role === 'org-president') {
+    return <OrgDashboardComponent />;
+  }
   return (
     <div>
       <PageHeader title="Dashboard" />
@@ -96,3 +102,13 @@ export const ListOfRequirements = ListOfRequirementsComponent;
 export const SubmitNewDocuments = SubmitNewDocumentComponent;
 
 export const AnnouncementManagement = AnnouncementManagementComponent;
+
+import AcademicSettingsComponent from './AcademicSettings';
+export const AcademicSettings = AcademicSettingsComponent;
+
+import AdminDashboardComponent from './AdminDashboard';
+export const AdminDashboard = AdminDashboardComponent;
+
+import OrgDashboardComponent from './OrgDashboard';
+export const OrgDashboard = OrgDashboardComponent;
+

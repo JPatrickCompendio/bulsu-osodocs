@@ -217,7 +217,6 @@ export const saveAttachmentRecord = async (versionId, requirementId, fileName, f
  * REGISTRATION & FINALIZATION
  */
 
-// Save Activity Proposal Details
 export const saveProposalDetails = async (versionId, details, proposalType) => {
   const safeDetails = {
     submission_version_id: versionId,
@@ -226,6 +225,17 @@ export const saveProposalDetails = async (versionId, details, proposalType) => {
     number_of_students: parseInt(details.number_of_students) || 0,
     created_at: new Date().toISOString()
   };
+
+  // Delete UI-only fields that do not exist in the database schema
+  delete safeDetails.is_indefinite_end_time;
+  delete safeDetails.target_end_time;
+
+  // Clean up empty strings to null to avoid Postgres type errors for date/time/numeric columns
+  Object.keys(safeDetails).forEach(key => {
+    if (safeDetails[key] === '') {
+      safeDetails[key] = null;
+    }
+  });
 
   const { data, error } = await supabase
     .from('activity_proposal_details')

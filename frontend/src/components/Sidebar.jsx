@@ -9,7 +9,8 @@ import {
   FilePlus, 
   CheckCircle,
   LogOut,
-  Megaphone
+  Megaphone,
+  Settings
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -25,6 +26,7 @@ const Sidebar = () => {
       { name: 'User Management', path: '/users', icon: <Users size={20} /> },
       { name: 'List of Requirements', path: '/requirements', icon: <ListChecks size={20} /> },
       { name: 'Announcements', path: '/admin/announcements', icon: <Megaphone size={20} /> },
+      { name: 'Academic Settings', path: '/admin/academic-settings', icon: <Settings size={20} /> },
     ],
     chairman: [
       { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
