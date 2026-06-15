@@ -13,7 +13,7 @@ import {
   Paperclip,
   ExternalLink
 } from 'lucide-react';
-import axios from 'axios';
+import { apiClient, apiUrl } from '../config/apiClient';
 import { supabase } from '../supabaseClient';
 
 const AnnouncementManagement = () => {
@@ -40,7 +40,7 @@ const AnnouncementManagement = () => {
   const fetchAnnouncements = async () => {
     try {
       setLoading(true);
-      const res = await axios.get('http://localhost:5000/api/announcements');
+      const res = await apiClient.get(apiUrl('/api/announcements'));
       if (res.data.success) {
         setAnnouncements(res.data.data);
       }
@@ -54,7 +54,7 @@ const AnnouncementManagement = () => {
 
   const fetchOrganizations = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/users');
+      const res = await apiClient.get(apiUrl('/api/users'));
       if (res.data) {
         const orgs = res.data
           .filter(u => u.role === 'org-president' && u.org_name)
@@ -192,9 +192,9 @@ const AnnouncementManagement = () => {
       };
 
       if (editingId) {
-        await axios.put(`http://localhost:5000/api/announcements/${editingId}`, payload);
+        await apiClient.put(apiUrl(`/api/announcements/${editingId}`), payload);
       } else {
-        const res = await axios.post('http://localhost:5000/api/announcements', {
+        const res = await apiClient.post(apiUrl('/api/announcements'), {
           ...payload,
           created_by: user?.id
         });
@@ -216,7 +216,7 @@ const AnnouncementManagement = () => {
   const handleDelete = async (id) => {
     if (window.confirm('Are you sure you want to delete this announcement?')) {
       try {
-        await axios.delete(`http://localhost:5000/api/announcements/${id}`);
+        await apiClient.delete(apiUrl(`/api/announcements/${id}`));
         fetchAnnouncements();
       } catch (err) {
         console.error('Error deleting announcement:', err);
@@ -227,7 +227,7 @@ const AnnouncementManagement = () => {
 
   const toggleActive = async (ann) => {
     try {
-      await axios.put(`http://localhost:5000/api/announcements/${ann.id}`, {
+      await apiClient.put(apiUrl(`/api/announcements/${ann.id}`), {
         ...ann,
         is_active: !ann.is_active
       });

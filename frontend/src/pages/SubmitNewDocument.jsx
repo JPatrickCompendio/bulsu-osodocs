@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import * as subService from '../services/submissionService';
 import * as reqService from '../services/requirementService';
 import { supabase } from '../supabaseClient';
-import axios from 'axios';
+import { apiClient, apiUrl } from '../config/apiClient';
 import { 
   FileText, Upload, Send, Save, ArrowLeft, CheckCircle2, 
   AlertCircle, Loader2, Info, Calendar, User, MapPin, 
@@ -80,7 +80,9 @@ const SubmitNewDocument = () => {
       setReqCounts(counts);
       // Fetch document availability
       if (user?.id) {
-        const availRes = await axios.get(`http://localhost:5000/api/system/document-availability?userId=${user.id}`);
+        const availRes = await apiClient.get(apiUrl('/api/system/document-availability'), {
+          params: { userId: user.id },
+        });
         if (availRes.data?.success) {
           setAvailability(availRes.data.availability || {});
           setBlockedEvents(availRes.data.blockedEvents || []);

@@ -19,6 +19,7 @@ import {
   Lock
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { apiFetch } from '../config/api';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -59,7 +60,7 @@ const UserManagement = () => {
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:5000/api/users');
+      const response = await apiFetch('/api/users');
       const data = await response.json();
       if (Array.isArray(data)) {
         setUsers(data);
@@ -135,7 +136,7 @@ const UserManagement = () => {
     
     setIsDeleting(true);
     try {
-      const response = await fetch(`http://localhost:5000/api/users/${userToDelete.id}`, {
+      const response = await apiFetch(`/api/users/${userToDelete.id}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -261,11 +262,11 @@ const UserManagement = () => {
     }
 
     try {
-      const url = isEditMode 
-        ? `http://localhost:5000/api/users/${editingUserId}` 
-        : 'http://localhost:5000/api/users';
-      
-      const response = await fetch(url, {
+      const path = isEditMode
+        ? `/api/users/${editingUserId}`
+        : '/api/users';
+
+      const response = await apiFetch(path, {
         method: isEditMode ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

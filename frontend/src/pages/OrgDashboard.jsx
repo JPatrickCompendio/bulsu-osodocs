@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import { apiClient, apiUrl } from '../config/apiClient';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -21,7 +21,9 @@ const OrgDashboard = () => {
   const fetchDashboardStats = async () => {
     try {
       setLoading(true);
-      const res = await axios.get(`http://localhost:5000/api/org/dashboard?userId=${user?.id}`);
+      const res = await apiClient.get(apiUrl('/api/org/dashboard'), {
+        params: { userId: user?.id },
+      });
       if (res.data?.success) {
         setData(res.data.data);
       }

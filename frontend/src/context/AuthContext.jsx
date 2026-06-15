@@ -8,14 +8,13 @@ export const AuthProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Only run the threshold check on the INITIAL mount
         let isInitialLoad = true;
         const timer = setTimeout(() => {
             if (isInitialLoad && loading) {
                 console.warn('Auth check reached threshold - proceeding with caution');
                 setLoading(false);
             }
-        }, 8000); // Give it a generous 8 seconds for slow connections
+        }, 8000);
 
         const initializeAuth = async () => {
             try {
@@ -36,9 +35,8 @@ export const AuthProvider = ({ children }) => {
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
             if (session) {
-                // Set basic user info so UI can render
                 setUser(prevUser => prevUser || { ...session.user, role: 'user' });
-                
+
                 if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
                     fetchProfile(session.user);
                 }
@@ -56,14 +54,17 @@ export const AuthProvider = ({ children }) => {
 
     const fetchProfile = async (authUser) => {
         try {
-            const response = await fetch(`http://localhost:5000/api/auth/profile?id=${authUser.id}`);
-            const data = await response.json();
+            const { data: profile, error } = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', authUser.id)
+                .maybeSingle();
 
-            if (data.success && data.profile) {
+            if (!error && profile) {
                 setUser({
                     ...authUser,
-                    ...data.profile,
-                    role: data.profile.role || 'user'
+                    ...profile,
+                    role: profile.role || 'user'
                 });
             } else {
                 setUser({ ...authUser, role: 'user' });
@@ -77,25 +78,20 @@ export const AuthProvider = ({ children }) => {
     };
 
     const login = async (email, password) => {
-        setLoading(true); // Show loading during manual login
+        setLoading(true);
         try {
-            const response = await fetch('http://localhost:5000/api/auth/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password })
-            });
+            const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+            if (error) throw new Error(error.message);
 
-            const data = await response.json();
-            if (!response.ok || !data.success) throw new Error(data.error || 'Login failed');
+            const { data: profile, error: profileError } = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', data.user.id)
+                .single();
 
-            if (data.session) {
-                await supabase.auth.setSession({
-                    access_token: data.session.access_token,
-                    refresh_token: data.session.refresh_token
-                });
-            }
+            if (profileError) throw new Error(profileError.message);
 
-            setUser({ ...data.user, role: data.user.role || 'user' });
+            setUser({ ...data.user, ...profile, role: profile.role || 'user' });
             return { success: true };
         } catch (error) {
             console.error('Login error:', error.message);

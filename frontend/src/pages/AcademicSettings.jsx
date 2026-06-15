@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
+import { apiFetch } from '../config/api';
 import { Calendar, Settings, Plus, Check, X, Edit, Trash2, CalendarDays, BookOpen, Clock, AlertCircle } from 'lucide-react';
 
 const AcademicSettings = () => {
@@ -45,8 +46,8 @@ const AcademicSettings = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const syRes = await fetch('http://localhost:5000/api/school-years');
-      const evRes = await fetch('http://localhost:5000/api/academic-events');
+      const syRes = await apiFetch('/api/school-years');
+      const evRes = await apiFetch('/api/academic-events');
       
       const { data: dtRes } = await supabase.from('documentType').select('*').order('name');
       setDocumentTypes(dtRes || []);
@@ -67,13 +68,12 @@ const AcademicSettings = () => {
   const saveSchoolYear = async (e) => {
     e.preventDefault();
     try {
-      const url = syForm.id ? `http://localhost:5000/api/school-years/${syForm.id}` : 'http://localhost:5000/api/school-years';
+      const path = syForm.id ? `/api/school-years/${syForm.id}` : '/api/school-years';
       const method = syForm.id ? 'PUT' : 'POST';
-      
-      const res = await fetch(url, {
+
+      const res = await apiFetch(path, {
         method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(syForm)
+        body: JSON.stringify(syForm),
       });
       
       if (res.ok) {
@@ -90,7 +90,7 @@ const AcademicSettings = () => {
 
   const activateSchoolYear = async (id) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/school-years/${id}/activate`, { method: 'PUT' });
+      const res = await apiFetch(`/api/school-years/${id}/activate`, { method: 'PUT' });
       if (res.ok) {
         showMessage('School Year activated!');
         fetchData();
@@ -103,7 +103,7 @@ const AcademicSettings = () => {
   const deleteSchoolYear = async (id) => {
     if (!window.confirm('Are you sure you want to delete this School Year?')) return;
     try {
-      const res = await fetch(`http://localhost:5000/api/school-years/${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/school-years/${id}`, { method: 'DELETE' });
       const data = await res.json();
       if (res.ok) {
         showMessage('School Year deleted!');
@@ -120,7 +120,7 @@ const AcademicSettings = () => {
   const saveEvent = async (e) => {
     e.preventDefault();
     try {
-      const url = eventForm.id ? `http://localhost:5000/api/academic-events/${eventForm.id}` : 'http://localhost:5000/api/academic-events';
+      const path = eventForm.id ? `/api/academic-events/${eventForm.id}` : '/api/academic-events';
       const method = eventForm.id ? 'PUT' : 'POST';
 
       // if Always Available is selected via UI logic (which we'll handle by nulling out dates)
@@ -129,10 +129,9 @@ const AcademicSettings = () => {
       if (!payload.end_date) payload.end_date = null;
       if (!payload.document_type_id) payload.document_type_id = null;
 
-      const res = await fetch(url, {
+      const res = await apiFetch(path, {
         method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
       
       if (res.ok) {
@@ -150,7 +149,7 @@ const AcademicSettings = () => {
   const deleteEvent = async (id) => {
     if (!window.confirm('Are you sure you want to delete this event?')) return;
     try {
-      const res = await fetch(`http://localhost:5000/api/academic-events/${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/academic-events/${id}`, { method: 'DELETE' });
       if (res.ok) {
         showMessage('Event deleted!');
         fetchData();

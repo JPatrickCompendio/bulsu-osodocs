@@ -3,7 +3,7 @@ import { Outlet, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import { Bell, Search, X, Check, CheckCircle2, Megaphone, FileText, ChevronRight, Paperclip, ExternalLink, Image as ImageIcon } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import axios from 'axios';
+import { apiClient, apiUrl } from '../config/apiClient';
 import { supabase } from '../supabaseClient';
 
 const Header = () => {
@@ -23,7 +23,13 @@ const Header = () => {
   const fetchNotifications = async () => {
     if (!user?.id || !user?.role) return;
     try {
-      const res = await axios.get(`http://localhost:5000/api/notifications?userId=${user.id}&role=${user.role}&orgName=${encodeURIComponent(user.org_name || '')}`);
+      const res = await apiClient.get(apiUrl('/api/notifications'), {
+        params: {
+          userId: user.id,
+          role: user.role,
+          orgName: user.org_name || '',
+        },
+      });
       if (res.data.success) {
         setNotifications(res.data.data);
       }
