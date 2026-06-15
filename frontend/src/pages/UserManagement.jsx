@@ -16,7 +16,14 @@ import {
   Copy,
   Pencil,
   Trash2,
-  Lock
+  Lock,
+  ArrowLeft,
+  Eye,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Ban
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../config/api';
@@ -41,6 +48,9 @@ const UserManagement = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [detailData, setDetailData] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   
   const { user: currentUser } = useAuth();
 
@@ -75,6 +85,47 @@ const UserManagement = () => {
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  const fetchUserDetail = async (userId) => {
+    setDetailLoading(true);
+    try {
+      const response = await apiFetch(`/api/users/${userId}/detail`);
+      const result = await response.json();
+      if (result.success) {
+        setDetailData(result.data);
+      }
+    } catch (error) {
+      console.error('Error fetching user detail:', error);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const handleProfileClick = (user) => {
+    setSelectedUser(user);
+    setDetailData(null);
+    fetchUserDetail(user.id);
+  };
+
+  const handleBackToList = () => {
+    setSelectedUser(null);
+    setDetailData(null);
+  };
+
+  const formatDetailDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+    });
+  };
+
+  const getActivityIcon = (actionType) => {
+    const action = String(actionType || '').toLowerCase();
+    if (action.includes('reject') || action.includes('disapprove')) return { bg: 'bg-red-100', color: 'text-red-500', icon: XCircle };
+    if (action.includes('approv')) return { bg: 'bg-green-100', color: 'text-green-500', icon: CheckCircle };
+    if (action.includes('submit')) return { bg: 'bg-blue-100', color: 'text-blue-500', icon: FileText };
+    return { bg: 'bg-gray-100', color: 'text-gray-500', icon: Clock };
+  };
   
   const handleCopyPassword = () => {
     navigator.clipboard.writeText(tempPassword);
@@ -300,6 +351,210 @@ const UserManagement = () => {
     return matchesSearch;
   });
 
+  if (selectedUser) {
+    const profile = detailData?.user || selectedUser;
+    const isOrgPresident = selectedUser.role === 'org-president';
+    const activeSinceYear = profile.joined_date
+      ? new Date(profile.joined_date).getFullYear()
+      : new Date(profile.created_at).getFullYear();
+    const pendingCount = detailData?.pendingReviewCount || 0;
+
+    return (
+      <div className="animate-in fade-in duration-500">
+        <button
+          onClick={handleBackToList}
+          className="flex items-center gap-2 text-gray-500 hover:text-primary-green font-semibold text-sm mb-6 transition-colors"
+        >
+          <ArrowLeft size={18} />
+          Back to User Management
+        </button>
+
+        {detailLoading ? (
+          <div className="p-20 flex flex-col items-center justify-center text-gray-400">
+            <Loader2 className="animate-spin mb-4" size={40} />
+            <p>Loading profile details...</p>
+          </div>
+        ) : isOrgPresident ? (
+          <div className="space-y-6">
+            {/* Organization Header Card */}
+            <div className="bg-gradient-to-br from-[#0b5c2a] to-[#1a7a3a] rounded-2xl p-8 text-white shadow-lg">
+              <div className="flex flex-col md:flex-row md:items-start gap-6">
+                <div className="w-20 h-20 rounded-2xl bg-secondary-gold flex items-center justify-center text-primary-green font-black text-2xl shadow-lg shrink-0">
+                  {profile.org_name?.charAt(0) || 'O'}
+                </div>
+                <div className="flex-1">
+                  <div className="flex flex-wrap items-center gap-3 mb-4">
+                    <h1 className="text-2xl md:text-3xl font-black">{profile.org_name || 'Organization'}</h1>
+                    <button onClick={() => handleEditClick(profile)} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors">
+                      <Pencil size={16} />
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="px-4 py-1.5 bg-white/20 rounded-full text-xs font-bold">Active Since - {activeSinceYear}</span>
+                    <span className="px-4 py-1.5 bg-white text-red-600 rounded-full text-xs font-bold flex items-center gap-1">
+                      <Ban size={12} /> Suspend
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Info Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mt-8">
+                {[
+                  { label: 'President', value: profile.full_name, sub: profile.student_no ? `SN: ${profile.student_no}` : '' },
+                  { label: 'Adviser', value: profile.adviser_name || '—', sub: 'CICT Faculty' },
+                  { label: 'Official Email', value: profile.email || '—', sub: '' },
+                  { label: 'Total Members', value: `${profile.no_member || 0} Active Members`, sub: '' },
+                  {
+                    label: 'Renewal Status',
+                    value: detailData?.renewal?.isEligible ? 'Eligible for Renewal' : 'Not Eligible',
+                    sub: detailData?.renewal?.isEligible ? 'Good' : 'Action Required',
+                  },
+                ].map(({ label, value, sub }) => (
+                  <div key={label} className="bg-white rounded-xl p-4 text-gray-800 shadow-sm">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">{label}</p>
+                    <p className="font-bold text-sm text-gray-800 line-clamp-2">{value}</p>
+                    {sub && <p className="text-[10px] text-gray-400 font-medium mt-1">{sub}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {pendingCount > 0 && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 flex items-start gap-3">
+                <AlertTriangle className="text-yellow-600 shrink-0 mt-0.5" size={20} />
+                <div>
+                  <p className="font-bold text-yellow-800 text-sm">Attention Needed</p>
+                  <p className="text-xs text-yellow-700 mt-0.5">
+                    You have {pendingCount} document{pendingCount !== 1 ? 's' : ''} pending review. Please check the status below.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Document Logs */}
+              <section className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="p-6 border-b border-gray-50 flex items-center justify-between">
+                  <h2 className="text-lg font-black text-gray-800 uppercase">Document Logs</h2>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-gray-50/50">
+                        <th className="px-6 py-3 text-xs font-black text-gray-400 uppercase">Document Name</th>
+                        <th className="px-6 py-3 text-xs font-black text-gray-400 uppercase">Type</th>
+                        <th className="px-6 py-3 text-xs font-black text-gray-400 uppercase">Date Submitted</th>
+                        <th className="px-6 py-3 text-xs font-black text-gray-400 uppercase">Status</th>
+                        <th className="px-6 py-3 text-xs font-black text-gray-400 uppercase text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {(detailData?.documentLogs || []).length === 0 ? (
+                        <tr>
+                          <td colSpan="5" className="px-6 py-12 text-center text-gray-400 font-bold text-sm">No documents found.</td>
+                        </tr>
+                      ) : (
+                        detailData.documentLogs.map((doc) => (
+                          <tr key={doc.id} className="hover:bg-gray-50/50 transition-colors">
+                            <td className="px-6 py-4 font-semibold text-sm text-gray-800">{doc.title}</td>
+                            <td className="px-6 py-4 text-sm text-gray-600">{doc.type}</td>
+                            <td className="px-6 py-4 text-sm text-gray-500">{formatDetailDate(doc.dateSubmitted)}</td>
+                            <td className="px-6 py-4">
+                              <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black uppercase ${
+                                doc.status === 'Approved' ? 'bg-green-100 text-green-700' :
+                                doc.status === 'Pending' ? 'bg-yellow-100 text-yellow-700' :
+                                doc.status === 'Returned' ? 'bg-orange-100 text-orange-700' :
+                                'bg-red-100 text-red-700'
+                              }`}>
+                                {doc.status === 'Approved' && <CheckCircle size={12} />}
+                                {doc.status === 'Pending' && <Clock size={12} />}
+                                {doc.status}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              <button className="p-2 text-gray-400 hover:text-primary-green transition-colors">
+                                <Eye size={16} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              {/* Activity History */}
+              <section className="bg-white rounded-2xl shadow-sm border border-gray-100">
+                <div className="p-6 border-b border-gray-50 flex items-center justify-between">
+                  <h2 className="text-lg font-black text-gray-800 uppercase">Activity History</h2>
+                </div>
+                <div className="p-6 space-y-4 max-h-[500px] overflow-y-auto">
+                  {(detailData?.activityHistory || []).length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-8">No activity recorded yet.</p>
+                  ) : (
+                    detailData.activityHistory.map((log) => {
+                      const { bg, color, icon: Icon } = getActivityIcon(log.action_type);
+                      return (
+                        <div key={log.id} className="flex gap-3">
+                          <div className={`w-8 h-8 rounded-full ${bg} ${color} flex items-center justify-center shrink-0`}>
+                            <Icon size={14} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-gray-800 line-clamp-2">
+                              {log.description || String(log.action_type || '').replace(/_/g, ' ')}
+                            </p>
+                            <p className="text-[10px] text-gray-400 font-bold mt-1">{formatDetailDate(log.created_at)}</p>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </section>
+            </div>
+          </div>
+        ) : (
+          /* Staff profile detail */
+          <div className="space-y-6">
+            <div className="bg-gradient-to-br from-[#0b5c2a] to-[#1a7a3a] rounded-2xl p-8 text-white shadow-lg">
+              <div className="flex items-center gap-6">
+                <div className="w-20 h-20 rounded-full bg-white/20 flex items-center justify-center text-3xl font-black">
+                  {profile.full_name?.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <h1 className="text-3xl font-black">{profile.full_name}</h1>
+                  <p className="text-green-100 font-medium capitalize mt-1">{profile.role?.replace('-', ' ')}</p>
+                  <span className="inline-block mt-2 px-4 py-1 bg-white/20 rounded-full text-xs font-bold">{profile.status || 'Active'}</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-8">
+                <div className="bg-white rounded-xl p-4 text-gray-800">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Official Email</p>
+                  <p className="font-bold text-sm">{profile.email || '—'}</p>
+                </div>
+                <div className="bg-white rounded-xl p-4 text-gray-800">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Contact Number</p>
+                  <p className="font-bold text-sm">{profile.contact_no || '—'}</p>
+                </div>
+                <div className="bg-white rounded-xl p-4 text-gray-800">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Joined</p>
+                  <p className="font-bold text-sm">{formatDetailDate(profile.created_at)}</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => handleEditClick(profile)} className="flex items-center gap-2 px-4 py-2 bg-primary-green text-white rounded-xl font-semibold text-sm hover:shadow-md transition-all">
+                <Pencil size={16} /> Edit Profile
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
@@ -379,7 +634,7 @@ const UserManagement = () => {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {filteredUsers.length > 0 ? filteredUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-gray-50/80 transition-colors group">
+                  <tr key={user.id} className="hover:bg-gray-50/80 transition-colors group cursor-pointer" onClick={() => handleProfileClick(user)}>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-sm ${user.role === 'org-president' ? 'bg-secondary-gold text-primary-green' : 'bg-primary-green'}`}>
@@ -425,7 +680,7 @@ const UserManagement = () => {
                     <td className="px-6 py-4 text-gray-400 text-xs">
                       {new Date(user.created_at).toLocaleDateString()}
                     </td>
-                    <td className="px-6 py-4 text-right">
+                    <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex justify-end gap-2">
                         <button 
                           onClick={() => handleEditClick(user)}

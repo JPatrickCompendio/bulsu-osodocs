@@ -1,7 +1,6 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
-import { useAuth } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import DashboardLayout from './components/DashboardLayout';
 import Login from './pages/Login';
@@ -13,16 +12,9 @@ import {
   SubmitNewDocuments,
   AnnouncementManagement,
   AcademicSettings,
-  AdminDashboard
 } from './pages/Pages';
 import Completed from './pages/Completed';
 import UserManagement from './pages/UserManagement';
-
-const RootDashboardRoute = () => {
-  const { user } = useAuth();
-
-  return user?.role === 'admin' ? <AdminDashboard /> : <Dashboard />;
-};
 
 const App = () => {
   return (
@@ -38,7 +30,7 @@ const App = () => {
               <DashboardLayout />
             </ProtectedRoute>
           }>
-            <Route path="/" element={<RootDashboardRoute />} />
+            <Route path="/" element={<Dashboard />} />
             <Route path="/inbox" element={<Inbox />} />
             <Route path="/my-documents" element={<MyDocuments />} />
             <Route path="/requirements" element={<ListOfRequirements />} />

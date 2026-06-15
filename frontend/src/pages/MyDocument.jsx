@@ -5,14 +5,14 @@ import { supabase } from '../supabaseClient';
 import * as subService from '../services/submissionService';
 import { filterTimelineLogsForVersion } from '../utils/submissionLogUtils';
 import SubmissionTimeline from '../components/SubmissionTimeline';
-import { 
-  Search, 
-  Filter, 
-  CheckCircle, 
-  Clock, 
-  AlertCircle, 
-  FileText, 
-  User, 
+import {
+  Search,
+  Filter,
+  CheckCircle,
+  Clock,
+  AlertCircle,
+  FileText,
+  User,
   ChevronRight,
   ChevronLeft,
   ChevronDown,
@@ -273,7 +273,7 @@ export const MyDocuments = () => {
 
       // Filter valid image and document files
       const proofFiles = (files || []).filter((file) => /\.(jpg|jpeg|png|gif|webp|bmp|pdf)$/i.test(file.name));
-      
+
       const fileUrls = await Promise.all(
         proofFiles.map(async (file) => {
           const path = `external-proof/${submissionId}/${file.name}`;
@@ -597,12 +597,12 @@ export const MyDocuments = () => {
       if (finalPath.startsWith('documents/')) {
         finalPath = finalPath.replace('documents/', '');
       }
-      
+
       try {
         const { data } = await supabase.storage
           .from('documents')
           .createSignedUrl(finalPath, 3600);
-        
+
         if (data?.signedUrl) {
           setFilePreviewUrl(data.signedUrl);
           return;
@@ -615,7 +615,7 @@ export const MyDocuments = () => {
       const { data } = supabase.storage
         .from('documents')
         .getPublicUrl(finalPath);
-      
+
       setFilePreviewUrl(data?.publicUrl || '');
     };
     fetchUrl();
@@ -629,7 +629,7 @@ export const MyDocuments = () => {
     try {
       setLoading(true);
       let data = [];
-      
+
       // Org President view: show their own submissions (not only their logs)
       if (String(user?.role || '').toLowerCase() === 'org-president') {
         const { data: subs, error: subsErr } = await supabase
@@ -664,7 +664,7 @@ export const MyDocuments = () => {
         return;
       }
 
-        const { data: primaryData, error } = await supabase
+      const { data: primaryData, error } = await supabase
         .from('submission_logs')
         .select(`
           *,
@@ -701,7 +701,7 @@ export const MyDocuments = () => {
           `)
           .eq('user_id', user.id)
           .order('created_at', { ascending: false });
-          
+
         if (fallbackRes.error) throw fallbackRes.error;
         data = fallbackRes.data;
       } else {
@@ -720,22 +720,22 @@ export const MyDocuments = () => {
     if (!selectedDoc) return;
     try {
       setLoading(true);
-      const activeVersionId = selectedDoc.raw?.current_version_id || 
-        (Array.isArray(selectedDoc.raw?.submission_versions) 
-          ? selectedDoc.raw?.submission_versions[0]?.id 
+      const activeVersionId = selectedDoc.raw?.current_version_id ||
+        (Array.isArray(selectedDoc.raw?.submission_versions)
+          ? selectedDoc.raw?.submission_versions[0]?.id
           : selectedDoc.raw?.submission_versions?.id);
 
       const currentStatus = (selectedDoc.raw?.status || selectedDoc.status || '').toLowerCase();
       const workflowPhase = currentStatus.includes('dean review')
         ? 'dean-review'
         : currentStatus.includes('sds coordinator review')
-        ? 'sds-review'
-        : 'Chairman Review';
+          ? 'sds-review'
+          : 'Chairman Review';
 
       const formattedRemarks = comments || `Returned for edits by ${formatReviewerRoleLabel(user?.role)}`;
       const { error: subErr } = await supabase
         .from('submissions')
-        .update({ 
+        .update({
           status: 'returned',
           remarks: formattedRemarks
         })
@@ -780,7 +780,7 @@ export const MyDocuments = () => {
     if (!selectedDoc) return;
     try {
       setIsResubmitting(true);
-      
+
       const currentVersion = Array.isArray(selectedDoc.raw?.submission_versions)
         ? (selectedDoc.raw?.submission_versions.find(v => v.id === selectedDoc.raw?.current_version_id) || selectedDoc.raw?.submission_versions[0])
         : selectedDoc.raw?.submission_versions;
@@ -793,7 +793,7 @@ export const MyDocuments = () => {
         const fileLog = timelineLogs.find(log => log.attachment_id === file.id);
         return fileLog && fileLog.review_action !== 'approved';
       }) || [];
-      
+
       const returnedAttachmentIds = returnedAttachments.map(a => a.id);
 
       // Validate all returned files have replacements
@@ -804,7 +804,7 @@ export const MyDocuments = () => {
 
       // 1. Create new version
       const newVersion = await subService.createNewVersion(submissionId, oldVersionId, user.id);
-      
+
       // 2. Copy over approved attachments
       await subService.copyApprovedAttachments(oldVersionId, newVersion.id, returnedAttachmentIds, submissionId);
 
@@ -833,22 +833,22 @@ export const MyDocuments = () => {
     if (!selectedDoc) return;
     try {
       setLoading(true);
-      const activeVersionId = selectedDoc.raw?.current_version_id || 
-        (Array.isArray(selectedDoc.raw?.submission_versions) 
-          ? selectedDoc.raw?.submission_versions[0]?.id 
+      const activeVersionId = selectedDoc.raw?.current_version_id ||
+        (Array.isArray(selectedDoc.raw?.submission_versions)
+          ? selectedDoc.raw?.submission_versions[0]?.id
           : selectedDoc.raw?.submission_versions?.id);
 
       const currentStatus = (selectedDoc.raw?.status || selectedDoc.status || '').toLowerCase();
       const workflowPhase = currentStatus.includes('dean review')
         ? 'dean-review'
         : currentStatus.includes('sds coordinator review')
-        ? 'sds-review'
-        : 'Chairman Review';
+          ? 'sds-review'
+          : 'Chairman Review';
 
       const formattedRemarks = comments || `Disapproved by ${formatReviewerRoleLabel(user?.role)}`;
       const { error: subErr } = await supabase
         .from('submissions')
-        .update({ 
+        .update({
           status: 'disapproved',
           remarks: formattedRemarks
         })
@@ -895,14 +895,14 @@ export const MyDocuments = () => {
     if (!selectedDoc) return;
     try {
       setLoading(true);
-      const activeVersionId = selectedDoc.raw?.current_version_id || 
-        (Array.isArray(selectedDoc.raw?.submission_versions) 
-          ? selectedDoc.raw?.submission_versions[0]?.id 
+      const activeVersionId = selectedDoc.raw?.current_version_id ||
+        (Array.isArray(selectedDoc.raw?.submission_versions)
+          ? selectedDoc.raw?.submission_versions[0]?.id
           : selectedDoc.raw?.submission_versions?.id);
 
       const { error: subErr } = await supabase
         .from('submissions')
-        .update({ 
+        .update({
           status: 'SDS coordinator review',
           remarks: 'Forwarded to SDS Coordinator (Admin) by Chairman'
         })
@@ -1069,9 +1069,9 @@ export const MyDocuments = () => {
     if (!selectedDoc) return;
     try {
       setLoading(true);
-      const activeVersionId = selectedDoc.raw?.current_version_id || 
-        (Array.isArray(selectedDoc.raw?.submission_versions) 
-          ? selectedDoc.raw?.submission_versions[0]?.id 
+      const activeVersionId = selectedDoc.raw?.current_version_id ||
+        (Array.isArray(selectedDoc.raw?.submission_versions)
+          ? selectedDoc.raw?.submission_versions[0]?.id
           : selectedDoc.raw?.submission_versions?.id);
 
       const formattedRemarks = comments || 'Approved';
@@ -1203,18 +1203,18 @@ export const MyDocuments = () => {
   const mappedDocs = uniqueSubmissionsList.map(({ latestLog, submission }) => {
     const docTypeName = submission.documentType?.name || 'Document';
     const isActivityProposal = docTypeName.toLowerCase() === 'activity proposal';
-    
+
     const version = Array.isArray(submission.submission_versions)
       ? (submission.submission_versions.find(v => v.id === submission.current_version_id) || submission.submission_versions[0])
       : submission.submission_versions;
-    const details = isActivityProposal 
-      ? (Array.isArray(version?.activity_proposal_details) 
-          ? version.activity_proposal_details[0] 
-          : version?.activity_proposal_details)
+    const details = isActivityProposal
+      ? (Array.isArray(version?.activity_proposal_details)
+        ? version.activity_proposal_details[0]
+        : version?.activity_proposal_details)
       : null;
 
     const orgName = details?.organization_name || submission.users?.org_name || '-';
-    
+
     // Format target dates
     const rawTargetDate = details?.target_date || '-';
     let targetDate = rawTargetDate;
@@ -1225,7 +1225,7 @@ export const MyDocuments = () => {
           day: 'numeric',
           year: 'numeric'
         });
-      } catch (_) {}
+      } catch (_) { }
     }
 
     const targetTime = details?.target_time || '-';
@@ -1243,7 +1243,7 @@ export const MyDocuments = () => {
         .trim();
     const subStatus = normalizeText(submission.status);
     const wpNorm = normalizeText(wp);
-    
+
     // STATUS-FIRST mapping (authoritative): prevents stale workflow_phase values
     // from forcing wrong tabs on admin side.
     if (subStatus === 'returned') {
@@ -1302,14 +1302,14 @@ export const MyDocuments = () => {
       sender: orgName,
       type: docTypeName,
       submittedDate,
-      status: submission.status === 'submitted' 
-        ? 'OSO STAFF REVIEW' 
-        : (submission.status === 'to forward' 
+      status: submission.status === 'submitted'
+        ? 'OSO STAFF REVIEW'
+        : (submission.status === 'to forward'
           ? (user?.role === 'org-president' ? 'HARDCOPY SUBMISSION' : 'TO FORWARD')
           : (submission.status ? submission.status.toUpperCase() : 'PENDING')),
       lastAction: lastActionDate,
       category,
-      
+
       // Extended fields copied from Inbox details mappings
       proposal_title: proposalTitle,
       pic: details?.person_in_charge || '-',
@@ -1350,7 +1350,7 @@ export const MyDocuments = () => {
     const matchesTab =
       activeTab === 'All' ||
       normalizeCategory(doc.category) === normalizeCategory(activeTab);
-    const matchesSearch = !query || 
+    const matchesSearch = !query ||
       doc.title.toLowerCase().includes(query) ||
       doc.sender.toLowerCase().includes(query) ||
       doc.type.toLowerCase().includes(query) ||
@@ -1378,7 +1378,7 @@ export const MyDocuments = () => {
   if (selectedDoc) {
     const isActivityProposal = selectedDoc.isActivityProposal;
 
-    const allVersions = Array.isArray(selectedDoc.raw?.submission_versions) 
+    const allVersions = Array.isArray(selectedDoc.raw?.submission_versions)
       ? [...selectedDoc.raw.submission_versions].sort((a, b) => b.version_number - a.version_number)
       : [selectedDoc.raw?.submission_versions].filter(Boolean);
 
@@ -1451,8 +1451,8 @@ export const MyDocuments = () => {
     if (user?.role === 'org-president') {
       const details = isActivityProposal
         ? (Array.isArray(currentVersion?.activity_proposal_details)
-            ? currentVersion.activity_proposal_details[0]
-            : currentVersion?.activity_proposal_details)
+          ? currentVersion.activity_proposal_details[0]
+          : currentVersion?.activity_proposal_details)
         : null;
 
       const formattedSubmittedAt = new Date(selectedDoc.raw?.created_at || selectedDoc.submittedDate).toLocaleDateString(
@@ -1500,13 +1500,13 @@ export const MyDocuments = () => {
       const lastViewerRole = lastViewerLog?.users?.role || null;
       const lastViewerTime = lastViewerLog?.created_at
         ? new Date(lastViewerLog.created_at).toLocaleString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-            hour: 'numeric',
-            minute: '2-digit',
-            hour12: true
-          })
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        })
         : null;
 
       const docTitle = selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title;
@@ -1635,7 +1635,7 @@ export const MyDocuments = () => {
 
               {/* Attached Files Section - Collapsible with Live Data (same design as old) */}
               <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 mb-10 transition-all duration-500">
-                <button 
+                <button
                   onClick={() => setIsFilesOpen(!isFilesOpen)}
                   className="w-full bg-[#525252] text-white px-8 py-4 flex items-center justify-between hover:brightness-110 transition-all outline-none"
                 >
@@ -1645,7 +1645,7 @@ export const MyDocuments = () => {
                   </div>
                   <ChevronDown size={20} className={`transition-transform duration-500 ${isFilesOpen ? 'rotate-180' : ''}`} />
                 </button>
-                
+
                 {isFilesOpen && (
                   <div className="p-6 space-y-3 animate-in slide-in-from-top-4 duration-500">
                     {attachments && attachments.length > 0 ? (
@@ -1659,7 +1659,7 @@ export const MyDocuments = () => {
                         const fileUrl = data?.publicUrl || '#';
 
                         const fileLog = timelineLogs.find(log => log.attachment_id === file.id);
-                        
+
                         // Only show "returned" (orange) during chairman-stage review.
                         // For later phases (e.g., dean review), old chairman return reasons should not force orange.
                         const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
@@ -1714,7 +1714,7 @@ export const MyDocuments = () => {
                               </div>
                             </div>
                             <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
-                              <button 
+                              <button
                                 onClick={() => {
                                   setPreviewFile(file);
                                   setReviewAction('');
@@ -1724,8 +1724,8 @@ export const MyDocuments = () => {
                               >
                                 view
                               </button>
-                              <a 
-                                href={fileUrl} 
+                              <a
+                                href={fileUrl}
                                 download
                                 className="bg-secondary-gold text-white px-6 py-2 rounded-lg text-xs font-bold hover:brightness-110 transition-all shadow-lg inline-block text-center"
                               >
@@ -2219,8 +2219,8 @@ export const MyDocuments = () => {
                             )}
                           </div>
                           <div className="mt-2">
-                            <input 
-                              type="file" 
+                            <input
+                              type="file"
                               accept=".pdf,.docx"
                               className="block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
                               onChange={(e) => {
@@ -2238,13 +2238,13 @@ export const MyDocuments = () => {
                   </div>
 
                   <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
-                    <button 
+                    <button
                       onClick={() => setIsResubmitModalOpen(false)}
                       className="px-6 py-3 border border-gray-200 text-gray-500 hover:bg-gray-50 rounded-xl font-bold transition-all text-xs uppercase"
                     >
                       Cancel
                     </button>
-                    <button 
+                    <button
                       onClick={handleResubmit}
                       disabled={isResubmitting || Object.keys(resubmitFiles).length < returnedAttachments.length}
                       className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all text-xs uppercase shadow-md disabled:opacity-50"
@@ -2266,7 +2266,7 @@ export const MyDocuments = () => {
         {/* Detail Header */}
         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-8">
           <div className="flex items-start gap-4">
-            <button 
+            <button
               onClick={() => { setSelectedDoc(null); setSelectedVersionId(null); }}
               className="mt-1 p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-gray-800"
             >
@@ -2291,7 +2291,7 @@ export const MyDocuments = () => {
             {allVersions.length > 1 && (
               <div className="flex items-center gap-3 bg-white border border-gray-100 px-4 py-2 rounded-xl shadow-sm">
                 <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Version:</span>
-                <select 
+                <select
                   value={currentVersion?.id || ''}
                   onChange={(e) => setSelectedVersionId(e.target.value)}
                   className="bg-gray-50 border-none rounded-lg px-3 py-1.5 text-sm font-bold text-gray-700 outline-none cursor-pointer focus:ring-2 focus:ring-primary-green/20"
@@ -2304,7 +2304,7 @@ export const MyDocuments = () => {
                 </select>
               </div>
             )}
-            
+
             {(user?.role === 'org-president' && (selectedDoc.status === 'DRAFT' || selectedDoc.status === 'RETURNED')) && (
               <button
                 onClick={() => navigate(`/submit?submissionId=${selectedDoc.id}`)}
@@ -2330,7 +2330,7 @@ export const MyDocuments = () => {
                 <span>{card.label}</span>
               </div>
               {card.badge ? (
-                <span 
+                <span
                   style={{
                     backgroundColor: `${getStatusColor(card.value)}1a`,
                     color: getStatusColor(card.value)
@@ -2371,8 +2371,8 @@ export const MyDocuments = () => {
             <div className="flex gap-2">
               <span className="font-bold min-w-[200px]">Target Date and Time:</span>
               <span>
-                {selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-' 
-                  ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}` 
+                {selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-'
+                  ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}`
                   : selectedDoc.targetDate}
               </span>
             </div>
@@ -2457,7 +2457,7 @@ export const MyDocuments = () => {
 
         {/* Attached Files Section - Collapsible with Live Data */}
         <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 mb-10 transition-all duration-500">
-          <button 
+          <button
             onClick={() => setIsFilesOpen(!isFilesOpen)}
             className="w-full bg-[#525252] text-white px-8 py-4 flex items-center justify-between hover:brightness-110 transition-all outline-none"
           >
@@ -2467,7 +2467,7 @@ export const MyDocuments = () => {
             </div>
             <ChevronDown size={20} className={`transition-transform duration-500 ${isFilesOpen ? 'rotate-180' : ''}`} />
           </button>
-          
+
           {isFilesOpen && (
             <div className="p-6 space-y-3 animate-in slide-in-from-top-4 duration-500">
               {attachments && attachments.length > 0 ? (
@@ -2526,7 +2526,7 @@ export const MyDocuments = () => {
                         </div>
                       </div>
                       <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
-                        <button 
+                        <button
                           onClick={() => {
                             setPreviewFile(file);
                             setReviewAction('');
@@ -2536,8 +2536,8 @@ export const MyDocuments = () => {
                         >
                           view
                         </button>
-                        <a 
-                          href={fileUrl} 
+                        <a
+                          href={fileUrl}
                           download
                           className="bg-secondary-gold text-white px-6 py-2 rounded-lg text-xs font-bold hover:brightness-110 transition-all shadow-lg inline-block text-center"
                         >
@@ -2733,7 +2733,7 @@ export const MyDocuments = () => {
                       <p className="text-gray-400 text-xs font-medium">Verify Document Attachment</p>
                     </div>
                   </div>
-                  <button 
+                  <button
                     onClick={() => setPreviewFile(null)}
                     className="p-2.5 hover:bg-gray-200 rounded-full transition-colors text-gray-400 hover:text-gray-800"
                   >
@@ -2747,15 +2747,15 @@ export const MyDocuments = () => {
                   <div className="flex-1 bg-gray-100 p-6 flex flex-col h-full overflow-hidden border-r border-gray-100">
                     <div className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-200/50 relative h-full">
                       {previewFile.file_name?.toLowerCase().endsWith('.pdf') || previewFile.file_url?.toLowerCase().includes('.pdf') ? (
-                        <iframe 
-                          src={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=Fit` : ''} 
-                          className="w-full h-full border-0 rounded-2xl" 
+                        <iframe
+                          src={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=Fit` : ''}
+                          className="w-full h-full border-0 rounded-2xl"
                           title="PDF Preview"
                         />
                       ) : previewFile.file_name?.toLowerCase().endsWith('.docx') || previewFile.file_url?.toLowerCase().includes('.docx') ? (
-                        <iframe 
-                          src={filePreviewUrl ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(filePreviewUrl)}` : ''} 
-                          className="w-full h-full border-0 rounded-2xl" 
+                        <iframe
+                          src={filePreviewUrl ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(filePreviewUrl)}` : ''}
+                          className="w-full h-full border-0 rounded-2xl"
                           title="DOCX Preview"
                         />
                       ) : (
@@ -2763,8 +2763,8 @@ export const MyDocuments = () => {
                           <FileText size={48} className="text-gray-300 mb-4 animate-bounce" />
                           <h4 className="font-bold text-gray-700 mb-1">Preview is not supported for this file type</h4>
                           <p className="text-gray-400 text-xs max-w-xs mb-4">You can download it to view locally on your device.</p>
-                          <a 
-                            href={filePreviewUrl} 
+                          <a
+                            href={filePreviewUrl}
                             download
                             className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-md inline-flex items-center gap-2"
                           >
@@ -2912,7 +2912,7 @@ export const MyDocuments = () => {
           let modalTitle = 'Return Submission';
           let modalDescription = (
             <>
-              Are you sure you want to return this submission to the sender? 
+              Are you sure you want to return this submission to the sender?
               This will update the status to <strong className="text-amber-600">Returned</strong>.
             </>
           );
@@ -2929,7 +2929,7 @@ export const MyDocuments = () => {
             modalTitle = 'Approve Submission';
             modalDescription = (
               <>
-                Are you sure you want to approve this submission? 
+                Are you sure you want to approve this submission?
                 This will advance the document to the next workflow stage.
               </>
             );
@@ -2944,7 +2944,7 @@ export const MyDocuments = () => {
             modalTitle = 'Disapprove Submission';
             modalDescription = (
               <>
-                Are you sure you want to disapprove this submission? 
+                Are you sure you want to disapprove this submission?
                 This will mark the status as <strong className="text-red-600">Disapproved</strong>.
               </>
             );
@@ -3004,7 +3004,7 @@ export const MyDocuments = () => {
 
                 <div className="space-y-2 mb-6">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-widest block font-bold text-gray-500">Add comments</label>
-                  <textarea 
+                  <textarea
                     value={returnComments}
                     onChange={(e) => setReturnComments(e.target.value)}
                     placeholder={placeholderText}
@@ -3029,7 +3029,7 @@ export const MyDocuments = () => {
                 )}
 
                 <div className="flex items-center gap-3">
-                  <button 
+                  <button
                     onClick={() => {
                       setIsReturnModalOpen(false);
                       setExternalProofFile(null);
@@ -3038,7 +3038,7 @@ export const MyDocuments = () => {
                   >
                     Cancel
                   </button>
-                  <button 
+                  <button
                     onClick={onConfirm}
                     disabled={loading || externalProofUploading || disableConfirm}
                     className={`flex-1 px-5 py-3 ${confirmBtnBg} text-white rounded-xl font-bold transition-all text-xs uppercase tracking-wider shadow-md disabled:opacity-50`}
@@ -3096,13 +3096,13 @@ export const MyDocuments = () => {
               </div>
 
               <div className="flex items-center gap-3">
-                <button 
+                <button
                   onClick={() => setIsForwardModalOpen(false)}
                   className="flex-1 px-5 py-3 border border-gray-200 text-gray-500 hover:bg-gray-50 rounded-xl font-bold transition-all text-xs uppercase tracking-wider"
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   onClick={handleForwardSubmission}
                   disabled={loading}
                   className="flex-1 px-5 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold transition-all text-xs uppercase tracking-wider shadow-md shadow-green-600/10 disabled:opacity-50"
@@ -3159,13 +3159,13 @@ export const MyDocuments = () => {
                           )}
                         </div>
                         <div className="mt-2">
-                          <input 
-                            type="file" 
+                          <input
+                            type="file"
                             accept=".pdf,.docx"
                             className="block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
                             onChange={(e) => {
-                              if(e.target.files[0]) {
-                                setResubmitFiles(prev => ({...prev, [reqId]: e.target.files[0]}));
+                              if (e.target.files[0]) {
+                                setResubmitFiles(prev => ({ ...prev, [reqId]: e.target.files[0] }));
                               }
                             }}
                           />
@@ -3178,13 +3178,13 @@ export const MyDocuments = () => {
                 </div>
 
                 <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
-                  <button 
+                  <button
                     onClick={() => setIsResubmitModalOpen(false)}
                     className="px-6 py-3 border border-gray-200 text-gray-500 hover:bg-gray-50 rounded-xl font-bold transition-all text-xs uppercase"
                   >
                     Cancel
                   </button>
-                  <button 
+                  <button
                     onClick={handleResubmit}
                     disabled={isResubmitting || Object.keys(resubmitFiles).length < returnedAttachments.length}
                     className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all text-xs uppercase shadow-md disabled:opacity-50"
@@ -3237,16 +3237,14 @@ export const MyDocuments = () => {
             <button
               key={tab.name}
               onClick={() => setActiveTab(tab.name)}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-2 ${
-                activeTab === tab.name 
-                  ? 'bg-white text-primary-green shadow-sm' 
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-2 ${activeTab === tab.name
+                ? 'bg-white text-primary-green shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+                }`}
             >
               {tab.name}
-              <span className={`px-2 py-0.5 rounded-md text-[10px] ${
-                activeTab === tab.name ? 'bg-primary-green text-white' : 'bg-gray-200 text-gray-500'
-              }`}>
+              <span className={`px-2 py-0.5 rounded-md text-[10px] ${activeTab === tab.name ? 'bg-primary-green text-white' : 'bg-gray-200 text-gray-500'
+                }`}>
                 {tab.count}
               </span>
             </button>
@@ -3276,47 +3274,47 @@ export const MyDocuments = () => {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {filteredDocs.map((doc) => (
-                    <tr
-                      key={doc.id}
-                      className="group transition-all duration-300 hover:bg-gray-50/50"
+                  <tr
+                    key={doc.id}
+                    className="group transition-all duration-300 hover:bg-gray-50/50"
+                  >
+                    <td
+                      className="px-6 py-5 cursor-pointer"
+                      onClick={() => setSelectedDoc(doc)}
                     >
-                      <td
-                        className="px-6 py-5 cursor-pointer"
-                        onClick={() => setSelectedDoc(doc)}
-                      >
-                        <div className="flex items-center gap-3">
-                          <FileText className="text-secondary-gold opacity-50" size={20} />
-                          <div>
-                            <p className="font-semibold text-gray-800 group-hover:text-primary-green transition-colors uppercase text-sm leading-tight">
-                              {doc.title}
-                            </p>
-                            <p className="text-[10px] text-gray-400 font-mono mt-0.5 tracking-tighter uppercase">{doc.ref}</p>
-                          </div>
+                      <div className="flex items-center gap-3">
+                        <FileText className="text-secondary-gold opacity-50" size={20} />
+                        <div>
+                          <p className="font-semibold text-gray-800 group-hover:text-primary-green transition-colors uppercase text-sm leading-tight">
+                            {doc.title}
+                          </p>
+                          <p className="text-[10px] text-gray-400 font-mono mt-0.5 tracking-tighter uppercase">{doc.ref}</p>
                         </div>
-                      </td>
-                      <td className="px-6 py-5">
-                        <span className="text-sm font-medium text-gray-600 uppercase tracking-tight">{doc.sender}</span>
-                      </td>
-                      <td className="px-6 py-5 text-center">
-                        <span className="inline-block px-4 py-1 border border-gray-100 text-gray-500 text-[10px] font-semibold rounded-lg bg-white shadow-sm group-hover:border-primary-green/20 group-hover:text-primary-green transition-all uppercase">
-                          {doc.type}
-                        </span>
-                      </td>
-                      <td className="px-6 py-5 text-sm text-gray-500 font-medium">
-                        {doc.submittedDate}
-                      </td>
-                      <td className="px-6 py-5 text-center">
-                        <span
-                          style={{
-                            backgroundColor: getStatusColor(doc.status?.toLowerCase() === 'waiting for accomplishment report' ? 'approved' : doc.status)
-                          }}
-                          className="px-4 py-1.5 rounded-full text-[10px] font-bold shadow-sm inline-block min-w-[120px] transition-all uppercase text-white"
-                        >
-                          {doc.status?.toLowerCase() === 'waiting for accomplishment report' ? 'APPROVED' : doc.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-5 text-right text-sm text-gray-500 font-medium">{doc.lastAction}</td>
-                    </tr>
+                      </div>
+                    </td>
+                    <td className="px-6 py-5">
+                      <span className="text-sm font-medium text-gray-600 uppercase tracking-tight">{doc.sender}</span>
+                    </td>
+                    <td className="px-6 py-5 text-center">
+                      <span className="inline-block px-4 py-1 border border-gray-100 text-gray-500 text-[10px] font-semibold rounded-lg bg-white shadow-sm group-hover:border-primary-green/20 group-hover:text-primary-green transition-all uppercase">
+                        {doc.type}
+                      </span>
+                    </td>
+                    <td className="px-6 py-5 text-sm text-gray-500 font-medium">
+                      {doc.submittedDate}
+                    </td>
+                    <td className="px-6 py-5 text-center">
+                      <span
+                        style={{
+                          backgroundColor: getStatusColor(doc.status?.toLowerCase() === 'waiting for accomplishment report' ? 'approved' : doc.status)
+                        }}
+                        className="px-4 py-1.5 rounded-full text-[10px] font-bold shadow-sm inline-block min-w-[120px] transition-all uppercase text-white"
+                      >
+                        {doc.status?.toLowerCase() === 'waiting for accomplishment report' ? 'APPROVED' : doc.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-5 text-right text-sm text-gray-500 font-medium">{doc.lastAction}</td>
+                  </tr>
                 ))}
               </tbody>
             </table>
