@@ -37,6 +37,13 @@
   animation: shine 2s infinite linear;
 }
 
+.login-brand-title {
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.45);
+}
+
 body {
   margin: 0;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;

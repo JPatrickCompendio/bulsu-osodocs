@@ -944,6 +944,34 @@ async function handleOrgDashboard(url: URL) {
   });
 }
 
+async function handleCheckEmail(url: URL) {
+  const email = url.searchParams.get('email');
+  if (!email) {
+    return jsonResponse({ error: 'Email is required' }, 400);
+  }
+
+  const supabase = getAdminClient();
+  try {
+    const { data, error } = await supabase.auth.admin.listUsers({
+      perPage: 1000,
+    });
+
+    if (error) {
+      return jsonResponse({ error: 'Failed to list users', details: error.message }, 500);
+    }
+
+    const exists = data.users.some(
+      (u) => u.email && u.email.toLowerCase() === email.toLowerCase()
+    );
+    return jsonResponse({ exists });
+  } catch (err) {
+    return jsonResponse(
+      { error: 'Internal server error', details: err instanceof Error ? err.message : String(err) },
+      500
+    );
+  }
+}
+
 async function routeRequest(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const path = normalizePath(url.pathname);
@@ -951,6 +979,7 @@ async function routeRequest(req: Request): Promise<Response> {
   const body = method === 'GET' || method === 'DELETE' ? {} : await readBody(req);
 
   if (method === 'GET' && path === '/users') return handleGetUsers();
+  if (method === 'GET' && path === '/users/check-email') return handleCheckEmail(url);
   if (method === 'POST' && path === '/users') return handlePostUsers(body);
   if (method === 'PUT' && /^\/users\/[^/]+$/.test(path)) {
     return handlePutUsers(path.split('/')[2], body);
