@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
-import { Bell, Search, X, Check, CheckCircle2, Megaphone, FileText, ChevronRight, Paperclip, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { Bell, Search, X, Check, CheckCircle2, Megaphone, FileText, ChevronRight, Paperclip, ExternalLink, Image as ImageIcon, ShieldAlert, AlertTriangle, Lock, Clock, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiClient, apiUrl } from '../config/apiClient';
 import { supabase } from '../supabaseClient';
@@ -368,6 +368,17 @@ const Header = () => {
 };
 
 const DashboardLayout = () => {
+  const { user, logout } = useAuth();
+  
+  const isSuspended = user?.status?.startsWith('Suspended');
+  const isInactive = user?.status === 'Inactive';
+  const isBlocked = (isSuspended || isInactive) && user?.role === 'org-president';
+
+  let suspensionMessage = '';
+  if (isSuspended && user.status.includes(':')) {
+    suspensionMessage = user.status.split(':').slice(1).join(':').trim();
+  }
+
   return (
     <div className="flex h-screen bg-[#f8fafc]">
       <Sidebar />
@@ -379,6 +390,77 @@ const DashboardLayout = () => {
           </div>
         </main>
       </div>
+
+      {isBlocked && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-lg z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-100 flex flex-col animate-in zoom-in-95 duration-300">
+            {/* Header / Banner */}
+            <div className={`p-6 text-white flex items-center gap-4 ${isSuspended ? 'bg-gradient-to-r from-red-600 to-red-500' : 'bg-gradient-to-r from-amber-500 to-amber-600'}`}>
+              <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-white shrink-0">
+                {isSuspended ? <ShieldAlert size={28} /> : <AlertTriangle size={28} />}
+              </div>
+              <div>
+                <h2 className="text-xl font-black tracking-wide">
+                  {isSuspended ? 'ACCOUNT SUSPENDED' : 'ACCOUNT INACTIVE'}
+                </h2>
+                <p className="text-white/80 text-xs mt-0.5 font-medium">
+                  {isSuspended ? "Your organization's access has been suspended" : "Your organization's access is currently inactive"}
+                </p>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="p-8 flex-1">
+              <p className="text-gray-600 text-sm leading-relaxed mb-6 font-medium">
+                {isSuspended 
+                  ? "An administrator has suspended your organization's account. During suspension, you cannot submit documents, view reports, or perform other dashboard activities."
+                  : 'Your organization account is inactive because you failed to submit the Mid-Year Report by the deadline scheduled by the administration.'}
+              </p>
+
+              {isSuspended && suspensionMessage && (
+                <div className="mb-6 p-4 bg-red-50 rounded-xl border border-red-100">
+                  <span className="block text-[10px] font-black text-red-500 uppercase tracking-widest mb-1.5">Message from Administrator</span>
+                  <p className="text-red-700 text-xs leading-relaxed italic whitespace-pre-wrap">
+                    "{suspensionMessage}"
+                  </p>
+                </div>
+              )}
+
+              {!isSuspended && (
+                <div className="mb-6 p-4 bg-amber-50 rounded-xl border border-amber-100 flex gap-3">
+                  <Clock size={18} className="text-amber-500 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="block text-[10px] font-black text-amber-600 uppercase tracking-widest mb-1">Reason for Inactivity</span>
+                    <p className="text-amber-700 text-xs leading-relaxed">
+                      Mid-Year Report submission deadline has passed without a submitted report for the active school year.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 flex items-center gap-3">
+                <Lock size={16} className="text-gray-400 shrink-0" />
+                <span className="text-xs text-gray-500 font-medium">
+                  Please contact the Office of Student Organizations (OSO) to reactivate your account.
+                </span>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between gap-3 shrink-0">
+              <span className="text-xs text-gray-400 font-semibold uppercase tracking-wider pl-2">
+                OSODOCS Portal
+              </span>
+              <button 
+                onClick={logout}
+                className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs font-black rounded-xl transition-all duration-200 shadow-md shadow-red-600/10 flex items-center gap-2"
+              >
+                <LogOut size={14} /> Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

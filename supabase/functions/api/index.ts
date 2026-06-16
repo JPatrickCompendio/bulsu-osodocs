@@ -1,9 +1,36 @@
-import {
-  corsHeaders,
-  getAdminClient,
-  jsonResponse,
-  normalizePath,
-} from './supabaseAdmin.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.48.1';
+
+export const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+};
+
+export function jsonResponse(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
+
+export function getAdminClient() {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+
+  return createClient(supabaseUrl, supabaseKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+}
+
+export function normalizePath(pathname: string) {
+  const stripped = pathname
+    .replace(/^\/functions\/v1\/api/, '')
+    .replace(/^\/api/, '');
+  return stripped.startsWith('/') ? stripped : `/${stripped}`;
+}
 
 type Params = Record<string, string>;
 
@@ -70,8 +97,80 @@ async function fetchActiveAnnouncements(
   return (data || []).filter((a) => a.is_active !== false);
 }
 
+async function checkAndDeactivateLateUsers() {
+  const supabase = getAdminClient();
+
+  // 1. Get the active school year
+  const { data: activeSy } = await supabase
+    .from('school_years')
+    .select('*')
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (!activeSy) return;
+
+  // 2. Get the Mid-Year Report document type details
+  const { data: midYearDoc } = await supabase
+    .from('documentType')
+    .select('*')
+    .eq('id', 'bcd8f528-5638-496a-af4d-51391cb234d5')
+    .maybeSingle();
+
+  if (!midYearDoc || midYearDoc.status !== 'active' || midYearDoc.availability_type !== 'scheduled') {
+    return;
+  }
+
+  const activeUntil = midYearDoc.active_until;
+  if (!activeUntil) return;
+
+  const deadlineDate = new Date(activeUntil);
+  const now = new Date();
+
+  // If the deadline hasn't passed, do nothing
+  if (now <= deadlineDate) return;
+
+  // 3. Find all active org presidents
+  const { data: activeOrgs, error: orgsError } = await supabase
+    .from('users')
+    .select('*')
+    .eq('role', 'org-president')
+    .eq('status', 'Active');
+
+  if (orgsError || !activeOrgs || activeOrgs.length === 0) return;
+
+  // 4. For each active org, check if they have a non-draft submission for the Mid-Year Report in the active school year
+  for (const org of activeOrgs) {
+    const { data: submissions, error: subError } = await supabase
+      .from('submissions')
+      .select('id')
+      .eq('user_id', org.id)
+      .eq('school_year_id', activeSy.id)
+      .eq('document_type_id', midYearDoc.id)
+      .neq('status', 'draft');
+
+    if (subError) continue;
+
+    // If no submissions found, they failed to submit on time! Turn status into 'Inactive'
+    if (!submissions || submissions.length === 0) {
+      console.log(`Deactivating user ${org.full_name} (${org.id}) due to missing Mid-Year Report by ${activeUntil}`);
+      await supabase
+        .from('users')
+        .update({ status: 'Inactive' })
+        .eq('id', org.id);
+    }
+  }
+}
+
 async function handleGetUsers() {
   const supabase = getAdminClient();
+  
+  // Automatically check and deactivate organizations that missed the mid-year report deadline
+  try {
+    await checkAndDeactivateLateUsers();
+  } catch (err) {
+    console.error('Error running deactivation check:', err);
+  }
+
   const { data, error } = await supabase.from('users').select('*');
   if (error) {
     return jsonResponse({ error: 'Failed to fetch users', details: error.message }, 500);
@@ -1109,7 +1208,6 @@ async function handleOrgDashboard(url: URL) {
   });
 }
 
-<<<<<<< HEAD
 async function handleCheckEmail(url: URL) {
   const email = url.searchParams.get('email');
   if (!email) {
@@ -1145,9 +1243,8 @@ async function routeRequest(req: Request): Promise<Response> {
   const body = method === 'GET' || method === 'DELETE' ? {} : await readBody(req);
 
   if (method === 'GET' && path === '/users') return handleGetUsers();
-
   if (method === 'GET' && path === '/users/check-email') return handleCheckEmail(url);
-
+  
   if (method === 'POST' && path === '/users') return handlePostUsers(body);
   if (method === 'PUT' && /^\/users\/[^/]+$/.test(path)) {
     return handlePutUsers(path.split('/')[2], body);

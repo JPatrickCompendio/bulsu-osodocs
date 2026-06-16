@@ -1365,12 +1365,11 @@ export const MyDocuments = () => {
   const tabs = [
     { name: 'All', count: visibleDocs.length },
     ...(user?.role === 'org-president' ? [{ name: 'OSO Staff review', count: countByTab('OSO Staff review') }] : []),
-    ...(user?.role === 'chairman' ? [{ name: 'Chairman Review', count: countByTab('Chairman Review') }] : []),
     ...(user?.role !== 'admin' ? [{ name: 'SDS Review', count: countByTab('SDS Review') }] : []),
     { name: 'Dean Review', count: countByTab('Dean Review') },
     { name: 'External Review', count: countByTab('External Review') },
     { name: 'Approved', count: countByTab('Approved') },
-    ...(user?.role !== 'org-president' ? [{ name: 'Completed', count: countByTab('Completed') }] : []),
+    ...(user?.role !== 'org-president' && user?.role !== 'admin' && user?.role !== 'chairman' ? [{ name: 'Completed', count: countByTab('Completed') }] : []),
     ...(user?.role === 'chairman' ? [{ name: 'To Forward', count: countByTab('To Forward') }] : []),
     { name: 'Returned', count: countByTab('Returned') }
   ];
