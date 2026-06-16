@@ -15,13 +15,178 @@ async function readBody(req: Request) {
   }
 }
 
+async function getAuthEmailsMap() {
+  const supabase = getAdminClient();
+  const emailMap = new Map<string, string>();
+  let page = 1;
+  const perPage = 1000;
+
+  while (true) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
+    if (error || !data?.users?.length) break;
+    data.users.forEach((u) => {
+      if (u.id && u.email) emailMap.set(u.id, u.email);
+    });
+    if (data.users.length < perPage) break;
+    page += 1;
+  }
+
+  return emailMap;
+}
+
+function getAnnouncementAudiences(role: string, orgName = '') {
+  if (role === 'org-president') {
+    const audiences = ['all-orgs', 'all', 'org-president'];
+    const trimmed = orgName.trim();
+    if (trimmed) audiences.push(`org:${trimmed}`);
+    return audiences;
+  }
+  if (role === 'chairman') return ['oso-staff', 'chairman'];
+  if (role === 'vice-chairman') return ['oso-staff', 'vice-chairman'];
+  return [];
+}
+
+async function fetchActiveAnnouncements(
+  supabase: ReturnType<typeof getAdminClient>,
+  role: string,
+  orgName = '',
+  limit = 3,
+) {
+  const audiences = getAnnouncementAudiences(role, orgName);
+  if (audiences.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from('announcements')
+    .select('*')
+    .in('target_audience', audiences)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error('Announcement fetch error:', error.message);
+    return [];
+  }
+
+  return (data || []).filter((a) => a.is_active !== false);
+}
+
 async function handleGetUsers() {
   const supabase = getAdminClient();
   const { data, error } = await supabase.from('users').select('*');
   if (error) {
     return jsonResponse({ error: 'Failed to fetch users', details: error.message }, 500);
   }
-  return jsonResponse(data);
+  const emailMap = await getAuthEmailsMap();
+  const enriched = (data || []).map((u) => ({ ...u, email: emailMap.get(u.id) || null }));
+  return jsonResponse(enriched);
+}
+
+async function handleGetUserDetail(id: string) {
+  const supabase = getAdminClient();
+  const { data: user, error } = await supabase.from('users').select('*').eq('id', id).single();
+  if (error || !user) {
+    return jsonResponse({ error: 'User not found' }, 404);
+  }
+
+  const { data: authUser } = await supabase.auth.admin.getUserById(id);
+  const email = authUser?.user?.email || null;
+
+  const { data: activeSy } = await supabase
+    .from('school_years')
+    .select('*')
+    .eq('is_active', true)
+    .single();
+
+  const { data: submissions } = await supabase
+    .from('submissions')
+    .select(
+      'id, status, created_at, school_year_id, documentType:document_type_id(name), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title))',
+    )
+    .eq('user_id', id)
+    .neq('status', 'draft')
+    .order('created_at', { ascending: false });
+
+  let activityHistory: Array<Record<string, unknown>> = [];
+  if (activeSy) {
+    const { data: logs } = await supabase
+      .from('submission_logs')
+      .select('*, submissions!inner(school_year_id)')
+      .eq('user_id', id)
+      .eq('submissions.school_year_id', activeSy.id)
+      .order('created_at', { ascending: false })
+      .limit(20);
+    activityHistory = logs || [];
+  }
+
+  let hasMidYear = false;
+  let hasYearEnd = false;
+  if (activeSy && submissions) {
+    submissions.forEach((sub) => {
+      if (sub.status === 'completed' && sub.school_year_id === activeSy.id) {
+        const docName = (sub.documentType as Record<string, unknown>)?.name;
+        const name = typeof docName === 'string' ? docName.toLowerCase() : '';
+        if (name.includes('mid-year') || name.includes('mid year')) hasMidYear = true;
+        if (name.includes('year-end') || name.includes('year end')) hasYearEnd = true;
+      }
+    });
+  }
+
+  const pendingReviewCount = (submissions || []).filter((s) => {
+    const status = String(s.status || '').toLowerCase();
+    return !['completed', 'disapproved', 'draft'].includes(status);
+  }).length;
+
+  const currentSySubmissions = activeSy
+    ? (submissions || []).filter((s) => s.school_year_id === activeSy.id)
+    : [];
+
+  const documentLogs = currentSySubmissions.map((doc) => {
+    let docTitle = `Submission #${String(doc.id).substring(0, 6).toUpperCase()}`;
+    const versions = doc.submission_versions as Array<Record<string, unknown>> | undefined;
+
+    if (versions && versions.length > 0) {
+      const latest = versions.reduce((max, v) =>
+        (v.version_number as number) > (max.version_number as number) ? v : max,
+      versions[0]);
+      const details = Array.isArray(latest.activity_proposal_details)
+        ? latest.activity_proposal_details[0]
+        : latest.activity_proposal_details;
+      if (details && (details as Record<string, unknown>).activity_title) {
+        docTitle = (details as Record<string, unknown>).activity_title as string;
+      } else {
+        docTitle = `${(doc.documentType as Record<string, unknown>)?.name || 'Document'} #${String(doc.id).substring(0, 6).toUpperCase()}`;
+      }
+    }
+
+    const status = String(doc.status || '').toLowerCase();
+    let displayStatus = 'Pending';
+    if (status === 'completed' || status === 'dean approved') displayStatus = 'Approved';
+    else if (status === 'disapproved') displayStatus = 'Disapproved';
+    else if (status === 'returned') displayStatus = 'Returned';
+
+    return {
+      id: doc.id,
+      title: docTitle,
+      type: (doc.documentType as Record<string, unknown>)?.name || 'Unknown',
+      dateSubmitted: doc.created_at,
+      status: displayStatus,
+    };
+  });
+
+  return jsonResponse({
+    success: true,
+    data: {
+      user: { ...user, email },
+      documentLogs,
+      activityHistory,
+      pendingReviewCount,
+      renewal: {
+        isEligible: hasMidYear && hasYearEnd,
+        hasMidYear,
+        hasYearEnd,
+      },
+    },
+  });
 }
 
 async function handlePostUsers(body: Record<string, unknown>) {
@@ -238,25 +403,8 @@ async function handleGetNotifications(url: URL) {
 
   let notifications: Array<Record<string, unknown>> = [];
 
-  let annQuery = supabase.from('announcements').select('*').eq('is_active', true);
-
   if (role !== 'admin') {
-    const audiences: string[] = [];
-    if (role === 'org-president') {
-      audiences.push('all-orgs');
-      if (orgName) audiences.push(`org:${orgName}`);
-    } else if (role === 'chairman') {
-      audiences.push('oso-staff', 'chairman');
-    } else if (role === 'vice-chairman') {
-      audiences.push('oso-staff', 'vice-chairman');
-    } else if (role === 'oso-staff') {
-      audiences.push('oso-staff');
-    }
-    annQuery = annQuery.in('target_audience', audiences);
-  }
-
-  const { data: announcementsData, error: annError } = await annQuery;
-  if (!annError && announcementsData) {
+    const announcementsData = await fetchActiveAnnouncements(supabase, role, orgName, 50);
     notifications = [
       ...notifications,
       ...announcementsData.map((a) => ({
@@ -268,6 +416,26 @@ async function handleGetNotifications(url: URL) {
         source: a,
       })),
     ];
+  } else {
+    const { data: announcementsData, error: annError } = await supabase
+      .from('announcements')
+      .select('*')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (!annError && announcementsData) {
+      notifications = [
+        ...notifications,
+        ...announcementsData.map((a) => ({
+          id: `ann_${a.id}`,
+          type: 'announcement',
+          title: a.title,
+          message: a.content,
+          timestamp: a.created_at,
+          source: a,
+        })),
+      ];
+    }
   }
 
   let logsData: Array<Record<string, unknown>> = [];
@@ -693,7 +861,7 @@ async function handleAdminDashboard() {
     : [];
 
   const statusBreakdown: Record<string, number> = {
-    'to forward and hardcopy submission for org president': 0,
+    'oso staff review': 0,
     'chairman and vice chairman review': 0,
     'sds coordinator review': 0,
     'dean review': 0,
@@ -709,7 +877,7 @@ async function handleAdminDashboard() {
       if (s.status === 'draft') return;
 
       let displayStatus = s.status;
-      if (s.status === 'submitted') displayStatus = 'to forward and hardcopy submission for org president';
+      if (s.status === 'submitted') displayStatus = 'oso staff review';
       else if (s.status === 'oso approved') displayStatus = 'sds coordinator review';
       else if (s.status === 'sds approved' || s.status === 'chairman approved') {
         displayStatus = 'chairman and vice chairman review';
@@ -817,12 +985,9 @@ async function handleOrgDashboard(url: URL) {
 
   const { data: user } = await supabase.from('users').select('*').eq('id', userId).single();
   const { data: activeSy } = await supabase.from('school_years').select('*').eq('is_active', true).single();
-  const { data: announcements } = await supabase
-    .from('announcements')
-    .select('*')
-    .in('target_audience', ['all', 'org-president'])
-    .order('created_at', { ascending: false })
-    .limit(3);
+
+  const orgName = user?.org_name || '';
+  const announcements = await fetchActiveAnnouncements(supabase, 'org-president', orgName, 3);
 
   const { data: userSubmissions } = await supabase
     .from('submissions')
@@ -944,6 +1109,7 @@ async function handleOrgDashboard(url: URL) {
   });
 }
 
+<<<<<<< HEAD
 async function handleCheckEmail(url: URL) {
   const email = url.searchParams.get('email');
   if (!email) {
@@ -970,7 +1136,7 @@ async function handleCheckEmail(url: URL) {
       500
     );
   }
-}
+ }
 
 async function routeRequest(req: Request): Promise<Response> {
   const url = new URL(req.url);
@@ -979,7 +1145,9 @@ async function routeRequest(req: Request): Promise<Response> {
   const body = method === 'GET' || method === 'DELETE' ? {} : await readBody(req);
 
   if (method === 'GET' && path === '/users') return handleGetUsers();
+
   if (method === 'GET' && path === '/users/check-email') return handleCheckEmail(url);
+
   if (method === 'POST' && path === '/users') return handlePostUsers(body);
   if (method === 'PUT' && /^\/users\/[^/]+$/.test(path)) {
     return handlePutUsers(path.split('/')[2], body);
@@ -1025,6 +1193,7 @@ async function routeRequest(req: Request): Promise<Response> {
   }
   if (method === 'GET' && path === '/admin/dashboard') return handleAdminDashboard();
   if (method === 'GET' && path === '/org/dashboard') return handleOrgDashboard(url);
+  if (method === 'GET' && path === '/chairman/dashboard') return handleChairmanDashboard(url);
 
   return jsonResponse({ error: 'Not found' }, 404);
 }

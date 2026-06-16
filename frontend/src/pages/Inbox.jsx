@@ -66,6 +66,7 @@ const getStatusColor = (status) => {
 export const Inbox = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const isOsoStaff = user?.role === 'chairman' || user?.role === 'vice-chairman';
   const [isFilterOpen, setIsFilterOpen] = React.useState(false);
   const [filterType, setFilterType] = React.useState('All'); // 'All', 'Pending', 'Approved', 'Rejected'
   const [selectedDocs, setSelectedDocs] = React.useState([]);
@@ -1675,20 +1676,22 @@ export const Inbox = () => {
           </div>
         </div>
 
-        <div className="flex p-1 bg-gray-100/50 rounded-xl border border-gray-100">
-          <button 
-            onClick={() => { setViewMode('inbox'); setSelectedDocs([]); }}
-            className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${viewMode === 'inbox' ? 'bg-white text-primary-green shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-          >
-            All Messages
-          </button>
-          <button 
-            onClick={() => { setViewMode('archive'); setSelectedDocs([]); }}
-            className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${viewMode === 'archive' ? 'bg-white text-primary-green shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-          >
-            Archive
-          </button>
-        </div>
+        {!isOsoStaff && (
+          <div className="flex p-1 bg-gray-100/50 rounded-xl border border-gray-100">
+            <button 
+              onClick={() => { setViewMode('inbox'); setSelectedDocs([]); }}
+              className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${viewMode === 'inbox' ? 'bg-white text-primary-green shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              All Messages
+            </button>
+            <button 
+              onClick={() => { setViewMode('archive'); setSelectedDocs([]); }}
+              className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${viewMode === 'archive' ? 'bg-white text-primary-green shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              Archive
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Top Header Bar */}
@@ -1772,22 +1775,26 @@ export const Inbox = () => {
           <div className="h-6 w-[1px] bg-gray-100"></div>
 
           <div className="flex items-center gap-1">
-            <button 
-              onClick={handleArchive}
-              disabled={isActionsDisabled || viewMode === 'archive'}
-              className="flex items-center gap-2 px-4 py-2 text-gray-400 hover:text-primary-green hover:bg-green-50 rounded-xl transition-all disabled:opacity-20 disabled:hover:bg-transparent group"
-            >
-              <Archive size={18} />
-              <span className="text-sm font-semibold">Archive</span>
-            </button>
-            <button 
-              onClick={handleDelete}
-              disabled={isActionsDisabled}
-              className="flex items-center gap-2 px-4 py-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all disabled:opacity-20 disabled:hover:bg-transparent group"
-            >
-              <Trash2 size={18} />
-              <span className="text-sm font-semibold">Delete</span>
-            </button>
+            {!isOsoStaff && (
+              <button 
+                onClick={handleArchive}
+                disabled={isActionsDisabled || viewMode === 'archive'}
+                className="flex items-center gap-2 px-4 py-2 text-gray-400 hover:text-primary-green hover:bg-green-50 rounded-xl transition-all disabled:opacity-20 disabled:hover:bg-transparent group"
+              >
+                <Archive size={18} />
+                <span className="text-sm font-semibold">Archive</span>
+              </button>
+            )}
+            {!isOsoStaff && (
+              <button 
+                onClick={handleDelete}
+                disabled={isActionsDisabled}
+                className="flex items-center gap-2 px-4 py-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all disabled:opacity-20 disabled:hover:bg-transparent group"
+              >
+                <Trash2 size={18} />
+                <span className="text-sm font-semibold">Delete</span>
+              </button>
+            )}
             <button 
               disabled={isActionsDisabled}
               className="flex items-center gap-2 px-4 py-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-xl transition-all disabled:opacity-20 disabled:hover:bg-transparent group"
