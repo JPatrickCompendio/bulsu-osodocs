@@ -34,6 +34,7 @@ const UserManagement = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [newUserType, setNewUserType] = useState('org'); // 'org' or 'admin-staff'
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('all');
@@ -160,7 +161,7 @@ const UserManagement = () => {
       joined_date: '',
       contact_no: '',
       student_no: '',
-      status: 'Active',
+      status: newUserType === 'org' ? 'Inactive' : 'Active',
       suspension_message: ''
     });
     generatePassword(newUserType);
@@ -170,27 +171,45 @@ const UserManagement = () => {
   const handleEditClick = (user) => {
     setIsEditMode(true);
     setEditingUserId(user.id);
-    setNewUserType(user.role === 'org-president' ? 'org' : 'admin-staff');
     
-    const isSuspended = user.status && user.status.startsWith('Suspended');
-    const suspensionMsg = isSuspended && user.status.includes(':') 
-      ? user.status.split(':').slice(1).join(':').trim() 
-      : '';
+    if (user.role === 'admin') {
+      setFormData({
+        full_name: user.full_name || '',
+        role: user.role || 'admin',
+        email: user.email || '',
+        org_name: '',
+        no_member: '',
+        adviser_name: '',
+        joined_date: '',
+        contact_no: user.contact_no || '',
+        student_no: '',
+        status: user.status || 'Active',
+        suspension_message: ''
+      });
+      setIsAdminModalOpen(true);
+    } else {
+      setNewUserType(user.role === 'org-president' ? 'org' : 'admin-staff');
+      
+      const isSuspended = user.status && user.status.startsWith('Suspended');
+      const suspensionMsg = isSuspended && user.status.includes(':') 
+        ? user.status.split(':').slice(1).join(':').trim() 
+        : '';
 
-    setFormData({
-      full_name: user.full_name || '',
-      role: user.role || '',
-      email: user.email || '',
-      org_name: user.org_name || '',
-      no_member: user.no_member || '',
-      adviser_name: user.adviser_name || '',
-      joined_date: user.joined_date || '',
-      contact_no: user.contact_no || '',
-      student_no: user.student_no || '',
-      status: isSuspended ? 'Suspended' : (user.status || 'Active'),
-      suspension_message: suspensionMsg
-    });
-    setIsModalOpen(true);
+      setFormData({
+        full_name: user.full_name || '',
+        role: user.role || '',
+        email: user.email || '',
+        org_name: user.org_name || '',
+        no_member: user.no_member || '',
+        adviser_name: user.adviser_name || '',
+        joined_date: user.joined_date || '',
+        contact_no: user.contact_no || '',
+        student_no: user.student_no || '',
+        status: isSuspended ? 'Suspended' : (user.status || 'Active'),
+        suspension_message: suspensionMsg
+      });
+      setIsModalOpen(true);
+    }
   };
 
   const handleToggleSuspendClick = (user) => {
@@ -403,6 +422,7 @@ const UserManagement = () => {
       
       if (result.success) {
         setIsModalOpen(false);
+        setIsAdminModalOpen(false);
         setSuccessMessage(isEditMode ? 'User account has been successfully updated!' : 'New user account has been successfully created!');
         setIsSuccessModalOpen(true);
         fetchUsers(); // Refresh table
@@ -830,24 +850,26 @@ const UserManagement = () => {
             <div className="p-6 border-b border-gray-100">
               <div className="flex p-1 bg-gray-100 rounded-xl w-fit mx-auto text-gray-800">
                 <button 
+                  type="button"
                   onClick={() => { 
                     setNewUserType('org'); 
                     generatePassword('org');
-                    setFormData(prev => ({ ...prev, role: 'org-president' }));
+                    setFormData(prev => ({ ...prev, role: 'org-president', status: 'Inactive' }));
                   }}
                   className={`px-6 py-2 rounded-lg text-sm font-semibold transition-all ${newUserType === 'org' ? 'bg-white text-primary-green shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
                   Student Organization
                 </button>
                 <button 
+                  type="button"
                   onClick={() => { 
                     setNewUserType('admin-staff'); 
                     generatePassword('admin-staff');
-                    setFormData(prev => ({ ...prev, role: 'chairman' }));
+                    setFormData(prev => ({ ...prev, role: 'chairman', status: 'Active' }));
                   }}
                   className={`px-6 py-2 rounded-lg text-sm font-semibold transition-all ${newUserType === 'admin-staff' ? 'bg-white text-primary-green shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
-                  Chairman / Vice Chairman
+                  OSO Staff
                 </button>
               </div>
             </div>
@@ -874,7 +896,6 @@ const UserManagement = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Student Number</label>
                     <input 
                       type="text" 
-                      required
                       className="w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-green text-gray-800" 
                       placeholder="e.g. 2021-123456"
                       value={formData.student_no}
@@ -882,8 +903,8 @@ const UserManagement = () => {
                         const cleaned = e.target.value.replace(/[^\d-]/g, '');
                         setFormData({...formData, student_no: cleaned});
                       }}
-                      pattern="[0-9]{4}-[0-9]{5,6}"
-                      title="Student number must be in format: 2021-123456 (4 digits, hyphen, 5-6 digits)"
+                      pattern="[0-9-]*"
+                      title="Student number can contain numbers and an optional hyphen"
                     />
                   </div>
                   <div>
@@ -1148,6 +1169,121 @@ const UserManagement = () => {
               >
                 {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Check size={18} />}
                 {isSaving ? 'Saving...' : 'Save User'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal - Edit Admin Details */}
+      {isAdminModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setIsAdminModalOpen(false)}></div>
+          
+          <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl relative z-10 overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="bg-[#0b5c2a] p-6 text-white flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold flex items-center gap-2">
+                  <Shield size={22} className="text-secondary-gold shrink-0 animate-pulse" />
+                  Edit Admin Account
+                </h2>
+                <p className="text-white/70 text-xs">Update SDS Coordinator admin profile details and email.</p>
+              </div>
+              <button onClick={() => setIsAdminModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Form Body */}
+            <form onSubmit={handleSaveUser} id="edit-admin-form" className="p-8 max-h-[60vh] overflow-y-auto text-gray-800 space-y-6">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">SDS Coordinator Name</label>
+                <div className="relative">
+                  <Shield className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                  <input 
+                    type="text" 
+                    required
+                    className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-green" 
+                    placeholder="e.g. SDS Coordinator"
+                    value={formData.full_name}
+                    onChange={(e) => setFormData({...formData, full_name: e.target.value})}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Contact Number</label>
+                  <input 
+                    type="text" 
+                    required
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-green text-gray-800" 
+                    placeholder="e.g. 09123456789"
+                    value={formData.contact_no}
+                    onChange={(e) => {
+                      const cleaned = e.target.value.replace(/[^\d]/g, '');
+                      setFormData({...formData, contact_no: cleaned});
+                    }}
+                    pattern="09[0-9]{9}"
+                    maxLength="11"
+                    title="Contact number must be an 11-digit mobile number starting with 09"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Email Address</label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                    <input 
+                      type="email" 
+                      required
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-green" 
+                      placeholder="admin@bulsu.edu.ph" 
+                      value={formData.email}
+                      onChange={(e) => setFormData({...formData, email: e.target.value})}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Status and Role - Read Only Visual Panels */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-gray-100 font-sans">
+                <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 flex items-center justify-between">
+                  <div>
+                    <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Account Role</span>
+                    <span className="font-bold text-sm text-gray-700">SDS Coordinator (Admin)</span>
+                  </div>
+                  <Shield size={20} className="text-primary-green opacity-40" />
+                </div>
+
+                <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 flex items-center justify-between">
+                  <div>
+                    <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Account Status</span>
+                    <span className="font-bold text-sm text-green-600">Active</span>
+                  </div>
+                  <CheckCircle size={20} className="text-green-500 opacity-40" />
+                </div>
+              </div>
+            </form>
+
+            {/* Modal Footer */}
+            <div className="p-6 border-t border-gray-100 flex gap-3 justify-end bg-gray-50/50">
+              <button 
+                type="button"
+                onClick={() => setIsAdminModalOpen(false)}
+                className="px-6 py-2.5 text-gray-500 font-semibold hover:text-gray-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                form="edit-admin-form"
+                type="submit"
+                disabled={isSaving}
+                className="px-8 py-2.5 bg-[#0b5c2a] text-white font-bold rounded-xl shadow-lg hover:shadow-green-600/20 transition-all flex items-center gap-2 disabled:opacity-50"
+              >
+                {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Check size={18} />}
+                {isSaving ? 'Saving Changes...' : 'Save Profile'}
               </button>
             </div>
           </div>

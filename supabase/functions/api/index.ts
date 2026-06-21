@@ -161,14 +161,145 @@ async function checkAndDeactivateLateUsers() {
   }
 }
 
+async function checkAndSuspendLateUsers() {
+  const supabase = getAdminClient();
+  const now = new Date();
+
+  // 1. Get the active school year
+  const { data: activeSy } = await supabase
+    .from('school_years')
+    .select('*')
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (!activeSy) return;
+
+  // 2. Get all org presidents who are currently Active or Inactive
+  const { data: orgPresidents, error: orgsError } = await supabase
+    .from('users')
+    .select('*')
+    .eq('role', 'org-president')
+    .in('status', ['Active', 'Inactive']);
+
+  if (orgsError || !orgPresidents || orgPresidents.length === 0) return;
+
+  // Check Criteria 1: School Year End Date
+  const syEndDate = activeSy.end_date ? new Date(activeSy.end_date) : null;
+  const isSyEnded = syEndDate && now > syEndDate;
+
+  // Check Criteria 2: Renewal Document Deadline
+  const { data: renewalDoc } = await supabase
+    .from('documentType')
+    .select('*')
+    .ilike('name', '%renewal%')
+    .maybeSingle();
+
+  const renewalDeadline = (renewalDoc && renewalDoc.availability_type === 'scheduled' && renewalDoc.active_until)
+    ? new Date(renewalDoc.active_until)
+    : null;
+  const isRenewalDeadlinePassed = renewalDeadline && now > renewalDeadline;
+
+  for (const org of orgPresidents) {
+    let shouldSuspend = false;
+    let reason = '';
+
+    // Check 1: Proposals submission requirement (if SY has ended)
+    if (isSyEnded) {
+      const { data: subs, error: subsError } = await supabase
+        .from('submissions')
+        .select('id, documentType:document_type_id(name)')
+        .eq('user_id', org.id)
+        .eq('school_year_id', activeSy.id)
+        .neq('status', 'draft');
+
+      if (!subsError) {
+        const submissionsList = subs || [];
+        const hasProposal = submissionsList.some((sub: any) => {
+          const name = sub.documentType?.name || '';
+          return name.toLowerCase().includes('proposal');
+        });
+        if (!hasProposal) {
+          shouldSuspend = true;
+          reason = 'Suspended: Failed to submit at least 1 Activity Proposal before the end of the school year.';
+        }
+      }
+    }
+
+    // Check 2: Renewal submission requirement (if renewal window has closed)
+    if (!shouldSuspend && isRenewalDeadlinePassed && renewalDoc) {
+      const { data: renewalSubs, error: renewalError } = await supabase
+        .from('submissions')
+        .select('id')
+        .eq('user_id', org.id)
+        .eq('school_year_id', activeSy.id)
+        .eq('document_type_id', renewalDoc.id)
+        .neq('status', 'draft');
+
+      if (!renewalError && (!renewalSubs || renewalSubs.length === 0)) {
+        shouldSuspend = true;
+        reason = 'Suspended: Failed to submit the Renewal Document before the deadline.';
+      }
+    }
+
+    if (shouldSuspend && reason) {
+      console.log(`Suspending user ${org.full_name} (${org.id}) due to: ${reason}`);
+      await supabase
+        .from('users')
+        .update({ status: reason })
+        .eq('id', org.id);
+    }
+  }
+}
+
+async function handleGetAdminEmail() {
+  const supabase = getAdminClient();
+  try {
+    const { data: profiles, error: profileError } = await supabase
+      .from('users')
+      .select('id, role, contact_no')
+      .eq('role', 'admin');
+
+    if (profileError || !profiles || profiles.length === 0) {
+      console.warn('Admin profile not found in users table:', profileError?.message);
+      return jsonResponse({ email: null });
+    }
+
+    const profile = profiles[0];
+    const { data: authUserData, error: authUserError } = await supabase.auth.admin.getUserById(profile.id);
+    if (authUserError || !authUserData?.user) {
+      console.warn('Admin auth user not found:', authUserError?.message);
+      return jsonResponse({ email: profile.contact_no || null });
+    }
+
+    const authUser = authUserData.user;
+    const email = authUser.email || 
+                  (authUser as any).Email || 
+                  authUser.user_metadata?.email || 
+                  authUser.user_metadata?.Email ||
+                  (authUser as any).user_metadata?.["Email"] ||
+                  (authUser as any).raw_user_meta_data?.email ||
+                  (authUser as any).raw_user_meta_data?.Email;
+
+    if (email) {
+      return jsonResponse({ email });
+    }
+
+    return jsonResponse({ email: profile.contact_no || null });
+  } catch (err) {
+    console.error('Error fetching admin email:', err);
+    return jsonResponse({ email: null });
+  }
+}
+
 async function handleGetUsers() {
   const supabase = getAdminClient();
   
-  // Automatically check and deactivate organizations that missed the mid-year report deadline
+  // Automatically check and deactivate/suspend organizations that missed deadlines
   try {
     await checkAndDeactivateLateUsers();
+    await checkAndSuspendLateUsers();
   } catch (err) {
-    console.error('Error running deactivation check:', err);
+    console.error('Error running automated status checks:', err);
   }
 
   const { data, error } = await supabase.from('users').select('*');
@@ -358,7 +489,16 @@ async function handlePutUsers(id: string, body: Record<string, unknown>) {
     joined_date,
     contact_no,
     student_no,
+    email,
   } = body as Record<string, string | null | undefined>;
+
+  // If email is provided, update the auth email
+  if (email) {
+    const { error: authError } = await supabase.auth.admin.updateUserById(id, { email });
+    if (authError) {
+      console.warn('Failed to update auth email:', authError.message);
+    }
+  }
 
   const { data, error } = await supabase
     .from('users')
@@ -1082,6 +1222,14 @@ async function handleOrgDashboard(url: URL) {
     return jsonResponse({ error: 'User ID is required' }, 400);
   }
 
+  // Automatically check and deactivate/suspend organizations that missed deadlines
+  try {
+    await checkAndDeactivateLateUsers();
+    await checkAndSuspendLateUsers();
+  } catch (err) {
+    console.error('Error running automated checks in dashboard:', err);
+  }
+
   const { data: user } = await supabase.from('users').select('*').eq('id', userId).single();
   const { data: activeSy } = await supabase.from('school_years').select('*').eq('is_active', true).single();
 
@@ -1287,6 +1435,9 @@ async function routeRequest(req: Request): Promise<Response> {
 
   if (method === 'GET' && path === '/system/document-availability') {
     return handleDocumentAvailability(url);
+  }
+  if (method === 'GET' && path === '/system/admin-email') {
+    return handleGetAdminEmail();
   }
   if (method === 'GET' && path === '/admin/dashboard') return handleAdminDashboard();
   if (method === 'GET' && path === '/org/dashboard') return handleOrgDashboard(url);

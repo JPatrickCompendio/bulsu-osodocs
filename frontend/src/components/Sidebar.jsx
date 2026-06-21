@@ -16,6 +16,7 @@ import { useAuth } from '../context/AuthContext';
 
 const Sidebar = () => {
   const { user, logout } = useAuth();
+  const [showLogoutConfirm, setShowLogoutConfirm] = React.useState(false);
 
   const menuItems = {
     admin: [
@@ -93,13 +94,45 @@ const Sidebar = () => {
           </div>
         </div>
         <button
-          onClick={logout}
+          onClick={() => setShowLogoutConfirm(true)}
           className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-white/80 hover:bg-red-500/20 hover:text-red-400 transition-colors"
         >
           <LogOut size={20} />
           <span className="font-medium">Logout</span>
         </button>
       </div>
+
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl relative animate-in zoom-in-95 duration-200 text-gray-800">
+            <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-5">
+              <LogOut size={28} />
+            </div>
+            <h3 className="text-xl font-bold text-gray-800 mb-2">Confirm Logout</h3>
+            <p className="text-sm text-gray-500 mb-6">Are you sure you want to log out of your account?</p>
+            
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowLogoutConfirm(false)}
+                className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-600 font-bold rounded-xl hover:bg-gray-50 transition-all text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLogoutConfirm(false);
+                  logout();
+                }}
+                className="flex-1 px-4 py-2.5 bg-red-600 text-white font-bold rounded-xl shadow-lg hover:shadow-red-600/20 transition-all text-sm"
+              >
+                Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

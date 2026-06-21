@@ -270,6 +270,16 @@ export const submitForReview = async (submissionId, versionId, userId) => {
 
   if (subErr) throw subErr;
 
+  // Automatically update the user account status to 'Active' upon submission
+  const { error: userErr } = await supabase
+    .from('users')
+    .update({ status: 'Active' })
+    .eq('id', userId);
+
+  if (userErr) {
+    console.error('Failed to update user status to Active on submission:', userErr);
+  }
+
   await createLog(submissionId, userId, 'Document submitted for review.', versionId, 'submission', 'submitted');
 };
 
@@ -329,6 +339,16 @@ export const createNewVersion = async (submissionId, oldVersionId, userId) => {
     .eq('id', submissionId);
 
   if (updateSubErr) throw updateSubErr;
+
+  // Automatically update the user account status to 'Active' upon resubmission
+  const { error: userErr } = await supabase
+    .from('users')
+    .update({ status: 'Active' })
+    .eq('id', userId);
+
+  if (userErr) {
+    console.error('Failed to update user status to Active on resubmission:', userErr);
+  }
 
   // 5. Log the resubmission
   await createLog(

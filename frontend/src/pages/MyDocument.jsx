@@ -5,6 +5,7 @@ import { supabase } from '../supabaseClient';
 import * as subService from '../services/submissionService';
 import { filterTimelineLogsForVersion } from '../utils/submissionLogUtils';
 import SubmissionTimeline from '../components/SubmissionTimeline';
+import { apiFetch } from '../config/api';
 import {
   Search,
   Filter,
@@ -21,7 +22,8 @@ import {
   RotateCcw,
   Calendar,
   Eye,
-  ArrowUpRight
+  ArrowUpRight,
+  Lock
 } from 'lucide-react';
 
 const getStatusColor = (status) => {
@@ -67,8 +69,41 @@ const getStatusColor = (status) => {
 
 export const MyDocuments = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
 
+  const [showSuspendedModal, setShowSuspendedModal] = React.useState(false);
+  const [adminEmail, setAdminEmail] = React.useState('');
+
+  const isSuspended = user?.status?.startsWith('Suspended') && user?.role === 'org-president';
+
+  React.useEffect(() => {
+    if (isSuspended && showSuspendedModal) {
+      apiFetch('/api/system/admin-email')
+        .then(res => res.json())
+        .then(data => {
+          if (data?.email) {
+            setAdminEmail(data.email);
+          }
+        })
+        .catch(err => console.error('Error fetching admin email:', err));
+    }
+  }, [isSuspended, showSuspendedModal]);
+
+  const handleResubmitClick = () => {
+    if (isSuspended) {
+      setShowSuspendedModal(true);
+    } else {
+      setIsResubmitModalOpen(true);
+    }
+  };
+
+  const handleContinueClick = () => {
+    if (isSuspended) {
+      setShowSuspendedModal(true);
+    } else {
+      navigate(`/submit?submissionId=${selectedDoc.id}`);
+    }
+  };
 
   const [activeTab, setActiveTab] = React.useState('All');
   const [searchQuery, setSearchQuery] = React.useState('');
@@ -820,6 +855,9 @@ export const MyDocuments = () => {
       setResubmitFiles({});
       setSelectedDoc(null);
       await fetchHandledLogs();
+      if (refreshUser) {
+        await refreshUser();
+      }
       alert('Document resubmitted successfully!');
     } catch (err) {
       console.error('Error resubmitting:', err);
@@ -1900,7 +1938,7 @@ export const MyDocuments = () => {
 
               {isReturnedStatus && (
                 <button
-                  onClick={() => setIsResubmitModalOpen(true)}
+                  onClick={handleResubmitClick}
                   className="w-full px-5 py-3.5 bg-amber-500 text-white rounded-xl text-sm font-semibold hover:bg-amber-600 transition-all shadow-sm"
                 >
                   Resubmit
@@ -2306,7 +2344,7 @@ export const MyDocuments = () => {
 
             {(user?.role === 'org-president' && (selectedDoc.status === 'DRAFT' || selectedDoc.status === 'RETURNED')) && (
               <button
-                onClick={() => navigate(`/submit?submissionId=${selectedDoc.id}`)}
+                onClick={handleContinueClick}
                 className="self-start mt-1 px-5 py-3 bg-primary-green text-white rounded-2xl text-xs font-bold uppercase tracking-widest shadow-lg shadow-primary-green/20 hover:bg-green-700 transition-all"
               >
                 Continue Editing
@@ -2569,7 +2607,7 @@ export const MyDocuments = () => {
         {user?.role === 'org-president' && selectedDoc.category === 'Returned' && (
           <div className="flex items-center justify-center gap-4 mt-10 p-6 bg-gray-50 border border-gray-100 rounded-3xl shadow-sm max-w-xl mx-auto">
             <button
-              onClick={() => setIsResubmitModalOpen(true)}
+              onClick={handleResubmitClick}
               className="flex items-center justify-center gap-3 px-8 py-3.5 bg-blue-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-blue-600/20 uppercase tracking-widest animate-in"
             >
               <RotateCcw size={16} />
@@ -3378,6 +3416,60 @@ export const MyDocuments = () => {
                   )}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSuspendedModal && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-100 flex flex-col animate-in zoom-in-95 duration-300">
+            <div className="p-6 text-white flex items-center gap-4 bg-gradient-to-r from-red-600 to-red-500">
+              <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-white shrink-0">
+                <Lock size={28} />
+              </div>
+              <div className="text-left">
+                <h2 className="text-xl font-black tracking-wide">ACCOUNT SUSPENDED</h2>
+                <p className="text-white/80 text-xs mt-0.5 font-medium">Access to document submission is restricted</p>
+              </div>
+            </div>
+
+            <div className="p-8 text-gray-800 text-left">
+              <p className="text-gray-600 text-sm leading-relaxed mb-6 font-medium">
+                An administrator has suspended your organization's account. While suspended, you can access your dashboard and view documents, but you cannot submit new documents or new versions.
+              </p>
+
+              {user?.status && (
+                <div className="mb-6 p-4 bg-red-50 rounded-xl border border-red-100">
+                  <span className="block text-[10px] font-black text-red-500 uppercase tracking-widest mb-1.5">Suspension Reason</span>
+                  <p className="text-red-700 text-xs leading-relaxed italic whitespace-pre-wrap">
+                    "{user.status.includes(':') ? user.status.split(':').slice(1).join(':').trim() : user.status}"
+                  </p>
+                </div>
+              )}
+
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 flex items-center gap-3">
+                <AlertCircle className="text-red-500 shrink-0" size={20} />
+                <span className="text-xs text-gray-500 font-medium text-left">
+                  Please contact the SDS Coordinator at {adminEmail && adminEmail.includes('@') ? (
+                    <a href={`mailto:${adminEmail}`} className="text-blue-600 hover:underline font-bold">{adminEmail}</a>
+                  ) : adminEmail ? (
+                    <span className="font-bold text-gray-800">{adminEmail}</span>
+                  ) : (
+                    <span className="font-bold text-gray-800">the administrator</span>
+                  )} to reactivate your account.
+                </span>
+              </div>
+            </div>
+
+            <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3 shrink-0">
+              <button 
+                type="button"
+                onClick={() => setShowSuspendedModal(false)}
+                className="px-6 py-2.5 bg-primary-green hover:bg-green-700 text-white text-xs font-black rounded-xl transition-all duration-200 shadow-md shadow-green-600/10"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

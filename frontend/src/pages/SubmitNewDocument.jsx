@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 
 const SubmitNewDocument = () => {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
   
   // Navigation & State
@@ -37,6 +37,21 @@ const SubmitNewDocument = () => {
   const [toast, setToast] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [adminEmail, setAdminEmail] = useState('');
+
+  const isSuspended = user?.status?.startsWith('Suspended') && user?.role === 'org-president';
+
+  useEffect(() => {
+    if (isSuspended) {
+      apiClient.get(apiUrl('/api/system/admin-email'))
+        .then(res => {
+          if (res.data?.email) {
+            setAdminEmail(res.data.email);
+          }
+        })
+        .catch(err => console.error('Error fetching admin email:', err));
+    }
+  }, [isSuspended]);
 
   // Form Data
   const defaultForm = {
@@ -317,6 +332,9 @@ const SubmitNewDocument = () => {
       // 4. If status is 'submitted', finalize it
       if (status === 'submitted') {
         await subService.submitForReview(submissionId, versionId, user.id);
+        if (refreshUser) {
+          await refreshUser();
+        }
         showToast('Document Registered Successfully!');
         setTimeout(() => navigate('/my-documents'), 2000);
       } else {
@@ -444,6 +462,65 @@ const SubmitNewDocument = () => {
       setProposalDetails(prev => ({ ...prev, duration: diff.toFixed(1) }));
     }
   }, [proposalDetails.target_time, proposalDetails.target_end_time, proposalDetails.is_indefinite_end_time]);
+
+  if (isSuspended) {
+    let suspensionMessage = 'Your account has been suspended due to system requirements or missing submissions.';
+    if (user.status.includes(':')) {
+      suspensionMessage = user.status.split(':').slice(1).join(':').trim();
+    }
+
+    return (
+      <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[9999] flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-100 flex flex-col animate-in zoom-in-95 duration-300">
+          <div className="p-6 text-white flex items-center gap-4 bg-gradient-to-r from-red-600 to-red-500">
+            <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-white shrink-0">
+              <Lock size={28} />
+            </div>
+            <div>
+              <h2 className="text-xl font-black tracking-wide">ACCOUNT SUSPENDED</h2>
+              <p className="text-white/80 text-xs mt-0.5 font-medium">Access to document submission is restricted</p>
+            </div>
+          </div>
+
+          <div className="p-8 text-gray-800">
+            <p className="text-gray-600 text-sm leading-relaxed mb-6 font-medium">
+              An administrator has suspended your organization's account. While suspended, you can access your dashboard and view documents, but you cannot submit new documents or new versions.
+            </p>
+
+            <div className="mb-6 p-4 bg-red-50 rounded-xl border border-red-100">
+              <span className="block text-[10px] font-black text-red-500 uppercase tracking-widest mb-1.5">Suspension Reason</span>
+              <p className="text-red-700 text-xs leading-relaxed italic whitespace-pre-wrap">
+                "{suspensionMessage}"
+              </p>
+            </div>
+
+            <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 flex items-center gap-3">
+              <AlertCircle className="text-red-500 shrink-0" size={20} />
+              <span className="text-xs text-gray-500 font-medium text-left">
+                Please contact the SDS Coordinator at {adminEmail && adminEmail.includes('@') ? (
+                  <a href={`mailto:${adminEmail}`} className="text-blue-600 hover:underline font-bold">{adminEmail}</a>
+                ) : adminEmail ? (
+                  <span className="font-bold text-gray-800">{adminEmail}</span>
+                ) : (
+                  <span className="font-bold text-gray-800">the administrator</span>
+                )} to reactivate your account.
+              </span>
+            </div>
+          </div>
+
+          <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3 shrink-0">
+            <button 
+              type="button"
+              onClick={() => navigate('/')}
+              className="px-6 py-2.5 bg-primary-green hover:bg-green-700 text-white text-xs font-black rounded-xl transition-all duration-200 shadow-md shadow-green-600/10"
+            >
+              Back to Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (loading && view === 'dashboard') {
     return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-primary-green" size={48} /></div>;
