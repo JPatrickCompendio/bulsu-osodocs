@@ -29,6 +29,7 @@ import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../config/api';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import Avatar from '../components/Avatar';
 
 const UserManagement = () => {
   const [users, setUsers] = useState([]);
@@ -342,7 +343,7 @@ const UserManagement = () => {
       user.adviser_name || '—',
       user.no_member || '0',
       user.status,
-      new Date(user.created_at).toLocaleDateString()
+      formatDetailDate(user.joined_date || user.created_at)
     ]);
 
     autoTable(doc, {
@@ -477,9 +478,12 @@ const UserManagement = () => {
               {/* Organization Header Card */}
               <div className="bg-gradient-to-br from-[#0b5c2a] to-[#1a7a3a] rounded-2xl p-8 text-white shadow-lg">
                 <div className="flex flex-col md:flex-row md:items-start gap-6">
-                  <div className="w-20 h-20 rounded-2xl bg-secondary-gold flex items-center justify-center text-primary-green font-black text-2xl shadow-lg shrink-0">
-                    {profile.org_name?.charAt(0) || 'O'}
-                  </div>
+                  <Avatar 
+                    profileImage={profile.profile_image} 
+                    name={profile.org_name || profile.full_name || 'O'} 
+                    className="w-20 h-20 rounded-2xl shadow-lg shrink-0" 
+                    fallbackClassName="bg-secondary-gold text-primary-green font-black text-2xl" 
+                  />
                   <div className="flex-1">
                     <div className="flex flex-wrap items-center gap-3 mb-4">
                       <h1 className="text-2xl md:text-3xl font-black">{profile.org_name || 'Organization'}</h1>
@@ -637,9 +641,12 @@ const UserManagement = () => {
             <div className="space-y-6">
               <div className="bg-gradient-to-br from-[#0b5c2a] to-[#1a7a3a] rounded-2xl p-8 text-white shadow-lg">
                 <div className="flex items-center gap-6">
-                  <div className="w-20 h-20 rounded-full bg-white/20 flex items-center justify-center text-3xl font-black">
-                    {profile.full_name?.charAt(0).toUpperCase()}
-                  </div>
+                  <Avatar 
+                    profileImage={profile.profile_image} 
+                    name={profile.full_name} 
+                    className="w-20 h-20 rounded-full shadow-sm" 
+                    fallbackClassName="bg-white/20 text-white font-black text-3xl" 
+                  />
                   <div>
                     <h1 className="text-3xl font-black">{profile.full_name}</h1>
                     <p className="text-green-100 font-medium capitalize mt-1">{profile.role?.replace('-', ' ')}</p>
@@ -657,7 +664,7 @@ const UserManagement = () => {
                   </div>
                   <div className="bg-white rounded-xl p-4 text-gray-800">
                     <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Joined</p>
-                    <p className="font-bold text-sm">{formatDetailDate(profile.created_at)}</p>
+                    <p className="font-bold text-sm">{formatDetailDate(profile.joined_date || profile.created_at)}</p>
                   </div>
                 </div>
               </div>
@@ -751,9 +758,12 @@ const UserManagement = () => {
                       <tr key={user.id} className="hover:bg-gray-50/80 transition-colors group cursor-pointer" onClick={() => handleProfileClick(user)}>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-sm ${user.role === 'org-president' ? 'bg-secondary-gold text-primary-green' : 'bg-primary-green'}`}>
-                              {user.full_name?.charAt(0).toUpperCase()}
-                            </div>
+                            <Avatar 
+                              profileImage={user.profile_image} 
+                              name={user.full_name} 
+                              className="w-10 h-10 rounded-full shadow-sm" 
+                              fallbackClassName={`text-white ${user.role === 'org-president' ? 'bg-secondary-gold text-primary-green' : 'bg-primary-green'}`} 
+                            />
                             <div>
                               <div className="font-semibold text-gray-800">{user.full_name}</div>
                               <div className="text-[10px] text-gray-400 font-mono">
@@ -793,7 +803,7 @@ const UserManagement = () => {
                           </div>
                         </td>
                         <td className="px-6 py-4 text-gray-400 text-xs">
-                          {new Date(user.created_at).toLocaleDateString()}
+                          {formatDetailDate(user.joined_date || user.created_at)}
                         </td>
                         <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex justify-end gap-2">

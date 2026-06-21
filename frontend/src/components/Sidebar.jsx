@@ -10,9 +10,11 @@ import {
   CheckCircle,
   LogOut,
   Megaphone,
-  Settings
+  Settings,
+  User
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../supabaseClient';
 
 const Sidebar = () => {
   const { user, logout } = useAuth();
@@ -21,6 +23,7 @@ const Sidebar = () => {
   const menuItems = {
     admin: [
       { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
+      { name: 'My Profile', path: '/profile', icon: <User size={20} /> },
       { name: 'Inbox', path: '/inbox', icon: <Inbox size={20} /> },
       { name: 'My Documents', path: '/my-documents', icon: <Files size={20} /> },
       { name: 'Completed', path: '/completed', icon: <CheckCircle size={20} /> },
@@ -31,6 +34,7 @@ const Sidebar = () => {
     ],
     chairman: [
       { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
+      { name: 'My Profile', path: '/profile', icon: <User size={20} /> },
       { name: 'Inbox', path: '/inbox', icon: <Inbox size={20} /> },
       { name: 'My Documents', path: '/my-documents', icon: <Files size={20} /> },
       { name: 'Completed', path: '/completed', icon: <CheckCircle size={20} /> },
@@ -38,6 +42,7 @@ const Sidebar = () => {
     ],
     'vice-chairman': [
       { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
+      { name: 'My Profile', path: '/profile', icon: <User size={20} /> },
       { name: 'Inbox', path: '/inbox', icon: <Inbox size={20} /> },
       { name: 'My Documents', path: '/my-documents', icon: <Files size={20} /> },
       { name: 'Completed', path: '/completed', icon: <CheckCircle size={20} /> },
@@ -45,6 +50,7 @@ const Sidebar = () => {
     ],
     'org-president': [
       { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
+      { name: 'My Profile', path: '/profile', icon: <User size={20} /> },
       { name: 'Submit New Document', path: '/submit', icon: <FilePlus size={20} /> },
       { name: 'My Documents', path: '/my-documents', icon: <Files size={20} /> },
       { name: 'Completed', path: '/completed', icon: <CheckCircle size={20} /> },
@@ -85,8 +91,12 @@ const Sidebar = () => {
 
       <div className="p-4 border-t border-white/10">
         <div className="flex items-center gap-3 px-4 py-3 mb-4">
-          <div className="w-8 h-8 rounded-full bg-secondary-gold flex items-center justify-center text-primary-green font-bold text-sm">
-            {user?.full_name?.charAt(0).toUpperCase() || '?'}
+          <div className="w-8 h-8 rounded-full bg-secondary-gold flex items-center justify-center text-primary-green font-bold text-sm overflow-hidden">
+            {user?.avatarUrl ? (
+              <img src={user.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+            ) : (
+              user?.full_name?.charAt(0).toUpperCase() || '?'
+            )}
           </div>
           <div className="flex flex-col">
             <span className="text-sm font-semibold truncate w-32">{user?.full_name || 'User'}</span>

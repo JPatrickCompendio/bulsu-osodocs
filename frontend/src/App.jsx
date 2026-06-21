@@ -15,6 +15,7 @@ import {
 } from './pages/Pages';
 import Completed from './pages/Completed';
 import UserManagement from './pages/UserManagement';
+import MyProfile from './pages/MyProfile';
 
 const App = () => {
   return (
@@ -34,6 +35,7 @@ const App = () => {
             <Route path="/inbox" element={<Inbox />} />
             <Route path="/my-documents" element={<MyDocuments />} />
             <Route path="/requirements" element={<ListOfRequirements />} />
+            <Route path="/profile" element={<MyProfile />} />
             
             {/* Admin only */}
             <Route path="/users" element={

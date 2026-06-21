@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
-import { Bell, Search, X, Check, CheckCircle2, Megaphone, FileText, ChevronRight, Paperclip, ExternalLink, Image as ImageIcon, ShieldAlert, AlertTriangle, Lock, Clock, LogOut } from 'lucide-react';
+import { Bell, Search, X, Check, CheckCircle2, Megaphone, FileText, ChevronRight, Paperclip, ExternalLink, Image as ImageIcon, ShieldAlert, AlertTriangle, Lock, Clock, LogOut, User as UserIcon } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiClient, apiUrl } from '../config/apiClient';
 import { supabase } from '../supabaseClient';
@@ -11,6 +11,7 @@ const Header = () => {
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [filter, setFilter] = useState('all');
   const [readNotifIds, setReadNotifIds] = useState(() => {
     const saved = localStorage.getItem('readNotifIds');
@@ -130,14 +131,50 @@ const Header = () => {
           
           <div className="h-8 w-[1px] bg-gray-100"></div>
           
-          <div className="flex items-center gap-3">
-            <div className="text-right hidden sm:block">
-              <p className="text-sm font-bold text-gray-800">{user?.username}</p>
-              <p className="text-[10px] text-gray-400 uppercase tracking-wider">{user?.role}</p>
-            </div>
-            <div className="w-10 h-10 rounded-full bg-primary-green flex items-center justify-center text-white font-bold border-2 border-white shadow-sm">
-              {user?.username?.charAt(0).toUpperCase()}
-            </div>
+          <div className="flex items-center gap-3 relative">
+            <button 
+              onClick={() => setShowUserDropdown(!showUserDropdown)}
+              className="flex items-center gap-3 hover:bg-gray-50 p-2 rounded-xl transition-colors text-left"
+            >
+              <div className="text-right hidden sm:block">
+                <p className="text-sm font-bold text-gray-800">{user?.full_name || user?.username}</p>
+                <p className="text-[10px] text-gray-400 uppercase tracking-wider">{user?.role}</p>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-primary-green flex items-center justify-center text-white font-bold border-2 border-white shadow-sm overflow-hidden">
+                {user?.avatarUrl ? (
+                  <img src={user.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+                ) : (
+                  (user?.full_name || user?.username)?.charAt(0).toUpperCase() || '?'
+                )}
+              </div>
+            </button>
+
+            {showUserDropdown && (
+              <>
+                <div 
+                  className="fixed inset-0 z-40" 
+                  onClick={() => setShowUserDropdown(false)} 
+                />
+                <div className="absolute top-full right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-gray-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
+                  <div className="p-4 border-b border-gray-100">
+                    <p className="text-sm font-bold text-gray-800 truncate">{user?.full_name || user?.username}</p>
+                    <p className="text-xs text-gray-500 truncate">{user?.email}</p>
+                  </div>
+                  <div className="p-2">
+                    <button 
+                      onClick={() => {
+                        setShowUserDropdown(false);
+                        navigate('/profile');
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 hover:text-primary-green rounded-lg transition-colors font-medium"
+                    >
+                      <UserIcon size={16} />
+                      My Profile
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </header>

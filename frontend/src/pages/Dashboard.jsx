@@ -106,16 +106,43 @@ const fetchChairmanDashboardFallback = async (user, role) => {
 };
 
 const getStatusColor = (status) => {
-  const s = status ? status.toLowerCase() : '';
-  if (s.includes('oso staff') || s === 'submitted') return '#db2777';
-  if (s.includes('chairman')) return '#c2bc13';
-  if (s.includes('sds') || s === 'oso approved') return '#6366f1';
-  if (s.includes('dean')) return '#1e3a8a';
-  if (s.includes('external')) return '#d76b0d';
-  if (s.includes('disapproved')) return '#ef4444';
-  if (s.includes('approved') || s.includes('waiting for accomplishment report')) return '#105220';
-  if (s.includes('returned')) return '#f59e0b';
-  if (s.includes('completed')) return '#22b814';
+  const s = (status || '').toLowerCase().trim();
+  if (s.includes('to forward') || s.includes('hardcopy submission')) {
+    return '#db2777';
+  }
+  if (s.includes('chairman') || s.includes('vice chairman') || s.includes('oso staff review') || s.includes('oso staff') || s.includes('pending')) {
+    return '#c2bc13';
+  }
+  if (s.includes('sds coordinator review') || s.includes('sds review') || s.includes('sds') || s === 'oso approved') {
+    return '#6366f1';
+  }
+  if (s.includes('dean review')) {
+    return '#1e3a8a';
+  }
+  if (s.includes('dean approved')) {
+    return '#1d4ed8';
+  }
+  if (s.includes('external review')) {
+    return '#d76b0d';
+  }
+  if (s.includes('waiting for accomplishment report')) {
+    return '#0ea5e9';
+  }
+  if (s === 'approved') {
+    return '#105220';
+  }
+  if (s.includes('ready for retrieval')) {
+    return '#9333ea';
+  }
+  if (s.includes('disapproved') || s.includes('rejected')) {
+    return '#ef4444';
+  }
+  if (s === 'returned') {
+    return '#f59e0b';
+  }
+  if (s === 'completed') {
+    return '#22b814';
+  }
   return '#6b7280';
 };
 
@@ -130,19 +157,19 @@ const getDocTypeColor = (type) => {
 
 const formatStatus = (s, viewerRole = 'org-president') => {
   if (!s) return 'Unknown';
-  const isStaffView = STAFF_ROLES.has(viewerRole);
-  if (s === 'submitted') return isStaffView ? 'OSO Staff Review' : 'To forward and hardcopy submission for org president';
+  if (s === 'submitted') return 'OSO Staff Review';
   if (s === 'oso approved') return 'SDS coordinator review';
   if (s === 'sds approved' || s === 'chairman approved') return 'Chairman and vice chairman review';
   if (s === 'vice chairman approved') return 'External review';
   if (s === 'external approved') return 'Dean review';
   if (s === 'dean approved' || s === 'waiting for accomplishment report') return 'Approved';
+  if (s === 'to forward') return 'To Forward';
   return s.charAt(0).toUpperCase() + s.slice(1);
 };
 
 const formatBreakdownLabel = (status) => {
-  if (status === 'to forward and hardcopy submission for org president') return 'OSO Staff Review';
-  if (status === 'oso staff review') return 'OSO Staff Review';
+  if (status === 'to forward') return 'To Forward';
+  if (status === 'submitted' || status === 'oso staff review') return 'OSO Staff Review';
   return status;
 };
 

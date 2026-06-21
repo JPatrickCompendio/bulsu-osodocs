@@ -30,15 +30,21 @@ export const createLog = async (submissionId, userId, description, versionId = n
  */
 
 // Create initial submission and v1 draft
-export const startNewSubmission = async (userId, typeId, typeName = 'Document') => {
+export const startNewSubmission = async (userId, typeId, typeName = 'Document', schoolYearId = null) => {
+  const payload = {
+    user_id: userId,
+    document_type_id: typeId,
+    status: 'draft',
+    remarks: 'Initial draft created'
+  };
+  
+  if (schoolYearId) {
+    payload.school_year_id = schoolYearId;
+  }
+
   const { data: sub, error: subErr } = await supabase
     .from('submissions')
-    .insert([{
-      user_id: userId,
-      document_type_id: typeId,
-      status: 'draft',
-      remarks: 'Initial draft created'
-    }])
+    .insert([payload])
     .select()
     .single();
 

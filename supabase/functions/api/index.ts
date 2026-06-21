@@ -325,24 +325,30 @@ async function handleGetUserDetail(id: string) {
     .from('school_years')
     .select('*')
     .eq('is_active', true)
-    .single();
+    .maybeSingle();
 
   const { data: submissions } = await supabase
     .from('submissions')
     .select(
-      'id, status, created_at, school_year_id, documentType:document_type_id(name), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title))',
+      'id, status, created_at, school_year_id, documentType:document_type_id(name), submission_versions!submission_id(version_number, activity_proposal_details(activity_title))'
     )
     .eq('user_id', id)
     .neq('status', 'draft')
     .order('created_at', { ascending: false });
 
+  const currentSySubmissions = activeSy
+    ? (submissions || []).filter((s) => s.school_year_id === activeSy.id || !s.school_year_id)
+    : (submissions || []);
+
+  const validSubIds = currentSySubmissions.map((s) => s.id);
+
   let activityHistory: Array<Record<string, unknown>> = [];
-  if (activeSy) {
+  if (validSubIds.length > 0) {
     const { data: logs } = await supabase
       .from('submission_logs')
-      .select('*, submissions!inner(school_year_id)')
+      .select('*, submissions(id)')
       .eq('user_id', id)
-      .eq('submissions.school_year_id', activeSy.id)
+      .in('submission_id', validSubIds)
       .order('created_at', { ascending: false })
       .limit(20);
     activityHistory = logs || [];
@@ -352,7 +358,7 @@ async function handleGetUserDetail(id: string) {
   let hasYearEnd = false;
   if (activeSy && submissions) {
     submissions.forEach((sub) => {
-      if (sub.status === 'completed' && sub.school_year_id === activeSy.id) {
+      if (sub.status === 'completed' && (sub.school_year_id === activeSy.id || !sub.school_year_id)) {
         const docName = (sub.documentType as Record<string, unknown>)?.name;
         const name = typeof docName === 'string' ? docName.toLowerCase() : '';
         if (name.includes('mid-year') || name.includes('mid year')) hasMidYear = true;
@@ -365,10 +371,6 @@ async function handleGetUserDetail(id: string) {
     const status = String(s.status || '').toLowerCase();
     return !['completed', 'disapproved', 'draft'].includes(status);
   }).length;
-
-  const currentSySubmissions = activeSy
-    ? (submissions || []).filter((s) => s.school_year_id === activeSy.id)
-    : [];
 
   const documentLogs = currentSySubmissions.map((doc) => {
     let docTitle = `Submission #${String(doc.id).substring(0, 6).toUpperCase()}`;
@@ -415,6 +417,8 @@ async function handleGetUserDetail(id: string) {
         hasMidYear,
         hasYearEnd,
       },
+      debugSubmissions: submissions,
+      debugActiveSy: activeSy,
     },
   });
 }
@@ -1392,6 +1396,9 @@ async function routeRequest(req: Request): Promise<Response> {
 
   if (method === 'GET' && path === '/users') return handleGetUsers();
   if (method === 'GET' && path === '/users/check-email') return handleCheckEmail(url);
+  if (method === 'GET' && /^\/users\/[^/]+\/detail$/.test(path)) {
+    return handleGetUserDetail(path.split('/')[2]);
+  }
   
   if (method === 'POST' && path === '/users') return handlePostUsers(body);
   if (method === 'PUT' && /^\/users\/[^/]+$/.test(path)) {

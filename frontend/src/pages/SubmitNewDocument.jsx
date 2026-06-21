@@ -38,6 +38,7 @@ const SubmitNewDocument = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [adminEmail, setAdminEmail] = useState('');
+  const [activeSchoolYearId, setActiveSchoolYearId] = useState(null);
 
   const isSuspended = user?.status?.startsWith('Suspended') && user?.role === 'org-president';
 
@@ -103,6 +104,8 @@ const SubmitNewDocument = () => {
           setBlockedEvents(availRes.data.blockedEvents || []);
           if (!availRes.data.activeSchoolYear || availRes.data.message === 'The current date is outside the active School Year.') {
             setGlobalWarning(availRes.data.message || 'No active school year configured.');
+          } else {
+            setActiveSchoolYearId(availRes.data.activeSchoolYear.id);
           }
         }
       }
@@ -305,7 +308,7 @@ const SubmitNewDocument = () => {
 
       // 1. Create submission and version records first if not existing
       if (!submissionId || !versionId) {
-        const { submission, version } = await subService.startNewSubmission(user.id, selectedType.id, selectedType.name);
+        const { submission, version } = await subService.startNewSubmission(user.id, selectedType.id, selectedType.name, activeSchoolYearId);
         submissionId = submission.id;
         versionId = version.id;
         versionNumber = version.version_number;

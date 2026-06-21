@@ -7,6 +7,15 @@ export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
 
+    // Cleanup object URL on unmount or when avatarUrl changes
+    useEffect(() => {
+        return () => {
+            if (user?.avatarUrl) {
+                URL.revokeObjectURL(user.avatarUrl);
+            }
+        };
+    }, [user?.avatarUrl]);
+
     useEffect(() => {
         let isInitialLoad = true;
         const timer = setTimeout(() => {
@@ -35,13 +44,19 @@ export const AuthProvider = ({ children }) => {
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
             if (session) {
-                setUser(prevUser => prevUser || { ...session.user, role: 'user' });
+                setUser(prevUser => {
+                    if (prevUser?.avatarUrl) URL.revokeObjectURL(prevUser.avatarUrl);
+                    return prevUser || { ...session.user, role: 'user' };
+                });
 
                 if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
                     fetchProfile(session.user);
                 }
             } else {
-                setUser(null);
+                setUser(prevUser => {
+                    if (prevUser?.avatarUrl) URL.revokeObjectURL(prevUser.avatarUrl);
+                    return null;
+                });
                 setLoading(false);
             }
         });
@@ -61,13 +76,36 @@ export const AuthProvider = ({ children }) => {
                 .maybeSingle();
 
             if (!error && profile) {
-                setUser({
-                    ...authUser,
-                    ...profile,
-                    role: profile.role || 'user'
+                let avatarUrl = null;
+                if (profile.profile_image) {
+                    try {
+                        const { data: blob } = await supabase.storage
+                            .from('profile_img')
+                            .download(profile.profile_image);
+                        if (blob) {
+                            avatarUrl = URL.createObjectURL(blob);
+                        }
+                    } catch (e) {
+                        console.error('Failed to download profile image:', e);
+                    }
+                }
+                setUser((prev) => {
+                    if (prev?.avatarUrl && prev.avatarUrl !== avatarUrl) {
+                        URL.revokeObjectURL(prev.avatarUrl);
+                    }
+                    return {
+                        ...prev,
+                        ...authUser,
+                        ...profile,
+                        role: profile.role || 'user',
+                        avatarUrl
+                    };
                 });
             } else {
-                setUser({ ...authUser, role: 'user' });
+                setUser((prev) => {
+                    if (prev?.avatarUrl) URL.revokeObjectURL(prev.avatarUrl);
+                    return { ...authUser, role: 'user' };
+                });
             }
         } catch (error) {
             console.warn('Profile fetch background sync:', error.message);
@@ -91,7 +129,26 @@ export const AuthProvider = ({ children }) => {
 
             if (profileError) throw new Error(profileError.message);
 
-            setUser({ ...data.user, ...profile, role: profile.role || 'user' });
+            let avatarUrl = null;
+            if (profile.profile_image) {
+                try {
+                    const { data: blob } = await supabase.storage
+                        .from('profile_img')
+                        .download(profile.profile_image);
+                    if (blob) {
+                        avatarUrl = URL.createObjectURL(blob);
+                    }
+                } catch (e) {
+                    console.error('Failed to download profile image:', e);
+                }
+            }
+
+            setUser((prev) => {
+                if (prev?.avatarUrl && prev.avatarUrl !== avatarUrl) {
+                    URL.revokeObjectURL(prev.avatarUrl);
+                }
+                return { ...data.user, ...profile, role: profile.role || 'user', avatarUrl };
+            });
             return { success: true };
         } catch (error) {
             console.error('Login error:', error.message);
@@ -102,6 +159,9 @@ export const AuthProvider = ({ children }) => {
     };
 
     const logout = async () => {
+        if (user?.avatarUrl) {
+            URL.revokeObjectURL(user.avatarUrl);
+        }
         await supabase.auth.signOut();
         setUser(null);
     };
