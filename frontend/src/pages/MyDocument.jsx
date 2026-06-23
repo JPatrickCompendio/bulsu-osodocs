@@ -684,8 +684,10 @@ export const MyDocuments = () => {
 
         if (subsErr) throw subsErr;
 
+        const activeSubs = (subs || []).filter((sub) => String(sub.status || '').toLowerCase() !== 'completed');
+
         // Normalize into the same shape expected by the existing mapper (logsData items with `.submissions`)
-        data = (subs || []).map((sub) => ({
+        data = activeSubs.map((sub) => ({
           id: `sub-${sub.id}`,
           submission_id: sub.id,
           created_at: sub.updated_at || sub.created_at,
@@ -743,7 +745,12 @@ export const MyDocuments = () => {
         data = primaryData;
       }
 
-      setLogsData(data || []);
+      const filteredData = (data || []).filter(item => {
+        const subStatus = String(item.submissions?.status || '').toLowerCase();
+        return subStatus !== 'completed';
+      });
+
+      setLogsData(filteredData);
     } catch (err) {
       console.error('Error fetching My Documents logs:', err);
     } finally {
@@ -1854,29 +1861,19 @@ export const MyDocuments = () => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
-                <div className="flex-1">
-                  <div className="relative">
-                    <select
-                      value={currentVersion?.id || ''}
-                      onChange={(e) => setSelectedVersionId(e.target.value)}
-                      className="w-full bg-white border border-gray-200 rounded-xl pl-4 pr-10 py-3 text-sm font-medium text-gray-700 outline-none cursor-pointer focus:ring-2 focus:ring-primary-green/20 appearance-none"
-                    >
-                      {allVersions.map(v => (
-                        <option key={v.id} value={v.id}>
-                          {v.id === selectedDoc.raw?.current_version_id ? 'Current Version' : `Version ${v.version_number}`}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                  </div>
-                </div>
-                <button
-                  onClick={() => window.print()}
-                  className="px-5 py-3 rounded-xl text-xs font-semibold uppercase tracking-wider text-white bg-primary-green hover:brightness-110 active:scale-[0.98] transition-all shadow-lg shadow-primary-green/20"
+              <div className="relative">
+                <select
+                  value={currentVersion?.id || ''}
+                  onChange={(e) => setSelectedVersionId(e.target.value)}
+                  className="w-full bg-white border border-gray-200 rounded-xl pl-4 pr-10 py-3 text-sm font-medium text-gray-700 outline-none cursor-pointer focus:ring-2 focus:ring-primary-green/20 appearance-none"
                 >
-                  Generate Report
-                </button>
+                  {allVersions.map(v => (
+                    <option key={v.id} value={v.id}>
+                      {v.id === selectedDoc.raw?.current_version_id ? 'Current Version' : `Version ${v.version_number}`}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
               </div>
 
               <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 space-y-4">
@@ -3253,16 +3250,18 @@ export const MyDocuments = () => {
           </div>
         </div>
 
-        <div className="flex p-1 bg-gray-100/50 rounded-xl border border-gray-100">
-          <div className="relative flex items-center">
-            <input
-              type="text"
-              placeholder="Search documents..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-transparent pl-8 pr-4 py-2 text-sm outline-none w-64 text-gray-600 font-medium"
-            />
-            <Search className="absolute left-2 text-gray-400" size={16} />
+        <div className="flex items-center gap-3">
+          <div className="flex p-1 bg-gray-100/50 rounded-xl border border-gray-100">
+            <div className="relative flex items-center">
+              <input
+                type="text"
+                placeholder="Search documents..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="bg-transparent pl-8 pr-4 py-2 text-sm outline-none w-64 text-gray-600 font-medium"
+              />
+              <Search className="absolute left-2 text-gray-400" size={16} />
+            </div>
           </div>
         </div>
       </div>

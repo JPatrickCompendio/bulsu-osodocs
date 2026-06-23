@@ -3,7 +3,9 @@ import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
 import CompletedDocumentDetail from '../components/CompletedDocumentDetail';
-import { Filter, ChevronDown, Eye } from 'lucide-react';
+import { Filter, ChevronDown, Eye, FileText } from 'lucide-react';
+import ReportPreviewModal from '../components/ReportPreviewModal';
+
 
 const PageHeader = ({ title }) => (
   <div className="mb-8">
@@ -114,6 +116,55 @@ const Completed = () => {
 
   const role = String(user?.role || '').toLowerCase();
   const isOrgPresident = role === 'org-president';
+
+  const [isReportOpen, setIsReportOpen] = React.useState(false);
+  const [reportData, setReportData] = React.useState({ title: '', stats: [], headers: [], rows: [], secondHeaders: null, secondRows: null, secondTitle: '', filename: '' });
+
+  const handleGenerateReport = () => {
+    const totalDocs = filteredDocs.length;
+    const approved = filteredDocs.filter(d => {
+      const s = String(d.raw?.status || d.statusLabel || '').toLowerCase();
+      return s === 'completed' || s === 'approved' || s === 'dean approved';
+    }).length;
+    const disapproved = filteredDocs.filter(d => {
+      const s = String(d.raw?.status || d.statusLabel || '').toLowerCase();
+      return s === 'disapproved' || s === 'rejected';
+    }).length;
+
+    const successRate = totalDocs > 0 
+      ? `${Math.round((approved / totalDocs) * 100)}%` 
+      : '0%';
+
+    const stats = [
+      { label: 'Total Documents', value: totalDocs },
+      { label: 'Approved', value: approved },
+      { label: 'Disapproved', value: disapproved },
+      { label: 'Approval Rate', value: successRate }
+    ];
+
+    const tableHeaders = ['Ref ID', 'Document Title', 'Sender Organization', 'Document Type', 'Date Completed', 'Status'];
+    const tableData = filteredDocs.map(doc => [
+      doc.ref || `SUB-${doc.id.substring(0, 8).toUpperCase()}`,
+      doc.title || 'Untitled Document',
+      doc.sender || '—',
+      doc.type || '—',
+      doc.completedDate || '—',
+      String(doc.statusLabel || doc.raw?.status || 'Completed').toUpperCase()
+    ]);
+
+    setReportData({
+      title: `Completed & Terminal Documents Report`,
+      stats,
+      headers: tableHeaders,
+      rows: tableData,
+      secondHeaders: null,
+      secondRows: null,
+      secondTitle: '',
+      filename: `Completed_Documents_Report_${new Date().toISOString().split('T')[0]}.pdf`
+    });
+    setIsReportOpen(true);
+  };
+
 
   React.useEffect(() => {
     if (location.state?.openDocId) {
@@ -330,21 +381,33 @@ const Completed = () => {
             onToggle={(e) => toggleFilter(e, 'date')}
           />
         </div>
-        <div className="flex items-center gap-2 text-xs text-gray-500">
-          <span className="shrink-0">Sort by:</span>
-          <FilterDropdown
-            label={SORT_OPTIONS.find((o) => o.value === sortBy)?.label || 'Recently Completed'}
-            value={sortBy}
-            activeWhen={sortBy !== 'recent'}
-            options={SORT_OPTIONS}
-            onChange={(v) => {
-              setSortBy(v);
-              setOpenFilter(null);
-            }}
-            isOpen={openFilter === 'sort'}
-            onToggle={(e) => toggleFilter(e, 'sort')}
-          />
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Generate Report Button */}
+          <button
+            onClick={handleGenerateReport}
+            className="flex items-center gap-2 px-4 py-1.5 bg-white border border-gray-200 text-gray-700 hover:border-primary-green rounded-xl transition-all font-semibold text-xs hover:text-primary-green hover:shadow-sm"
+          >
+            <FileText size={14} />
+            <span>Generate Report</span>
+          </button>
+          
+          <div className="flex items-center gap-2 text-xs text-gray-500">
+            <span className="shrink-0">Sort by:</span>
+            <FilterDropdown
+              label={SORT_OPTIONS.find((o) => o.value === sortBy)?.label || 'Recently Completed'}
+              value={sortBy}
+              activeWhen={sortBy !== 'recent'}
+              options={SORT_OPTIONS}
+              onChange={(v) => {
+                setSortBy(v);
+                setOpenFilter(null);
+              }}
+              isOpen={openFilter === 'sort'}
+              onToggle={(e) => toggleFilter(e, 'sort')}
+            />
+          </div>
         </div>
+
       </div>
 
       <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
@@ -416,12 +479,27 @@ const Completed = () => {
       </div>
 
       {!loading && filteredDocs.length > 0 && (
-        <p className="mt-3 text-xs text-gray-400 text-right">
-          Showing {filteredDocs.length} of {completedDocs.length} completed document{completedDocs.length !== 1 ? 's' : ''}
-        </p>
-      )}
+          <p className="mt-3 text-xs text-gray-400 text-right">
+            Showing {filteredDocs.length} of {completedDocs.length} completed document{completedDocs.length !== 1 ? 's' : ''}
+          </p>
+        )}
+
+      <ReportPreviewModal
+        isOpen={isReportOpen}
+        onClose={() => setIsReportOpen(false)}
+        title={reportData.title}
+        generatedBy={user?.full_name || 'System User'}
+        stats={reportData.stats}
+        tableHeaders={reportData.headers}
+        tableData={reportData.rows}
+        secondTableHeaders={reportData.secondHeaders}
+        secondTableData={reportData.secondRows}
+        secondTableTitle={reportData.secondTitle}
+        pdfFilename={reportData.filename}
+      />
     </div>
   );
 };
+
 
 export default Completed;

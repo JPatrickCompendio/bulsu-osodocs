@@ -90,19 +90,6 @@ const Sidebar = () => {
       </nav>
 
       <div className="p-4 border-t border-white/10">
-        <div className="flex items-center gap-3 px-4 py-3 mb-4">
-          <div className="w-8 h-8 rounded-full bg-secondary-gold flex items-center justify-center text-primary-green font-bold text-sm overflow-hidden">
-            {user?.avatarUrl ? (
-              <img src={user.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
-            ) : (
-              user?.full_name?.charAt(0).toUpperCase() || '?'
-            )}
-          </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold truncate w-32">{user?.full_name || 'User'}</span>
-            <span className="text-xs text-white/60 capitalize">{user?.role}</span>
-          </div>
-        </div>
         <button
           onClick={() => setShowLogoutConfirm(true)}
           className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-white/80 hover:bg-red-500/20 hover:text-red-400 transition-colors"

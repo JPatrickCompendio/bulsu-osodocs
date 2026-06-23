@@ -1335,6 +1335,75 @@ async function handleOrgDashboard(url: URL) {
   const totalFinished = completedCount + disapprovedCount;
   const successRate = totalFinished > 0 ? Math.round((completedCount / totalFinished) * 100) : 100;
 
+  const { data: returnLogs } = await supabase
+    .from('submission_logs')
+    .select('review_action')
+    .eq('action_type', 'attachment_review')
+    .neq('review_action', 'approved');
+
+  const errorCounts: Record<string, number> = {};
+  if (returnLogs) {
+    returnLogs.forEach((log: { review_action: string | null }) => {
+      if (log.review_action && String(log.review_action).trim() !== '') {
+        const reason = String(log.review_action).trim().replace(/-/g, ' ');
+        const displayReason = reason.charAt(0).toUpperCase() + reason.slice(1);
+        errorCounts[displayReason] = (errorCounts[displayReason] || 0) + 1;
+      }
+    });
+  }
+
+  const commonErrors = Object.entries(errorCounts)
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
+  const currentDate = new Date();
+  const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString();
+
+  const { data: recentVersions } = await supabase
+    .from('submission_versions')
+    .select('submission_id, version_number')
+    .gte('created_at', startOfMonth);
+
+  const revisionsThisMonth = recentVersions
+    ? recentVersions.filter((v) => v.version_number > 1).length
+    : 0;
+
+  const { data: allVersions } = await supabase
+    .from('submission_versions')
+    .select('submission_id, version_number');
+
+  const { data: allSubmissionsForRevisions } = await supabase
+    .from('submissions')
+    .select('id, documentType:document_type_id(name)')
+    .neq('status', 'draft');
+
+  const avgRevisionsPerType: Record<string, string | number> = {};
+  if (allVersions && allSubmissionsForRevisions) {
+    const docTypeStats: Record<string, { totalRevisions: number; docCount: number }> = {};
+    allSubmissionsForRevisions.forEach((sub: any) => {
+      if (sub.documentType && sub.documentType.name) {
+        if (!docTypeStats[sub.documentType.name]) {
+          docTypeStats[sub.documentType.name] = { totalRevisions: 0, docCount: 0 };
+        }
+        docTypeStats[sub.documentType.name].docCount++;
+      }
+    });
+
+    allVersions.forEach((v) => {
+      if (v.version_number > 1) {
+        const sub = allSubmissionsForRevisions.find((s: any) => s.id === v.submission_id);
+        if (sub && sub.documentType && sub.documentType.name) {
+          docTypeStats[sub.documentType.name].totalRevisions++;
+        }
+      }
+    });
+
+    for (const [type, stats] of Object.entries(docTypeStats)) {
+      avgRevisionsPerType[type] = stats.docCount > 0 ? (stats.totalRevisions / stats.docCount).toFixed(2) : 0;
+    }
+  }
+
   return jsonResponse({
     success: true,
     data: {
@@ -1355,6 +1424,11 @@ async function handleOrgDashboard(url: URL) {
         isEligible: isRenewalEligible,
         hasMidYear,
         hasYearEnd,
+      },
+      commonErrors,
+      revisionAnalysis: {
+        revisionsThisMonth,
+        avgRevisionsPerType,
       },
     },
   });

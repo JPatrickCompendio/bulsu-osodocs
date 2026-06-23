@@ -3,10 +3,12 @@ import { apiClient, apiUrl } from '../config/apiClient';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
+import ReportPreviewModal from '../components/ReportPreviewModal';
 import {
   FileText, CheckCircle, Clock, AlertCircle, RefreshCcw,
   ChevronRight, BarChart2, Activity, UserCheck, Calendar, Bell, XCircle, Inbox,
 } from 'lucide-react';
+
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -189,9 +191,86 @@ const LoadingSpinner = () => (
 // ─── Admin Dashboard ──────────────────────────────────────────────────────────
 
 const AdminDashboardView = () => {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
+  const [activeSy, setActiveSy] = useState(null);
+
+  const [isReportOpen, setIsReportOpen] = useState(false);
+  const [reportData, setReportData] = useState({ title: '', stats: [], headers: [], rows: [], secondHeaders: null, secondRows: null, secondTitle: '', filename: '' });
+
+  const handleGenerateProcessingReport = () => {
+    const reportStats = [
+      { label: 'Active Under Review', value: stats.statistics.activeReviewCount },
+      { label: 'Eligible for Renewal', value: stats.statistics.eligibleForRenewalCount },
+      { label: 'Current SY Docs', value: stats.statistics.currentSyCount },
+      { label: 'All-Time Docs', value: stats.statistics.allTimeCount }
+    ];
+
+    const tableHeaders = ['Submission ID', 'Document Title', 'Organization', 'Document Type', 'Status'];
+    const tableData = (stats.activeDocuments || []).map(doc => {
+      let docTitle = `Submission #${doc.id.substring(0, 6).toUpperCase()}`;
+      if (doc.submission_versions?.length > 0) {
+        const latest = doc.submission_versions.reduce((max, v) => (v.version_number > max.version_number ? v : max), doc.submission_versions[0]);
+        const details = Array.isArray(latest.activity_proposal_details) ? latest.activity_proposal_details[0] : latest.activity_proposal_details;
+        docTitle = details?.activity_title || `${doc.documentType?.name || 'Document'} #${doc.id.substring(0, 6).toUpperCase()}`;
+      } else {
+        docTitle = `${doc.documentType?.name || 'Document'} #${doc.id.substring(0, 6).toUpperCase()}`;
+      }
+      return [
+        `SUB-${doc.id.substring(0, 8).toUpperCase()}`,
+        docTitle,
+        doc.users?.org_name || 'N/A',
+        doc.documentType?.name || 'Unknown',
+        formatStatus(doc.status, 'admin').toUpperCase()
+      ];
+    });
+
+    setReportData({
+      title: 'In-Progress Documents Report',
+      stats: reportStats,
+      headers: tableHeaders,
+      rows: tableData,
+      secondHeaders: null,
+      secondRows: null,
+      secondTitle: '',
+      filename: `In_Progress_Documents_Report_${new Date().toISOString().split('T')[0]}.pdf`
+    });
+    setIsReportOpen(true);
+  };
+
+  const handleGenerateErrorsRevisionsReport = () => {
+    const reportStats = [
+      { label: 'Revisions This Month', value: stats.revisionAnalysis.revisionsThisMonth }
+    ];
+
+    const tableHeaders = ['Error Rank', 'Reason / Description', 'Count / Frequency'];
+    const tableData = (stats.commonErrors || []).map((err, i) => [
+      `#${i + 1}`,
+      err.reason,
+      String(err.count)
+    ]);
+
+    const secondTableHeaders = ['Document Type', 'Average Revisions'];
+    const secondTableData = Object.entries(stats.revisionAnalysis?.avgRevisionsPerType || {}).map(([type, avg]) => [
+      type,
+      `${avg} avg`
+    ]);
+
+    setReportData({
+      title: 'Common Submission Errors and Revision Analysis Report',
+      stats: reportStats,
+      headers: tableHeaders,
+      rows: tableData,
+      secondHeaders: secondTableHeaders,
+      secondRows: secondTableData,
+      secondTitle: 'Average Revisions Per Document Type',
+      filename: `Submission_Errors_And_Revisions_Report_${new Date().toISOString().split('T')[0]}.pdf`
+    });
+    setIsReportOpen(true);
+  };
+
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -199,6 +278,14 @@ const AdminDashboardView = () => {
         setLoading(true);
         const res = await apiClient.get(apiUrl('/api/admin/dashboard'));
         if (res.data?.success) setStats(res.data.data);
+
+        // Fetch active school year
+        const { data: sy } = await supabase
+          .from('school_years')
+          .select('*')
+          .eq('is_active', true)
+          .maybeSingle();
+        setActiveSy(sy);
       } catch (err) {
         console.error('Failed to load admin dashboard stats:', err);
       } finally {
@@ -214,10 +301,31 @@ const AdminDashboardView = () => {
   return (
     <div className="min-h-screen bg-[#F8F9FA] p-8 pb-32">
       <div className="max-w-7xl mx-auto space-y-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-black text-gray-800 tracking-tight">Admin Dashboard</h1>
-          <p className="text-gray-400 font-bold text-sm mt-1">System Overview and Analytics</p>
+        <div className="flex justify-between items-center mb-8">
+          <div>
+            <h1 className="text-3xl font-black text-gray-800 tracking-tight">Admin Dashboard</h1>
+            <p className="text-gray-400 font-bold text-sm mt-1">System Overview and Analytics</p>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={handleGenerateProcessingReport}
+              className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 hover:border-primary-green rounded-xl transition-all font-semibold text-xs hover:text-primary-green hover:shadow-sm"
+              title="Generate report of all documents that are currently processing"
+            >
+              <FileText size={14} />
+              <span>Processing Docs Report</span>
+            </button>
+            <button
+              onClick={handleGenerateErrorsRevisionsReport}
+              className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 hover:border-primary-green rounded-xl transition-all font-semibold text-xs hover:text-primary-green hover:shadow-sm"
+              title="Generate report for common submission errors and revision analysis"
+            >
+              <FileText size={14} />
+              <span>Errors & Revisions Report</span>
+            </button>
+          </div>
         </div>
+
 
         <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex items-center gap-4">
@@ -305,7 +413,7 @@ const AdminDashboardView = () => {
                           </span>
                         </td>
                         <td className="px-6 py-4">
-                          <span className="px-3 py-1 text-[10px] font-black uppercase rounded-full" style={{ backgroundColor: getStatusColor(statusName), color: '#fff' }}>
+                          <span className="inline-block text-center w-[220px] truncate px-3 py-1 text-[10px] font-black uppercase rounded-full" style={{ backgroundColor: getStatusColor(statusName), color: '#fff' }} title={statusName}>
                             {statusName}
                           </span>
                         </td>
@@ -403,9 +511,25 @@ const AdminDashboardView = () => {
           </div>
         </div>
       </div>
+
+      <ReportPreviewModal
+        isOpen={isReportOpen}
+        onClose={() => setIsReportOpen(false)}
+        title={reportData.title}
+        generatedBy={user?.full_name || 'System User'}
+        stats={reportData.stats}
+        tableHeaders={reportData.headers}
+        tableData={reportData.rows}
+        secondTableHeaders={reportData.secondHeaders}
+        secondTableData={reportData.secondRows}
+        secondTableTitle={reportData.secondTitle}
+        pdfFilename={reportData.filename}
+        schoolYear={activeSy?.name || ''}
+      />
     </div>
   );
 };
+
 
 // ─── Chairman / Vice Chairman Dashboard ───────────────────────────────────────
 
@@ -414,6 +538,84 @@ const ChairmanDashboardView = ({ role }) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
+  const [activeSy, setActiveSy] = useState(null);
+
+  const [isReportOpen, setIsReportOpen] = useState(false);
+  const [reportData, setReportData] = useState({ title: '', stats: [], headers: [], rows: [], secondHeaders: null, secondRows: null, secondTitle: '', filename: '' });
+
+  const handleGenerateProcessingReport = () => {
+    const reportStats = [
+      { label: 'Active Under Review', value: stats.statistics?.activeReviewCount || 0 },
+      { label: 'Eligible for Renewal', value: stats.statistics?.eligibleForRenewalCount || 0 },
+      { label: 'Current SY Docs', value: stats.statistics?.currentSyCount || 0 },
+      { label: 'All-Time Docs', value: stats.statistics?.allTimeCount || 0 }
+    ];
+
+    const tableHeaders = ['Submission ID', 'Document Title', 'Organization', 'Document Type', 'Status'];
+    const tableData = (stats.activeDocuments || []).map(doc => {
+      let docTitle = `Submission #${doc.id.substring(0, 6).toUpperCase()}`;
+      if (doc.submission_versions?.length > 0) {
+        const latest = doc.submission_versions.reduce((max, v) => (v.version_number > max.version_number ? v : max), doc.submission_versions[0]);
+        const details = Array.isArray(latest.activity_proposal_details) ? latest.activity_proposal_details[0] : latest.activity_proposal_details;
+        docTitle = details?.activity_title || `${doc.documentType?.name || 'Document'} #${doc.id.substring(0, 6).toUpperCase()}`;
+      } else {
+        docTitle = `${doc.documentType?.name || 'Document'} #${doc.id.substring(0, 6).toUpperCase()}`;
+      }
+      return [
+        `SUB-${doc.id.substring(0, 8).toUpperCase()}`,
+        docTitle,
+        doc.users?.org_name || 'N/A',
+        doc.documentType?.name || 'Unknown',
+        formatStatus(doc.status, 'admin').toUpperCase()
+      ];
+    });
+
+    const roleLabel = role === 'vice-chairman' ? 'Vice Chairman' : 'Chairman';
+    setReportData({
+      title: 'In-Progress Documents Report',
+      stats: reportStats,
+      headers: tableHeaders,
+      rows: tableData,
+      secondHeaders: null,
+      secondRows: null,
+      secondTitle: '',
+      filename: `In_Progress_Documents_Report_${new Date().toISOString().split('T')[0]}.pdf`
+    });
+    setIsReportOpen(true);
+  };
+
+  const handleGenerateErrorsRevisionsReport = () => {
+    const reportStats = [
+      { label: 'Revisions This Month', value: stats.revisionAnalysis?.revisionsThisMonth || 0 }
+    ];
+
+    const tableHeaders = ['Error Rank', 'Reason / Description', 'Count / Frequency'];
+    const tableData = (stats.commonErrors || []).map((err, i) => [
+      `#${i + 1}`,
+      err.reason,
+      String(err.count)
+    ]);
+
+    const secondTableHeaders = ['Document Type', 'Average Revisions'];
+    const secondTableData = Object.entries(stats.revisionAnalysis?.avgRevisionsPerType || {}).map(([type, avg]) => [
+      type,
+      `${avg} avg`
+    ]);
+
+    const roleLabel = role === 'vice-chairman' ? 'Vice Chairman' : 'Chairman';
+    setReportData({
+      title: `${roleLabel} Dashboard - Common Errors & Revision Analysis Report`,
+      stats: reportStats,
+      headers: tableHeaders,
+      rows: tableData,
+      secondHeaders: secondTableHeaders,
+      secondRows: secondTableData,
+      secondTitle: 'Average Revisions Per Document Type',
+      filename: `${roleLabel}_Errors_And_Revisions_Report_${new Date().toISOString().split('T')[0]}.pdf`
+    });
+    setIsReportOpen(true);
+  };
+
 
   useEffect(() => {
     if (!user?.id) return;
@@ -430,6 +632,14 @@ const ChairmanDashboardView = ({ role }) => {
         }
 
         const announcements = await fetchAnnouncementsForUser(user);
+
+        // Fetch active school year
+        const { data: sy } = await supabase
+          .from('school_years')
+          .select('*')
+          .eq('is_active', true)
+          .maybeSingle();
+        setActiveSy(sy);
         
         if (dashboardStats) {
           setData({ stats: dashboardStats, announcements });
@@ -457,10 +667,29 @@ const ChairmanDashboardView = ({ role }) => {
             <h1 className="text-3xl font-black text-gray-800 tracking-tight">{roleLabel} Dashboard</h1>
             <p className="text-gray-400 font-bold text-sm mt-1">System Overview and Analytics</p>
           </div>
-          <p className="text-sm font-bold text-gray-500 bg-white px-4 py-2 rounded-lg border border-gray-100 shadow-sm">
-            Welcome, {user?.full_name || roleLabel}
-          </p>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleGenerateProcessingReport}
+              className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 hover:border-primary-green rounded-xl transition-all font-semibold text-xs hover:text-primary-green hover:shadow-sm"
+              title="Generate report of all documents that are currently processing"
+            >
+              <FileText size={14} />
+              <span>Processing Docs Report</span>
+            </button>
+            <button
+              onClick={handleGenerateErrorsRevisionsReport}
+              className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 hover:border-primary-green rounded-xl transition-all font-semibold text-xs hover:text-primary-green hover:shadow-sm"
+              title="Generate report for common submission errors and revision analysis"
+            >
+              <FileText size={14} />
+              <span>Errors & Revisions Report</span>
+            </button>
+            <p className="text-xs font-bold text-gray-500 bg-white px-3 py-2.5 rounded-xl border border-gray-100 shadow-sm">
+              Welcome, {user?.full_name || roleLabel}
+            </p>
+          </div>
         </div>
+
 
         <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex items-center gap-4 hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate('/user-management')}>
@@ -553,7 +782,7 @@ const ChairmanDashboardView = ({ role }) => {
                           </span>
                         </td>
                         <td className="px-6 py-4">
-                          <span className="px-3 py-1 text-[10px] font-black uppercase rounded-full" style={{ backgroundColor: getStatusColor(statusName), color: '#fff' }}>
+                          <span className="inline-block text-center w-[220px] truncate px-3 py-1 text-[10px] font-black uppercase rounded-full" style={{ backgroundColor: getStatusColor(statusName), color: '#fff' }} title={statusName}>
                             {statusName}
                           </span>
                         </td>
@@ -677,9 +906,25 @@ const ChairmanDashboardView = ({ role }) => {
           </div>
         </div>
       </div>
+
+      <ReportPreviewModal
+        isOpen={isReportOpen}
+        onClose={() => setIsReportOpen(false)}
+        title={reportData.title}
+        generatedBy={user?.full_name || 'System User'}
+        stats={reportData.stats}
+        tableHeaders={reportData.headers}
+        tableData={reportData.rows}
+        secondTableHeaders={reportData.secondHeaders}
+        secondTableData={reportData.secondRows}
+        secondTableTitle={reportData.secondTitle}
+        pdfFilename={reportData.filename}
+        schoolYear={activeSy?.name || ''}
+      />
     </div>
   );
 };
+
 
 // ─── Org President Dashboard ──────────────────────────────────────────────────
 
@@ -689,6 +934,72 @@ const OrgDashboardView = () => {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [showDates, setShowDates] = useState(false);
+
+  const [isReportOpen, setIsReportOpen] = useState(false);
+  const [reportData, setReportData] = useState({ title: '', stats: [], headers: [], rows: [], secondHeaders: null, secondRows: null, secondTitle: '', filename: '' });
+
+  const handleGenerateProcessingReport = () => {
+    const reportStats = [
+      { label: 'Pending Review', value: data.statistics.pendingCount },
+      { label: 'Approved Documents', value: data.statistics.approvedCount },
+      { label: 'Returned Documents', value: data.statistics.returnedCount },
+      { label: 'Completed Documents', value: data.statistics.completedCount }
+    ];
+
+    const tableHeaders = ['Document Title', 'Document Type', 'Latest Activity Log', 'Status'];
+    const tableData = data.activeDocuments.map(doc => [
+      doc.title || 'Untitled Document',
+      doc.type || '—',
+      doc.latestLog 
+        ? `${doc.latestLog.description || doc.latestLog.comment || 'Status updated'} (${new Date(doc.latestLog.created_at).toLocaleDateString()})` 
+        : 'No logs yet',
+      formatStatus(doc.status, 'org-president').toUpperCase()
+    ]);
+
+    setReportData({
+      title: 'In-Progress Documents Report',
+      stats: reportStats,
+      headers: tableHeaders,
+      rows: tableData,
+      secondHeaders: null,
+      secondRows: null,
+      secondTitle: '',
+      filename: `In_Progress_Documents_Report_${new Date().toISOString().split('T')[0]}.pdf`
+    });
+    setIsReportOpen(true);
+  };
+
+  const handleGenerateErrorsRevisionsReport = () => {
+    const reportStats = [
+      { label: 'Revisions This Month', value: data.revisionAnalysis?.revisionsThisMonth || 0 }
+    ];
+
+    const tableHeaders = ['Error Rank', 'Reason / Description', 'Count / Frequency'];
+    const tableData = (data.commonErrors || []).map((err, i) => [
+      `#${i + 1}`,
+      err.reason,
+      String(err.count)
+    ]);
+
+    const secondTableHeaders = ['Document Type', 'Average Revisions'];
+    const secondTableData = Object.entries(data.revisionAnalysis?.avgRevisionsPerType || {}).map(([type, avg]) => [
+      type,
+      `${avg} avg`
+    ]);
+
+    setReportData({
+      title: 'Common Submission Errors and Revision Analysis Report',
+      stats: reportStats,
+      headers: tableHeaders,
+      rows: tableData,
+      secondHeaders: secondTableHeaders,
+      secondRows: secondTableData,
+      secondTitle: 'Average Revisions Per Document Type',
+      filename: `Org_Errors_And_Revisions_Report_${new Date().toISOString().split('T')[0]}.pdf`
+    });
+    setIsReportOpen(true);
+  };
+
 
   useEffect(() => {
     if (!user?.id) return;
@@ -723,7 +1034,18 @@ const OrgDashboardView = () => {
         <div className="bg-[#0b5c2a] rounded-xl p-8 text-white shadow-lg relative overflow-hidden">
           <div className="flex justify-between items-start mb-8 relative z-10">
             <p className="text-green-100 font-medium text-sm">{today}</p>
-            <div className="relative cursor-pointer bg-white/10 hover:bg-white/20 transition-all rounded-full px-4 py-2 flex items-center gap-2" onClick={() => setShowDates(!showDates)}>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleGenerateProcessingReport}
+                className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all font-semibold text-xs tracking-wider border border-white/10"
+                title="Generate report of all documents that are currently processing"
+              >
+                <FileText size={14} className="text-green-100" />
+                <span>Generate Report</span>
+              </button>
+              
+              <div className="relative cursor-pointer bg-white/10 hover:bg-white/20 transition-all rounded-full px-4 py-2 flex items-center gap-2" onClick={() => setShowDates(!showDates)}>
+
               <Calendar size={14} className="text-green-100" />
               <span className="text-xs font-semibold text-green-50 tracking-wider">{data.hero.activeSy?.name || 'No Active SY'}</span>
               {showDates && data.hero.activeSy && (
@@ -738,6 +1060,7 @@ const OrgDashboardView = () => {
               )}
             </div>
           </div>
+        </div>
 
           <div className="mb-10 relative z-10 flex items-center gap-4">
             <div className="grid grid-cols-2 gap-1 w-12 h-12 opacity-80">
@@ -830,7 +1153,7 @@ const OrgDashboardView = () => {
                             )}
                           </td>
                           <td className="px-6 py-4 text-right">
-                            <span className="inline-block px-3 py-1 text-[10px] font-black uppercase rounded-full" style={{ backgroundColor: getStatusColor(statusName), color: '#fff' }}>
+                            <span className="inline-block text-center w-[220px] truncate px-3 py-1 text-[10px] font-black uppercase rounded-full" style={{ backgroundColor: getStatusColor(statusName), color: '#fff' }} title={statusName}>
                               {statusName}
                             </span>
                           </td>
@@ -906,9 +1229,25 @@ const OrgDashboardView = () => {
           </div>
         </div>
       </div>
+
+      <ReportPreviewModal
+        isOpen={isReportOpen}
+        onClose={() => setIsReportOpen(false)}
+        title={reportData.title}
+        generatedBy={user?.full_name || 'System User'}
+        stats={reportData.stats}
+        tableHeaders={reportData.headers}
+        tableData={reportData.rows}
+        secondTableHeaders={reportData.secondHeaders}
+        secondTableData={reportData.secondRows}
+        secondTableTitle={reportData.secondTitle}
+        pdfFilename={reportData.filename}
+        schoolYear={data.hero.activeSy?.name || ''}
+      />
     </div>
   );
 };
+
 
 // ─── Main Dashboard Router ────────────────────────────────────────────────────
 

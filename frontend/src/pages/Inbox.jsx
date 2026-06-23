@@ -88,6 +88,7 @@ export const Inbox = () => {
   const [locallyReturned, setLocallyReturned] = React.useState({});
   const [attachmentReturnLogs, setAttachmentReturnLogs] = React.useState([]);
   const RETURN_REASONS = ['missing-requirements', 'incorrect-format', 'incomplete-information'];
+
   const normalizeRole = (role) => String(role || '').toLowerCase().replace('-', ' ').trim();
   const sameRole = (a, b) => normalizeRole(a) === normalizeRole(b);
   const formatReviewerRoleLabel = (role) => {
@@ -1757,6 +1758,7 @@ export const Inbox = () => {
             </div>
           )}
         </div>
+
       </div>
 
       {/* Bulk Action Bar */}

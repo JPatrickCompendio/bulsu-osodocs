@@ -27,9 +27,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../config/api';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import Avatar from '../components/Avatar';
+import ReportPreviewModal from '../components/ReportPreviewModal';
 
 const UserManagement = () => {
   const [users, setUsers] = useState([]);
@@ -59,6 +58,8 @@ const UserManagement = () => {
   const [suspendUser, setSuspendUser] = useState(null);
   const [suspendMessage, setSuspendMessage] = useState('');
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [isReportOpen, setIsReportOpen] = useState(false);
+  const [reportData, setReportData] = useState({ title: '', stats: [], headers: [], rows: [], filename: '' });
   
   const { user: currentUser } = useAuth();
 
@@ -308,82 +309,42 @@ const UserManagement = () => {
   };
 
   const handleGenerateReport = () => {
-    const doc = new jsPDF();
-    const timestamp = new Date().toLocaleString();
+    const totalUsers = filteredUsers.length;
+    const orgPresidents = filteredUsers.filter(u => u.role === 'org-president').length;
+    const osoStaff = filteredUsers.filter(u => u.role === 'chairman' || u.role === 'vice-chairman').length;
+    const activeUsers = filteredUsers.filter(u => u.status === 'Active').length;
+    const suspendedUsers = filteredUsers.filter(u => u.status?.startsWith('Suspended')).length;
+
+    const stats = [
+      { label: 'Total Users', value: totalUsers },
+      { label: 'Org Presidents', value: orgPresidents },
+      { label: 'OSO Staff', value: osoStaff },
+      { label: 'Active / Suspended', value: `${activeUsers} / ${suspendedUsers}` }
+    ];
+
+    const tableHeaders = ['User Name & ID', 'Role', 'Organization Name', 'Adviser Name', 'Members', 'Status', 'Date Joined'];
+    const tableData = filteredUsers.map(user => [
+      `${user.full_name}\n(ID: ${user.id.substring(0, 8).toUpperCase()})`,
+      String(user.role).replace('-', ' ').toUpperCase(),
+      user.org_name || '—',
+      user.adviser_name || '—',
+      user.no_member || '0',
+      user.status?.startsWith('Suspended') ? 'SUSPENDED' : String(user.status || 'Active').toUpperCase(),
+      formatDetailDate(user.joined_date || user.created_at)
+    ]);
+
     const filterLabel = filterType === 'all' ? 'All Roles' : 
                        filterType === 'org' ? 'Organization Presidents' : 
                        'Chairman / Vice Chairman';
 
-    // 1. Header Design
-    doc.setFillColor(34, 139, 34); // Primary Green
-    doc.rect(0, 0, 210, 40, 'F');
-    
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(22);
-    doc.setFont('helvetica', 'bold');
-    doc.text('BULSU BUSTOS', 105, 18, { align: 'center' });
-    
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'normal');
-    doc.text('OSODOCS: USER MANAGEMENT REPORT', 105, 28, { align: 'center' });
-
-    // 2. Report Info
-    doc.setTextColor(80, 80, 80);
-    doc.setFontSize(10);
-    doc.text(`Generated on: ${timestamp}`, 15, 50);
-    doc.text(`Filter Applied: ${filterLabel}`, 15, 55);
-    doc.text(`Total Records: ${filteredUsers.length}`, 15, 60);
-
-    // 3. Table Data
-    const tableHeaders = [['User Details', 'Role', 'Organization', 'Adviser', 'Members', 'Status', 'Joined']];
-    const tableData = filteredUsers.map(user => [
-      `${user.full_name}\n(ID: ${user.id.substring(0, 8)})`,
-      user.role,
-      user.org_name || '—',
-      user.adviser_name || '—',
-      user.no_member || '0',
-      user.status,
-      formatDetailDate(user.joined_date || user.created_at)
-    ]);
-
-    autoTable(doc, {
-      startY: 70,
-      head: tableHeaders,
-      body: tableData,
-      theme: 'grid',
-      headStyles: { 
-        fillColor: [34, 139, 34], 
-        textColor: [255, 255, 255],
-        fontSize: 9,
-        fontStyle: 'bold',
-        halign: 'center'
-      },
-      bodyStyles: { 
-        fontSize: 8,
-        valign: 'middle'
-      },
-      columnStyles: {
-        0: { cellWidth: 40 },
-        1: { cellWidth: 25 },
-        2: { cellWidth: 35 },
-        3: { cellWidth: 30 },
-        4: { cellWidth: 15, halign: 'center' },
-        5: { cellWidth: 20, halign: 'center' },
-        6: { cellWidth: 25, halign: 'center' }
-      },
-      didDrawPage: (data) => {
-        // Footer
-        doc.setFontSize(8);
-        doc.setTextColor(150, 150, 150);
-        doc.text(
-          `Page ${data.pageNumber} - OSODOCS System Generated`,
-          data.settings.margin.left,
-          doc.internal.pageSize.height - 10
-        );
-      }
+    setReportData({
+      title: `User Management Report (${filterLabel})`,
+      stats,
+      headers: tableHeaders,
+      rows: tableData,
+      filename: `User_Management_Report_${new Date().toISOString().split('T')[0]}.pdf`
     });
-
-    doc.save(`OSODOCS_Report_${filterType}_${new Date().toISOString().split('T')[0]}.pdf`);
+    setIsReportOpen(true);
   };
 
   const handleSaveUser = async (e) => {
@@ -1455,6 +1416,17 @@ const UserManagement = () => {
           </div>
         </div>
       )}
+      {/* Report Preview Modal */}
+      <ReportPreviewModal
+        isOpen={isReportOpen}
+        onClose={() => setIsReportOpen(false)}
+        title={reportData.title}
+        stats={reportData.stats}
+        tableHeaders={reportData.headers}
+        tableData={reportData.rows}
+        pdfFilename={reportData.filename}
+        generatedBy={currentUser?.full_name || 'System Administrator'}
+      />
     </div>
   );
 };

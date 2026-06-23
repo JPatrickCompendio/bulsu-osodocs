@@ -111,10 +111,7 @@ const Header = () => {
   return (
     <>
       <header className="h-16 bg-white border-b border-gray-100 flex items-center justify-between px-8 sticky top-0 z-30 shadow-sm">
-        <div className="flex items-center gap-4 text-gray-400">
-          <Search size={20} />
-          <span className="text-sm">Search for documents, users...</span>
-        </div>
+        <div></div>
         
         <div className="flex items-center gap-6">
           <button 
