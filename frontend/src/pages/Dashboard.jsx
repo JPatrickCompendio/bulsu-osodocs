@@ -36,23 +36,35 @@ const fetchAnnouncementsForUser = async (user) => {
   return [];
 };
 
-const formatSubmissionTitle = (doc) => {
+const formatSubmissionTitle = (doc, activeSy) => {
   let docTitle = `Submission #${String(doc.id).substring(0, 6).toUpperCase()}`;
   const versions = doc.submission_versions;
-  const docTypeName = doc.documentType?.name;
+  const docTypeName = doc.documentType?.name || 'Document';
+  const isActivityProposal = docTypeName.toLowerCase() === 'activity proposal' || docTypeName.toLowerCase().includes('proposal');
 
   if (versions?.length > 0) {
     const latest = versions.reduce((max, v) => (v.version_number > max.version_number ? v : max), versions[0]);
     const details = Array.isArray(latest.activity_proposal_details)
       ? latest.activity_proposal_details[0]
       : latest.activity_proposal_details;
-    if (details?.activity_title) {
-      docTitle = details.activity_title;
+      
+    if (isActivityProposal) {
+      if (details?.activity_title) {
+        docTitle = details.activity_title;
+      } else {
+        docTitle = `${docTypeName} #${String(doc.id).substring(0, 6).toUpperCase()}`;
+      }
     } else {
-      docTitle = `${docTypeName || 'Document'} #${String(doc.id).substring(0, 6).toUpperCase()}`;
+      const orgName = details?.organization_name || doc.users?.org_name || '-';
+      docTitle = `${orgName} ${docTypeName} ${activeSy ? activeSy.name : ''}`.toUpperCase().trim();
     }
   } else {
-    docTitle = `${docTypeName || 'Document'} #${String(doc.id).substring(0, 6).toUpperCase()}`;
+    if (isActivityProposal) {
+      docTitle = `${docTypeName} #${String(doc.id).substring(0, 6).toUpperCase()}`;
+    } else {
+      const orgName = doc.users?.org_name || '-';
+      docTitle = `${orgName} ${docTypeName} ${activeSy ? activeSy.name : ''}`.toUpperCase().trim();
+    }
   }
   return docTitle;
 };
@@ -210,14 +222,7 @@ const AdminDashboardView = () => {
 
     const tableHeaders = ['Submission ID', 'Document Title', 'Organization', 'Document Type', 'Status'];
     const tableData = (stats.activeDocuments || []).map(doc => {
-      let docTitle = `Submission #${doc.id.substring(0, 6).toUpperCase()}`;
-      if (doc.submission_versions?.length > 0) {
-        const latest = doc.submission_versions.reduce((max, v) => (v.version_number > max.version_number ? v : max), doc.submission_versions[0]);
-        const details = Array.isArray(latest.activity_proposal_details) ? latest.activity_proposal_details[0] : latest.activity_proposal_details;
-        docTitle = details?.activity_title || `${doc.documentType?.name || 'Document'} #${doc.id.substring(0, 6).toUpperCase()}`;
-      } else {
-        docTitle = `${doc.documentType?.name || 'Document'} #${doc.id.substring(0, 6).toUpperCase()}`;
-      }
+      const docTitle = formatSubmissionTitle(doc, stats?.hero?.activeSy);
       return [
         `SUB-${doc.id.substring(0, 8).toUpperCase()}`,
         docTitle,
@@ -301,67 +306,80 @@ const AdminDashboardView = () => {
   return (
     <div className="min-h-screen bg-[#F8F9FA] p-8 pb-32">
       <div className="max-w-7xl mx-auto space-y-8">
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-3xl font-black text-gray-800 tracking-tight">Admin Dashboard</h1>
-            <p className="text-gray-400 font-bold text-sm mt-1">System Overview and Analytics</p>
+        <section className="relative rounded-[2rem] overflow-hidden mb-8 shadow-lg bg-black p-8 md:p-10 border border-gray-800">
+          <video 
+            autoPlay 
+            loop 
+            muted 
+            playsInline
+            className="absolute inset-0 w-full h-full object-cover mix-blend-screen opacity-50"
+          >
+            <source src="/loginbgvid.mp4" type="video/mp4" />
+          </video>
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent"></div>
+          
+          <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-10">
+            <div>
+              <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-2 drop-shadow-md uppercase">Admin Dashboard</h1>
+              <p className="text-gray-200 font-bold text-lg drop-shadow-sm">System Overview and Analytics</p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={handleGenerateProcessingReport}
+                className="flex items-center gap-2 px-5 py-3 bg-white text-gray-800 hover:bg-gray-100 rounded-xl transition-all font-bold text-sm shadow-md"
+                title="Generate report of all documents that are currently processing"
+              >
+                <FileText size={16} />
+                <span>Processing Docs Report</span>
+              </button>
+              <button
+                onClick={handleGenerateErrorsRevisionsReport}
+                className="flex items-center gap-2 px-5 py-3 bg-white text-gray-800 hover:bg-gray-100 rounded-xl transition-all font-bold text-sm shadow-md"
+                title="Generate report for common submission errors and revision analysis"
+              >
+                <FileText size={16} />
+                <span>Errors & Revisions Report</span>
+              </button>
+            </div>
           </div>
-          <div className="flex gap-3">
-            <button
-              onClick={handleGenerateProcessingReport}
-              className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 hover:border-primary-green rounded-xl transition-all font-semibold text-xs hover:text-primary-green hover:shadow-sm"
-              title="Generate report of all documents that are currently processing"
-            >
-              <FileText size={14} />
-              <span>Processing Docs Report</span>
-            </button>
-            <button
-              onClick={handleGenerateErrorsRevisionsReport}
-              className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 hover:border-primary-green rounded-xl transition-all font-semibold text-xs hover:text-primary-green hover:shadow-sm"
-              title="Generate report for common submission errors and revision analysis"
-            >
-              <FileText size={14} />
-              <span>Errors & Revisions Report</span>
-            </button>
-          </div>
-        </div>
 
 
-        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-pink-50 text-pink-500 flex items-center justify-center shrink-0">
-              <UserCheck size={24} />
+          <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="bg-white rounded-2xl p-6 shadow-md flex items-center gap-4 hover:shadow-lg transition-shadow">
+              <div className="w-12 h-12 rounded-xl bg-pink-50 text-pink-500 flex items-center justify-center shrink-0">
+                <UserCheck size={24} />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Eligible for Renewal</p>
+                <p className="text-2xl font-black text-gray-800">{stats.statistics.eligibleForRenewalCount}</p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs font-bold text-gray-400 uppercase">Eligible for Renewal</p>
-              <p className="text-2xl font-black text-gray-800">{stats.statistics.eligibleForRenewalCount}</p>
+            <div className="bg-white rounded-2xl p-6 shadow-md flex items-center gap-4 hover:shadow-lg transition-shadow">
+              <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center shrink-0">
+                <Activity size={24} />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Active Under Review</p>
+                <p className="text-2xl font-black text-gray-800">{stats.statistics.activeReviewCount}</p>
+              </div>
             </div>
-          </div>
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center shrink-0">
-              <Activity size={24} />
+            <div className="bg-white rounded-2xl p-6 shadow-md flex items-center gap-4 hover:shadow-lg transition-shadow">
+              <div className="w-12 h-12 rounded-xl bg-green-50 text-green-500 flex items-center justify-center shrink-0">
+                <FileText size={24} />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Current SY Docs</p>
+                <p className="text-2xl font-black text-gray-800">{stats.statistics.currentSyCount}</p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs font-bold text-gray-400 uppercase">Active Under Review</p>
-              <p className="text-2xl font-black text-gray-800">{stats.statistics.activeReviewCount}</p>
-            </div>
-          </div>
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-green-50 text-green-500 flex items-center justify-center shrink-0">
-              <FileText size={24} />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-gray-400 uppercase">Current SY Docs</p>
-              <p className="text-2xl font-black text-gray-800">{stats.statistics.currentSyCount}</p>
-            </div>
-          </div>
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-500 flex items-center justify-center shrink-0">
-              <BarChart2 size={24} />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-gray-400 uppercase">All-Time Docs</p>
-              <p className="text-2xl font-black text-gray-800">{stats.statistics.allTimeCount}</p>
+            <div className="bg-white rounded-2xl p-6 shadow-md flex items-center gap-4 hover:shadow-lg transition-shadow">
+              <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-500 flex items-center justify-center shrink-0">
+                <BarChart2 size={24} />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">All-Time Docs</p>
+                <p className="text-2xl font-black text-gray-800">{stats.statistics.allTimeCount}</p>
+              </div>
             </div>
           </div>
         </section>
@@ -390,14 +408,7 @@ const AdminDashboardView = () => {
                 ) : (
                   stats.activeDocuments.map((doc) => {
                     const statusName = formatStatus(doc.status, 'admin');
-                    let docTitle = `Submission #${doc.id.substring(0, 6).toUpperCase()}`;
-                    if (doc.submission_versions?.length > 0) {
-                      const latest = doc.submission_versions.reduce((max, v) => (v.version_number > max.version_number ? v : max), doc.submission_versions[0]);
-                      const details = Array.isArray(latest.activity_proposal_details) ? latest.activity_proposal_details[0] : latest.activity_proposal_details;
-                      docTitle = details?.activity_title || `${doc.documentType?.name || 'Document'} #${doc.id.substring(0, 6).toUpperCase()}`;
-                    } else {
-                      docTitle = `${doc.documentType?.name || 'Document'} #${doc.id.substring(0, 6).toUpperCase()}`;
-                    }
+                    const docTitle = formatSubmissionTitle(doc, stats?.hero?.activeSy);
                     const typeColor = getDocTypeColor(doc.documentType?.name);
                     return (
                       <tr key={doc.id} className="hover:bg-gray-50/50 transition-colors group">
@@ -553,14 +564,7 @@ const ChairmanDashboardView = ({ role }) => {
 
     const tableHeaders = ['Submission ID', 'Document Title', 'Organization', 'Document Type', 'Status'];
     const tableData = (stats.activeDocuments || []).map(doc => {
-      let docTitle = `Submission #${doc.id.substring(0, 6).toUpperCase()}`;
-      if (doc.submission_versions?.length > 0) {
-        const latest = doc.submission_versions.reduce((max, v) => (v.version_number > max.version_number ? v : max), doc.submission_versions[0]);
-        const details = Array.isArray(latest.activity_proposal_details) ? latest.activity_proposal_details[0] : latest.activity_proposal_details;
-        docTitle = details?.activity_title || `${doc.documentType?.name || 'Document'} #${doc.id.substring(0, 6).toUpperCase()}`;
-      } else {
-        docTitle = `${doc.documentType?.name || 'Document'} #${doc.id.substring(0, 6).toUpperCase()}`;
-      }
+      const docTitle = formatSubmissionTitle(doc, stats?.hero?.activeSy);
       return [
         `SUB-${doc.id.substring(0, 8).toUpperCase()}`,
         docTitle,
@@ -662,70 +666,80 @@ const ChairmanDashboardView = ({ role }) => {
   return (
     <div className="min-h-screen bg-[#F8F9FA] p-8 pb-32">
       <div className="max-w-7xl mx-auto space-y-8">
-        <div className="flex justify-between items-end mb-8">
-          <div>
-            <h1 className="text-3xl font-black text-gray-800 tracking-tight">{roleLabel} Dashboard</h1>
-            <p className="text-gray-400 font-bold text-sm mt-1">System Overview and Analytics</p>
+        <section className="relative rounded-[2rem] overflow-hidden mb-8 shadow-lg bg-black p-8 md:p-10 border border-gray-800">
+          <video 
+            autoPlay 
+            loop 
+            muted 
+            playsInline
+            className="absolute inset-0 w-full h-full object-cover mix-blend-screen opacity-50"
+          >
+            <source src="/loginbgvid.mp4" type="video/mp4" />
+          </video>
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent"></div>
+          
+          <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-10">
+            <div>
+              <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-2 drop-shadow-md uppercase">{roleLabel} Dashboard</h1>
+              <p className="text-gray-200 font-bold text-lg drop-shadow-sm">System Overview and Analytics</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={handleGenerateProcessingReport}
+                className="flex items-center gap-2 px-5 py-3 bg-white text-gray-800 hover:bg-gray-100 rounded-xl transition-all font-bold text-sm shadow-md"
+                title="Generate report of all documents that are currently processing"
+              >
+                <FileText size={16} />
+                <span>Processing Docs Report</span>
+              </button>
+              <button
+                onClick={handleGenerateErrorsRevisionsReport}
+                className="flex items-center gap-2 px-5 py-3 bg-white text-gray-800 hover:bg-gray-100 rounded-xl transition-all font-bold text-sm shadow-md"
+                title="Generate report for common submission errors and revision analysis"
+              >
+                <FileText size={16} />
+                <span>Errors & Revisions Report</span>
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleGenerateProcessingReport}
-              className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 hover:border-primary-green rounded-xl transition-all font-semibold text-xs hover:text-primary-green hover:shadow-sm"
-              title="Generate report of all documents that are currently processing"
-            >
-              <FileText size={14} />
-              <span>Processing Docs Report</span>
-            </button>
-            <button
-              onClick={handleGenerateErrorsRevisionsReport}
-              className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 hover:border-primary-green rounded-xl transition-all font-semibold text-xs hover:text-primary-green hover:shadow-sm"
-              title="Generate report for common submission errors and revision analysis"
-            >
-              <FileText size={14} />
-              <span>Errors & Revisions Report</span>
-            </button>
-            <p className="text-xs font-bold text-gray-500 bg-white px-3 py-2.5 rounded-xl border border-gray-100 shadow-sm">
-              Welcome, {user?.full_name || roleLabel}
-            </p>
-          </div>
-        </div>
 
 
-        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex items-center gap-4 hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate('/user-management')}>
-            <div className="w-12 h-12 rounded-xl bg-pink-50 text-pink-500 flex items-center justify-center shrink-0">
-              <UserCheck size={24} />
+          <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="bg-white rounded-2xl p-6 shadow-md border border-gray-100 flex items-center gap-4 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate('/user-management')}>
+              <div className="w-12 h-12 rounded-xl bg-pink-50 text-pink-500 flex items-center justify-center shrink-0">
+                <UserCheck size={24} />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Eligible for Renewal</p>
+                <p className="text-2xl font-black text-gray-800">{stats.statistics?.eligibleForRenewalCount || 0}</p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs font-bold text-gray-400 uppercase">Eligible for Renewal</p>
-              <p className="text-2xl font-black text-gray-800">{stats.statistics?.eligibleForRenewalCount || 0}</p>
+            <div className="bg-white rounded-2xl p-6 shadow-md border border-gray-100 flex items-center gap-4 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate('/inbox')}>
+              <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center shrink-0">
+                <Activity size={24} />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Active Under Review</p>
+                <p className="text-2xl font-black text-gray-800">{stats.statistics?.activeReviewCount || 0}</p>
+              </div>
             </div>
-          </div>
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex items-center gap-4 hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate('/inbox')}>
-            <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center shrink-0">
-              <Activity size={24} />
+            <div className="bg-white rounded-2xl p-6 shadow-md border border-gray-100 flex items-center gap-4 hover:shadow-lg transition-shadow">
+              <div className="w-12 h-12 rounded-xl bg-green-50 text-green-500 flex items-center justify-center shrink-0">
+                <FileText size={24} />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Current SY Docs</p>
+                <p className="text-2xl font-black text-gray-800">{stats.statistics?.currentSyCount || 0}</p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs font-bold text-gray-400 uppercase">Active Under Review</p>
-              <p className="text-2xl font-black text-gray-800">{stats.statistics?.activeReviewCount || 0}</p>
-            </div>
-          </div>
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-green-50 text-green-500 flex items-center justify-center shrink-0">
-              <FileText size={24} />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-gray-400 uppercase">Current SY Docs</p>
-              <p className="text-2xl font-black text-gray-800">{stats.statistics?.currentSyCount || 0}</p>
-            </div>
-          </div>
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-500 flex items-center justify-center shrink-0">
-              <BarChart2 size={24} />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-gray-400 uppercase">All-Time Docs</p>
-              <p className="text-2xl font-black text-gray-800">{stats.statistics?.allTimeCount || 0}</p>
+            <div className="bg-white rounded-2xl p-6 shadow-md border border-gray-100 flex items-center gap-4 hover:shadow-lg transition-shadow">
+              <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-500 flex items-center justify-center shrink-0">
+                <BarChart2 size={24} />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">All-Time Docs</p>
+                <p className="text-2xl font-black text-gray-800">{stats.statistics?.allTimeCount || 0}</p>
+              </div>
             </div>
           </div>
         </section>
@@ -759,14 +773,7 @@ const ChairmanDashboardView = ({ role }) => {
                 ) : (
                   stats.activeDocuments.map((doc) => {
                     const statusName = formatStatus(doc.status, 'admin');
-                    let docTitle = `Submission #${doc.id.substring(0, 6).toUpperCase()}`;
-                    if (doc.submission_versions?.length > 0) {
-                      const latest = doc.submission_versions.reduce((max, v) => (v.version_number > max.version_number ? v : max), doc.submission_versions[0]);
-                      const details = Array.isArray(latest.activity_proposal_details) ? latest.activity_proposal_details[0] : latest.activity_proposal_details;
-                      docTitle = details?.activity_title || `${doc.documentType?.name || 'Document'} #${doc.id.substring(0, 6).toUpperCase()}`;
-                    } else {
-                      docTitle = `${doc.documentType?.name || 'Document'} #${doc.id.substring(0, 6).toUpperCase()}`;
-                    }
+                    const docTitle = formatSubmissionTitle(doc, stats?.hero?.activeSy);
                     const typeColor = getDocTypeColor(doc.documentType?.name);
                     return (
                       <tr key={doc.id} className="hover:bg-gray-50/50 transition-colors group cursor-pointer" onClick={() => navigate(`/inbox`)}>
@@ -1031,78 +1038,54 @@ const OrgDashboardView = () => {
   return (
     <div className="min-h-screen bg-[#F8F9FA] p-8 pb-32">
       <div className="max-w-7xl mx-auto space-y-8">
-        <div className="bg-[#0b5c2a] rounded-xl p-8 text-white shadow-lg relative overflow-hidden">
-          <div className="flex justify-between items-start mb-8 relative z-10">
-            <p className="text-green-100 font-medium text-sm">{today}</p>
-            <div className="flex items-center gap-3">
+        <section className="relative rounded-[2rem] overflow-hidden mb-8 shadow-lg bg-black p-8 md:p-10 border border-gray-800">
+          <video 
+            autoPlay 
+            loop 
+            muted 
+            playsInline
+            className="absolute inset-0 w-full h-full object-cover mix-blend-screen opacity-50"
+          >
+            <source src="/loginbgvid.mp4" type="video/mp4" />
+          </video>
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent"></div>
+
+          <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-10">
+            <div>
+              <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-2 drop-shadow-md uppercase">ORG PRES DASHBOARD</h1>
+              <p className="text-gray-200 font-bold text-lg drop-shadow-sm">System Overview and Analytics</p>
+            </div>
+            <div className="flex flex-wrap gap-3">
               <button
                 onClick={handleGenerateProcessingReport}
-                className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all font-semibold text-xs tracking-wider border border-white/10"
+                className="flex items-center gap-2 px-5 py-3 bg-white text-gray-800 hover:bg-gray-100 rounded-xl transition-all font-bold text-sm shadow-md"
                 title="Generate report of all documents that are currently processing"
               >
-                <FileText size={14} className="text-green-100" />
-                <span>Generate Report</span>
+                <FileText size={16} />
+                <span>Processing Docs Report</span>
               </button>
-              
-              <div className="relative cursor-pointer bg-white/10 hover:bg-white/20 transition-all rounded-full px-4 py-2 flex items-center gap-2" onClick={() => setShowDates(!showDates)}>
-
-              <Calendar size={14} className="text-green-100" />
-              <span className="text-xs font-semibold text-green-50 tracking-wider">{data.hero.activeSy?.name || 'No Active SY'}</span>
-              {showDates && data.hero.activeSy && (
-                <div className="absolute top-full right-0 mt-2 bg-white text-gray-800 rounded-lg p-4 shadow-xl border border-gray-100 z-20 min-w-[250px]">
-                  <p className="text-xs font-bold text-gray-400 uppercase mb-2">{data.hero.activeSy.semester_type || 'Semester'} Dates</p>
-                  <div className="flex justify-between items-center text-sm font-semibold">
-                    <span className="text-[#0b5c2a]">{formatDate(data.hero.activeSy.start_date)}</span>
-                    <span className="text-gray-300">-</span>
-                    <span className="text-red-500">{formatDate(data.hero.activeSy.end_date)}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-          <div className="mb-10 relative z-10 flex items-center gap-4">
-            <div className="grid grid-cols-2 gap-1 w-12 h-12 opacity-80">
-              <div className="bg-green-400 rounded-tl-lg"></div>
-              <div className="bg-green-400 rounded-tr-lg"></div>
-              <div className="bg-green-400 rounded-bl-lg"></div>
-              <div className="bg-green-400 rounded-br-lg"></div>
-            </div>
-            <div>
-              <h1 className="text-4xl font-black mb-1 uppercase tracking-tight">
-                WELCOME BACK, {data.hero.user?.full_name ? data.hero.user.full_name.split(' ')[0] : 'President'}!
-              </h1>
-              <p className="text-green-100 text-sm font-medium">{data.hero.user?.org_name || 'Organization'} • Organization President</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 relative z-10">
+          <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
               { label: 'Pending Review', value: data.statistics.pendingCount, icon: Clock, bg: 'bg-yellow-50', color: 'text-yellow-500' },
-              { label: 'Approved', value: data.statistics.approvedCount, icon: CheckCircle, bg: 'bg-green-100', color: 'text-green-600' },
+              { label: 'Approved', value: data.statistics.approvedCount, icon: CheckCircle, bg: 'bg-green-50', color: 'text-green-500' },
               { label: 'Returned', value: data.statistics.returnedCount, icon: RefreshCcw, bg: 'bg-blue-50', color: 'text-blue-500' },
-              { label: 'Completed', value: data.statistics.completedCount, icon: CheckCircle, bg: 'bg-red-50', color: 'text-red-500' },
+              { label: 'Completed', value: data.statistics.completedCount, icon: CheckCircle, bg: 'bg-purple-50', color: 'text-purple-500' },
             ].map(({ label, value, icon: Icon, bg, color }) => (
-              <div key={label} className="bg-white rounded-lg p-5 text-gray-800 shadow-sm flex flex-col justify-between hover:shadow-md transition-all">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{label}</p>
-                    <p className="text-3xl font-black mt-1">{value}</p>
-                  </div>
-                  <div className={`w-10 h-10 rounded-lg ${bg} ${color} flex items-center justify-center`}>
-                    <Icon size={20} />
-                  </div>
+              <div key={label} className="bg-white rounded-2xl p-6 shadow-md flex items-center gap-4 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate('/my-documents')}>
+                <div className={`w-12 h-12 rounded-xl ${bg} ${color} flex items-center justify-center shrink-0`}>
+                  <Icon size={24} />
                 </div>
-                <div className="pt-3 border-t border-gray-100">
-                  <button onClick={() => navigate('/my-documents')} className="text-[10px] font-bold text-green-600 hover:text-green-700 uppercase flex items-center gap-1">
-                    View Details <ChevronRight size={12} />
-                  </button>
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{label}</p>
+                  <p className="text-2xl font-black text-gray-800">{value}</p>
                 </div>
               </div>
             ))}
           </div>
-        </div>
+        </section>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <section className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
@@ -1134,10 +1117,14 @@ const OrgDashboardView = () => {
                     data.activeDocuments.map((doc) => {
                       const statusName = formatStatus(doc.status, 'org-president');
                       const typeColor = getDocTypeColor(doc.type);
+                      const isActivityProposal = doc.type.toLowerCase() === 'activity proposal' || doc.type.toLowerCase().includes('proposal');
+                      const orgNameStr = data.hero?.user?.org_name || '-';
+                      const docTitle = isActivityProposal ? doc.title : `${orgNameStr} ${doc.type} ${data.hero?.activeSy?.name || ''}`.toUpperCase().trim();
+                      
                       return (
                         <tr key={doc.id} className="hover:bg-gray-50/50 transition-colors cursor-pointer" onClick={() => navigate(`/my-documents?submissionId=${doc.id}`)}>
                           <td className="px-6 py-4">
-                            <p className="font-bold text-sm text-gray-800 line-clamp-1" title={doc.title}>{doc.title}</p>
+                            <p className="font-bold text-sm text-gray-800 line-clamp-1" title={docTitle}>{docTitle}</p>
                             <span className="inline-block mt-1 px-2 py-0.5 text-[9px] font-black uppercase rounded border" style={{ color: typeColor, borderColor: typeColor, backgroundColor: `${typeColor}10` }}>
                               {doc.type}
                             </span>

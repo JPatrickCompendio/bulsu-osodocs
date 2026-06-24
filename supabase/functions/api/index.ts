@@ -977,25 +977,35 @@ async function handleDocumentAvailability(url: URL) {
   let isRenewalEligible = false;
   const missingRenewalRequirements: string[] = [];
 
+  const existingDocTypesThisYear = new Set<string>();
+
   if (userId) {
     const { data: userSubs } = await supabase
       .from('submissions')
-      .select('status, documentType:document_type_id(name)')
+      .select('status, document_type_id, documentType:document_type_id(name)')
       .eq('user_id', userId)
-      .eq('school_year_id', activeSy.id)
-      .eq('status', 'completed');
+      .eq('school_year_id', activeSy.id);
 
-    const hasApprovedMidYear = userSubs?.some((s) =>
-      s.documentType?.name?.toLowerCase().includes('mid-year'),
-    );
-    const hasApprovedYearEnd = userSubs?.some((s) =>
-      s.documentType?.name?.toLowerCase().includes('year-end'),
-    );
+    if (userSubs) {
+      const completedSubs = userSubs.filter((s) => s.status === 'completed');
+      const hasApprovedMidYear = completedSubs.some((s) =>
+        (s.documentType as Record<string, unknown>)?.name?.toString().toLowerCase().includes('mid-year'),
+      );
+      const hasApprovedYearEnd = completedSubs.some((s) =>
+        (s.documentType as Record<string, unknown>)?.name?.toString().toLowerCase().includes('year-end'),
+      );
 
-    if (!hasApprovedMidYear) missingRenewalRequirements.push('Approved Mid-Year Report');
-    if (!hasApprovedYearEnd) missingRenewalRequirements.push('Approved Year-End Report');
+      if (!hasApprovedMidYear) missingRenewalRequirements.push('Approved Mid-Year Report');
+      if (!hasApprovedYearEnd) missingRenewalRequirements.push('Approved Year-End Report');
 
-    isRenewalEligible = Boolean(hasApprovedMidYear && hasApprovedYearEnd);
+      isRenewalEligible = Boolean(hasApprovedMidYear && hasApprovedYearEnd);
+
+      userSubs.forEach((s) => {
+        if (s.status !== 'disapproved' && s.document_type_id) {
+          existingDocTypesThisYear.add(String(s.document_type_id));
+        }
+      });
+    }
   }
 
   for (const dt of docTypes || []) {
@@ -1021,6 +1031,12 @@ async function handleDocumentAvailability(url: URL) {
         isAvailable = false;
         lockedReason = 'Missing Requirements: ' + missingRenewalRequirements.join(', ');
       }
+    }
+
+    const isActivityProposal = dt.name.toLowerCase() === 'activity proposal' || dt.name.toLowerCase().includes('proposal');
+    if (isAvailable && !isActivityProposal && existingDocTypesThisYear.has(String(dt.id))) {
+      isAvailable = false;
+      lockedReason = 'You already have an active submission for this category. Check your My Documents page.';
     }
 
     availability[dt.id] = {
@@ -1304,6 +1320,9 @@ async function handleOrgDashboard(url: URL) {
   }
 
   const formattedActiveDocs = underReviewDocs.map((doc) => {
+    const docTypeName = (doc.documentType as Record<string, unknown>)?.name as string || 'Document';
+    const isActivityProposal = docTypeName.toLowerCase() === 'activity proposal' || docTypeName.toLowerCase().includes('proposal');
+
     let docTitle = `Submission #${String(doc.id).substring(0, 6).toUpperCase()}`;
     const versions = doc.submission_versions as Array<Record<string, unknown>> | undefined;
 
@@ -1314,13 +1333,24 @@ async function handleOrgDashboard(url: URL) {
       const details = Array.isArray(latest.activity_proposal_details)
         ? latest.activity_proposal_details[0]
         : latest.activity_proposal_details;
-      if (details && (details as Record<string, unknown>).activity_title) {
-        docTitle = (details as Record<string, unknown>).activity_title as string;
+        
+      if (isActivityProposal) {
+        if (details && (details as Record<string, unknown>).activity_title) {
+          docTitle = (details as Record<string, unknown>).activity_title as string;
+        } else {
+          docTitle = `${docTypeName} #${String(doc.id).substring(0, 6).toUpperCase()}`;
+        }
       } else {
-        docTitle = `${(doc.documentType as Record<string, unknown>)?.name || 'Document'} #${String(doc.id).substring(0, 6).toUpperCase()}`;
+        const orgNameStr = (details as Record<string, unknown>)?.organization_name || user?.org_name || '-';
+        docTitle = `${orgNameStr} ${docTypeName} ${activeSy ? activeSy.name : ''}`.toUpperCase().trim();
       }
     } else {
-      docTitle = `${(doc.documentType as Record<string, unknown>)?.name || 'Document'} #${String(doc.id).substring(0, 6).toUpperCase()}`;
+      if (isActivityProposal) {
+        docTitle = `${docTypeName} #${String(doc.id).substring(0, 6).toUpperCase()}`;
+      } else {
+        const orgNameStr = user?.org_name || '-';
+        docTitle = `${orgNameStr} ${docTypeName} ${activeSy ? activeSy.name : ''}`.toUpperCase().trim();
+      }
     }
 
     return {
@@ -1334,75 +1364,6 @@ async function handleOrgDashboard(url: URL) {
 
   const totalFinished = completedCount + disapprovedCount;
   const successRate = totalFinished > 0 ? Math.round((completedCount / totalFinished) * 100) : 100;
-
-  const { data: returnLogs } = await supabase
-    .from('submission_logs')
-    .select('review_action')
-    .eq('action_type', 'attachment_review')
-    .neq('review_action', 'approved');
-
-  const errorCounts: Record<string, number> = {};
-  if (returnLogs) {
-    returnLogs.forEach((log: { review_action: string | null }) => {
-      if (log.review_action && String(log.review_action).trim() !== '') {
-        const reason = String(log.review_action).trim().replace(/-/g, ' ');
-        const displayReason = reason.charAt(0).toUpperCase() + reason.slice(1);
-        errorCounts[displayReason] = (errorCounts[displayReason] || 0) + 1;
-      }
-    });
-  }
-
-  const commonErrors = Object.entries(errorCounts)
-    .map(([reason, count]) => ({ reason, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 10);
-
-  const currentDate = new Date();
-  const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString();
-
-  const { data: recentVersions } = await supabase
-    .from('submission_versions')
-    .select('submission_id, version_number')
-    .gte('created_at', startOfMonth);
-
-  const revisionsThisMonth = recentVersions
-    ? recentVersions.filter((v) => v.version_number > 1).length
-    : 0;
-
-  const { data: allVersions } = await supabase
-    .from('submission_versions')
-    .select('submission_id, version_number');
-
-  const { data: allSubmissionsForRevisions } = await supabase
-    .from('submissions')
-    .select('id, documentType:document_type_id(name)')
-    .neq('status', 'draft');
-
-  const avgRevisionsPerType: Record<string, string | number> = {};
-  if (allVersions && allSubmissionsForRevisions) {
-    const docTypeStats: Record<string, { totalRevisions: number; docCount: number }> = {};
-    allSubmissionsForRevisions.forEach((sub: any) => {
-      if (sub.documentType && sub.documentType.name) {
-        if (!docTypeStats[sub.documentType.name]) {
-          docTypeStats[sub.documentType.name] = { totalRevisions: 0, docCount: 0 };
-        }
-        docTypeStats[sub.documentType.name].docCount++;
-      }
-    });
-
-    allVersions.forEach((v) => {
-      if (v.version_number > 1) {
-        const sub = allSubmissionsForRevisions.find((s: any) => s.id === v.submission_id);
-        if (sub && sub.documentType && sub.documentType.name) {
-          docTypeStats[sub.documentType.name].totalRevisions++;
-        }
-      }
-    });
-
-    for (const [type, stats] of Object.entries(docTypeStats)) {
-      avgRevisionsPerType[type] = stats.docCount > 0 ? (stats.totalRevisions / stats.docCount).toFixed(2) : 0;
-    }
-  }
 
   return jsonResponse({
     success: true,
@@ -1424,11 +1385,6 @@ async function handleOrgDashboard(url: URL) {
         isEligible: isRenewalEligible,
         hasMidYear,
         hasYearEnd,
-      },
-      commonErrors,
-      revisionAnalysis: {
-        revisionsThisMonth,
-        avgRevisionsPerType,
       },
     },
   });

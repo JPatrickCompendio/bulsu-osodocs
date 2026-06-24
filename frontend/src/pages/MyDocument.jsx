@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
 import * as subService from '../services/submissionService';
@@ -69,6 +69,7 @@ const getStatusColor = (status) => {
 
 export const MyDocuments = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, refreshUser } = useAuth();
 
   const [showSuspendedModal, setShowSuspendedModal] = React.useState(false);
@@ -88,6 +89,12 @@ export const MyDocuments = () => {
         .catch(err => console.error('Error fetching admin email:', err));
     }
   }, [isSuspended, showSuspendedModal]);
+
+  React.useEffect(() => {
+    const handleSidebarClick = () => setSelectedDoc(null);
+    window.addEventListener('sidebar-nav-click', handleSidebarClick);
+    return () => window.removeEventListener('sidebar-nav-click', handleSidebarClick);
+  }, []);
 
   const handleResubmitClick = () => {
     if (isSuspended) {
@@ -112,6 +119,19 @@ export const MyDocuments = () => {
 
   // Detail View State
   const [selectedDoc, setSelectedDoc] = React.useState(null);
+  const [activeSy, setActiveSy] = React.useState(null);
+
+  React.useEffect(() => {
+    const fetchSy = async () => {
+      const { data } = await supabase
+        .from('school_years')
+        .select('*')
+        .eq('is_active', true)
+        .maybeSingle();
+      setActiveSy(data);
+    };
+    fetchSy();
+  }, []);
   const [selectedVersionId, setSelectedVersionId] = React.useState(null);
   const [isFilesOpen, setIsFilesOpen] = React.useState(true);
   const [previewFile, setPreviewFile] = React.useState(null);
@@ -1247,7 +1267,7 @@ export const MyDocuments = () => {
   // Map submissions to visual format
   const mappedDocs = uniqueSubmissionsList.map(({ latestLog, submission }) => {
     const docTypeName = submission.documentType?.name || 'Document';
-    const isActivityProposal = docTypeName.toLowerCase() === 'activity proposal';
+    const isActivityProposal = docTypeName.toLowerCase() === 'activity proposal' || docTypeName.toLowerCase().includes('proposal');
 
     const version = Array.isArray(submission.submission_versions)
       ? (submission.submission_versions.find(v => v.id === submission.current_version_id) || submission.submission_versions[0])
@@ -1258,7 +1278,7 @@ export const MyDocuments = () => {
         : version?.activity_proposal_details)
       : null;
 
-    const orgName = details?.organization_name || submission.users?.org_name || '-';
+    const orgName = details?.organization_name || submission.users?.org_name || user?.org_name || '-';
 
     // Format target dates
     const rawTargetDate = details?.target_date || '-';
@@ -1341,6 +1361,7 @@ export const MyDocuments = () => {
 
     return {
       id: submission.id,
+      isActivityProposal,
 
       title: proposalTitle && proposalTitle !== '-' ? proposalTitle : docTypeName,
       ref: `SUB-2026-03-${String(submission.id).padStart(3, '0')}`,
@@ -1591,7 +1612,7 @@ export const MyDocuments = () => {
                   {selectedDoc.ref}
                 </p>
                 <h1 className="mt-1 text-2xl md:text-3xl font-extrabold tracking-tight text-gray-900">
-                  {docTitle}
+                  {isActivityProposal ? docTitle : `${selectedDoc.sender} ${selectedDoc.type} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
                 </h1>
                 {isActivityProposal && (
                   <p className="mt-2 text-sm font-semibold text-gray-500">Activity Proposal Form</p>
@@ -1603,9 +1624,11 @@ export const MyDocuments = () => {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2.3fr)_minmax(0,1fr)] gap-8 items-start">
-            <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 p-10 space-y-7">
+            <div className={isActivityProposal ? "bg-white rounded-[2.5rem] shadow-sm border border-gray-100 p-10 space-y-7" : "space-y-7"}>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+              {isActivityProposal && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                 {[
                   { label: 'Person In-Charge', value: selectedDoc.pic },
                   { label: 'Student ID No.', value: selectedDoc.studentId },
@@ -1676,6 +1699,8 @@ export const MyDocuments = () => {
                   </div>
                 </div>
               </div>
+              </>
+              )}
 
               {/* Attached Files Section - Collapsible with Live Data (same design as old) */}
               <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 mb-10 transition-all duration-500">
@@ -2385,7 +2410,7 @@ export const MyDocuments = () => {
           <h2 className="text-xl font-bold text-gray-800 mb-8">{selectedDoc.type} Form Details</h2>
           <div className="text-center mb-10">
             <h3 className="text-lg font-bold text-gray-800">
-              Document Title: {selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title}
+              Document Title: {isActivityProposal ? (selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title) : `${selectedDoc.sender} ${selectedDoc.type} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
             </h3>
           </div>
 
@@ -2779,18 +2804,12 @@ export const MyDocuments = () => {
                 <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
                   {/* Left Side: Preview iframe */}
                   <div className="flex-1 bg-gray-100 p-6 flex flex-col h-full overflow-hidden border-r border-gray-100">
-                    <div className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-200/50 relative h-full">
-                      {previewFile.file_name?.toLowerCase().endsWith('.pdf') || previewFile.file_url?.toLowerCase().includes('.pdf') ? (
+                    <div className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-200/50 relative">
+                      {previewFile.file_url?.toLowerCase().includes('.pdf') ? (
                         <iframe
-                          src={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=Fit` : ''}
+                          src={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=Fit` : null}
                           className="w-full h-full border-0 rounded-2xl"
                           title="PDF Preview"
-                        />
-                      ) : previewFile.file_name?.toLowerCase().endsWith('.docx') || previewFile.file_url?.toLowerCase().includes('.docx') ? (
-                        <iframe
-                          src={filePreviewUrl ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(filePreviewUrl)}` : ''}
-                          className="w-full h-full border-0 rounded-2xl"
-                          title="DOCX Preview"
                         />
                       ) : (
                         <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
@@ -3322,7 +3341,7 @@ export const MyDocuments = () => {
                         <FileText className="text-secondary-gold opacity-50" size={20} />
                         <div>
                           <p className="font-semibold text-gray-800 group-hover:text-primary-green transition-colors uppercase text-sm leading-tight">
-                            {doc.title}
+                            {doc.isActivityProposal ? doc.title : `${doc.sender} ${doc.type} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
                           </p>
                           <p className="text-[10px] text-gray-400 font-mono mt-0.5 tracking-tighter uppercase">{doc.ref}</p>
                         </div>

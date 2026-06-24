@@ -269,19 +269,38 @@ const MyProfile = () => {
                 </div>
               </div>
               
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">User ID</label>
-                <div className="flex items-center gap-3 text-gray-500 font-medium bg-gray-50 p-3 rounded-xl border border-gray-100 text-xs">
-                  <Lock size={16} className="text-gray-400" />
-                  <span className="truncate">{user.id}</span>
+              {user.role === 'org-president' ? (
+                <>
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Student Number</label>
+                    <div className="flex items-center gap-3 text-gray-500 font-medium bg-gray-50 p-3 rounded-xl border border-gray-100 text-xs">
+                      <Lock size={16} className="text-gray-400" />
+                      <span className="truncate">{user.student_no || 'N/A'}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Contact Number</label>
+                    <div className="flex items-center gap-3 text-gray-500 font-medium bg-gray-50 p-3 rounded-xl border border-gray-100 text-xs">
+                      <Lock size={16} className="text-gray-400" />
+                      <span className="truncate">{user.contact_no || 'N/A'}</span>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">User ID</label>
+                  <div className="flex items-center gap-3 text-gray-500 font-medium bg-gray-50 p-3 rounded-xl border border-gray-100 text-xs">
+                    <Lock size={16} className="text-gray-400" />
+                    <span className="truncate">{user.id}</span>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Member Since</label>
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Active Since</label>
                 <div className="flex items-center gap-3 text-gray-700 font-medium bg-gray-50 p-3 rounded-xl border border-gray-100">
                   <Calendar size={16} className="text-gray-400" />
-                  <span>{new Date(user.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                  <span>{new Date(user.joined_date || user.created_at || Date.now()).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</span>
                 </div>
               </div>
             </div>

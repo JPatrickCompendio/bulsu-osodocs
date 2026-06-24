@@ -1196,7 +1196,7 @@ const UserManagement = () => {
                       const cleaned = e.target.value.replace(/[^\d]/g, '');
                       setFormData({...formData, contact_no: cleaned});
                     }}
-                    pattern="09[0-9]{9}"
+                    pattern="^09[0-9]{9}$"
                     maxLength="11"
                     title="Contact number must be an 11-digit mobile number starting with 09"
                   />

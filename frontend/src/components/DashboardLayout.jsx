@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
-import { Bell, Search, X, Check, CheckCircle2, Megaphone, FileText, ChevronRight, Paperclip, ExternalLink, Image as ImageIcon, ShieldAlert, AlertTriangle, Lock, Clock, LogOut, User as UserIcon } from 'lucide-react';
+import { Bell, Search, X, Check, CheckCircle2, Megaphone, FileText, ChevronRight, Paperclip, ExternalLink, Image as ImageIcon, ShieldAlert, AlertTriangle, Lock, Clock, LogOut, User as UserIcon, Calendar } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiClient, apiUrl } from '../config/apiClient';
 import { supabase } from '../supabaseClient';
@@ -13,11 +13,12 @@ const Header = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [filter, setFilter] = useState('all');
+  const [activeSy, setActiveSy] = useState(null);
   const [readNotifIds, setReadNotifIds] = useState(() => {
     const saved = localStorage.getItem('readNotifIds');
     return saved ? JSON.parse(saved) : [];
   });
-  
+
   const [selectedAnnouncement, setSelectedAnnouncement] = useState(null);
   const [announcementAttachments, setAnnouncementAttachments] = useState([]);
 
@@ -46,6 +47,18 @@ const Header = () => {
   }, [user]);
 
   useEffect(() => {
+    const fetchSy = async () => {
+      const { data } = await supabase
+        .from('school_years')
+        .select('*')
+        .eq('is_active', true)
+        .maybeSingle();
+      setActiveSy(data);
+    };
+    fetchSy();
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem('readNotifIds', JSON.stringify(readNotifIds));
   }, [readNotifIds]);
 
@@ -54,16 +67,16 @@ const Header = () => {
       setAnnouncementAttachments([]);
       const folderPath = `announcements/${announcementId}`;
       const { data, error } = await supabase.storage.from('documents').list(folderPath);
-      
+
       if (data && data.length > 0) {
         const files = data.filter(f => f.name !== '.emptyFolderPlaceholder');
-        
+
         if (files.length > 0) {
           const filePromises = files.map(async (file) => {
             const { data: signedUrlData } = await supabase.storage
               .from('documents')
               .createSignedUrl(`${folderPath}/${file.name}`, 3600);
-              
+
             if (signedUrlData) {
               return {
                 name: file.name,
@@ -87,7 +100,7 @@ const Header = () => {
     if (!readNotifIds.includes(notif.id)) {
       setReadNotifIds(prev => [...prev, notif.id]);
     }
-    
+
     if (notif.type === 'announcement') {
       setSelectedAnnouncement(notif.source);
       loadAttachment(notif.source.id);
@@ -111,10 +124,24 @@ const Header = () => {
   return (
     <>
       <header className="h-16 bg-white border-b border-gray-100 flex items-center justify-between px-8 sticky top-0 z-30 shadow-sm">
-        <div></div>
-        
+        <div className="flex items-center gap-2 text-gray-700 relative group cursor-pointer">
+          <Calendar size={20} />
+          <span className="text-sm font-bold">{activeSy ? ` ${activeSy.name}` : 'Loading S.Y...'}</span>
+          
+          {activeSy && (
+            <div className="absolute top-full left-0 mt-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 bg-white text-gray-800 rounded-lg p-4 shadow-xl border border-gray-100 z-50 min-w-[250px]">
+              <p className="text-xs font-bold text-gray-400 uppercase mb-2">{activeSy.semester_type || 'Semester'} Dates</p>
+              <div className="flex justify-between items-center text-sm font-semibold">
+                <span className="text-green-600">{new Date(activeSy.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                <span className="text-gray-300">-</span>
+                <span className="text-red-500">{new Date(activeSy.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="flex items-center gap-6">
-          <button 
+          <button
             onClick={() => setIsModalOpen(!isModalOpen)}
             className="relative p-2 text-gray-500 hover:bg-gray-50 rounded-full transition-colors group"
           >
@@ -125,11 +152,11 @@ const Header = () => {
               </span>
             )}
           </button>
-          
+
           <div className="h-8 w-[1px] bg-gray-100"></div>
-          
+
           <div className="flex items-center gap-3 relative">
-            <button 
+            <button
               onClick={() => setShowUserDropdown(!showUserDropdown)}
               className="flex items-center gap-3 hover:bg-gray-50 p-2 rounded-xl transition-colors text-left"
             >
@@ -148,9 +175,9 @@ const Header = () => {
 
             {showUserDropdown && (
               <>
-                <div 
-                  className="fixed inset-0 z-40" 
-                  onClick={() => setShowUserDropdown(false)} 
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setShowUserDropdown(false)}
                 />
                 <div className="absolute top-full right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-gray-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
                   <div className="p-4 border-b border-gray-100">
@@ -158,7 +185,7 @@ const Header = () => {
                     <p className="text-xs text-gray-500 truncate">{user?.email}</p>
                   </div>
                   <div className="p-2">
-                    <button 
+                    <button
                       onClick={() => {
                         setShowUserDropdown(false);
                         navigate('/profile');
@@ -191,7 +218,7 @@ const Header = () => {
               </div>
               <div className="flex items-center gap-3">
                 {unreadCount > 0 && (
-                  <button 
+                  <button
                     onClick={markAllAsRead}
                     className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
                   >
@@ -199,7 +226,7 @@ const Header = () => {
                     Mark all read
                   </button>
                 )}
-                <button 
+                <button
                   onClick={() => setIsModalOpen(false)}
                   className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
                 >
@@ -209,19 +236,19 @@ const Header = () => {
             </div>
 
             <div className="flex border-b border-gray-100 px-4 pt-2">
-              <button 
+              <button
                 onClick={() => setFilter('all')}
                 className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${filter === 'all' ? 'border-primary-green text-primary-green' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
               >
                 All
               </button>
-              <button 
+              <button
                 onClick={() => setFilter('announcement')}
                 className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${filter === 'announcement' ? 'border-primary-green text-primary-green' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
               >
                 Announcements
               </button>
-              <button 
+              <button
                 onClick={() => setFilter('workflow')}
                 className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${filter === 'workflow' ? 'border-primary-green text-primary-green' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
               >
@@ -243,24 +270,22 @@ const Header = () => {
                   {filteredNotifications.map((notif) => {
                     const isRead = readNotifIds.includes(notif.id);
                     const isAnnouncement = notif.type === 'announcement';
-                    
+
                     return (
-                      <div 
+                      <div
                         key={notif.id}
                         onClick={() => handleNotificationClick(notif)}
-                        className={`p-4 rounded-xl cursor-pointer transition-all border ${
-                          isRead 
-                            ? 'bg-white border-transparent hover:border-gray-200' 
+                        className={`p-4 rounded-xl cursor-pointer transition-all border ${isRead
+                            ? 'bg-white border-transparent hover:border-gray-200'
                             : 'bg-blue-50/50 border-blue-100/50 relative overflow-hidden'
-                        }`}
+                          }`}
                       >
                         {!isRead && (
                           <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
                         )}
                         <div className="flex gap-3">
-                          <div className={`mt-0.5 w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-                            isAnnouncement ? 'bg-amber-100 text-amber-600' : 'bg-primary-green/10 text-primary-green'
-                          }`}>
+                          <div className={`mt-0.5 w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${isAnnouncement ? 'bg-amber-100 text-amber-600' : 'bg-primary-green/10 text-primary-green'
+                            }`}>
                             {isAnnouncement ? <Megaphone size={14} /> : <FileText size={14} />}
                           </div>
                           <div className="flex-1 min-w-0">
@@ -275,7 +300,7 @@ const Header = () => {
                             <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed">
                               {notif.message}
                             </p>
-                            
+
                             {!isAnnouncement && notif.source?.submissions && (
                               <div className="mt-2 flex items-center gap-1 text-[10px] font-bold text-primary-green uppercase tracking-wider">
                                 View document <ChevronRight size={12} />
@@ -306,14 +331,14 @@ const Header = () => {
                   <h2 className="text-white font-bold text-lg leading-tight">Notice</h2>
                 </div>
               </div>
-              <button 
+              <button
                 onClick={() => setSelectedAnnouncement(null)}
                 className="w-8 h-8 flex items-center justify-center bg-black/10 hover:bg-black/20 text-white rounded-full transition-colors"
               >
                 <X size={18} />
               </button>
             </div>
-            
+
             <div className="p-8 overflow-y-auto">
               <h3 className="font-bold text-2xl text-gray-800 mb-2 leading-tight">{selectedAnnouncement.title}</h3>
               <div className="flex items-center gap-2 text-xs text-gray-500 font-medium mb-6">
@@ -321,24 +346,24 @@ const Header = () => {
                 <span>•</span>
                 <span className="px-2 py-0.5 bg-gray-100 rounded text-[10px] uppercase tracking-wider">{selectedAnnouncement.target_audience}</span>
               </div>
-              
+
               <div className="prose prose-sm max-w-none text-gray-600 leading-relaxed whitespace-pre-wrap">
                 {selectedAnnouncement.content}
               </div>
-              
+
               {announcementAttachments.length > 0 && (
                 <div className="mt-8 pt-6 border-t border-gray-100">
                   <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Attachments</h4>
-                  
+
                   {/* Images Gallery */}
                   {announcementAttachments.filter(a => a.isImage).length > 0 && (
                     <div className="mb-6">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {announcementAttachments.filter(a => a.isImage).map((img, idx) => (
                           <div key={idx} className="rounded-xl overflow-hidden border border-gray-200 bg-gray-50 flex items-center justify-center">
-                            <img 
-                              src={img.url} 
-                              alt={`Attachment ${idx + 1}`} 
+                            <img
+                              src={img.url}
+                              alt={`Attachment ${idx + 1}`}
                               className="w-full h-auto max-h-[300px] object-cover hover:scale-105 transition-transform duration-300"
                             />
                           </div>
@@ -362,7 +387,7 @@ const Header = () => {
                             </div>
                           </div>
                           <div className="flex items-center gap-2 pl-12 sm:pl-0 shrink-0">
-                            <a 
+                            <a
                               href={doc.url}
                               target="_blank"
                               rel="noreferrer"
@@ -370,7 +395,7 @@ const Header = () => {
                             >
                               <ExternalLink size={14} /> Preview
                             </a>
-                            <a 
+                            <a
                               href={`${doc.url}&download=`}
                               download
                               className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition-colors shadow-sm flex items-center gap-1.5"
@@ -385,9 +410,9 @@ const Header = () => {
                 </div>
               )}
             </div>
-            
+
             <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end shrink-0">
-              <button 
+              <button
                 onClick={() => setSelectedAnnouncement(null)}
                 className="px-6 py-2.5 bg-white border border-gray-200 text-gray-700 text-sm font-bold rounded-xl hover:bg-gray-50 hover:text-gray-900 transition-colors shadow-sm"
               >

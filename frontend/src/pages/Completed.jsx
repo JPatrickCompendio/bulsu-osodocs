@@ -180,6 +180,12 @@ const Completed = () => {
   }, []);
 
   React.useEffect(() => {
+    const handleSidebarClick = () => setSelectedSubmissionId(null);
+    window.addEventListener('sidebar-nav-click', handleSidebarClick);
+    return () => window.removeEventListener('sidebar-nav-click', handleSidebarClick);
+  }, []);
+
+  React.useEffect(() => {
     const fetchCompleted = async () => {
       if (!user?.id) {
         setCompletedDocs([]);

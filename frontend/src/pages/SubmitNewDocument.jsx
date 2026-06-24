@@ -10,7 +10,7 @@ import {
   AlertCircle, Loader2, Info, Calendar, User, MapPin, 
   Clock, Users, Search, ChevronRight, RefreshCcw, X, 
   FileCheck, Download, Eye, Trash2, File as FileIcon, 
-  Eraser, Check, CheckSquare, Lock
+  Eraser, Check, CheckSquare, Lock, Paperclip
 } from 'lucide-react';
 
 const SubmitNewDocument = () => {
@@ -100,12 +100,46 @@ const SubmitNewDocument = () => {
           params: { userId: user.id },
         });
         if (availRes.data?.success) {
-          setAvailability(availRes.data.availability || {});
+          let frontendAvailability = availRes.data.availability || {};
           setBlockedEvents(availRes.data.blockedEvents || []);
-          if (!availRes.data.activeSchoolYear || availRes.data.message === 'The current date is outside the active School Year.') {
+          const sy = availRes.data.activeSchoolYear;
+          
+          if (!sy || availRes.data.message === 'The current date is outside the active School Year.') {
             setGlobalWarning(availRes.data.message || 'No active school year configured.');
+            setAvailability(frontendAvailability);
           } else {
-            setActiveSchoolYearId(availRes.data.activeSchoolYear.id);
+            setActiveSchoolYearId(sy.id);
+            
+            try {
+              const { data: userSubs } = await supabase
+                .from('submissions')
+                .select('status, document_type_id, documentType:document_type_id(name)')
+                .eq('user_id', user.id)
+                .eq('school_year_id', sy.id);
+
+              if (userSubs && userSubs.length > 0) {
+                const existingDocTypeIds = new Set();
+                userSubs.forEach(s => {
+                  if (s.status !== 'disapproved' && s.document_type_id) {
+                    existingDocTypeIds.add(String(s.document_type_id));
+                    existingDocTypeIds.add(Number(s.document_type_id));
+                  }
+                });
+
+                types.forEach(dt => {
+                  const isActivityProposal = dt.name.toLowerCase() === 'activity proposal' || dt.name.toLowerCase().includes('proposal');
+                  if (!isActivityProposal && existingDocTypeIds.has(dt.id)) {
+                    if (!frontendAvailability[dt.id]) frontendAvailability[dt.id] = { isAvailable: true };
+                    frontendAvailability[dt.id].isAvailable = false;
+                    frontendAvailability[dt.id].lockedReason = 'You already have an active submission for this category. Check your My Documents page.';
+                  }
+                });
+              }
+            } catch (err) {
+              console.error('Failed to fetch user submissions for availability check:', err);
+            }
+            
+            setAvailability(frontendAvailability);
           }
         }
       }
@@ -156,6 +190,7 @@ const SubmitNewDocument = () => {
         setProposalDetails({
           ...defaultForm,
           ...details,
+          activity_dates: details.target_date ? details.target_date.split(',').map(d => d.trim()).filter(Boolean) : [],
           organization_name: details.organization_name || user?.org_name || '',
           adviser_name: details.adviser_name || user?.adviser_name || '',
           person_in_charge: details.person_in_charge || user?.full_name || '',
@@ -211,6 +246,7 @@ const SubmitNewDocument = () => {
           setProposalDetails({
             ...defaultForm,
             ...details,
+            activity_dates: details.target_date ? details.target_date.split(',').map(d => d.trim()).filter(Boolean) : [],
             activity_number: details.activity_number || `AP-${new Date().getFullYear()}-${(new Date().getMonth() + 1).toString().padStart(2, '0')}-001`,
             organization_name: details.organization_name || user?.org_name || '',
             adviser_name: details.adviser_name || user?.adviser_name || '',
@@ -530,6 +566,70 @@ const SubmitNewDocument = () => {
   }
 
   const isProposal = selectedType?.name.toLowerCase().includes('activity proposal');
+
+  const renderRequirementsList = (isModal = false) => (
+    <div className={`space-y-4 ${isModal ? '' : 'w-full max-w-5xl mx-auto'}`}>
+      {requirements.map((req, i) => {
+        const existing = existingAttachmentMap[req.id];
+        return (
+          <div key={req.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 bg-white rounded-xl shadow-sm border border-gray-100 hover:border-amber-200 transition-all">
+            <div className="flex items-start sm:items-center gap-4 sm:gap-6">
+              <div className="w-10 h-10 bg-green-100 text-green-800 font-black text-sm flex items-center justify-center rounded-lg shrink-0">
+                {i + 1}
+              </div>
+              <div className="flex flex-col">
+                <h4 className="text-sm font-black text-gray-800 leading-tight uppercase">{req.title}</h4>
+                <p className="text-[11px] font-bold text-gray-500 mt-1">{req.description || 'Please provide the requested document'}</p>
+                <span className="text-[11px] font-bold text-gray-400 mt-2 block">{req.referenceCode || 'REQ'}</span>
+              </div>
+            </div>
+            
+            {localFiles[req.id] ? (
+              <div className="flex items-center gap-3 bg-green-50 px-5 py-2.5 rounded-lg border border-green-100 self-start sm:self-auto shrink-0">
+                <Check className="text-green-600" size={16} />
+                <span className="text-xs font-bold text-green-700 max-w-[150px] truncate" title={localFiles[req.id].name}>
+                  {localFiles[req.id].name}
+                </span>
+                <button type="button" onClick={() => setLocalFiles(prev => {
+                  const next = {...prev}; delete next[req.id]; return next;
+                })} className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all ml-2">
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ) : existing ? (
+              <div className="flex flex-col gap-2 bg-yellow-50 px-5 py-3 rounded-lg border border-yellow-100 self-start sm:self-auto shrink-0 max-w-full">
+                <div className="flex items-center gap-3">
+                  <CheckSquare className="text-amber-600" size={16} />
+                  <span className="text-xs font-bold text-amber-700 truncate max-w-[180px]" title={existing.file_name}>{existing.file_name}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => setExistingAttachments(prev => prev.filter(a => a.requirement_id !== req.id))} className="text-xs text-blue-600 font-bold hover:underline">Remove saved file</button>
+                </div>
+              </div>
+            ) : (
+              <button 
+                type="button"
+                onClick={() => document.getElementById(`file-${isModal ? 'modal' : 'inline'}-${req.id}`).click()}
+                className="px-6 py-2.5 bg-[#f5b027] text-white font-bold rounded-lg hover:bg-amber-500 transition-all text-xs flex items-center justify-center gap-2 self-start sm:self-auto shrink-0 shadow-md"
+              >
+                <Paperclip size={14} /> Attach File
+                <input 
+                  type="file" id={`file-${isModal ? 'modal' : 'inline'}-${req.id}`} className="hidden" accept=".pdf"
+                  onChange={(e) => handleFileUpload(req.id, e.target.files[0])}
+                />
+              </button>
+            )}
+          </div>
+        );
+      })}
+      {requirements.length === 0 && (
+        <div className="py-12 flex flex-col items-center justify-center text-gray-400 bg-white rounded-2xl border border-gray-100">
+          <FileText size={48} className="mb-4 opacity-20" />
+          <p className="font-bold text-sm">No requirements found for this category.</p>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-gray-700 font-sans pb-32 relative">
@@ -945,8 +1045,11 @@ const SubmitNewDocument = () => {
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
+                </div>
+              )}
+
+              {/* Conditional Non-Proposal List */}
+              {!isProposal && renderRequirementsList(false)}
             </div>
           </div>
 
@@ -956,14 +1059,18 @@ const SubmitNewDocument = () => {
               
               {/* Action Buttons */}
               <div className="flex items-center gap-3">
-                <button 
-                  type="button"
-                  onClick={() => setShowUploadModal(true)}
-                  className="px-5 py-2.5 bg-blue-50 text-blue-600 border border-blue-200 font-black rounded-lg hover:bg-blue-100 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
-                >
-                  <Upload size={14} /> Upload Requirements ({attachedRequirementIds.size}/{requirements.length})
-                </button>
-                <div className="h-6 w-px bg-gray-200 mx-2"></div>
+                {isProposal && (
+                  <>
+                    <button 
+                      type="button"
+                      onClick={() => setShowUploadModal(true)}
+                      className="px-5 py-2.5 bg-blue-50 text-blue-600 border border-blue-200 font-black rounded-lg hover:bg-blue-100 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
+                    >
+                      <Upload size={14} /> Upload Requirements ({attachedRequirementIds.size}/{requirements.length})
+                    </button>
+                    <div className="h-6 w-px bg-gray-200 mx-2"></div>
+                  </>
+                )}
                 <button 
                   type="button"
                   onClick={() => setShowClearModal(true)}
@@ -1012,65 +1119,8 @@ const SubmitNewDocument = () => {
               </div>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50/50">
-              {requirements.map((req, i) => {
-                const existing = existingAttachmentMap[req.id];
-                return (
-                  <div key={req.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-white rounded-xl shadow-sm border border-gray-100 hover:border-blue-200 transition-all">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 bg-gray-50 text-gray-500 font-black text-sm flex items-center justify-center rounded-lg shrink-0 border border-gray-100">
-                        {i + 1}
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-black text-gray-800 leading-tight">{req.title}</h4>
-                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{req.referenceCode || 'REQ'}</span>
-                      </div>
-                    </div>
-                    
-                    {localFiles[req.id] ? (
-                      <div className="flex items-center gap-3 bg-green-50 px-4 py-2 rounded-lg border border-green-100 self-start sm:self-auto shrink-0">
-                        <Check className="text-green-600" size={16} />
-                        <span className="text-xs font-bold text-green-700 max-w-[150px] truncate" title={localFiles[req.id].name}>
-                          {localFiles[req.id].name}
-                        </span>
-                        <button type="button" onClick={() => setLocalFiles(prev => {
-                          const next = {...prev}; delete next[req.id]; return next;
-                        })} className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all ml-2">
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    ) : existing ? (
-                      <div className="flex flex-col gap-2 bg-yellow-50 px-4 py-3 rounded-lg border border-yellow-100 self-start sm:self-auto shrink-0 max-w-full">
-                        <div className="flex items-center gap-3">
-                          <CheckSquare className="text-amber-600" size={16} />
-                          <span className="text-xs font-bold text-amber-700 truncate max-w-[180px]" title={existing.file_name}>{existing.file_name}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button type="button" onClick={() => setExistingAttachments(prev => prev.filter(a => a.requirement_id !== req.id))} className="text-xs text-blue-600 font-bold hover:underline">Remove saved file</button>
-                        </div>
-                      </div>
-                    ) : (
-                      <button 
-                        type="button"
-                        onClick={() => document.getElementById(`modal-file-${req.id}`).click()}
-                        className="px-5 py-2.5 bg-white border-2 border-dashed border-gray-200 text-gray-500 font-bold rounded-xl hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600 transition-all text-xs flex items-center justify-center gap-2 self-start sm:self-auto shrink-0"
-                      >
-                        <Upload size={14} /> Attach File
-                        <input 
-                          type="file" id={`modal-file-${req.id}`} className="hidden" accept=".pdf"
-                          onChange={(e) => handleFileUpload(req.id, e.target.files[0])}
-                        />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-              {requirements.length === 0 && (
-                <div className="py-12 flex flex-col items-center justify-center text-gray-400">
-                  <FileText size={48} className="mb-4 opacity-20" />
-                  <p className="font-bold text-sm">No requirements found for this category.</p>
-                </div>
-              )}
+            <div className="flex-1 overflow-y-auto p-6 bg-gray-50/50">
+              {renderRequirementsList(true)}
             </div>
 
             <div className="p-6 border-t border-gray-100 flex justify-end bg-white rounded-b-2xl">

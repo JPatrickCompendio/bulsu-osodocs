@@ -492,7 +492,7 @@ const ListOfRequirements = () => {
               )}
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto pb-48">
               <table className="w-full text-left">
                 <thead>
                   <tr className="bg-gray-50/30 text-gray-400 border-b-2 border-gray-50">
@@ -872,8 +872,8 @@ const ListOfRequirements = () => {
                   <Paperclip size={20} />
                 </div>
                 <div>
-                  <h3 className="font-bold text-gray-800 text-lg">{previewFile.url.split('/').pop()}</h3>
-                  <p className="text-gray-400 text-xs font-medium">Verify Template Document: {previewFile.title}</p>
+                  <h3 className="font-bold text-gray-800 text-lg">{previewFile.title}</h3>
+                  <p className="text-gray-400 text-xs font-medium max-w-sm truncate" title={previewFile.url.split('/').pop()}>File: {previewFile.url.split('/').pop()}</p>
                 </div>
               </div>
               <button
@@ -889,15 +889,9 @@ const ListOfRequirements = () => {
               <div className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-200/50 relative">
                 {previewFile.url?.toLowerCase().includes('.pdf') ? (
                   <iframe
-                    src={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=Fit` : ''}
+                    src={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=Fit` : null}
                     className="w-full h-full border-0 rounded-2xl"
                     title="PDF Preview"
-                  />
-                ) : previewFile.url?.toLowerCase().includes('.docx') ? (
-                  <iframe
-                    src={filePreviewUrl ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(filePreviewUrl)}` : ''}
-                    className="w-full h-full border-0 rounded-2xl"
-                    title="DOCX Preview"
                   />
                 ) : (
                   <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">

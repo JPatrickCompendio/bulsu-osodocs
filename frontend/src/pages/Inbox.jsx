@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import SubmissionTimeline from '../components/SubmissionTimeline';
 import { 
   Search, 
@@ -66,12 +66,26 @@ const getStatusColor = (status) => {
 export const Inbox = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const isOsoStaff = user?.role === 'chairman' || user?.role === 'vice-chairman';
   const [isFilterOpen, setIsFilterOpen] = React.useState(false);
   const [filterType, setFilterType] = React.useState('All'); // 'All', 'Pending', 'Approved', 'Rejected'
   const [selectedDocs, setSelectedDocs] = React.useState([]);
   const [viewMode, setViewMode] = React.useState('inbox'); // 'inbox' or 'archive'
   const [selectedDoc, setSelectedDoc] = React.useState(null);
+  const [activeSy, setActiveSy] = React.useState(null);
+
+  React.useEffect(() => {
+    const fetchSy = async () => {
+      const { data } = await supabase
+        .from('school_years')
+        .select('*')
+        .eq('is_active', true)
+        .maybeSingle();
+      setActiveSy(data);
+    };
+    fetchSy();
+  }, []);
   const [selectedVersionId, setSelectedVersionId] = React.useState(null);
   const [isFilesOpen, setIsFilesOpen] = React.useState(true);
   const [previewFile, setPreviewFile] = React.useState(null);
@@ -385,6 +399,12 @@ export const Inbox = () => {
   }, [selectedDoc, selectedVersionId]);
 
   React.useEffect(() => {
+    const handleSidebarClick = () => setSelectedDoc(null);
+    window.addEventListener('sidebar-nav-click', handleSidebarClick);
+    return () => window.removeEventListener('sidebar-nav-click', handleSidebarClick);
+  }, []);
+
+  React.useEffect(() => {
     const fetchUrl = async () => {
       if (!previewFile) {
         setFilePreviewUrl('');
@@ -579,7 +599,8 @@ export const Inbox = () => {
 
         return {
           id: sub.id,
-          org: isActivityProposal ? (customDetails.organization_name || '-') : '-',
+          isActivityProposal,
+          org: customDetails.organization_name || sub.users?.org_name || '-',
           submitter_name: sub.users?.full_name || 'Unknown',
           title: (isActivityProposal && customDetails.activity_title) ? customDetails.activity_title.toUpperCase() : docTypeName.toUpperCase(),
           ref: `SUB-2026-03-${String(sub.id).padStart(3, '0')}`,
@@ -965,7 +986,7 @@ export const Inbox = () => {
             </button>
             <div>
               <h1 className="text-3xl font-bold text-gray-800 tracking-tight flex items-center gap-3">
-                {selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title}
+                {isActivityProposal ? (selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title) : `${selectedDoc.org || selectedDoc.sender} ${documentTypeName} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
                 {allVersions.length > 0 && (
                   <span className="px-3 py-1 bg-gray-100 text-gray-500 text-sm font-bold rounded-lg uppercase tracking-widest">
                     V{activeVersion?.version_number}
@@ -1026,11 +1047,12 @@ export const Inbox = () => {
         </div>
 
         {/* Content Section */}
+        {isActivityProposal && (
         <div className="bg-white rounded-[2.5rem] p-10 shadow-sm border border-gray-100 mb-8 text-gray-800">
           <h2 className="text-xl font-bold text-gray-800 mb-8">{selectedDoc.type} Form Details</h2>
           <div className="text-center mb-10">
             <h3 className="text-lg font-bold text-gray-800">
-              Document Title: {selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title}
+              Document Title: {isActivityProposal ? (selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title) : `${selectedDoc.org || selectedDoc.sender} ${documentTypeName} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
             </h3>
           </div>
 
@@ -1133,6 +1155,7 @@ export const Inbox = () => {
             )}
           </div>
         </div>
+        )}
 
         {/* Attached Files Section - Collapsible with Live Data */}
         <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 mb-10 transition-all duration-500">
@@ -1415,20 +1438,14 @@ export const Inbox = () => {
                 <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
                   {/* Left Side: Preview iframe */}
                   <div className="flex-1 bg-gray-100 p-6 flex flex-col h-full overflow-hidden border-r border-gray-100">
-                    <div className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-200/50 relative h-full">
-                      {previewFile.file_name?.toLowerCase().endsWith('.pdf') || previewFile.file_url?.toLowerCase().includes('.pdf') ? (
-                        <iframe 
-                          src={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=Fit` : ''} 
-                          className="w-full h-full border-0 rounded-2xl" 
-                          title="PDF Preview"
-                        />
-                      ) : previewFile.file_name?.toLowerCase().endsWith('.docx') || previewFile.file_url?.toLowerCase().includes('.docx') ? (
-                        <iframe 
-                          src={filePreviewUrl ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(filePreviewUrl)}` : ''} 
-                          className="w-full h-full border-0 rounded-2xl" 
-                          title="DOCX Preview"
-                        />
-                      ) : (
+                    <div className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-200/50 relative">
+                {previewFile.file_url?.toLowerCase().includes('.pdf') ? (
+                  <iframe
+                    src={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=Fit` : null}
+                    className="w-full h-full border-0 rounded-2xl"
+                    title="PDF Preview"
+                  />
+                ) : (
                         <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
                           <FileText size={48} className="text-gray-300 mb-4 animate-bounce" />
                           <h4 className="font-bold text-gray-700 mb-1">Preview is not supported for this file type</h4>
@@ -1866,7 +1883,9 @@ export const Inbox = () => {
                           </div>
                         )}
                         <div>
-                          <p className="font-semibold text-gray-800 group-hover:text-primary-green transition-colors uppercase text-sm">{item.title}</p>
+                          <p className="font-semibold text-gray-800 group-hover:text-primary-green transition-colors uppercase text-sm">
+                            {item.isActivityProposal ? item.title : `${item.org} ${item.type} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
+                          </p>
                           <p className="text-[10px] text-gray-400 font-mono mt-0.5 tracking-tighter uppercase">{item.ref}</p>
                         </div>
                       </div>

@@ -227,6 +227,7 @@ export const saveProposalDetails = async (versionId, details, proposalType) => {
   const safeDetails = {
     submission_version_id: versionId,
     ...details,
+    target_date: Array.isArray(details.activity_dates) && details.activity_dates.length > 0 ? details.activity_dates.join(', ') : details.target_date,
     proposal_type: proposalType.toLowerCase().replace(' ', '-'), // MANDATORY NEW FIELD
     number_of_students: parseInt(details.number_of_students) || 0,
     created_at: new Date().toISOString()
@@ -235,6 +236,7 @@ export const saveProposalDetails = async (versionId, details, proposalType) => {
   // Delete UI-only fields that do not exist in the database schema
   delete safeDetails.is_indefinite_end_time;
   delete safeDetails.target_end_time;
+  delete safeDetails.activity_dates;
 
   // Clean up empty strings to null to avoid Postgres type errors for date/time/numeric columns
   Object.keys(safeDetails).forEach(key => {

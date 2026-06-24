@@ -19,11 +19,51 @@ import { supabase } from '../supabaseClient';
 const Sidebar = () => {
   const { user, logout } = useAuth();
   const [showLogoutConfirm, setShowLogoutConfirm] = React.useState(false);
+  const [inboxCount, setInboxCount] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!user) return;
+    
+    let isMounted = true;
+    
+    const fetchInboxCount = async () => {
+      try {
+        let statusFilter = '';
+        if (user.role === 'admin') statusFilter = 'SDS coordinator review';
+        else if (user.role === 'chairman' || user.role === 'vice-chairman') statusFilter = 'submitted';
+        
+        if (!statusFilter) return;
+
+        const { count, error } = await supabase
+          .from('submissions')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', statusFilter);
+          
+        if (!error && isMounted) {
+          setInboxCount(count || 0);
+        }
+      } catch (err) {
+        console.error('Error fetching inbox count:', err);
+      }
+    };
+    
+    fetchInboxCount();
+    
+    const channel = supabase.channel('submissions_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'submissions' }, () => {
+        fetchInboxCount();
+      })
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
 
   const menuItems = {
     admin: [
       { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
-      { name: 'My Profile', path: '/profile', icon: <User size={20} /> },
       { name: 'Inbox', path: '/inbox', icon: <Inbox size={20} /> },
       { name: 'My Documents', path: '/my-documents', icon: <Files size={20} /> },
       { name: 'Completed', path: '/completed', icon: <CheckCircle size={20} /> },
@@ -34,7 +74,6 @@ const Sidebar = () => {
     ],
     chairman: [
       { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
-      { name: 'My Profile', path: '/profile', icon: <User size={20} /> },
       { name: 'Inbox', path: '/inbox', icon: <Inbox size={20} /> },
       { name: 'My Documents', path: '/my-documents', icon: <Files size={20} /> },
       { name: 'Completed', path: '/completed', icon: <CheckCircle size={20} /> },
@@ -42,7 +81,6 @@ const Sidebar = () => {
     ],
     'vice-chairman': [
       { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
-      { name: 'My Profile', path: '/profile', icon: <User size={20} /> },
       { name: 'Inbox', path: '/inbox', icon: <Inbox size={20} /> },
       { name: 'My Documents', path: '/my-documents', icon: <Files size={20} /> },
       { name: 'Completed', path: '/completed', icon: <CheckCircle size={20} /> },
@@ -50,7 +88,6 @@ const Sidebar = () => {
     ],
     'org-president': [
       { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
-      { name: 'My Profile', path: '/profile', icon: <User size={20} /> },
       { name: 'Submit New Document', path: '/submit', icon: <FilePlus size={20} /> },
       { name: 'My Documents', path: '/my-documents', icon: <Files size={20} /> },
       { name: 'Completed', path: '/completed', icon: <CheckCircle size={20} /> },
@@ -75,16 +112,24 @@ const Sidebar = () => {
           <NavLink
             key={item.path}
             to={item.path}
+            onClick={() => window.dispatchEvent(new CustomEvent('sidebar-nav-click'))}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
+              `flex items-center justify-between px-4 py-3 rounded-lg transition-all duration-200 ${
                 isActive 
                   ? 'bg-secondary-gold text-primary-green shadow-lg scale-105 animate-shine' 
                   : 'hover:bg-white/10 text-white/80'
               }`
             }
           >
-            {item.icon}
-            <span className="font-medium">{item.name}</span>
+            <div className="flex items-center gap-3">
+              {item.icon}
+              <span className="font-medium">{item.name}</span>
+            </div>
+            {item.name === 'Inbox' && inboxCount > 0 && (
+              <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm">
+                {inboxCount > 99 ? '99+' : inboxCount}
+              </span>
+            )}
           </NavLink>
         ))}
       </nav>
