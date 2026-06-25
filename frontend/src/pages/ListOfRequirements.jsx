@@ -30,6 +30,25 @@ import {
   Check
 } from 'lucide-react';
 
+const getStoragePath = (filePath) => {
+  let path = String(filePath || '').trim();
+  if (path.startsWith('http')) {
+    const bucketMarker = '/documents/';
+    const index = path.indexOf(bucketMarker);
+    if (index !== -1) {
+      path = path.substring(index + bucketMarker.length);
+    }
+  }
+  const queryIndex = path.indexOf('?');
+  if (queryIndex !== -1) {
+    path = path.substring(0, queryIndex);
+  }
+  if (path.startsWith('documents/')) {
+    path = path.substring('documents/'.length);
+  }
+  return path;
+};
+
 const ListOfRequirements = () => {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
@@ -88,10 +107,7 @@ const ListOfRequirements = () => {
         setFilePreviewUrl('');
         return;
       }
-      let finalPath = previewFile.url || '';
-      if (finalPath.startsWith('documents/')) {
-        finalPath = finalPath.replace('documents/', '');
-      }
+      const finalPath = getStoragePath(previewFile.url);
 
       try {
         const { data } = await supabase.storage
@@ -309,7 +325,8 @@ const ListOfRequirements = () => {
     setIsPreviewLoading(true);
     setIsPreviewOpen(true);
     try {
-      const url = await reqService.generateSignedUrl(filePath);
+      const finalPath = getStoragePath(filePath);
+      const url = await reqService.generateSignedUrl(finalPath);
       setPreviewUrl(url);
     } catch (error) {
       showToast('Preview failed', 'error');
@@ -321,7 +338,8 @@ const ListOfRequirements = () => {
 
   const handleDownload = async (filePath, fileName) => {
     try {
-      const url = await reqService.generateSignedUrl(filePath);
+      const finalPath = getStoragePath(filePath);
+      const url = await reqService.generateSignedUrl(finalPath);
       const link = document.createElement('a');
       link.href = url;
       link.download = fileName;
@@ -853,6 +871,8 @@ const ListOfRequirements = () => {
             <div className="bg-white mx-auto w-full max-w-7xl h-full rounded-[4rem] shadow-2xl overflow-hidden">
               {isPreviewLoading ? (
                 <div className="w-full h-full flex items-center justify-center"><Loader2 className="h-20 w-20 animate-spin text-primary-green" /></div>
+              ) : previewUrl?.toLowerCase().includes('.docx') ? (
+                <iframe src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(previewUrl)}`} className="w-full h-full border-none" title="Word Preview" />
               ) : (
                 <iframe src={`${previewUrl}#toolbar=0`} className="w-full h-full border-none" title="PDF" />
               )}
@@ -892,6 +912,12 @@ const ListOfRequirements = () => {
                     src={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=Fit` : null}
                     className="w-full h-full border-0 rounded-2xl"
                     title="PDF Preview"
+                  />
+                ) : previewFile.url?.toLowerCase().includes('.docx') ? (
+                  <iframe
+                    src={filePreviewUrl ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(filePreviewUrl)}` : null}
+                    className="w-full h-full border-0 rounded-2xl"
+                    title="Word Preview"
                   />
                 ) : (
                   <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">

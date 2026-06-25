@@ -708,6 +708,8 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
                     alt="Document Preview"
                     className="max-h-[70vh] rounded-xl shadow-md border border-gray-200 object-contain"
                   />
+                ) : previewUrl?.toLowerCase().includes('.docx') ? (
+                  <iframe src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(previewUrl)}`} title="Word Preview" className="w-full h-[70vh] rounded-xl shadow-sm border border-gray-200 bg-white" />
                 ) : (
                   <iframe src={previewUrl} title="Preview" className="w-full h-[70vh] rounded-xl shadow-sm border border-gray-200 bg-white" />
                 )}

@@ -327,19 +327,25 @@ const SubmissionTimeline = ({
 
           <div className={`grid gap-6 p-6 ${stripProofReferenceFromText(selectedProof.comment || '') ? 'md:grid-cols-[1.1fr_0.9fr]' : 'md:grid-cols-1'}`}>
             <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 min-h-[420px] flex items-center justify-center overflow-hidden">
-              {selectedProof.previewUrl && isImageUrl(selectedProof.previewUrl) ? (
-                <img
-                  src={selectedProof.previewUrl}
-                  alt="Proof preview"
-                  className="h-full max-h-[70vh] w-full rounded-xl object-contain"
-                />
-              ) : selectedProof.previewUrl ? (
-                <iframe
-                  src={selectedProof.previewUrl}
-                  title="Proof preview"
-                  className="h-[70vh] w-full rounded-xl border-0"
-                />
-              ) : (
+               {selectedProof.previewUrl && isImageUrl(selectedProof.previewUrl) ? (
+                 <img
+                   src={selectedProof.previewUrl}
+                   alt="Proof preview"
+                   className="h-full max-h-[70vh] w-full rounded-xl object-contain"
+                 />
+               ) : selectedProof.previewUrl && (selectedProof.previewUrl.toLowerCase().includes('.docx') || selectedProof.log?.comment?.toLowerCase().includes('.docx') || selectedProof.log?.description?.toLowerCase().includes('.docx')) ? (
+                 <iframe
+                   src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(selectedProof.previewUrl)}`}
+                   title="Word Preview"
+                   className="h-[70vh] w-full rounded-xl border-0"
+                 />
+               ) : selectedProof.previewUrl ? (
+                 <iframe
+                   src={selectedProof.previewUrl}
+                   title="Proof preview"
+                   className="h-[70vh] w-full rounded-xl border-0"
+                 />
+               ) : (
                 <div className="text-center text-gray-400">
                   <FileText size={40} className="mx-auto mb-3" />
                   <p className="text-sm font-semibold">No preview available for this proof.</p>

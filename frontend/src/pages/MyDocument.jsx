@@ -116,6 +116,18 @@ export const MyDocuments = () => {
   const [searchQuery, setSearchQuery] = React.useState('');
   const [loading, setLoading] = React.useState(true);
   const [logsData, setLogsData] = React.useState([]);
+  const [highlightedDocId, setHighlightedDocId] = React.useState(null);
+
+  React.useEffect(() => {
+    if (location.state?.highlightedId) {
+      setHighlightedDocId(location.state.highlightedId);
+      window.history.replaceState({}, document.title);
+      const timer = setTimeout(() => {
+        setHighlightedDocId(null);
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [location.state]);
 
   // Detail View State
   const [selectedDoc, setSelectedDoc] = React.useState(null);
@@ -255,12 +267,51 @@ export const MyDocuments = () => {
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   };
 
-  const getStoragePath = (filePath) => String(filePath || '').replace(/^documents\//, '');
+  const getStoragePath = (filePath) => {
+    let path = String(filePath || '').trim();
+    if (path.startsWith('http')) {
+      const bucketMarker = '/documents/';
+      const index = path.indexOf(bucketMarker);
+      if (index !== -1) {
+        path = path.substring(index + bucketMarker.length);
+      }
+    }
+    const queryIndex = path.indexOf('?');
+    if (queryIndex !== -1) {
+      path = path.substring(0, queryIndex);
+    }
+    if (path.startsWith('documents/')) {
+      path = path.substring('documents/'.length);
+    }
+    return path;
+  };
 
   const getStoragePublicUrl = (filePath) => {
     const cleanPath = getStoragePath(filePath);
     const { data } = supabase.storage.from('documents').getPublicUrl(cleanPath);
     return data?.publicUrl || '';
+  };
+
+  const handleDownload = async (filePath, fileName) => {
+    try {
+      const cleanPath = getStoragePath(filePath);
+      const { data, error } = await supabase.storage
+        .from('documents')
+        .createSignedUrl(cleanPath, 3600);
+      if (error) throw error;
+      if (!data?.signedUrl) throw new Error('No signed URL generated');
+
+      const link = document.createElement('a');
+      link.href = data.signedUrl;
+      link.download = fileName;
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Download failed:', error);
+      alert('Download failed. Please try again.');
+    }
   };
 
   const loadAccomplishmentReport = async (submissionId) => {
@@ -477,42 +528,40 @@ export const MyDocuments = () => {
     return !isApproved;
   };
 
-  const persistLocalAttachmentReviews = async (activeVersionId, mode) => {
+  const persistLocalAttachmentReviews = async (activeVersionId) => {
     const now = new Date().toISOString();
     const workflowPhase = getAttachmentWorkflowPhase(selectedDoc);
     const logsToInsert = [];
 
-    if (mode === 'approve') {
-      locallyApproved.forEach((attachmentId) => {
-        logsToInsert.push({
-          submission_id: selectedDoc.id,
-          submission_version_id: activeVersionId,
-          attachment_id: attachmentId,
-          user_id: user.id,
-          workflow_phase: workflowPhase,
-          action_type: 'attachment_review',
-          review_action: 'approved',
-          description: 'Attachment approved',
-          comment: null,
-          created_at: now
-        });
+    locallyApproved.forEach((attachmentId) => {
+      logsToInsert.push({
+        submission_id: selectedDoc.id,
+        submission_version_id: activeVersionId,
+        attachment_id: attachmentId,
+        user_id: user.id,
+        workflow_phase: workflowPhase,
+        action_type: 'attachment_review',
+        review_action: 'approved',
+        description: 'Attachment approved',
+        comment: null,
+        created_at: now
       });
-    } else if (mode === 'return') {
-      Object.entries(locallyReturned).forEach(([attachmentId, payload]) => {
-        logsToInsert.push({
-          submission_id: selectedDoc.id,
-          submission_version_id: activeVersionId,
-          attachment_id: attachmentId,
-          user_id: user.id,
-          workflow_phase: workflowPhase,
-          action_type: 'attachment_review',
-          review_action: payload.reviewAction,
-          description: payload.comment || 'Attachment reviewed',
-          comment: payload.comment || null,
-          created_at: now
-        });
+    });
+
+    Object.entries(locallyReturned).forEach(([attachmentId, payload]) => {
+      logsToInsert.push({
+        submission_id: selectedDoc.id,
+        submission_version_id: activeVersionId,
+        attachment_id: attachmentId,
+        user_id: user.id,
+        workflow_phase: workflowPhase,
+        action_type: 'attachment_review',
+        review_action: payload.reviewAction,
+        description: payload.comment || 'Attachment reviewed',
+        comment: payload.comment || null,
+        created_at: now
       });
-    }
+    });
 
     if (logsToInsert.length === 0) return;
     const { error } = await supabase.from('submission_logs').insert(logsToInsert);
@@ -648,10 +697,7 @@ export const MyDocuments = () => {
         setFilePreviewUrl('');
         return;
       }
-      let finalPath = previewFile.file_url || '';
-      if (finalPath.startsWith('documents/')) {
-        finalPath = finalPath.replace('documents/', '');
-      }
+      const finalPath = getStoragePath(previewFile.file_url);
 
       try {
         const { data } = await supabase.storage
@@ -805,7 +851,7 @@ export const MyDocuments = () => {
 
       if (subErr) throw subErr;
 
-      await persistLocalAttachmentReviews(activeVersionId, 'return');
+      await persistLocalAttachmentReviews(activeVersionId);
 
       const { error: logErr } = await supabase
         .from('submission_logs')
@@ -975,7 +1021,7 @@ export const MyDocuments = () => {
 
       if (subErr) throw subErr;
 
-      await persistLocalAttachmentReviews(activeVersionId, 'approve');
+      await persistLocalAttachmentReviews(activeVersionId);
 
       const { error: logErr } = await supabase
         .from('submission_logs')
@@ -1175,7 +1221,7 @@ export const MyDocuments = () => {
 
       if (subErr) throw subErr;
 
-      await persistLocalAttachmentReviews(activeVersionId, 'approve');
+      await persistLocalAttachmentReviews(activeVersionId);
 
       const { error: logErr1 } = await supabase
         .from('submission_logs')
@@ -1767,7 +1813,15 @@ export const MyDocuments = () => {
                         }
 
                         return (
-                          <div key={file.id || idx} className={`${containerBg} rounded-xl p-4 flex items-center justify-between group hover:brightness-110 transition-all`}>
+                          <div
+                            key={file.id || idx}
+                            onClick={() => {
+                              setPreviewFile(file);
+                              setReviewAction('');
+                              setReviewComments('');
+                            }}
+                            className={`${containerBg} rounded-xl p-4 flex items-center justify-between group hover:brightness-110 transition-all cursor-pointer`}
+                          >
                             <div className="flex items-center gap-4">
                               <div className={`w-10 h-10 ${iconStyle} rounded-lg flex items-center justify-center shrink-0`}>
                                 <Paperclip size={20} />
@@ -1782,9 +1836,10 @@ export const MyDocuments = () => {
                                 )}
                               </div>
                             </div>
-                            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                            <div className="flex items-center gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 pointer-events-auto md:pointer-events-none md:group-hover:pointer-events-auto transition-all">
                               <button
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   setPreviewFile(file);
                                   setReviewAction('');
                                   setReviewComments('');
@@ -1793,13 +1848,15 @@ export const MyDocuments = () => {
                               >
                                 view
                               </button>
-                              <a
-                                href={fileUrl}
-                                download
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDownload(file.file_url, fileName);
+                                }}
                                 className="bg-secondary-gold text-white px-6 py-2 rounded-lg text-xs font-bold hover:brightness-110 transition-all shadow-lg inline-block text-center"
                               >
                                 Download
-                              </a>
+                              </button>
                             </div>
                           </div>
                         );
@@ -2315,9 +2372,116 @@ export const MyDocuments = () => {
               </div>
             );
           })()}
+
+          {/* PDF Preview Modal Overlay */}
+          {previewFile && (() => {
+            const requiresReview = attachmentRequiresReview(
+              previewFile,
+              selectedDoc,
+              currentVersion,
+              allVersions,
+              timelineLogs,
+              locallyApproved,
+              locallyReturned
+            );
+            const fileLog = getLatestAttachmentLog(timelineLogs, previewFile.id);
+            const previewReturnHistory = getFileReturnHistory(previewFile, allVersions, attachmentReturnLogs);
+            const latestPreviewReturn = previewReturnHistory[0] || null;
+            const previewDisplayLog =
+              latestPreviewReturn ||
+              (RETURN_REASONS.includes(String(fileLog?.review_action || '').toLowerCase()) ? fileLog : null);
+
+            return (
+              <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-300">
+                <div className="bg-white rounded-3xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300">
+                  {/* Header */}
+                  <div className="bg-gray-50 border-b border-gray-100 px-8 py-5 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
+                        <Paperclip size={20} />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-gray-800 text-lg">{previewFile.file_name || 'Attached File'}</h3>
+                        <p className="text-gray-400 text-xs font-medium">Verify Document Attachment</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setPreviewFile(null)}
+                      className="p-2.5 hover:bg-gray-200 rounded-full transition-colors text-gray-400 hover:text-gray-800"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+
+                  {/* Body */}
+                  <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+                    {/* Left Side: Preview iframe */}
+                    <div className="flex-1 bg-gray-100 p-6 flex flex-col h-full overflow-hidden border-r border-gray-100">
+                      <div className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-200/50 relative">
+                        {previewFile.file_name?.toLowerCase().includes('.pdf') || previewFile.file_url?.toLowerCase().includes('.pdf') ? (
+                          <iframe
+                            src={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=Fit` : null}
+                            className="w-full h-full border-0 rounded-2xl"
+                            title="PDF Preview"
+                          />
+                        ) : previewFile.file_name?.toLowerCase().includes('.docx') || previewFile.file_url?.toLowerCase().includes('.docx') ? (
+                          <iframe
+                            src={filePreviewUrl ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(filePreviewUrl)}` : null}
+                            className="w-full h-full border-0 rounded-2xl"
+                            title="Word Preview"
+                          />
+                        ) : (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
+                            <FileText size={48} className="text-gray-300 mb-4 animate-bounce" />
+                            <h4 className="font-bold text-gray-700 mb-1">Preview is not supported for this file type</h4>
+                            <p className="text-gray-400 text-xs max-w-xs mb-4">You can download it to view locally on your device.</p>
+                            <button
+                              onClick={() => handleDownload(previewFile.file_url, previewFile.file_name || 'Attached File')}
+                              className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-md inline-flex items-center gap-2"
+                            >
+                              Download Attachment
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="w-full md:w-96 bg-white p-8 flex flex-col justify-between overflow-y-auto border-t md:border-t-0 border-gray-100">
+                      <div className="space-y-6">
+                        <div>
+                          <h4 className="font-bold text-gray-800 text-base mb-1">Attachment Information</h4>
+                          <p className="text-gray-400 text-xs leading-relaxed">View the status and return comments for this attachment.</p>
+                        </div>
+
+                        {previewDisplayLog && (
+                          <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                            <p className="text-[11px] uppercase tracking-widest text-gray-400 mb-2">Latest return context</p>
+                            <div className="flex flex-wrap items-center gap-2 mb-1">
+                              <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] font-bold uppercase">
+                                {(previewDisplayLog.review_action || 'returned').replace('-', ' ')}
+                              </span>
+                              <span className="text-[10px] text-gray-500 uppercase">
+                                by {previewDisplayLog.users?.full_name || previewDisplayLog.users?.role || 'reviewer'}
+                              </span>
+                            </div>
+                            {(previewDisplayLog.comment || previewDisplayLog.description) && (
+                              <p className="text-xs text-gray-600 italic">
+                                "{previewDisplayLog.comment || previewDisplayLog.description}"
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       );
     }
+
 
     // Default detail view for chairman/admin and others
     return (
@@ -2406,113 +2570,116 @@ export const MyDocuments = () => {
         </div>
 
         {/* Form Details Content card */}
-        <div className="bg-white rounded-[2.5rem] p-10 shadow-sm border border-gray-100 mb-8 text-gray-800">
-          <h2 className="text-xl font-bold text-gray-800 mb-8">{selectedDoc.type} Form Details</h2>
-          <div className="text-center mb-10">
-            <h3 className="text-lg font-bold text-gray-800">
-              Document Title: {isActivityProposal ? (selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title) : `${selectedDoc.sender} ${selectedDoc.type} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
-            </h3>
-          </div>
-
-          <div className="space-y-4 text-gray-700 max-w-4xl">
-            <div className="flex gap-2">
-              <span className="font-bold min-w-[200px]">Person In-Charge:</span>
-              <span>{selectedDoc.pic}</span>
-            </div>
-            <div className="flex gap-2">
-              <span className="font-bold min-w-[200px]">Student ID No.:</span>
-              <span>{selectedDoc.studentId}</span>
-            </div>
-            <div className="flex gap-2">
-              <span className="font-bold min-w-[200px]">Contact Number:</span>
-              <span>{selectedDoc.contact}</span>
-            </div>
-            <div className="flex gap-2">
-              <span className="font-bold min-w-[200px]">Target Date and Time:</span>
-              <span>
-                {selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-'
-                  ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}`
-                  : selectedDoc.targetDate}
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <span className="font-bold min-w-[200px]">Duration:</span>
-              <span>{selectedDoc.duration}</span>
-            </div>
-            <div className="flex gap-2">
-              <span className="font-bold min-w-[200px]">Number of Students:</span>
-              <span>{selectedDoc.students}</span>
-            </div>
-            <div className="flex gap-2">
-              <span className="font-bold min-w-[200px]">Nature of Activity:</span>
-              <span>{selectedDoc.nature}</span>
+        {isActivityProposal && (
+          <div className="bg-white rounded-[2.5rem] p-10 shadow-sm border border-gray-100 mb-8 text-gray-800">
+            <h2 className="text-xl font-bold text-gray-800 mb-8">{selectedDoc.type} Form Details</h2>
+            <div className="text-center mb-10">
+              <h3 className="text-lg font-bold text-gray-800">
+                Document Title: {isActivityProposal ? (selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title) : `${selectedDoc.sender} ${selectedDoc.type} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
+              </h3>
             </div>
 
-            <div className="mt-8">
-              <p className="font-bold mb-3">Objectives of the Activity:</p>
-              {selectedDoc.objectives ? (
-                <div className="bg-gray-50 p-6 rounded-2xl text-sm leading-relaxed text-gray-600 border border-gray-100 italic">
-                  {selectedDoc.objectives}
+            <div className="space-y-4 text-gray-700 max-w-4xl">
+              <div className="flex gap-2">
+                <span className="font-bold min-w-[200px]">Person In-Charge:</span>
+                <span>{selectedDoc.pic}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-bold min-w-[200px]">Student ID No.:</span>
+                <span>{selectedDoc.studentId}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-bold min-w-[200px]">Contact Number:</span>
+                <span>{selectedDoc.contact}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-bold min-w-[200px]">Target Date and Time:</span>
+                <span>
+                  {selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-'
+                    ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}`
+                    : selectedDoc.targetDate}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-bold min-w-[200px]">Duration:</span>
+                <span>{selectedDoc.duration}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-bold min-w-[200px]">Number of Students:</span>
+                <span>{selectedDoc.students}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-bold min-w-[200px]">Nature of Activity:</span>
+                <span>{selectedDoc.nature}</span>
+              </div>
+
+              <div className="mt-8">
+                <p className="font-bold mb-3">Objectives of the Activity:</p>
+                {selectedDoc.objectives ? (
+                  <div className="bg-gray-50 p-6 rounded-2xl text-sm leading-relaxed text-gray-600 border border-gray-100 italic">
+                    {selectedDoc.objectives}
+                  </div>
+                ) : (
+                  <ul className="list-disc pl-5 space-y-1 text-sm text-gray-500">
+                    <li>Leadership Development and Formation</li>
+                    <li>Membership Development and Formation</li>
+                    <li>Organizational Program Management</li>
+                    <li>Values Enrichment</li>
+                    <li>Technical Skills Development and Industry Exposure</li>
+                  </ul>
+                )}
+              </div>
+
+              <div className="mt-6">
+                <p className="font-bold mb-2">Target Audience / Participants: <span className="font-normal text-sm">BulSUans Only</span></p>
+              </div>
+
+              {isActivityProposal && (selectedDoc.satisfy_goals && selectedDoc.satisfy_goals.length > 0) ? (
+                <div className="mt-8">
+                  <p className="font-bold mb-4 text-sm leading-relaxed">
+                    Describe how this activity will satisfy the needs of the organization and how it will help the organization achieve its goals:
+                  </p>
+                  <div className="bg-gray-50 p-6 rounded-2xl text-sm leading-relaxed text-gray-600 border border-gray-100 italic">
+                    <ol className="list-decimal pl-5 space-y-2">
+                      {selectedDoc.satisfy_goals.map((goal, idx) => (
+                        <li key={idx} className="font-medium">{goal}</li>
+                      ))}
+                    </ol>
+                  </div>
                 </div>
               ) : (
-                <ul className="list-disc pl-5 space-y-1 text-sm text-gray-500">
-                  <li>Leadership Development and Formation</li>
-                  <li>Membership Development and Formation</li>
-                  <li>Organizational Program Management</li>
-                  <li>Values Enrichment</li>
-                  <li>Technical Skills Development and Industry Exposure</li>
-                </ul>
+                <div className="mt-8">
+                  <p className="font-bold mb-4 text-sm leading-relaxed">
+                    Describe how this activity will satisfy the needs of the organization and how it will help the organization achieve its goals:
+                  </p>
+                  <div className="bg-gray-50 p-6 rounded-2xl text-sm leading-relaxed text-gray-600 border border-gray-100 italic">
+                    {selectedDoc.satisfy_needs || '"The ASICS Summit aims to connect students with experienced IT professionals and industry experts who will share their knowledge, career experiences and current trends in the field of information technology..."'}
+                  </div>
+                </div>
+              )}
+
+              {isActivityProposal && (selectedDoc.sponsors_partners && selectedDoc.sponsors_partners.length > 0) && (
+                <div className="mt-8">
+                  <p className="font-bold mb-3">List of Sponsors / Partners:</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {selectedDoc.sponsors_partners.map((partner, idx) => (
+                      <div key={idx} className="bg-gray-50 rounded-2xl p-4 border border-gray-100 hover:border-primary-green/20 transition-all flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-primary-green/10 flex items-center justify-center text-primary-green font-bold text-xs">
+                          {idx + 1}
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">Partner Agency</p>
+                          <p className="text-sm font-bold text-gray-800">{partner}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
-
-            <div className="mt-6">
-              <p className="font-bold mb-2">Target Audience / Participants: <span className="font-normal text-sm">BulSUans Only</span></p>
-            </div>
-
-            {isActivityProposal && (selectedDoc.satisfy_goals && selectedDoc.satisfy_goals.length > 0) ? (
-              <div className="mt-8">
-                <p className="font-bold mb-4 text-sm leading-relaxed">
-                  Describe how this activity will satisfy the needs of the organization and how it will help the organization achieve its goals:
-                </p>
-                <div className="bg-gray-50 p-6 rounded-2xl text-sm leading-relaxed text-gray-600 border border-gray-100 italic">
-                  <ol className="list-decimal pl-5 space-y-2">
-                    {selectedDoc.satisfy_goals.map((goal, idx) => (
-                      <li key={idx} className="font-medium">{goal}</li>
-                    ))}
-                  </ol>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-8">
-                <p className="font-bold mb-4 text-sm leading-relaxed">
-                  Describe how this activity will satisfy the needs of the organization and how it will help the organization achieve its goals:
-                </p>
-                <div className="bg-gray-50 p-6 rounded-2xl text-sm leading-relaxed text-gray-600 border border-gray-100 italic">
-                  {selectedDoc.satisfy_needs || '"The ASICS Summit aims to connect students with experienced IT professionals and industry experts who will share their knowledge, career experiences and current trends in the field of information technology..."'}
-                </div>
-              </div>
-            )}
-
-            {isActivityProposal && (selectedDoc.sponsors_partners && selectedDoc.sponsors_partners.length > 0) && (
-              <div className="mt-8">
-                <p className="font-bold mb-3">List of Sponsors / Partners:</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {selectedDoc.sponsors_partners.map((partner, idx) => (
-                    <div key={idx} className="bg-gray-50 rounded-2xl p-4 border border-gray-100 hover:border-primary-green/20 transition-all flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-primary-green/10 flex items-center justify-center text-primary-green font-bold text-xs">
-                        {idx + 1}
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">Partner Agency</p>
-                        <p className="text-sm font-bold text-gray-800">{partner}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
-        </div>
+        )}
+
 
         {/* Attached Files Section - Collapsible with Live Data */}
         <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 mb-10 transition-all duration-500">
@@ -2569,7 +2736,15 @@ export const MyDocuments = () => {
                   }
 
                   return (
-                    <div key={idx} className={`${containerBg} rounded-xl p-4 flex items-center justify-between group hover:brightness-110 transition-all`}>
+                    <div
+                      key={idx}
+                      onClick={() => {
+                        setPreviewFile(file);
+                        setReviewAction('');
+                        setReviewComments('');
+                      }}
+                      className={`${containerBg} rounded-xl p-4 flex items-center justify-between group hover:brightness-110 transition-all cursor-pointer`}
+                    >
                       <div className="flex items-center gap-4">
                         <div className={`w-10 h-10 ${iconStyle} rounded-lg flex items-center justify-center shrink-0`}>
                           <Paperclip size={20} />
@@ -2584,9 +2759,10 @@ export const MyDocuments = () => {
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                      <div className="flex items-center gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 pointer-events-auto md:pointer-events-none md:group-hover:pointer-events-auto transition-all">
                         <button
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setPreviewFile(file);
                             setReviewAction('');
                             setReviewComments('');
@@ -2595,13 +2771,15 @@ export const MyDocuments = () => {
                         >
                           view
                         </button>
-                        <a
-                          href={fileUrl}
-                          download
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownload(file.file_url, fileName);
+                          }}
                           className="bg-secondary-gold text-white px-6 py-2 rounded-lg text-xs font-bold hover:brightness-110 transition-all shadow-lg inline-block text-center"
                         >
                           Download
-                        </a>
+                        </button>
                       </div>
                     </div>
                   );
@@ -2779,7 +2957,7 @@ export const MyDocuments = () => {
             (RETURN_REASONS.includes(String(fileLog?.review_action || '').toLowerCase()) ? fileLog : null);
 
           return (
-            <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
+            <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-300">
               <div className="bg-white rounded-3xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300">
                 {/* Header */}
                 <div className="bg-gray-50 border-b border-gray-100 px-8 py-5 flex items-center justify-between">
@@ -2805,24 +2983,29 @@ export const MyDocuments = () => {
                   {/* Left Side: Preview iframe */}
                   <div className="flex-1 bg-gray-100 p-6 flex flex-col h-full overflow-hidden border-r border-gray-100">
                     <div className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-200/50 relative">
-                      {previewFile.file_url?.toLowerCase().includes('.pdf') ? (
+                      {previewFile.file_name?.toLowerCase().includes('.pdf') || previewFile.file_url?.toLowerCase().includes('.pdf') ? (
                         <iframe
                           src={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=Fit` : null}
                           className="w-full h-full border-0 rounded-2xl"
                           title="PDF Preview"
+                        />
+                      ) : previewFile.file_name?.toLowerCase().includes('.docx') || previewFile.file_url?.toLowerCase().includes('.docx') ? (
+                        <iframe
+                          src={filePreviewUrl ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(filePreviewUrl)}` : null}
+                          className="w-full h-full border-0 rounded-2xl"
+                          title="Word Preview"
                         />
                       ) : (
                         <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
                           <FileText size={48} className="text-gray-300 mb-4 animate-bounce" />
                           <h4 className="font-bold text-gray-700 mb-1">Preview is not supported for this file type</h4>
                           <p className="text-gray-400 text-xs max-w-xs mb-4">You can download it to view locally on your device.</p>
-                          <a
-                            href={filePreviewUrl}
-                            download
+                          <button
+                            onClick={() => handleDownload(previewFile.file_url, previewFile.file_name || 'Attached File')}
                             className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-md inline-flex items-center gap-2"
                           >
                             Download Attachment
-                          </a>
+                          </button>
                         </div>
                       )}
                     </div>
@@ -3331,7 +3514,7 @@ export const MyDocuments = () => {
                 {filteredDocs.map((doc) => (
                   <tr
                     key={doc.id}
-                    className="group transition-all duration-300 hover:bg-gray-50/50"
+                    className={`group transition-all duration-300 hover:bg-gray-50/50 ${doc.id === highlightedDocId ? 'newly-added-glow' : ''}`}
                   >
                     <td
                       className="px-6 py-5 cursor-pointer"

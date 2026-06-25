@@ -63,6 +63,25 @@ const getStatusColor = (status) => {
   return '#6366f1'; // Default
 };
 
+const getStoragePath = (filePath) => {
+  let path = String(filePath || '').trim();
+  if (path.startsWith('http')) {
+    const bucketMarker = '/documents/';
+    const index = path.indexOf(bucketMarker);
+    if (index !== -1) {
+      path = path.substring(index + bucketMarker.length);
+    }
+  }
+  const queryIndex = path.indexOf('?');
+  if (queryIndex !== -1) {
+    path = path.substring(0, queryIndex);
+  }
+  if (path.startsWith('documents/')) {
+    path = path.substring('documents/'.length);
+  }
+  return path;
+};
+
 export const Inbox = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -241,41 +260,39 @@ export const Inbox = () => {
     return !isApproved;
   };
 
-  const persistLocalAttachmentReviews = async (activeVersionId, mode) => {
+  const persistLocalAttachmentReviews = async (activeVersionId) => {
     const now = new Date().toISOString();
     const logsToInsert = [];
 
-    if (mode === 'approve') {
-      locallyApproved.forEach((attachmentId) => {
-        logsToInsert.push({
-          submission_id: selectedDoc.id,
-          submission_version_id: activeVersionId,
-          attachment_id: attachmentId,
-          user_id: user.id,
-          workflow_phase: 'Chairman Review',
-          action_type: 'attachment_review',
-          review_action: 'approved',
-          description: 'Attachment approved',
-          comment: null,
-          created_at: now
-        });
+    locallyApproved.forEach((attachmentId) => {
+      logsToInsert.push({
+        submission_id: selectedDoc.id,
+        submission_version_id: activeVersionId,
+        attachment_id: attachmentId,
+        user_id: user.id,
+        workflow_phase: 'Chairman Review',
+        action_type: 'attachment_review',
+        review_action: 'approved',
+        description: 'Attachment approved',
+        comment: null,
+        created_at: now
       });
-    } else if (mode === 'return') {
-      Object.entries(locallyReturned).forEach(([attachmentId, payload]) => {
-        logsToInsert.push({
-          submission_id: selectedDoc.id,
-          submission_version_id: activeVersionId,
-          attachment_id: attachmentId,
-          user_id: user.id,
-          workflow_phase: 'Chairman Review',
-          action_type: 'attachment_review',
-          review_action: payload.reviewAction,
-          description: payload.comment || 'Attachment reviewed',
-          comment: payload.comment || null,
-          created_at: now
-        });
+    });
+
+    Object.entries(locallyReturned).forEach(([attachmentId, payload]) => {
+      logsToInsert.push({
+        submission_id: selectedDoc.id,
+        submission_version_id: activeVersionId,
+        attachment_id: attachmentId,
+        user_id: user.id,
+        workflow_phase: 'Chairman Review',
+        action_type: 'attachment_review',
+        review_action: payload.reviewAction,
+        description: payload.comment || 'Attachment reviewed',
+        comment: payload.comment || null,
+        created_at: now
       });
-    }
+    });
 
     if (logsToInsert.length === 0) return;
     const { error } = await supabase.from('submission_logs').insert(logsToInsert);
@@ -410,10 +427,7 @@ export const Inbox = () => {
         setFilePreviewUrl('');
         return;
       }
-      let finalPath = previewFile.file_url || '';
-      if (finalPath.startsWith('documents/')) {
-        finalPath = finalPath.replace('documents/', '');
-      }
+      const finalPath = getStoragePath(previewFile.file_url);
       
       // Try to create a signed URL first (private bucket compatible)
       try {
@@ -438,6 +452,28 @@ export const Inbox = () => {
     };
     fetchUrl();
   }, [previewFile]);
+
+  const handleDownload = async (filePath, fileName) => {
+    try {
+      const finalPath = getStoragePath(filePath);
+      const { data, error } = await supabase.storage
+        .from('documents')
+        .createSignedUrl(finalPath, 3600);
+      if (error) throw error;
+      if (!data?.signedUrl) throw new Error('No signed URL generated');
+
+      const link = document.createElement('a');
+      link.href = data.signedUrl;
+      link.download = fileName;
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Download failed:', error);
+      alert('Download failed. Please try again.');
+    }
+  };
   
   const [inboxData, setInboxData] = React.useState([]);
   const [archiveData, setArchiveData] = React.useState([]);
@@ -674,7 +710,7 @@ export const Inbox = () => {
 
       if (subErr) throw subErr;
 
-      await persistLocalAttachmentReviews(activeVersionId, 'approve');
+      await persistLocalAttachmentReviews(activeVersionId);
 
       // 2. Insert workflow action log(s)
       // Special case: admin approving right after SDS Coordinator review
@@ -738,8 +774,9 @@ export const Inbox = () => {
       setLocallyReturned({});
       await fetchSubmissions();
       setSelectedDoc(null);
+      window.dispatchEvent(new CustomEvent('inbox-updated'));
       alert('Submission approved successfully!');
-      navigate('/my-documents');
+      navigate('/my-documents', { state: { highlightedId: selectedDoc.id } });
     } catch (err) {
       console.error('Error approving submission:', err);
       alert('Failed to approve submission.');
@@ -769,7 +806,7 @@ export const Inbox = () => {
 
       if (subErr) throw subErr;
 
-      await persistLocalAttachmentReviews(activeVersionId, 'return');
+      await persistLocalAttachmentReviews(activeVersionId);
 
       // 2. Insert workflow action log into submission_logs
       const { error: logErr } = await supabase
@@ -796,8 +833,9 @@ export const Inbox = () => {
       setLocallyReturned({});
       await fetchSubmissions();
       setSelectedDoc(null);
+      window.dispatchEvent(new CustomEvent('inbox-updated'));
       alert('Submission returned for edits successfully!');
-      navigate('/my-documents');
+      navigate('/my-documents', { state: { highlightedId: selectedDoc.id } });
     } catch (err) {
       console.error('Error returning submission:', err);
       alert('Failed to return submission.');
@@ -851,6 +889,7 @@ export const Inbox = () => {
       const disapprovedId = selectedDoc.id;
       await fetchSubmissions();
       setSelectedDoc(null);
+      window.dispatchEvent(new CustomEvent('inbox-updated'));
       alert('Submission disapproved successfully!');
       navigate('/completed', { state: { openDocId: disapprovedId } });
     } catch (err) {
@@ -1213,7 +1252,15 @@ export const Inbox = () => {
                   }
 
                   return (
-                    <div key={idx} className={`${containerBg} rounded-xl p-4 flex items-center justify-between group hover:brightness-110 transition-all`}>
+                    <div
+                      key={idx}
+                      onClick={() => {
+                        setPreviewFile(file);
+                        setReviewAction('');
+                        setReviewComments('');
+                      }}
+                      className={`${containerBg} rounded-xl p-4 flex items-center justify-between group hover:brightness-110 transition-all cursor-pointer`}
+                    >
                       <div className="flex items-center gap-4">
                         <div className={`w-10 h-10 ${iconStyle} rounded-lg flex items-center justify-center`}>
                           <Paperclip size={20} />
@@ -1228,9 +1275,10 @@ export const Inbox = () => {
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                      <div className="flex items-center gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 pointer-events-auto md:pointer-events-none md:group-hover:pointer-events-auto transition-all">
                         <button 
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setPreviewFile(file);
                             setReviewAction('');
                             setReviewComments('');
@@ -1239,13 +1287,15 @@ export const Inbox = () => {
                         >
                           view
                         </button>
-                        <a 
-                          href={fileUrl} 
-                          download
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownload(file.file_url, fileName);
+                          }}
                           className="bg-secondary-gold text-white px-6 py-2 rounded-lg text-xs font-bold hover:brightness-110 transition-all shadow-lg inline-block text-center"
                         >
                           Download
-                        </a>
+                        </button>
                       </div>
                     </div>
                   );
@@ -1413,7 +1463,7 @@ export const Inbox = () => {
             (RETURN_REASONS.includes(String(fileLog?.review_action || '').toLowerCase()) ? fileLog : null);
 
           return (
-            <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
+            <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-300">
               <div className="bg-white rounded-3xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300">
                 {/* Header */}
                 <div className="bg-gray-50 border-b border-gray-100 px-8 py-5 flex items-center justify-between">
@@ -1439,24 +1489,29 @@ export const Inbox = () => {
                   {/* Left Side: Preview iframe */}
                   <div className="flex-1 bg-gray-100 p-6 flex flex-col h-full overflow-hidden border-r border-gray-100">
                     <div className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-200/50 relative">
-                {previewFile.file_url?.toLowerCase().includes('.pdf') ? (
-                  <iframe
-                    src={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=Fit` : null}
-                    className="w-full h-full border-0 rounded-2xl"
-                    title="PDF Preview"
-                  />
-                ) : (
+                      {previewFile.file_name?.toLowerCase().includes('.pdf') || previewFile.file_url?.toLowerCase().includes('.pdf') ? (
+                        <iframe
+                          src={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=Fit` : null}
+                          className="w-full h-full border-0 rounded-2xl"
+                          title="PDF Preview"
+                        />
+                      ) : previewFile.file_name?.toLowerCase().includes('.docx') || previewFile.file_url?.toLowerCase().includes('.docx') ? (
+                        <iframe
+                          src={filePreviewUrl ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(filePreviewUrl)}` : null}
+                          className="w-full h-full border-0 rounded-2xl"
+                          title="Word Preview"
+                        />
+                      ) : (
                         <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
                           <FileText size={48} className="text-gray-300 mb-4 animate-bounce" />
                           <h4 className="font-bold text-gray-700 mb-1">Preview is not supported for this file type</h4>
                           <p className="text-gray-400 text-xs max-w-xs mb-4">You can download it to view locally on your device.</p>
-                          <a 
-                            href={filePreviewUrl} 
-                            download
+                          <button 
+                            onClick={() => handleDownload(previewFile.file_url, previewFile.file_name || 'Attached File')}
                             className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-md inline-flex items-center gap-2"
                           >
                             Download Attachment
-                          </a>
+                          </button>
                         </div>
                       )}
                     </div>

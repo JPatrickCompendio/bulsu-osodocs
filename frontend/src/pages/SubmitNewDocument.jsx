@@ -375,7 +375,7 @@ const SubmitNewDocument = () => {
           await refreshUser();
         }
         showToast('Document Registered Successfully!');
-        setTimeout(() => navigate('/my-documents'), 2000);
+        setTimeout(() => navigate('/my-documents', { state: { highlightedId: submissionId } }), 2000);
       } else {
         showToast('Progress Saved as Draft!', 'success');
         setHasUnsavedChanges(false);

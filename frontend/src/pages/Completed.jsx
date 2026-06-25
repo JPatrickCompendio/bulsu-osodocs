@@ -106,8 +106,8 @@ const Completed = () => {
   const [loading, setLoading] = React.useState(true);
   const [selectedSubmissionId, setSelectedSubmissionId] = React.useState(null);
   const [completedDocs, setCompletedDocs] = React.useState([]);
+  const [unreadDocIds, setUnreadDocIds] = React.useState([]);
   const [fetchError, setFetchError] = React.useState(null);
-
   const [filterDocType, setFilterDocType] = React.useState('all');
   const [filterSemester, setFilterSemester] = React.useState('all');
   const [filterDateRange, setFilterDateRange] = React.useState('all');
@@ -165,13 +165,35 @@ const Completed = () => {
     setIsReportOpen(true);
   };
 
+  const markAsRead = (docId) => {
+    try {
+      const readIds = JSON.parse(localStorage.getItem('completed_read_ids') || '[]');
+      if (!readIds.includes(docId)) {
+        readIds.push(docId);
+        localStorage.setItem('completed_read_ids', JSON.stringify(readIds));
+        window.dispatchEvent(new CustomEvent('completed-updated'));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   React.useEffect(() => {
     if (location.state?.openDocId) {
+      markAsRead(location.state.openDocId);
       setSelectedSubmissionId(location.state.openDocId);
       window.history.replaceState({}, document.title);
     }
   }, [location.state]);
+
+  React.useEffect(() => {
+    if (unreadDocIds.length > 0) {
+      const timer = setTimeout(() => {
+        setUnreadDocIds([]);
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [unreadDocIds]);
 
   React.useEffect(() => {
     const handleClickOutside = () => setOpenFilter(null);
@@ -261,8 +283,10 @@ const Completed = () => {
               raw: sub
             };
           });
-
         setCompletedDocs(rows);
+        const readIds = JSON.parse(localStorage.getItem('completed_read_ids') || '[]');
+        const unread = rows.filter((d) => !readIds.includes(d.id)).map((d) => d.id);
+        setUnreadDocIds(unread);
       } catch (err) {
         console.error('Error fetching completed documents:', err);
         setFetchError(err.message || 'Failed to load completed documents.');
@@ -442,10 +466,13 @@ const Completed = () => {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {filteredDocs.map((doc) => (
-                  <tr key={doc.id} className="group transition-all duration-300 hover:bg-gray-50/50">
+                  <tr key={doc.id} className={`group transition-all duration-300 hover:bg-gray-50/50 ${unreadDocIds.includes(doc.id) ? 'newly-added-glow' : ''}`}>
                     <td
                       className="px-6 py-5 cursor-pointer"
-                      onClick={() => setSelectedSubmissionId(doc.id)}
+                      onClick={() => {
+                        markAsRead(doc.id);
+                        setSelectedSubmissionId(doc.id);
+                      }}
                     >
                       <p className="font-semibold text-gray-800 uppercase text-sm leading-tight group-hover:text-primary-green transition-colors">
                         {doc.title}
@@ -469,7 +496,10 @@ const Completed = () => {
                     <td className="px-6 py-5 text-right">
                       <button
                         type="button"
-                        onClick={() => setSelectedSubmissionId(doc.id)}
+                        onClick={() => {
+                          markAsRead(doc.id);
+                          setSelectedSubmissionId(doc.id);
+                        }}
                         className="text-xs font-semibold text-gray-600 hover:text-primary-green transition-colors inline-flex items-center gap-1"
                       >
                         view

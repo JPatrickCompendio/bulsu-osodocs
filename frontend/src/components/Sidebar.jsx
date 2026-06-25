@@ -20,6 +20,7 @@ const Sidebar = () => {
   const { user, logout } = useAuth();
   const [showLogoutConfirm, setShowLogoutConfirm] = React.useState(false);
   const [inboxCount, setInboxCount] = React.useState(0);
+  const [completedCount, setCompletedCount] = React.useState(0);
 
   React.useEffect(() => {
     if (!user) return;
@@ -46,17 +47,56 @@ const Sidebar = () => {
         console.error('Error fetching inbox count:', err);
       }
     };
+
+    const fetchCompletedCount = async () => {
+      try {
+        if (!['admin', 'chairman', 'vice-chairman'].includes(user.role)) {
+          setCompletedCount(0);
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from('submissions')
+          .select('id, status');
+
+        if (!error && isMounted) {
+          const completedList = (data || []).filter(sub => {
+            const s = String(sub.status || '').toLowerCase();
+            return s === 'completed' || s.includes('disapproved') || s === 'rejected';
+          });
+          const readIds = JSON.parse(localStorage.getItem('completed_read_ids') || '[]');
+          const unreadCount = completedList.filter(sub => !readIds.includes(sub.id)).length;
+          setCompletedCount(unreadCount);
+        }
+      } catch (err) {
+        console.error('Error fetching completed count:', err);
+      }
+    };
     
     fetchInboxCount();
+    fetchCompletedCount();
+    
+    const handleInboxUpdate = () => {
+      fetchInboxCount();
+    };
+    const handleCompletedUpdate = () => {
+      fetchCompletedCount();
+    };
+
+    window.addEventListener('inbox-updated', handleInboxUpdate);
+    window.addEventListener('completed-updated', handleCompletedUpdate);
     
     const channel = supabase.channel('submissions_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'submissions' }, () => {
         fetchInboxCount();
+        fetchCompletedCount();
       })
       .subscribe();
 
     return () => {
       isMounted = false;
+      window.removeEventListener('inbox-updated', handleInboxUpdate);
+      window.removeEventListener('completed-updated', handleCompletedUpdate);
       supabase.removeChannel(channel);
     };
   }, [user]);
@@ -128,6 +168,11 @@ const Sidebar = () => {
             {item.name === 'Inbox' && inboxCount > 0 && (
               <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm">
                 {inboxCount > 99 ? '99+' : inboxCount}
+              </span>
+            )}
+            {item.name === 'Completed' && completedCount > 0 && (
+              <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm animate-pulse">
+                {completedCount > 99 ? '99+' : completedCount}
               </span>
             )}
           </NavLink>
