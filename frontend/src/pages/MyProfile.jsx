@@ -288,10 +288,10 @@ const MyProfile = () => {
                 </>
               ) : (
                 <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">User ID</label>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Contact Number</label>
                   <div className="flex items-center gap-3 text-gray-500 font-medium bg-gray-50 p-3 rounded-xl border border-gray-100 text-xs">
                     <Lock size={16} className="text-gray-400" />
-                    <span className="truncate">{user.id}</span>
+                    <span className="truncate">{user.contact_no || 'N/A'}</span>
                   </div>
                 </div>
               )}

@@ -82,6 +82,150 @@ const getStoragePath = (filePath) => {
   return path;
 };
 
+const SUBMISSION_SELECT = `
+  id,
+  user_id,
+  document_type_id,
+  status,
+  remarks,
+  created_at,
+  current_version_id,
+  users (
+    id,
+    full_name,
+    role,
+    org_name
+  ),
+  documentType (
+    id,
+    name
+  ),
+  submission_versions!submission_id (
+    id,
+    version_number,
+    status,
+    activity_proposal_details (
+      *
+    ),
+    submission_attachments (
+      *
+    )
+  )
+`;
+
+const mapInboxSubmission = (sub, viewer) => {
+  const docTypeName = sub.documentType?.name || 'Document';
+  const isActivityProposal = docTypeName.toLowerCase() === 'activity proposal' || docTypeName.toLowerCase().includes('proposal');
+
+  let proposalType = '-';
+  let customDetails = {};
+
+  let activeVersion = null;
+  if (sub.submission_versions) {
+    activeVersion = Array.isArray(sub.submission_versions)
+      ? (sub.submission_versions.find((v) => v.id === sub.current_version_id) || sub.submission_versions[0])
+      : sub.submission_versions;
+  }
+
+  if (isActivityProposal && activeVersion && activeVersion.activity_proposal_details) {
+    const details = Array.isArray(activeVersion.activity_proposal_details)
+      ? activeVersion.activity_proposal_details[0]
+      : activeVersion.activity_proposal_details;
+
+    if (details) {
+      customDetails = details;
+      if (details.proposal_type) {
+        const rawType = details.proposal_type;
+        if (rawType.toLowerCase() === 'in-campus') {
+          proposalType = 'In-Campus';
+        } else if (rawType.toLowerCase() === 'off-campus') {
+          proposalType = 'Off-Campus';
+        } else {
+          proposalType = rawType.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        }
+      }
+    }
+  }
+
+  const rawStatus = String(sub.status || '').toLowerCase();
+  let statusLabel = 'OSO Staff Review';
+  if (sub.status === 'approved' || rawStatus === 'dean approved') {
+    statusLabel = rawStatus === 'dean approved' ? 'Dean Approved' : 'Approved';
+  } else if (sub.status === 'disapproved' || sub.status === 'rejected') {
+    statusLabel = 'Rejected';
+  } else if (rawStatus === 'submitted' || rawStatus === 'pending') {
+    statusLabel = 'OSO Staff Review';
+  } else if (rawStatus === 'to forward') {
+    statusLabel = viewer?.role === 'org-president' ? 'Hardcopy Submission' : 'To Forward';
+  } else if (rawStatus === 'sds coordinator review' || rawStatus === 'oso approved') {
+    statusLabel = 'SDS coordinator review';
+  } else if (rawStatus === 'dean review' || rawStatus === 'external approved') {
+    statusLabel = 'Dean Review';
+  } else if (rawStatus === 'external review' || rawStatus === 'vice chairman approved') {
+    statusLabel = 'External Review';
+  } else if (rawStatus === 'sds approved' || rawStatus === 'chairman approved') {
+    statusLabel = 'Chairman Review';
+  } else if (rawStatus === 'returned') {
+    statusLabel = 'Returned';
+  } else if (rawStatus === 'completed') {
+    statusLabel = 'Completed';
+  } else if (rawStatus === 'draft') {
+    statusLabel = 'Draft';
+  } else if (sub.status) {
+    statusLabel = sub.status;
+  }
+
+  let attachmentsList = [];
+  if (activeVersion && activeVersion.submission_attachments) {
+    attachmentsList = Array.isArray(activeVersion.submission_attachments)
+      ? activeVersion.submission_attachments
+      : [activeVersion.submission_attachments];
+  }
+
+  const satisfyGoals = [];
+  if (customDetails.satisfaction_goal_1) satisfyGoals.push(customDetails.satisfaction_goal_1);
+  if (customDetails.satisfaction_goal_2) satisfyGoals.push(customDetails.satisfaction_goal_2);
+  if (customDetails.satisfaction_goal_3) satisfyGoals.push(customDetails.satisfaction_goal_3);
+
+  return {
+    id: sub.id,
+    isActivityProposal,
+    org: customDetails.organization_name || sub.users?.org_name || '-',
+    submitter_name: sub.users?.full_name || 'Unknown',
+    title: (isActivityProposal && customDetails.activity_title) ? customDetails.activity_title.toUpperCase() : docTypeName.toUpperCase(),
+    ref: `SUB-2026-03-${String(sub.id).padStart(3, '0')}`,
+    type: docTypeName,
+    proposal_type: proposalType,
+    status: statusLabel,
+    time: new Date(sub.created_at).toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }),
+    timestamp: new Date(sub.created_at).getTime(),
+    isNew: rawStatus === 'submitted' || rawStatus === 'pending',
+    pic: customDetails.person_in_charge || sub.users?.full_name || 'N/A',
+    studentId: customDetails.student_id_no || 'N/A',
+    contact: customDetails.contact_number || 'N/A',
+    proposal_title: isActivityProposal ? (customDetails.activity_title || '-') : '-',
+    targetDate: isActivityProposal ? (customDetails.target_date || '-') : '-',
+    targetTime: isActivityProposal ? (customDetails.target_time || '-') : '-',
+    duration: customDetails.duration || 'N/A',
+    students: customDetails.number_of_students ? `${customDetails.number_of_students} Students` : 'N/A',
+    nature: customDetails.nature_of_activity || 'N/A',
+    objectives: customDetails.objectives || '',
+    satisfy_needs: customDetails.satisfy_needs || '',
+    satisfy_goals: satisfyGoals,
+    partners: isActivityProposal ? (customDetails.partners || null) : null,
+    sponsors: isActivityProposal ? (customDetails.sponsors || null) : null,
+    attachments: attachmentsList,
+    raw: sub,
+  };
+};
+
 export const Inbox = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -487,42 +631,15 @@ export const Inbox = () => {
     try {
       setLoading(true);
       
-      const statusFilter = user?.role === 'admin' ? 'SDS coordinator review' : 'submitted';
+      const statusFilter = user?.role === 'admin'
+        ? ['SDS coordinator review', 'oso approved']
+        : ['submitted'];
 
       // Try with precise relation name first
       let { data, error } = await supabase
         .from('submissions')
-        .select(`
-          id,
-          user_id,
-          document_type_id,
-          status,
-          remarks,
-          created_at,
-          current_version_id,
-          users (
-            id,
-            full_name,
-            role,
-            org_name
-          ),
-          documentType (
-            id,
-            name
-          ),
-          submission_versions!submission_id (
-            id,
-            version_number,
-            status,
-            activity_proposal_details (
-              *
-            ),
-            submission_attachments (
-              *
-            )
-          )
-        `)
-        .eq('status', statusFilter)
+        .select(SUBMISSION_SELECT)
+        .in('status', statusFilter)
         .order('created_at', { ascending: false });
 
       // Fallback in case of foreign key name mismatch or PostgREST join resolution ambiguity
@@ -530,147 +647,15 @@ export const Inbox = () => {
         console.warn("Attempting fallback query due to join error:", error.message);
         const fallbackRes = await supabase
           .from('submissions')
-          .select(`
-            id,
-            user_id,
-            document_type_id,
-            status,
-            remarks,
-            created_at,
-            current_version_id,
-            users (
-              id,
-              full_name,
-              role,
-              org_name
-            ),
-            documentType (
-              id,
-              name
-            ),
-            submission_versions!submission_id (
-              id,
-              version_number,
-              status,
-              activity_proposal_details (
-                *
-              ),
-              submission_attachments (
-                *
-              )
-            )
-          `)
-          .eq('status', statusFilter)
+          .select(SUBMISSION_SELECT)
+          .in('status', statusFilter)
           .order('created_at', { ascending: false });
 
         if (fallbackRes.error) throw fallbackRes.error;
         data = fallbackRes.data;
       }
 
-      const mapped = (data || []).map(sub => {
-        const docTypeName = sub.documentType?.name || 'Document';
-        const isActivityProposal = docTypeName.toLowerCase() === 'activity proposal' || docTypeName.toLowerCase().includes('proposal');
-        
-        let proposalType = '-';
-        let customDetails = {};
-
-        // Resolve submission version
-        let activeVersion = null;
-        if (sub.submission_versions) {
-          activeVersion = Array.isArray(sub.submission_versions)
-            ? (sub.submission_versions.find(v => v.id === sub.current_version_id) || sub.submission_versions[0])
-            : sub.submission_versions;
-        }
-
-        // Fetch proposal_type if it is an Activity Proposal
-        if (isActivityProposal && activeVersion && activeVersion.activity_proposal_details) {
-          const details = Array.isArray(activeVersion.activity_proposal_details)
-            ? activeVersion.activity_proposal_details[0]
-            : activeVersion.activity_proposal_details;
-
-          if (details) {
-            customDetails = details;
-            if (details.proposal_type) {
-              const rawType = details.proposal_type;
-              if (rawType.toLowerCase() === 'in-campus') {
-                proposalType = 'In-Campus';
-              } else if (rawType.toLowerCase() === 'off-campus') {
-                proposalType = 'Off-Campus';
-              } else {
-                proposalType = rawType.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-              }
-            }
-          }
-        }
-
-        // Map status value to correct friendly label for UI filtering
-        let statusLabel = 'OSO Staff Review';
-        if (sub.status === 'approved') {
-          statusLabel = 'Approved';
-        } else if (sub.status === 'disapproved' || sub.status === 'rejected') {
-          statusLabel = 'Rejected';
-        } else if (sub.status === 'submitted') {
-          statusLabel = 'OSO Staff Review';
-        } else if (sub.status === 'to forward') {
-          statusLabel = user?.role === 'org-president' ? 'Hardcopy Submission' : 'To Forward';
-        } else if (sub.status === 'SDS coordinator review') {
-          statusLabel = 'SDS coordinator review';
-        } else if (sub.status === 'draft') {
-          statusLabel = 'Draft';
-        }
-
-        // Resolve attachments from nested join
-        let attachmentsList = [];
-        if (activeVersion && activeVersion.submission_attachments) {
-          attachmentsList = Array.isArray(activeVersion.submission_attachments)
-            ? activeVersion.submission_attachments
-            : [activeVersion.submission_attachments];
-        }
-
-        // Resolve satisfy goals array
-        let satisfyGoals = [];
-        if (customDetails.satisfaction_goal_1) satisfyGoals.push(customDetails.satisfaction_goal_1);
-        if (customDetails.satisfaction_goal_2) satisfyGoals.push(customDetails.satisfaction_goal_2);
-        if (customDetails.satisfaction_goal_3) satisfyGoals.push(customDetails.satisfaction_goal_3);
-
-        return {
-          id: sub.id,
-          isActivityProposal,
-          org: customDetails.organization_name || sub.users?.org_name || '-',
-          submitter_name: sub.users?.full_name || 'Unknown',
-          title: (isActivityProposal && customDetails.activity_title) ? customDetails.activity_title.toUpperCase() : docTypeName.toUpperCase(),
-          ref: `SUB-2026-03-${String(sub.id).padStart(3, '0')}`,
-          type: docTypeName,
-          proposal_type: proposalType,
-          status: statusLabel,
-          time: new Date(sub.created_at).toLocaleString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-            hour: 'numeric',
-            minute: '2-digit',
-            hour12: true
-          }),
-          timestamp: new Date(sub.created_at).getTime(),
-          isNew: sub.status === 'submitted' || sub.status === 'pending',
-          pic: customDetails.person_in_charge || sub.users?.full_name || 'N/A',
-          studentId: customDetails.student_id_no || 'N/A',
-          contact: customDetails.contact_number || 'N/A',
-          proposal_title: isActivityProposal ? (customDetails.activity_title || '-') : '-',
-          targetDate: isActivityProposal ? (customDetails.target_date || '-') : '-',
-          targetTime: isActivityProposal ? (customDetails.target_time || '-') : '-',
-          duration: customDetails.duration || 'N/A',
-          students: customDetails.number_of_students ? `${customDetails.number_of_students} Students` : 'N/A',
-          nature: customDetails.nature_of_activity || 'N/A',
-          objectives: customDetails.objectives || '',
-          satisfy_needs: customDetails.satisfy_needs || '',
-          satisfy_goals: satisfyGoals,
-          partners: isActivityProposal ? (customDetails.partners || null) : null,
-          sponsors: isActivityProposal ? (customDetails.sponsors || null) : null,
-          attachments: attachmentsList,
-          raw: sub
-        };
-      });
+      const mapped = (data || []).map((sub) => mapInboxSubmission(sub, user));
 
       setInboxData(mapped);
     } catch (err) {
@@ -680,9 +665,44 @@ export const Inbox = () => {
     }
   };
 
+  const fetchSubmissionById = async (submissionId) => {
+    const { data, error } = await supabase
+      .from('submissions')
+      .select(SUBMISSION_SELECT)
+      .eq('id', submissionId)
+      .maybeSingle();
+
+    if (error || !data) return null;
+    return mapInboxSubmission(data, user);
+  };
+
   React.useEffect(() => {
     fetchSubmissions();
   }, []);
+
+  React.useEffect(() => {
+    const targetId = location.state?.submissionId || location.state?.highlightedId;
+    if (!targetId) return;
+
+    const openFromNotification = async () => {
+      const match = inboxData.find((doc) => String(doc.id) === String(targetId));
+      if (match) {
+        setSelectedDoc(match);
+        navigate(location.pathname, { replace: true, state: {} });
+        return;
+      }
+
+      if (loading) return;
+
+      const doc = await fetchSubmissionById(targetId);
+      if (doc) {
+        setSelectedDoc(doc);
+        navigate(location.pathname, { replace: true, state: {} });
+      }
+    };
+
+    openFromNotification();
+  }, [inboxData, location.state, location.pathname, navigate, loading, user]);
 
   const handleApproveSubmission = async (comments = '') => {
     if (!selectedDoc) return;

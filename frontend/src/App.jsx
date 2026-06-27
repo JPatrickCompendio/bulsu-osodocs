@@ -9,6 +9,7 @@ import {
   Inbox, 
   MyDocuments, 
   ListOfRequirements, 
+  DocumentTypeSettings,
   SubmitNewDocuments,
   AnnouncementManagement,
   AcademicSettings,
@@ -35,6 +36,11 @@ const App = () => {
             <Route path="/inbox" element={<Inbox />} />
             <Route path="/my-documents" element={<MyDocuments />} />
             <Route path="/requirements" element={<ListOfRequirements />} />
+            <Route path="/requirements/settings/:typeId" element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <DocumentTypeSettings />
+              </ProtectedRoute>
+            } />
             <Route path="/profile" element={<MyProfile />} />
             
             {/* Admin only */}

@@ -5,6 +5,12 @@ import { Bell, Search, X, Check, CheckCircle2, Megaphone, FileText, ChevronRight
 import { useAuth } from '../context/AuthContext';
 import { apiClient, apiUrl } from '../config/apiClient';
 import { supabase } from '../supabaseClient';
+import {
+  getNotificationDestination,
+  extractSubmissionIdFromNotification,
+  extractSubmissionStatusFromNotification,
+  normalizeWorkflowStatus,
+} from '../utils/workflowNotificationUtils';
 
 const Header = () => {
   const { user } = useAuth();
@@ -96,7 +102,7 @@ const Header = () => {
     }
   };
 
-  const handleNotificationClick = (notif) => {
+  const handleNotificationClick = async (notif) => {
     if (!readNotifIds.includes(notif.id)) {
       setReadNotifIds(prev => [...prev, notif.id]);
     }
@@ -104,9 +110,51 @@ const Header = () => {
     if (notif.type === 'announcement') {
       setSelectedAnnouncement(notif.source);
       loadAttachment(notif.source.id);
+      return;
+    }
+
+    const source = notif.source || {};
+    const submissionId = extractSubmissionIdFromNotification(source);
+
+    setIsModalOpen(false);
+
+    if (submissionId) {
+      const role = String(user?.role || '').toLowerCase();
+      let status = extractSubmissionStatusFromNotification(source);
+
+      if (!status) {
+        const { data } = await supabase
+          .from('submissions')
+          .select('status')
+          .eq('id', submissionId)
+          .maybeSingle();
+        status = data?.status || null;
+      }
+
+      if (role === 'org-president') {
+        const normalized = normalizeWorkflowStatus(status);
+        if (['completed', 'disapproved', 'rejected'].includes(normalized)) {
+          navigate('/completed', { state: { openDocId: submissionId } });
+        } else {
+          navigate('/my-documents', { state: { submissionId, highlightedId: submissionId, openSubmission: true } });
+        }
+        return;
+      }
+
+      if (role === 'admin' || role === 'chairman' || role === 'vice-chairman') {
+        const destination = getNotificationDestination(role, submissionId, status);
+        navigate(destination.path, { state: destination.state });
+        return;
+      }
+
+      navigate('/my-documents', { state: { submissionId, highlightedId: submissionId, openSubmission: true } });
+      return;
+    }
+
+    if (user?.role === 'admin' || user?.role === 'chairman' || user?.role === 'vice-chairman') {
+      navigate('/inbox');
     } else {
       navigate('/my-documents');
-      setIsModalOpen(false);
     }
   };
 

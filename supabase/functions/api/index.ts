@@ -327,52 +327,11 @@ async function handleGetUserDetail(id: string) {
     .eq('is_active', true)
     .maybeSingle();
 
-  const { data: submissions } = await supabase
-    .from('submissions')
-    .select(
-      'id, status, created_at, school_year_id, documentType:document_type_id(name), submission_versions!submission_id(version_number, activity_proposal_details(activity_title))'
-    )
-    .eq('user_id', id)
-    .neq('status', 'draft')
-    .order('created_at', { ascending: false });
-
-  const currentSySubmissions = activeSy
-    ? (submissions || []).filter((s) => s.school_year_id === activeSy.id || !s.school_year_id)
-    : (submissions || []);
-
-  const validSubIds = currentSySubmissions.map((s) => s.id);
-
+  let submissions: Array<Record<string, unknown>> = [];
   let activityHistory: Array<Record<string, unknown>> = [];
-  if (validSubIds.length > 0) {
-    const { data: logs } = await supabase
-      .from('submission_logs')
-      .select('*, submissions(id)')
-      .eq('user_id', id)
-      .in('submission_id', validSubIds)
-      .order('created_at', { ascending: false })
-      .limit(20);
-    activityHistory = logs || [];
-  }
+  let reviewedDocuments: Array<Record<string, unknown>> = [];
 
-  let hasMidYear = false;
-  let hasYearEnd = false;
-  if (activeSy && submissions) {
-    submissions.forEach((sub) => {
-      if (sub.status === 'completed' && (sub.school_year_id === activeSy.id || !sub.school_year_id)) {
-        const docName = (sub.documentType as Record<string, unknown>)?.name;
-        const name = typeof docName === 'string' ? docName.toLowerCase() : '';
-        if (name.includes('mid-year') || name.includes('mid year')) hasMidYear = true;
-        if (name.includes('year-end') || name.includes('year end')) hasYearEnd = true;
-      }
-    });
-  }
-
-  const pendingReviewCount = (submissions || []).filter((s) => {
-    const status = String(s.status || '').toLowerCase();
-    return !['completed', 'disapproved', 'draft'].includes(status);
-  }).length;
-
-  const documentLogs = currentSySubmissions.map((doc) => {
+  const formatDocumentLog = (doc: Record<string, unknown>) => {
     let docTitle = `Submission #${String(doc.id).substring(0, 6).toUpperCase()}`;
     const versions = doc.submission_versions as Array<Record<string, unknown>> | undefined;
 
@@ -395,6 +354,13 @@ async function handleGetUserDetail(id: string) {
     if (status === 'completed' || status === 'dean approved') displayStatus = 'Approved';
     else if (status === 'disapproved') displayStatus = 'Disapproved';
     else if (status === 'returned') displayStatus = 'Returned';
+    else if (status === 'submitted' || status === 'pending') displayStatus = 'OSO Staff Review';
+    else if (status === 'oso approved' || status === 'sds coordinator review') displayStatus = 'SDS Coordinator Review';
+    else if (status === 'sds approved' || status === 'chairman approved') displayStatus = 'Chairman Review';
+    else if (status === 'vice chairman approved' || status === 'external review') displayStatus = 'External Review';
+    else if (status === 'external approved' || status === 'dean review') displayStatus = 'Dean Review';
+    else if (status === 'approved') displayStatus = 'Approved';
+    else if (status === 'to forward') displayStatus = 'To Forward';
 
     return {
       id: doc.id,
@@ -403,7 +369,147 @@ async function handleGetUserDetail(id: string) {
       dateSubmitted: doc.created_at,
       status: displayStatus,
     };
-  });
+  };
+
+  if (user.role === 'org-president') {
+    const { data: subs } = await supabase
+      .from('submissions')
+      .select(
+        'id, status, created_at, school_year_id, documentType:document_type_id(name), submission_versions!submission_id(version_number, activity_proposal_details(activity_title))',
+      )
+      .eq('user_id', id)
+      .neq('status', 'draft')
+      .order('created_at', { ascending: false });
+    submissions = subs || [];
+
+    const currentSySubmissions = activeSy
+      ? submissions.filter((s) => s.school_year_id === activeSy.id)
+      : submissions;
+
+    const validSubIds = currentSySubmissions.map((s) => s.id);
+
+    if (validSubIds.length > 0) {
+      const { data: logs } = await supabase
+        .from('submission_logs')
+        .select('*, submissions(id, school_year_id)')
+        .eq('user_id', id)
+        .in('submission_id', validSubIds)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      activityHistory = (logs || []).filter((log) => {
+        const sub = log.submissions as Record<string, unknown> | null;
+        return !activeSy || !sub?.school_year_id || sub.school_year_id === activeSy.id;
+      });
+    }
+  } else {
+    const submissionSelect =
+      'id, status, created_at, school_year_id, documentType:document_type_id(name), submission_versions!submission_id(version_number, activity_proposal_details(activity_title))';
+
+    const getStaffPipelineStatuses = (role: string) => {
+      if (role === 'admin') {
+        return [
+          'oso approved',
+          'sds coordinator review',
+          'vice chairman approved',
+          'external approved',
+          'external review',
+          'dean review',
+          'dean approved',
+          'approved',
+        ];
+      }
+      if (role === 'chairman' || role === 'vice-chairman') {
+        return [
+          'submitted',
+          'pending',
+          'sds approved',
+          'chairman approved',
+          'vice chairman approved',
+          'to forward',
+        ];
+      }
+      return [];
+    };
+
+    const pipelineStatuses = getStaffPipelineStatuses(String(user.role));
+    const pipelineDocs: Array<Record<string, unknown>> = [];
+
+    if (pipelineStatuses.length > 0) {
+      const { data: pipelineSubs } = await supabase
+        .from('submissions')
+        .select(submissionSelect)
+        .in('status', pipelineStatuses)
+        .order('created_at', { ascending: false });
+
+      pipelineDocs.push(
+        ...(pipelineSubs || []).filter(
+          (s) => !activeSy || s.school_year_id === activeSy.id || !s.school_year_id,
+        ),
+      );
+    }
+
+    const { data: userReturnLogs } = await supabase
+      .from('submission_logs')
+      .select(`submission_id, submissions(${submissionSelect})`)
+      .eq('user_id', id)
+      .eq('action_type', 'returned')
+      .order('created_at', { ascending: false });
+
+    const returnedDocs = (userReturnLogs || [])
+      .map((log) => log.submissions as Record<string, unknown> | null)
+      .filter(
+        (sub): sub is Record<string, unknown> =>
+          Boolean(sub) && (!activeSy || !sub.school_year_id || sub.school_year_id === activeSy.id),
+      );
+
+    const reviewedMap = new Map<string, Record<string, unknown>>();
+    [...pipelineDocs, ...returnedDocs].forEach((doc) => {
+      reviewedMap.set(String(doc.id), doc);
+    });
+    reviewedDocuments = Array.from(reviewedMap.values()).map(formatDocumentLog);
+
+    let logsQuery = supabase
+      .from('submission_logs')
+      .select('*, submissions(id, status, school_year_id, documentType:document_type_id(name), submission_versions!submission_id(version_number, activity_proposal_details(activity_title)))')
+      .eq('user_id', id)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    const { data: logs } = await logsQuery;
+    activityHistory = (logs || []).filter((log) => {
+      const sub = log.submissions as Record<string, unknown> | null;
+      return !activeSy || !sub?.school_year_id || sub.school_year_id === activeSy.id;
+    });
+  }
+
+  const currentSySubmissions = activeSy
+    ? submissions.filter((s) => s.school_year_id === activeSy.id)
+    : submissions;
+
+  let hasMidYear = false;
+  let hasYearEnd = false;
+  if (activeSy && submissions) {
+    submissions.forEach((sub) => {
+      if (sub.status === 'completed' && sub.school_year_id === activeSy.id) {
+        const docName = (sub.documentType as Record<string, unknown>)?.name;
+        const name = typeof docName === 'string' ? docName.toLowerCase() : '';
+        if (name.includes('mid-year') || name.includes('mid year')) hasMidYear = true;
+        if (name.includes('year-end') || name.includes('year end')) hasYearEnd = true;
+      }
+    });
+  }
+
+  const pendingReviewCount = user.role === 'org-president'
+    ? (submissions || []).filter((s) => {
+        const status = String(s.status || '').toLowerCase();
+        return !['completed', 'disapproved', 'draft'].includes(status);
+      }).length
+    : reviewedDocuments.length;
+
+  const documentLogs =
+    user.role === 'org-president'
+      ? currentSySubmissions.map(formatDocumentLog)
+      : reviewedDocuments;
 
   return jsonResponse({
     success: true,
@@ -417,8 +523,7 @@ async function handleGetUserDetail(id: string) {
         hasMidYear,
         hasYearEnd,
       },
-      debugSubmissions: submissions,
-      debugActiveSy: activeSy,
+      activeSchoolYear: activeSy,
     },
   });
 }
@@ -467,7 +572,7 @@ async function handlePostUsers(body: Record<string, unknown>) {
         no_member: no_member || null,
         adviser_name: adviser_name || null,
         joined_date: joined_date || null,
-        contact_no: contact_no || null,
+        contact_no: contact_no != null && contact_no !== '' ? String(contact_no) : null,
         student_no: student_no || null,
       },
     ])
@@ -496,7 +601,16 @@ async function handlePutUsers(id: string, body: Record<string, unknown>) {
     email,
   } = body as Record<string, string | null | undefined>;
 
-  // If email is provided, update the auth email
+  const { data: existingUser, error: existingError } = await supabase
+    .from('users')
+    .select('profile_image')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (existingError) {
+    return jsonResponse({ error: 'Failed to load user profile', details: existingError.message }, 500);
+  }
+
   if (email) {
     const { error: authError } = await supabase.auth.admin.updateUserById(id, { email });
     if (authError) {
@@ -504,20 +618,27 @@ async function handlePutUsers(id: string, body: Record<string, unknown>) {
     }
   }
 
+  const updatePayload: Record<string, unknown> = {
+    full_name,
+    role,
+    status: status || 'Active',
+    org_name: org_name || null,
+    no_member: no_member || null,
+    adviser_name: adviser_name || null,
+    joined_date: joined_date || null,
+    contact_no: contact_no != null && contact_no !== '' ? String(contact_no) : null,
+    student_no: student_no || null,
+  };
+
+  if (profile_image !== undefined && profile_image !== null && profile_image !== '') {
+    updatePayload.profile_image = profile_image;
+  } else {
+    updatePayload.profile_image = existingUser?.profile_image ?? null;
+  }
+
   const { data, error } = await supabase
     .from('users')
-    .update({
-      full_name,
-      role,
-      status: status || 'Active',
-      profile_image: profile_image || null,
-      org_name: org_name || null,
-      no_member: no_member || null,
-      adviser_name: adviser_name || null,
-      joined_date: joined_date || null,
-      contact_no: contact_no || null,
-      student_no: student_no || null,
-    })
+    .update(updatePayload)
     .eq('id', id)
     .select();
 
@@ -526,6 +647,26 @@ async function handlePutUsers(id: string, body: Record<string, unknown>) {
   }
 
   return jsonResponse({ success: true, user: data?.[0] });
+}
+
+async function handleVerifyPassword(body: Record<string, unknown>) {
+  const supabase = getAdminClient();
+  const { adminEmail, adminPassword } = body as { adminEmail?: string; adminPassword?: string };
+
+  if (!adminEmail || !adminPassword) {
+    return jsonResponse({ error: 'Admin email and password are required' }, 400);
+  }
+
+  const { error: authError } = await supabase.auth.signInWithPassword({
+    email: adminEmail,
+    password: adminPassword,
+  });
+
+  if (authError) {
+    return jsonResponse({ error: 'Invalid admin credentials' }, 401);
+  }
+
+  return jsonResponse({ success: true, message: 'Password verified' });
 }
 
 async function handleDeleteUsers(id: string, body: Record<string, unknown>) {
@@ -634,6 +775,72 @@ async function handleDeleteAnnouncements(id: string) {
   return jsonResponse({ success: true, message: 'Announcement deleted successfully' });
 }
 
+function normalizeWorkflowText(value: unknown) {
+  return String(value || '').toLowerCase().trim().replace(/[_-]/g, ' ');
+}
+
+function getSubmissionDisplayTitle(sub: Record<string, unknown> | null | undefined): string {
+  if (!sub) return 'Document';
+
+  const versions = sub.submission_versions as Array<Record<string, unknown>> | undefined;
+  if (versions && versions.length > 0) {
+    const latest = versions.reduce((max, version) =>
+      (version.version_number as number) > (max.version_number as number) ? version : max,
+    versions[0]);
+    const details = Array.isArray(latest.activity_proposal_details)
+      ? latest.activity_proposal_details[0]
+      : latest.activity_proposal_details;
+    const activityTitle = (details as Record<string, unknown> | undefined)?.activity_title;
+    if (typeof activityTitle === 'string' && activityTitle.trim()) {
+      return activityTitle.trim();
+    }
+  }
+
+  const docType = (sub.documentType as Record<string, unknown> | undefined)?.name;
+  return typeof docType === 'string' && docType.trim() ? docType : 'Document';
+}
+
+function isWorkflowLogRelevantForRole(
+  role: string,
+  log: Record<string, unknown>,
+  submission: Record<string, unknown> | null,
+): boolean {
+  if (!submission) return false;
+
+  const status = normalizeWorkflowText(submission.status);
+  const phase = normalizeWorkflowText(log.workflow_phase);
+  const actionType = normalizeWorkflowText(log.action_type);
+
+  if (['created', 'viewed', 'attachment review'].includes(actionType)) return false;
+  if (status === 'draft') return false;
+
+  if (role === 'chairman' || role === 'vice-chairman') {
+    const beforeChairmanReview = ['draft'];
+    if (beforeChairmanReview.includes(status)) return false;
+    if (phase.includes('sds review') || phase.includes('dean review') || phase.includes('external review')) {
+      return false;
+    }
+    return true;
+  }
+
+  if (role === 'admin') {
+    const beforeAdminReview = ['submitted', 'pending', 'sds approved', 'chairman approved'];
+    if (beforeAdminReview.includes(status)) return false;
+    if (phase.includes('chairman review') && beforeAdminReview.includes(status)) return false;
+    return true;
+  }
+
+  return false;
+}
+
+function formatWorkflowNotificationTitle(
+  submission: Record<string, unknown> | null,
+  actionLabel: string,
+) {
+  const docTitle = getSubmissionDisplayTitle(submission);
+  return `${docTitle} — ${actionLabel}`;
+}
+
 async function handleGetNotifications(url: URL) {
   const supabase = getAdminClient();
   const userId = url.searchParams.get('userId');
@@ -682,33 +889,111 @@ async function handleGetNotifications(url: URL) {
   }
 
   let logsData: Array<Record<string, unknown>> = [];
-  if (role === 'admin') {
-    const adminActions = ['oso approved', 'document_retrieved', 'accomplishment_report_submitted'];
+
+  const getReviewStatusesForRole = (viewerRole: string) => {
+    if (viewerRole === 'admin') return ['SDS coordinator review', 'oso approved'];
+    if (viewerRole === 'chairman' || viewerRole === 'vice-chairman') return ['submitted'];
+    return [];
+  };
+
+  if (role === 'org-president') {
     const { data } = await supabase
       .from('submission_logs')
-      .select('*, submissions(document_type_id, user_id, id)')
-      .in('action_type', adminActions)
-      .order('created_at', { ascending: false })
-      .limit(50);
-    logsData = data || [];
-  } else if (role === 'org-president') {
-    const { data } = await supabase
-      .from('submission_logs')
-      .select('*, submissions!inner(id, user_id)')
+      .select('*, submissions!inner(id, user_id, school_year_id)')
       .eq('submissions.user_id', userId)
+      .neq('user_id', userId)
       .neq('action_type', 'created')
-      .neq('action_type', 'submitted')
-      .neq('action_type', 'attachment_review')
       .neq('action_type', 'viewed')
+      .neq('action_type', 'attachment_review')
       .order('created_at', { ascending: false })
       .limit(50);
     logsData = data || [];
+  } else if (role === 'admin' || role === 'chairman' || role === 'vice-chairman') {
+    const reviewStatuses = getReviewStatusesForRole(role);
+    const { data: activeSy } = await supabase
+      .from('school_years')
+      .select('id')
+      .eq('is_active', true)
+      .maybeSingle();
+
+    const { data: queueSubs } = await supabase
+      .from('submissions')
+      .select('id, status, created_at, updated_at, school_year_id, documentType:document_type_id(name), users:user_id(full_name, org_name), submission_versions!submission_id(version_number, activity_proposal_details(activity_title))')
+      .in('status', reviewStatuses)
+      .order('created_at', { ascending: false })
+      .limit(25);
+
+    const filteredQueue = (queueSubs || []).filter(
+      (sub) => !activeSy?.id || sub.school_year_id === activeSy.id || !sub.school_year_id,
+    );
+
+    const queueNotifications = filteredQueue.map((sub) => {
+      const docTitle = getSubmissionDisplayTitle(sub as Record<string, unknown>);
+      const orgName = (sub.users as Record<string, unknown>)?.org_name || 'An organization';
+      const docType = (sub.documentType as Record<string, unknown>)?.name || 'a document';
+      return {
+        id: `queue_${sub.id}`,
+        type: 'workflow',
+        title: `${docTitle} — Pending Review`,
+        message: `${orgName} submitted ${docType} for review.`,
+        timestamp: sub.updated_at || sub.created_at,
+        source: {
+          submission_id: sub.id,
+          status: sub.status,
+          submissions: sub,
+        },
+      };
+    });
+
+    let logNotifications: Array<Record<string, unknown>> = [];
+
+    const { data: allLogs } = await supabase
+      .from('submission_logs')
+      .select('*, submissions(id, status, school_year_id, document_type_id, user_id, users:user_id(org_name, full_name), documentType:document_type_id(name), submission_versions!submission_id(version_number, activity_proposal_details(activity_title)))')
+      .neq('user_id', userId)
+      .not('action_type', 'in', '("viewed","attachment_review","created")')
+      .order('created_at', { ascending: false })
+      .limit(75);
+
+    logNotifications = (allLogs || [])
+      .filter((log) => {
+        const sub = log.submissions as Record<string, unknown> | null;
+        if (!sub) return false;
+        if (activeSy?.id && sub.school_year_id && sub.school_year_id !== activeSy.id) return false;
+        return isWorkflowLogRelevantForRole(role, log as Record<string, unknown>, sub);
+      })
+      .map((l) => {
+        const sub = l.submissions as Record<string, unknown> | null;
+        const actionLabel = l.action_type
+          ? String(l.action_type).replace(/_/g, ' ').toUpperCase()
+          : 'Workflow Update';
+        return {
+          id: `log_${l.id}`,
+          type: 'workflow',
+          title: formatWorkflowNotificationTitle(sub, actionLabel),
+          message: l.description || 'Status changed',
+          timestamp: l.created_at,
+          source: {
+            ...l,
+            submission_id: l.submission_id,
+            status: sub?.status,
+            submissions: sub,
+          },
+        };
+      });
+
+    const seen = new Set<string>();
+    logsData = [...queueNotifications, ...logNotifications].filter((item) => {
+      const source = item.source as Record<string, unknown>;
+      const submissionId = String(source?.submission_id || (source?.submissions as Record<string, unknown>)?.id || '');
+      const key = `${submissionId}:${item.title}:${String(item.timestamp).slice(0, 16)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   } else {
     let triggerActions: string[] = [];
-    if (role === 'oso-staff') triggerActions = ['submitted'];
-    else if (role === 'sds-coordinator') triggerActions = ['oso approved'];
-    else if (role === 'chairman') triggerActions = ['sds approved'];
-    else if (role === 'vice-chairman') triggerActions = ['chairman approved'];
+    if (role === 'sds-coordinator') triggerActions = ['oso approved'];
     else if (role === 'external') triggerActions = ['vice chairman approved'];
     else if (role === 'dean') triggerActions = ['external approved'];
 
@@ -717,6 +1002,7 @@ async function handleGetNotifications(url: URL) {
         .from('submission_logs')
         .select('*, submissions(id)')
         .in('action_type', triggerActions)
+        .neq('user_id', userId)
         .order('created_at', { ascending: false })
         .limit(50);
       logsData = data || [];
@@ -724,19 +1010,28 @@ async function handleGetNotifications(url: URL) {
   }
 
   if (logsData.length > 0) {
-    notifications = [
-      ...notifications,
-      ...logsData.map((l) => ({
+    const workflowItems = logsData.map((l) => {
+      if (l.source) return l;
+      const sub = (l.submissions as Record<string, unknown> | undefined) || null;
+      const actionLabel = l.action_type
+        ? String(l.action_type).replace(/_/g, ' ').toUpperCase()
+        : 'Workflow Update';
+      return {
         id: `log_${l.id}`,
         type: 'workflow',
-        title: l.action_type
-          ? String(l.action_type).replace(/_/g, ' ').toUpperCase()
-          : 'Workflow Update',
-        message: l.description || 'Status changed',
-        timestamp: l.created_at,
-        source: l,
-      })),
-    ];
+        title: formatWorkflowNotificationTitle(sub, actionLabel),
+        message: l.description || l.message || 'Status changed',
+        timestamp: l.timestamp || l.created_at,
+        source: {
+          ...l,
+          submission_id: l.submission_id,
+          status: sub?.status,
+          submissions: sub,
+        },
+      };
+    });
+
+    notifications = [...notifications, ...workflowItems];
   }
 
   notifications.sort(
@@ -1431,6 +1726,7 @@ async function routeRequest(req: Request): Promise<Response> {
   }
   
   if (method === 'POST' && path === '/users') return handlePostUsers(body);
+  if (method === 'POST' && path === '/auth/verify-password') return handleVerifyPassword(body);
   if (method === 'PUT' && /^\/users\/[^/]+$/.test(path)) {
     return handlePutUsers(path.split('/')[2], body);
   }

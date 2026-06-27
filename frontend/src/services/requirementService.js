@@ -148,6 +148,19 @@ export const deleteDocumentType = async (id) => {
 };
 
 /**
+ * Fetch all requirements with their document type (for global search)
+ */
+export const fetchAllRequirements = async () => {
+  const { data, error } = await supabase
+    .from('requirements')
+    .select('*, documentType:documentTypeID(id, name)')
+    .order('title', { ascending: true });
+
+  if (error) throw error;
+  return data || [];
+};
+
+/**
  * Fetch requirements filtered by document type and optional proposal type
  */
 export const fetchRequirements = async (typeId, proposalType = null) => {

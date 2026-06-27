@@ -11,12 +11,14 @@ export const MyDocuments = MyDocumentsComponent;
 // Moved to separate file: UserManagement.jsx
 
 import ListOfRequirementsComponent from './ListOfRequirements';
+import DocumentTypeSettingsComponent from './DocumentTypeSettings';
 
 import SubmitNewDocumentComponent from './SubmitNewDocument';
 
 import AnnouncementManagementComponent from './AnnouncementManagement';
 
 export const ListOfRequirements = ListOfRequirementsComponent;
+export const DocumentTypeSettings = DocumentTypeSettingsComponent;
 
 export const SubmitNewDocuments = SubmitNewDocumentComponent;
 

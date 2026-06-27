@@ -67,6 +67,117 @@ const getStatusColor = (status) => {
   return '#6366f1'; // Default
 };
 
+const MY_DOCS_SUBMISSION_SELECT = `
+  *,
+  users (org_name, student_no, full_name, role),
+  documentType (name),
+  submission_versions!submission_id (
+    *,
+    activity_proposal_details (*),
+    submission_attachments (*)
+  )
+`;
+
+const buildMyDocumentRow = (submission, latestLog, user, activeSy) => {
+  const docTypeName = submission.documentType?.name || 'Document';
+  const isActivityProposal = docTypeName.toLowerCase() === 'activity proposal' || docTypeName.toLowerCase().includes('proposal');
+
+  const version = Array.isArray(submission.submission_versions)
+    ? (submission.submission_versions.find((v) => v.id === submission.current_version_id) || submission.submission_versions[0])
+    : submission.submission_versions;
+  const details = isActivityProposal
+    ? (Array.isArray(version?.activity_proposal_details)
+      ? version.activity_proposal_details[0]
+      : version?.activity_proposal_details)
+    : null;
+
+  const orgName = details?.organization_name || submission.users?.org_name || user?.org_name || '-';
+  const rawTargetDate = details?.target_date || '-';
+  let targetDate = rawTargetDate;
+  if (rawTargetDate && rawTargetDate !== '-') {
+    try {
+      targetDate = new Date(rawTargetDate).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+    } catch (_) { /* ignore */ }
+  }
+
+  const proposalTitle = details?.activity_title || '-';
+  const wp = latestLog?.workflow_phase || '';
+  const ra = latestLog?.review_action || '';
+  const normalizeText = (value) =>
+    String(value || '').toLowerCase().replace(/[_-]/g, ' ').replace(/\s+/g, ' ').trim();
+  const subStatus = normalizeText(submission.status);
+  const wpNorm = normalizeText(wp);
+
+  let category = 'All';
+  if (subStatus === 'returned') category = 'Returned';
+  else if (subStatus === 'to forward') category = user?.role === 'org-president' ? 'OSO Staff review' : 'To Forward';
+  else if (subStatus === 'submitted' || subStatus === 'pending') category = 'OSO Staff review';
+  else if (subStatus.includes('sds')) category = 'SDS Review';
+  else if (subStatus.includes('dean approved')) category = 'Dean Review';
+  else if (subStatus.includes('dean review')) category = 'Dean Review';
+  else if (subStatus.includes('external review')) category = 'External Review';
+  else if (subStatus.includes('ready for retrieval')) category = 'Approved';
+  else if (subStatus.includes('waiting for accomplishment report')) category = 'Approved';
+  else if (subStatus === 'approved') category = 'Approved';
+  else if (subStatus === 'completed') category = 'Completed';
+  else if (subStatus.includes('disapproved') || subStatus.includes('rejected')) category = 'Disapproved';
+  else {
+    if (wpNorm === 'sds review') category = 'SDS Review';
+    else if (wpNorm === 'dean review') category = 'Dean Review';
+    else if (wpNorm === 'external review') category = 'External Review';
+    else if (wpNorm === 'chairman review') category = 'Chairman Review';
+    else if (ra === 'ready-for-hardcopy') category = user?.role === 'org-president' ? 'OSO Staff review' : 'To Forward';
+    else if (ra === 'approved') category = 'Approved';
+    else if (ra === 'returned') category = 'Returned';
+  }
+
+  const submittedDate = new Date(submission.created_at).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const lastActionDate = new Date(latestLog?.created_at || submission.updated_at || submission.created_at).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+
+  return {
+    id: submission.id,
+    isActivityProposal,
+    title: proposalTitle && proposalTitle !== '-' ? proposalTitle : docTypeName,
+    ref: `SUB-2026-03-${String(submission.id).padStart(3, '0')}`,
+    sender: orgName,
+    type: docTypeName,
+    submittedDate,
+    status: submission.status === 'submitted'
+      ? 'OSO STAFF REVIEW'
+      : (submission.status === 'to forward'
+        ? (user?.role === 'org-president' ? 'HARDCOPY SUBMISSION' : 'TO FORWARD')
+        : (submission.status ? submission.status.toUpperCase() : 'PENDING')),
+    lastAction: lastActionDate,
+    category,
+    proposal_title: proposalTitle,
+    pic: details?.person_in_charge || '-',
+    studentId: submission.users?.student_no || details?.student_id_number || '-',
+    contact: details?.contact_number || '-',
+    targetDate,
+    targetTime: details?.target_time || '-',
+    duration: details?.duration || '-',
+    students: details?.number_of_students || '-',
+    nature: details?.nature_of_activity || '-',
+    objectives: details?.objectives || null,
+    satisfy_goals: details?.satisfy_goals || [],
+    sponsors_partners: details?.sponsors_partners || [],
+    satisfy_needs: details?.satisfy_needs || null,
+    raw: submission,
+  };
+};
+
 export const MyDocuments = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -1293,6 +1404,62 @@ export const MyDocuments = () => {
   React.useEffect(() => {
     fetchHandledLogs();
   }, [user]);
+
+  React.useEffect(() => {
+    const targetId = location.state?.submissionId || location.state?.highlightedId;
+    if (!targetId || !location.state?.openSubmission) return;
+
+    let cancelled = false;
+
+    const openFromNotification = async () => {
+      const inLogs = logsData.find(
+        (log) =>
+          String(log.submission_id) === String(targetId) ||
+          String(log.submissions?.id) === String(targetId),
+      );
+
+      if (inLogs?.submissions) {
+        if (!cancelled) {
+          setSelectedDoc(buildMyDocumentRow(inLogs.submissions, inLogs, user, activeSy));
+          navigate(location.pathname, { replace: true, state: {} });
+        }
+        return;
+      }
+
+      if (loading) return;
+
+      const { data: submission, error } = await supabase
+        .from('submissions')
+        .select(MY_DOCS_SUBMISSION_SELECT)
+        .eq('id', targetId)
+        .maybeSingle();
+
+      if (error || !submission || cancelled) return;
+
+      const { data: latestLogs } = await supabase
+        .from('submission_logs')
+        .select('*')
+        .eq('submission_id', targetId)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      const latestLog = latestLogs?.[0] || {
+        created_at: submission.updated_at || submission.created_at,
+        workflow_phase: null,
+        review_action: null,
+      };
+
+      if (!cancelled) {
+        setSelectedDoc(buildMyDocumentRow(submission, latestLog, user, activeSy));
+        navigate(location.pathname, { replace: true, state: {} });
+      }
+    };
+
+    openFromNotification();
+    return () => {
+      cancelled = true;
+    };
+  }, [location.state, logsData, loading, user, activeSy, navigate, location.pathname]);
 
   // Group by submission_id to keep only the latest log entry per submission
   const uniqueSubmissionsMap = {};
