@@ -87,7 +87,7 @@ const getCurrentVersion = (submission) => {
 
 const normalizeProposalType = (proposalType) => proposalType ? proposalType.toLowerCase().replace(/\s+/g, '-') : null;
 
-export const getDraftSubmission = async (userId, typeId, proposalType = null) => {
+export const getDraftSubmission = async (userId, typeId, subtypeId = null, proposalType = null) => {
   const formattedType = normalizeProposalType(proposalType);
   // First fetch the submission record (latest draft)
   const { data: subs, error: subErr } = await supabase
@@ -116,12 +116,15 @@ export const getDraftSubmission = async (userId, typeId, proposalType = null) =>
 
   // pick matching version
   let version = getCurrentVersion(submission);
-  if (formattedType && Array.isArray(versions)) {
+  if ((subtypeId || formattedType) && Array.isArray(versions)) {
     const matchingVersion = versions.find(v => {
       const details = Array.isArray(v.activity_proposal_details)
         ? v.activity_proposal_details[0]
         : v.activity_proposal_details;
-      return details?.proposal_type === formattedType;
+      // Match either by subtype_id or by legacy proposal_type
+      if (subtypeId && details?.subtype_id === subtypeId) return true;
+      if (formattedType && details?.proposal_type === formattedType) return true;
+      return false;
     });
     if (matchingVersion) version = matchingVersion;
   }
@@ -153,20 +156,23 @@ export const getSubmissionById = async (submissionId) => {
   return { submission, version };
 };
 
-// Fetch requirements for a specific type and optional proposal_type
-export const getRequirementsForType = async (typeId, proposalType = null) => {
+// Fetch requirements for a specific type and optional subtype_id
+export const getRequirementsForType = async (typeId, subtypeId = null, proposalType = null) => {
   let query = supabase
     .from('requirements')
     .select('*')
     .eq('documentTypeID', typeId);
   
-  if (proposalType) {
+  if (subtypeId) {
+    query = query.or(`subtype_id.eq.${subtypeId},subtype_id.is.null`);
+  } else if (proposalType) {
     // Fetch requirements that match the type OR are general (NULL)
     const formattedType = proposalType.toLowerCase().replace(' ', '-');
     query = query.or(`proposal_type.eq.${formattedType},proposal_type.is.null`);
   } else {
     // Otherwise, ensure it's NULL (standard requirements)
-    query = query.is('proposal_type', null);
+    // To support migration where requirements might still rely on proposal_type null
+    query = query.is('subtype_id', null).is('proposal_type', null);
   }
 
   const { data, error } = await query.order('created_at', { ascending: true });
@@ -179,15 +185,15 @@ export const getRequirementsForType = async (typeId, proposalType = null) => {
  * FILE UPLOAD & ATTACHMENTS
  */
 
-export const uploadSubmissionFile = async (file, typeName, submissionId, versionNumber, proposalType = null) => {
+export const uploadSubmissionFile = async (file, typeName, submissionId, versionNumber, subtypeSlug = null) => {
   const safeTypeName = typeName.replace(/[^a-z0-9]/gi, '-').toLowerCase();
   const timestamp = Date.now();
   const safeFileName = file.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
   
   // New folder structure: submitted-documents/activity-proposal/in-campus/{id}/file.pdf
   let folderPath = `submitted-documents/${safeTypeName}`;
-  if (proposalType) {
-    folderPath += `/${proposalType.toLowerCase().replace(' ', '-')}`;
+  if (subtypeSlug) {
+    folderPath += `/${subtypeSlug.toLowerCase().replace(' ', '-')}`;
   }
   
   const filePath = `${folderPath}/${submissionId}/v${versionNumber}/${timestamp}-${safeFileName}`;
@@ -223,12 +229,13 @@ export const saveAttachmentRecord = async (versionId, requirementId, fileName, f
  * REGISTRATION & FINALIZATION
  */
 
-export const saveProposalDetails = async (versionId, details, proposalType) => {
+export const saveProposalDetails = async (versionId, details, subtypeId = null, proposalType = '') => {
   const safeDetails = {
     submission_version_id: versionId,
     ...details,
     target_date: Array.isArray(details.activity_dates) && details.activity_dates.length > 0 ? details.activity_dates.join(', ') : details.target_date,
-    proposal_type: proposalType.toLowerCase().replace(' ', '-'), // MANDATORY NEW FIELD
+    subtype_id: subtypeId, // Use new subtype_id
+    proposal_type: proposalType ? proposalType.toLowerCase().replace(' ', '-') : null, // keep temporarily
     number_of_students: parseInt(details.number_of_students) || 0,
     created_at: new Date().toISOString()
   };

@@ -163,19 +163,18 @@ export const fetchAllRequirements = async () => {
 /**
  * Fetch requirements filtered by document type and optional proposal type
  */
-export const fetchRequirements = async (typeId, proposalType = null) => {
+export const fetchRequirements = async (typeId, subtypeId = null) => {
   let query = supabase
     .from('requirements')
     .select('*')
     .eq('documentTypeID', typeId);
 
-  if (proposalType) {
-    // Fetch requirements that match the type OR are general (NULL)
-    const formattedType = proposalType.toLowerCase().replace(' ', '-');
-    query = query.or(`proposal_type.eq.${formattedType},proposal_type.is.null`);
+  if (subtypeId) {
+    // Fetch requirements that match the subtype OR are general (NULL)
+    query = query.or(`subtype_id.eq.${subtypeId},subtype_id.is.null`);
   } else {
-    // If no type is provided, just get the general ones
-    query = query.is('proposal_type', null);
+    // If no subtype is provided, just get the general ones
+    query = query.is('subtype_id', null);
   }
 
   const { data, error } = await query.order('created_at', { ascending: true });
@@ -187,14 +186,14 @@ export const fetchRequirements = async (typeId, proposalType = null) => {
 /**
  * Upload a template file to Supabase Storage
  */
-export const uploadTemplate = async (file, documentTypeName, proposalType = null) => {
+export const uploadTemplate = async (file, documentTypeName, subtypeSlug = null) => {
   const folder = documentTypeName.toLowerCase().replace(/ /g, '-');
   const fileName = `${Date.now()}-${file.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase()}`;
   
   // New structure: list-of-requirements/activity-proposal/in-campus/file.pdf
   let folderPath = `list-of-requirements/${folder}`;
-  if (proposalType) {
-    folderPath += `/${proposalType.toLowerCase().replace(' ', '-')}`;
+  if (subtypeSlug) {
+    folderPath += `/${subtypeSlug.toLowerCase().replace(' ', '-')}`;
   }
   
   const filePath = `${folderPath}/${fileName}`;

@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../config/api';
 import * as reqService from '../services/requirementService';
+import * as subtypeService from '../services/subtypeService';
 import { supabase } from '../supabaseClient';
 import {
   ArrowLeft,
@@ -17,6 +18,7 @@ import {
   FileText,
   Upload,
   Check,
+  Settings,
 } from 'lucide-react';
 
 const DocumentTypeSettings = () => {
@@ -31,7 +33,12 @@ const DocumentTypeSettings = () => {
   const [toast, setToast] = useState(null);
   const [documentType, setDocumentType] = useState(null);
   const [requirements, setRequirements] = useState([]);
-  const [subType, setSubType] = useState('In-Campus');
+  const [subType, setSubType] = useState(null); // null = Global
+  const [subtypes, setSubtypes] = useState([]);
+  const [showSubtypeModal, setShowSubtypeModal] = useState(false);
+  const [isAddingSubtype, setIsAddingSubtype] = useState(false);
+  const [subtypeForm, setSubtypeForm] = useState({ id: null, name: '', description: '', status: 'active', sort_order: 0 });
+  
   const [adminPassword, setAdminPassword] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
 
@@ -69,8 +76,22 @@ const DocumentTypeSettings = () => {
 
   useEffect(() => {
     if (!documentType?.id) return;
-    loadRequirements(documentType.id, isProposal ? subType : null);
-  }, [documentType?.id, subType, isProposal]);
+    loadSubtypes(documentType.id);
+  }, [documentType?.id]);
+
+  useEffect(() => {
+    if (!documentType?.id) return;
+    loadRequirements(documentType.id, subType);
+  }, [documentType?.id, subType]);
+
+  const loadSubtypes = async (id) => {
+    try {
+      const data = await subtypeService.fetchSubtypes(id);
+      setSubtypes(data || []);
+    } catch {
+      showToast('Failed to load subtypes', 'error');
+    }
+  };
 
   const loadType = async () => {
     setLoading(true);
@@ -102,9 +123,9 @@ const DocumentTypeSettings = () => {
     }
   };
 
-  const loadRequirements = async (id, proposalType = null) => {
+  const loadRequirements = async (id, subtypeId = null) => {
     try {
-      const data = await reqService.fetchRequirements(id, proposalType);
+      const data = await reqService.fetchRequirements(id, subtypeId);
       setRequirements(data || []);
     } catch {
       showToast('Failed to load requirements', 'error');
@@ -176,8 +197,10 @@ const DocumentTypeSettings = () => {
     }
     setIsSaving(true);
     try {
-      const currentProposalType = isProposal ? subType : null;
       let finalFilePath = reqForm.file_url;
+      const currentSubtypeObj = subtypes.find(s => s.id === subType);
+      const subtypeSlug = currentSubtypeObj ? currentSubtypeObj.name : null;
+
       if (reqForm.file) {
         if (editingReqId) {
           const existing = requirements.find((r) => r.id === editingReqId);
@@ -185,7 +208,7 @@ const DocumentTypeSettings = () => {
             await reqService.deleteStorageFile(existing.file_url).catch(() => {});
           }
         }
-        finalFilePath = await reqService.uploadTemplate(reqForm.file, documentType.name, currentProposalType);
+        finalFilePath = await reqService.uploadTemplate(reqForm.file, documentType.name, subtypeSlug);
       }
 
       const payload = {
@@ -193,7 +216,7 @@ const DocumentTypeSettings = () => {
         referenceCode: reqForm.referenceCode,
         description: reqForm.description,
         file_url: finalFilePath,
-        proposal_type: currentProposalType ? currentProposalType.toLowerCase().replace(' ', '-') : null,
+        subtype_id: subType, // New field instead of proposal_type
         updatedAt: new Date().toISOString(),
       };
 
@@ -205,7 +228,7 @@ const DocumentTypeSettings = () => {
         showToast('Requirement created');
       }
       resetReqForm();
-      loadRequirements(documentType.id, currentProposalType);
+      loadRequirements(documentType.id, subType);
     } catch (error) {
       showToast(error.message || 'Failed to save requirement', 'error');
     } finally {
@@ -223,6 +246,16 @@ const DocumentTypeSettings = () => {
         if (error) throw error;
         if (count > 0) {
           showToast(`Cannot delete category because it has ${count} existing submission(s)`, 'error');
+          return;
+        }
+      } else if (target.type === 'subtype') {
+        const { count, error } = await supabase
+          .from('activity_proposal_details')
+          .select('*', { count: 'exact', head: true })
+          .eq('subtype_id', target.item.id);
+        if (error) throw error;
+        if (count > 0) {
+          showToast(`Cannot delete subtype because it has ${count} existing submission(s)`, 'error');
           return;
         }
       } else {
@@ -263,10 +296,17 @@ const DocumentTypeSettings = () => {
         await reqService.deleteDocumentType(documentType.id);
         showToast('Category deleted');
         navigate('/requirements');
+      } else if (deleteTarget.type === 'subtype') {
+        await subtypeService.deleteSubtype(deleteTarget.item.id);
+        showToast('Subtype deleted');
+        loadSubtypes(documentType.id);
+        if (subType === deleteTarget.item.id) setSubType(null);
+        setIsAddingSubtype(false);
+        setSubtypeForm({ id: null, name: '', description: '', status: 'active', sort_order: 0 });
       } else {
         await reqService.deleteRequirement(deleteTarget.item.id, deleteTarget.item.file_url);
         showToast('Requirement deleted');
-        loadRequirements(documentType.id, isProposal ? subType : null);
+        loadRequirements(documentType.id, subType);
       }
       setDeleteTarget(null);
       setAdminPassword('');
@@ -346,6 +386,35 @@ const DocumentTypeSettings = () => {
       </button>
     </form>
   );
+
+  const handleSaveSubtype = async (e) => {
+    e.preventDefault();
+    setIsSaving(true);
+    try {
+      const payload = {
+        document_type_id: documentType.id,
+        name: subtypeForm.name,
+        description: subtypeForm.description,
+        status: subtypeForm.status,
+        sort_order: subtypeForm.sort_order,
+      };
+
+      if (subtypeForm.id) {
+        await subtypeService.updateSubtype(subtypeForm.id, payload);
+        showToast('Subtype updated');
+      } else {
+        await subtypeService.createSubtype(payload);
+        showToast('Subtype created');
+      }
+      setIsAddingSubtype(false);
+      setSubtypeForm({ id: null, name: '', description: '', status: 'active', sort_order: 0 });
+      loadSubtypes(documentType.id);
+    } catch (error) {
+      showToast(error.message || 'Failed to save subtype', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -544,26 +613,49 @@ const DocumentTypeSettings = () => {
         <section className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="p-8 border-b border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <h2 className="text-lg font-black text-gray-800 uppercase">Requirements</h2>
-              <p className="text-xs font-bold text-gray-400 mt-1">Add and manage requirements for this category</p>
+              <h2 className="text-lg font-black text-gray-800 uppercase">Requirements & Subtypes</h2>
+              <p className="text-xs font-bold text-gray-400 mt-1">Manage subtypes and requirements</p>
             </div>
-            {isProposal && (
-              <div className="flex bg-gray-50 p-1 rounded-xl">
-                {['In-Campus', 'Off-Campus'].map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => setSubType(type)}
-                    className={`px-5 py-2 rounded-lg text-xs font-black uppercase ${
-                      subType === type ? 'bg-primary-green text-white' : 'text-gray-500'
-                    }`}
-                  >
-                    {type}
-                  </button>
-                ))}
-              </div>
-            )}
+            
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddingSubtype(false);
+                  setSubtypeForm({ id: null, name: '', description: '', status: 'active', sort_order: subtypes.length });
+                  setShowSubtypeModal(true);
+                }}
+                className="px-4 py-2 bg-gray-100 text-gray-600 font-bold rounded-lg text-xs hover:bg-gray-200 flex items-center justify-center gap-2"
+              >
+                <Settings size={14} /> Manage Subtypes
+              </button>
+            </div>
           </div>
+          
+          <div className="border-b border-gray-100 px-8 py-3 bg-gray-50 flex items-center gap-2 overflow-x-auto">
+            <button
+              type="button"
+              onClick={() => setSubType(null)}
+              className={`px-5 py-2 rounded-lg text-xs font-black uppercase whitespace-nowrap ${
+                subType === null ? 'bg-primary-green text-white' : 'text-gray-500 hover:bg-gray-200'
+              }`}
+            >
+              Global Requirements
+            </button>
+            {subtypes.map((st) => (
+              <button
+                key={st.id}
+                type="button"
+                onClick={() => setSubType(st.id)}
+                className={`px-5 py-2 rounded-lg text-xs font-black uppercase whitespace-nowrap flex items-center gap-2 ${
+                  subType === st.id ? 'bg-primary-green text-white' : 'text-gray-500 hover:bg-gray-200'
+                }`}
+              >
+                {st.name} {st.status !== 'active' && <span className="text-[10px] bg-gray-200 px-2 py-0.5 rounded-full text-gray-600">{st.status}</span>}
+              </button>
+            ))}
+          </div>
+          
           <div className="p-8 space-y-6">
             {showAddForm && !editingReqId && renderReqForm(false)}
             {!showAddForm && !editingReqId && (
@@ -636,7 +728,11 @@ const DocumentTypeSettings = () => {
               <p className="text-gray-500 mb-8">
                 You are about to delete{' '}
                 <span className="font-bold text-gray-800">
-                  {deleteTarget.type === 'category' ? documentType?.name : deleteTarget.item?.title}
+                  {deleteTarget.type === 'category' 
+                    ? documentType?.name 
+                    : deleteTarget.type === 'subtype' 
+                      ? deleteTarget.item?.name 
+                      : deleteTarget.item?.title}
                 </span>
                 . This action cannot be undone.
               </p>
@@ -673,6 +769,135 @@ const DocumentTypeSettings = () => {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSubtypeModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setShowSubtypeModal(false)} />
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl relative z-10 overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-8 border-b border-gray-100 shrink-0">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-gray-800">
+                  Manage Subtypes
+                </h2>
+                <button onClick={() => setShowSubtypeModal(false)} className="text-gray-400 hover:text-gray-600">
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+            
+            <div className="overflow-y-auto p-8 flex-1">
+              {(!subtypeForm.id && !isAddingSubtype) ? (
+                <div className="space-y-6">
+                  {subtypes.length === 0 ? (
+                    <div className="text-center py-8 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-100">
+                      <p className="text-gray-400 font-bold">No subtypes defined.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {subtypes.map((st) => (
+                        <div key={st.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100 hover:border-gray-200 transition-colors">
+                          <div>
+                            <p className="font-bold text-sm text-gray-800">{st.name}</p>
+                            <p className="text-[10px] text-gray-500 uppercase font-black mt-1">{st.status}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSubtypeForm(st);
+                              setIsAddingSubtype(true);
+                            }}
+                            className="px-4 py-2 bg-white border border-gray-200 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-100 shadow-sm"
+                          >
+                            Edit
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSubtypeForm({ id: null, name: '', description: '', status: 'active', sort_order: subtypes.length });
+                      setIsAddingSubtype(true);
+                    }}
+                    className="w-full py-4 border-2 border-dashed border-gray-200 rounded-xl text-gray-500 font-black text-xs uppercase tracking-widest hover:border-primary-green hover:text-primary-green flex items-center justify-center gap-2"
+                  >
+                    <Plus size={18} />
+                    Add New Subtype
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleSaveSubtype} className="space-y-5 animate-in slide-in-from-right-4 duration-300">
+                  <div className="flex items-center gap-3 mb-6">
+                    <button
+                      type="button"
+                      onClick={() => setIsAddingSubtype(false)}
+                      className="text-gray-400 hover:text-gray-800 transition-colors"
+                    >
+                      <ArrowLeft size={20} />
+                    </button>
+                    <h3 className="font-bold text-gray-800">
+                      {subtypeForm.id ? 'Edit Subtype' : 'New Subtype'}
+                    </h3>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Name</label>
+                    <input
+                      type="text"
+                      required
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-bold text-sm"
+                      value={subtypeForm.name}
+                      onChange={(e) => setSubtypeForm({ ...subtypeForm, name: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Description</label>
+                    <textarea
+                      rows={3}
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-bold text-sm resize-none"
+                      value={subtypeForm.description}
+                      onChange={(e) => setSubtypeForm({ ...subtypeForm, description: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Status</label>
+                    <select
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-bold text-sm"
+                      value={subtypeForm.status}
+                      onChange={(e) => setSubtypeForm({ ...subtypeForm, status: e.target.value })}
+                    >
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                      <option value="archived">Archived</option>
+                    </select>
+                  </div>
+                  <div className="pt-6 space-y-3">
+                    <button
+                      type="submit"
+                      disabled={isSaving}
+                      className="w-full py-4 bg-primary-green text-white font-black rounded-xl text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-green-700 transition-colors shadow-lg shadow-green-900/20"
+                    >
+                      {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                      Save Subtype
+                    </button>
+                    {subtypeForm.id && (
+                      <button
+                        type="button"
+                        onClick={() => requestDelete({ type: 'subtype', item: subtypeForm })}
+                        className="w-full py-4 bg-red-50 text-red-600 font-black rounded-xl text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-red-100 transition-colors"
+                      >
+                        <Trash2 size={16} />
+                        Delete Subtype
+                      </button>
+                    )}
+                  </div>
+                </form>
+              )}
             </div>
           </div>
         </div>
