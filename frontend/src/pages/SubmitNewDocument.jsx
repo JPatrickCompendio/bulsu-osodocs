@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import * as subService from '../services/submissionService';
 import * as reqService from '../services/requirementService';
+import * as subtypeService from '../services/subtypeService';
 import { supabase } from '../supabaseClient';
 import { apiClient, apiUrl } from '../config/apiClient';
 import {
@@ -27,7 +28,9 @@ const SubmitNewDocument = () => {
   const [globalWarning, setGlobalWarning] = useState(''); // School Year bounds warning
   const [selectedType, setSelectedType] = useState(null);
   const [subType, setSubType] = useState('');
+  const [selectedSubtypeObj, setSelectedSubtypeObj] = useState(null);
   const [requirements, setRequirements] = useState([]);
+  const [docSubtypes, setDocSubtypes] = useState({}); // Mapping from docTypeId -> active subtypes
 
   // UI States
   const [showClearModal, setShowClearModal] = useState(false);
@@ -94,6 +97,23 @@ const SubmitNewDocument = () => {
         });
       }
       setReqCounts(counts);
+
+      // Fetch all active subtypes for these document types
+      const subtypesRes = await supabase
+        .from('document_subtypes')
+        .select('*')
+        .eq('status', 'active')
+        .order('sort_order', { ascending: true });
+        
+      if (subtypesRes.data) {
+        const subtypesMap = {};
+        subtypesRes.data.forEach(st => {
+          if (!subtypesMap[st.document_type_id]) subtypesMap[st.document_type_id] = [];
+          subtypesMap[st.document_type_id].push(st);
+        });
+        setDocSubtypes(subtypesMap);
+      }
+
       // Fetch document availability
       if (user?.id) {
         const availRes = await apiClient.get(apiUrl('/api/system/document-availability'), {
@@ -176,12 +196,31 @@ const SubmitNewDocument = () => {
       const isProposal = type?.name?.toLowerCase().includes('activity proposal');
       const rawDetails = version?.activity_proposal_details;
       const details = (Array.isArray(rawDetails) ? rawDetails[0] : rawDetails) || {};
-      const proposalType = isProposal ? humanizeProposalType(details?.proposal_type) : '';
-      const reqs = await subService.getRequirementsForType(type.id, isProposal ? proposalType : null);
+      
+      const proposalTypeStr = isProposal ? humanizeProposalType(details?.proposal_type) : '';
+      let subtypeId = details?.subtype_id || null;
+      let matchedSubtype = null;
+
+      if (!subtypeId && proposalTypeStr) {
+        // Fallback mapping for existing records without subtype_id
+        const stRes = await supabase.from('document_subtypes').select('*').eq('document_type_id', type.id).eq('name', proposalTypeStr).single();
+        if (stRes.data) {
+           subtypeId = stRes.data.id;
+           matchedSubtype = stRes.data;
+        }
+      } else if (subtypeId) {
+        const stRes = await supabase.from('document_subtypes').select('*').eq('id', subtypeId).single();
+        if (stRes.data) matchedSubtype = stRes.data;
+      }
+
+      const subtypeName = matchedSubtype ? matchedSubtype.name : proposalTypeStr;
+
+      const reqs = await subService.getRequirementsForType(type.id, subtypeId, isProposal ? subtypeName : null);
 
       setRequirements(reqs || []);
       setSelectedType(type);
-      setSubType(proposalType);
+      setSubType(subtypeName);
+      setSelectedSubtypeObj(matchedSubtype);
       setExistingAttachments(version?.submission_attachments || []);
       setActiveDraft({ submissionId: submission.id, versionId: version?.id });
       setDraftNotice('Loaded draft from your previous session.');
@@ -218,17 +257,19 @@ const SubmitNewDocument = () => {
     }
   };
 
-  const initializeSubmissionForm = async (type, subName = '') => {
+  const initializeSubmissionForm = async (type, subtypeObj = null, subName = '') => {
     setLoading(true);
     try {
       const isProposal = type.name.toLowerCase().includes('activity proposal');
+      const subtypeId = subtypeObj ? subtypeObj.id : null;
       const proposalType = isProposal ? subName : null;
-      const draft = await subService.getDraftSubmission(user.id, type.id, proposalType);
-      const reqs = await subService.getRequirementsForType(type.id, proposalType);
+      const draft = await subService.getDraftSubmission(user.id, type.id, subtypeId, proposalType);
+      const reqs = await subService.getRequirementsForType(type.id, subtypeId, proposalType);
 
       setRequirements(reqs || []);
       setSelectedType(type);
       setSubType(subName);
+      setSelectedSubtypeObj(subtypeObj);
       setShowUnsavedModal(false);
       setLocalFiles({});
       setExistingAttachments([]);
@@ -316,8 +357,8 @@ const SubmitNewDocument = () => {
     return pType ? specificCount + generalCount : generalCount;
   };
 
-  const handleSelectType = async (type, subName = '') => {
-    await initializeSubmissionForm(type, subName);
+  const handleSelectType = async (type, subtypeObj = null, subName = '') => {
+    await initializeSubmissionForm(type, subtypeObj, subName);
   };
 
   const handleFileUpload = (reqId, file) => {
@@ -365,7 +406,7 @@ const SubmitNewDocument = () => {
       // 3. Save Proposal Details if it's an Activity Proposal
       const isProposal = selectedType.name.toLowerCase().includes('activity proposal');
       if (isProposal) {
-        await subService.saveProposalDetails(versionId, proposalDetails, subType);
+        await subService.saveProposalDetails(versionId, proposalDetails, selectedSubtypeObj?.id || null, subType);
       }
 
       // 4. If status is 'submitted', finalize it
@@ -723,7 +764,7 @@ const SubmitNewDocument = () => {
                 return (
                   <button
                     key={subName}
-                    onClick={() => handleSelectType(typeObj, subName)}
+                    onClick={() => handleSelectType(typeObj, typeObj.__subtype, subName)}
                     className={`w-full px-6 py-4 flex items-center justify-between hover:bg-white transition-all group/btn ${!isLast ? 'border-b border-gray-50' : ''}`}
                   >
                     <div className="flex items-center gap-6">
@@ -737,79 +778,43 @@ const SubmitNewDocument = () => {
 
               return (
                 <>
-                  {/* Activity Proposal */}
-                  {docTypes.find(t => t.name.toLowerCase().includes('activity proposal')) && (
-                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
-                      <div className="p-6 flex items-start gap-4">
-                        <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-xl flex items-center justify-center shrink-0">
-                          <FileText size={24} />
-                        </div>
-                        <div>
-                          <h3 className="text-lg font-black text-gray-800 uppercase">Activity Proposal</h3>
-                          <p className="text-gray-400 text-xs font-bold mt-1">Requirements for activity proposals</p>
-                        </div>
-                      </div>
-                      <div className="mt-auto border-t border-gray-50 bg-gray-50/30">
-                        {(() => {
-                          const typeObj = docTypes.find(t => t.name.toLowerCase().includes('activity proposal'));
-                          return (
-                            <>
-                              {renderCategoryItem(typeObj, 'In Campus', false)}
-                              {renderCategoryItem(typeObj, 'Off Campus', true)}
-                            </>
-                          );
-                        })()}
-                      </div>
-                    </div>
-                  )}
+                  {docTypes.map(typeObj => {
+                    const subtypes = docSubtypes[typeObj.id] || [];
+                    const isActivityProposal = typeObj.name.toLowerCase().includes('activity proposal');
+                    const isReport = typeObj.name.toLowerCase().includes('report');
+                    const isRenewal = typeObj.name.toLowerCase().includes('renewal');
 
-                  {/* Year End Report */}
-                  {docTypes.find(t => t.name.toLowerCase().includes('report')) && (
-                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
-                      <div className="p-6 flex items-start gap-4">
-                        <div className="w-12 h-12 bg-orange-50 text-orange-500 rounded-xl flex items-center justify-center shrink-0">
-                          <Calendar size={24} />
-                        </div>
-                        <div>
-                          <h3 className="text-lg font-black text-gray-800 uppercase">Reports</h3>
-                          <p className="text-gray-400 text-xs font-bold mt-1">Annual & Mid-year summaries</p>
-                        </div>
-                      </div>
-                      <div className="mt-auto border-t border-gray-50 bg-gray-50/30">
-                        {(() => {
-                          const midYear = docTypes.find(t => t.name.toLowerCase().includes('mid-year'));
-                          const yearEnd = docTypes.find(t => t.name.toLowerCase().includes('year-end'));
-                          return (
-                            <>
-                              {renderCategoryItem(midYear, 'Mid-Year Report', false)}
-                              {renderCategoryItem(yearEnd, 'Year-End Report', true)}
-                            </>
-                          );
-                        })()}
-                      </div>
-                    </div>
-                  )}
+                    let icon = <FileText size={24} />;
+                    let bg = 'bg-blue-50 text-blue-500';
+                    let desc = 'Required documents';
 
-                  {/* Renewal */}
-                  {docTypes.find(t => t.name.toLowerCase().includes('renewal')) && (() => {
-                    const typeObj = docTypes.find(t => t.name.toLowerCase().includes('renewal'));
+                    if (isReport) { icon = <Calendar size={24} />; bg = 'bg-orange-50 text-orange-500'; desc = 'Annual & Mid-year summaries'; }
+                    if (isRenewal) { icon = <RefreshCcw size={24} />; bg = 'bg-amber-50 text-amber-500'; desc = 'Requirements for org renewal'; }
+
                     return (
-                      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col group">
+                      <div key={typeObj.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
                         <div className="p-6 flex items-start gap-4">
-                          <div className="w-12 h-12 bg-amber-50 text-amber-500 rounded-xl flex items-center justify-center shrink-0">
-                            <RefreshCcw size={24} />
+                          <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${bg}`}>
+                            {icon}
                           </div>
                           <div>
-                            <h3 className="text-lg font-black text-gray-800 uppercase">Renewal Document</h3>
-                            <p className="text-gray-400 text-xs font-bold mt-1">Requirements for org renewal</p>
+                            <h3 className="text-lg font-black text-gray-800 uppercase">{typeObj.name}</h3>
+                            <p className="text-gray-400 text-xs font-bold mt-1">{desc}</p>
                           </div>
                         </div>
-                        <div className="mt-auto border-t border-gray-50 bg-gray-50/30 h-full flex flex-col justify-end">
-                          {renderCategoryItem(typeObj, 'Renewal Document', true)}
+                        <div className="mt-auto border-t border-gray-50 bg-gray-50/30 flex flex-col h-full justify-end">
+                          {subtypes.length > 0 ? (
+                            subtypes.map((st, idx) => {
+                              const tObj = { ...typeObj, __subtype: st };
+                              return renderCategoryItem(tObj, st.name, idx === subtypes.length - 1);
+                            })
+                          ) : (
+                            renderCategoryItem(typeObj, typeObj.name, true)
+                          )}
                         </div>
                       </div>
-                    )
-                  })()}
+                    );
+                  })}
                 </>
               );
             })()}

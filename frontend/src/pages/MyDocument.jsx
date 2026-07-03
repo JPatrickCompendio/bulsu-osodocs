@@ -78,7 +78,7 @@ const MY_DOCS_SUBMISSION_SELECT = `
   )
 `;
 
-const buildMyDocumentRow = (submission, latestLog, user, activeSy) => {
+const buildMyDocumentRow = (submission, latestLog, user, activeSy, subtypesMap = {}) => {
   const docTypeName = submission.documentType?.name || 'Document';
   const isActivityProposal = docTypeName.toLowerCase() === 'activity proposal' || docTypeName.toLowerCase().includes('proposal');
 
@@ -102,6 +102,16 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy) => {
         year: 'numeric',
       });
     } catch (_) { /* ignore */ }
+  }
+
+  let proposalTypeStr = '-';
+  if (details?.subtype_id && subtypesMap[details.subtype_id]) {
+    proposalTypeStr = subtypesMap[details.subtype_id].name;
+  } else if (details?.proposal_type) {
+    const rawType = details.proposal_type;
+    if (rawType.toLowerCase() === 'in-campus') proposalTypeStr = 'In-Campus';
+    else if (rawType.toLowerCase() === 'off-campus') proposalTypeStr = 'Off-Campus';
+    else proposalTypeStr = rawType.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   }
 
   const proposalTitle = details?.activity_title || '-';
@@ -162,6 +172,7 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy) => {
     lastAction: lastActionDate,
     category,
     proposal_title: proposalTitle,
+    proposal_type: proposalTypeStr !== '-' ? proposalTypeStr : null,
     pic: details?.person_in_charge || '-',
     studentId: submission.users?.student_no || details?.student_id_number || '-',
     contact: details?.contact_number || '-',
@@ -228,6 +239,19 @@ export const MyDocuments = () => {
   const [loading, setLoading] = React.useState(true);
   const [logsData, setLogsData] = React.useState([]);
   const [highlightedDocId, setHighlightedDocId] = React.useState(null);
+  const [subtypesMap, setSubtypesMap] = React.useState({});
+
+  React.useEffect(() => {
+    const fetchSubtypes = async () => {
+      const { data } = await supabase.from('document_subtypes').select('id, name');
+      if (data) {
+        const map = {};
+        data.forEach(st => { map[st.id] = st; });
+        setSubtypesMap(map);
+      }
+    };
+    fetchSubtypes();
+  }, []);
 
   React.useEffect(() => {
     if (location.state?.highlightedId) {
@@ -1429,7 +1453,7 @@ export const MyDocuments = () => {
 
       if (inLogs?.submissions) {
         if (!cancelled) {
-          setSelectedDoc(buildMyDocumentRow(inLogs.submissions, inLogs, user, activeSy));
+          setSelectedDoc(buildMyDocumentRow(inLogs.submissions, inLogs, user, activeSy, subtypesMap));
           navigate(location.pathname, { replace: true, state: {} });
         }
         return;
@@ -1459,7 +1483,7 @@ export const MyDocuments = () => {
       };
 
       if (!cancelled) {
-        setSelectedDoc(buildMyDocumentRow(submission, latestLog, user, activeSy));
+        setSelectedDoc(buildMyDocumentRow(submission, latestLog, user, activeSy, subtypesMap));
         navigate(location.pathname, { replace: true, state: {} });
       }
     };
@@ -1468,7 +1492,7 @@ export const MyDocuments = () => {
     return () => {
       cancelled = true;
     };
-  }, [location.state, logsData, loading, user, activeSy, navigate, location.pathname]);
+  }, [location.state, logsData, loading, user, activeSy, navigate, location.pathname, subtypesMap]);
 
   // Group by submission_id to keep only the latest log entry per submission
   const uniqueSubmissionsMap = {};
@@ -1517,6 +1541,16 @@ export const MyDocuments = () => {
 
     const targetTime = details?.target_time || '-';
     const proposalTitle = details?.activity_title || '-';
+
+    let proposalTypeStr = '-';
+    if (details?.subtype_id && subtypesMap[details.subtype_id]) {
+      proposalTypeStr = subtypesMap[details.subtype_id].name;
+    } else if (details?.proposal_type) {
+      const rawType = details.proposal_type;
+      if (rawType.toLowerCase() === 'in-campus') proposalTypeStr = 'In-Campus';
+      else if (rawType.toLowerCase() === 'off-campus') proposalTypeStr = 'Off-Campus';
+      else proposalTypeStr = rawType.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    }
 
     // Map Category Filter based on latest log or overall status
     let category = 'All';
@@ -1600,6 +1634,7 @@ export const MyDocuments = () => {
 
       // Extended fields copied from Inbox details mappings
       proposal_title: proposalTitle,
+      proposal_type: proposalTypeStr !== '-' ? proposalTypeStr : null,
       pic: details?.person_in_charge || '-',
       studentId: submission.users?.student_no || details?.student_id_number || '-',
       contact: details?.contact_number || '-',

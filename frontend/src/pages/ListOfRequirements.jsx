@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import * as reqService from '../services/requirementService';
+import * as subtypeService from '../services/subtypeService';
 import { supabase } from '../supabaseClient';
 import {
   Search,
@@ -61,7 +62,9 @@ const ListOfRequirements = () => {
 
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [highlightReqId, setHighlightReqId] = useState(null);
-  const [subType, setSubType] = useState('In-Campus');
+  const [docSubtypes, setDocSubtypes] = useState({}); // Mapping from docTypeId -> active subtypes
+  const [subTypeObj, setSubTypeObj] = useState(null); // The selected subtype object
+  const [subType, setSubType] = useState(''); // Keep subType string for compatibility
   const [previewUrl, setPreviewUrl] = useState('');
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState(null);
@@ -110,9 +113,9 @@ const ListOfRequirements = () => {
   useEffect(() => {
     if (selectedType) {
       const isProposal = selectedType.name.toLowerCase().includes('activity proposal');
-      loadRequirements(selectedType.id, isProposal ? subType : null);
+      loadRequirements(selectedType.id, isProposal ? (subTypeObj?.id || null) : null, isProposal ? (subTypeObj?.name || subType || null) : null);
     }
-  }, [selectedType, subType]);
+  }, [selectedType, subTypeObj, subType]);
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -124,6 +127,21 @@ const ListOfRequirements = () => {
     try {
       const data = await reqService.fetchDocumentTypes();
       setDocumentTypes(data || []);
+
+      const subtypesRes = await supabase
+        .from('document_subtypes')
+        .select('*')
+        .eq('status', 'active')
+        .order('sort_order', { ascending: true });
+        
+      if (subtypesRes.data) {
+        const subtypesMap = {};
+        subtypesRes.data.forEach(st => {
+          if (!subtypesMap[st.document_type_id]) subtypesMap[st.document_type_id] = [];
+          subtypesMap[st.document_type_id].push(st);
+        });
+        setDocSubtypes(subtypesMap);
+      }
     } catch (error) {
       showToast('Failed to load categories', 'error');
     } finally {
@@ -131,10 +149,10 @@ const ListOfRequirements = () => {
     }
   };
 
-  const loadRequirements = async (typeId, proposalType = null) => {
+  const loadRequirements = async (typeId, subtypeId = null, proposalType = null) => {
     setLoading(true);
     try {
-      const data = await reqService.fetchRequirements(typeId, proposalType);
+      const data = await reqService.fetchRequirements(typeId, subtypeId, proposalType);
       setRequirements(data || []);
     } catch (error) {
       showToast('Failed to load requirements', 'error');
@@ -191,9 +209,16 @@ const ListOfRequirements = () => {
     setSearchQuery('');
     setShowSearchResults(false);
     setHighlightReqId(req.id);
-    if (type.name.toLowerCase().includes('activity proposal') && req.proposal_type) {
-      if (String(req.proposal_type).toLowerCase().includes('off')) setSubType('Off-Campus');
-      else setSubType('In-Campus');
+    if (req.subtype_id || req.proposal_type) {
+      const subtypes = docSubtypes[type.id] || [];
+      const match = subtypes.find(st => st.id === req.subtype_id || st.name === req.proposal_type);
+      if (match) {
+        setSubTypeObj(match);
+        setSubType(match.name);
+      }
+    } else {
+      setSubTypeObj(null);
+      setSubType('');
     }
     setTimeout(() => {
       const el = document.getElementById(`requirement-row-${req.id}`);
@@ -322,10 +347,21 @@ const ListOfRequirements = () => {
       {!selectedType ? (
         /* Dynamic Grid */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10 animate-in slide-in-from-bottom-10 duration-700">
-          {documentTypes.map((type) => (
+          {documentTypes.map((type) => {
+            const hasSubtypes = docSubtypes[type.id] && docSubtypes[type.id].length > 0;
+            return (
             <div
               key={type.id}
-              onClick={() => setSelectedType(type)}
+              onClick={() => {
+                setSelectedType(type);
+                if (hasSubtypes) {
+                   setSubTypeObj(docSubtypes[type.id][0]);
+                   setSubType(docSubtypes[type.id][0].name);
+                } else {
+                   setSubTypeObj(null);
+                   setSubType('');
+                }
+              }}
               className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 cursor-pointer group relative overflow-hidden"
             >
               {isAdmin && (
@@ -357,7 +393,8 @@ const ListOfRequirements = () => {
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
           {documentTypes.length === 0 && (
             <div className="col-span-full py-20 text-center bg-white rounded-3xl border-2 border-dashed border-gray-100 flex flex-col items-center gap-4">
               <Info size={48} className="text-gray-300" />
@@ -404,19 +441,22 @@ const ListOfRequirements = () => {
               </div>
 
               <div className="flex items-center gap-4">
-                {/* NEW: Subcategory Toggle for Activity Proposal */}
-                {selectedType.name.toLowerCase().includes('activity proposal') && (
+                {/* NEW: Dynamic Subcategory Toggle */}
+                {selectedType && docSubtypes[selectedType.id] && docSubtypes[selectedType.id].length > 0 && (
                   <div className="flex bg-white p-1.5 rounded-xl shadow-sm border border-gray-100">
-                    {['In-Campus', 'Off-Campus'].map((type) => (
+                    {docSubtypes[selectedType.id].map((st) => (
                       <button
-                        key={type}
-                        onClick={() => setSubType(type)}
-                        className={`px-6 py-2.5 rounded-lg text-xs font-black transition-all duration-300 uppercase tracking-widest ${subType === type
+                        key={st.id}
+                        onClick={() => {
+                          setSubTypeObj(st);
+                          setSubType(st.name);
+                        }}
+                        className={`px-6 py-2.5 rounded-lg text-xs font-black transition-all duration-300 uppercase tracking-widest ${subTypeObj?.id === st.id
                           ? 'bg-primary-green text-white shadow-md'
                           : 'text-gray-500 hover:bg-gray-50'
                           }`}
                       >
-                        {type}
+                        {st.name}
                       </button>
                     ))}
                   </div>

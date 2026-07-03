@@ -113,7 +113,7 @@ const SUBMISSION_SELECT = `
   )
 `;
 
-const mapInboxSubmission = (sub, viewer) => {
+const mapInboxSubmission = (sub, viewer, subtypesMap = {}) => {
   const docTypeName = sub.documentType?.name || 'Document';
   const isActivityProposal = docTypeName.toLowerCase() === 'activity proposal' || docTypeName.toLowerCase().includes('proposal');
 
@@ -134,7 +134,9 @@ const mapInboxSubmission = (sub, viewer) => {
 
     if (details) {
       customDetails = details;
-      if (details.proposal_type) {
+      if (details.subtype_id && subtypesMap[details.subtype_id]) {
+        proposalType = subtypesMap[details.subtype_id].name;
+      } else if (details.proposal_type) {
         const rawType = details.proposal_type;
         if (rawType.toLowerCase() === 'in-campus') {
           proposalType = 'In-Campus';
@@ -623,6 +625,20 @@ export const Inbox = () => {
   const [archiveData, setArchiveData] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState('');
+  const [subtypesMap, setSubtypesMap] = React.useState({});
+
+  // Fetch subtypes on mount
+  React.useEffect(() => {
+    const fetchSubtypes = async () => {
+      const { data } = await supabase.from('document_subtypes').select('id, name');
+      if (data) {
+        const map = {};
+        data.forEach(st => { map[st.id] = st; });
+        setSubtypesMap(map);
+      }
+    };
+    fetchSubtypes();
+  }, []);
 
   const currentData = viewMode === 'inbox' ? inboxData : archiveData;
 
@@ -655,7 +671,7 @@ export const Inbox = () => {
         data = fallbackRes.data;
       }
 
-      const mapped = (data || []).map((sub) => mapInboxSubmission(sub, user));
+      const mapped = (data || []).map((sub) => mapInboxSubmission(sub, user, subtypesMap));
 
       setInboxData(mapped);
     } catch (err) {
@@ -673,12 +689,14 @@ export const Inbox = () => {
       .maybeSingle();
 
     if (error || !data) return null;
-    return mapInboxSubmission(data, user);
+    return mapInboxSubmission(data, user, subtypesMap);
   };
 
   React.useEffect(() => {
-    fetchSubmissions();
-  }, []);
+    if (Object.keys(subtypesMap).length > 0 || !loading) {
+      fetchSubmissions();
+    }
+  }, [subtypesMap]);
 
   React.useEffect(() => {
     const targetId = location.state?.submissionId || location.state?.highlightedId;
@@ -1079,7 +1097,7 @@ export const Inbox = () => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10 text-gray-800">
           {[
             { label: 'ORGANIZATION', value: details?.organization_name || selectedDoc.org || '-', icon: <User size={18} /> },
-            { label: 'TYPE', value: `${selectedDoc.type} ${selectedDoc.proposal_type !== '-' ? `(${selectedDoc.proposal_type})` : ''}`, icon: <FileText size={18} />, color: 'text-blue-500' },
+            { label: 'TYPE', value: `${selectedDoc.type} ${selectedDoc.proposal_type && selectedDoc.proposal_type !== '-' ? `(${selectedDoc.proposal_type})` : ''}`, icon: <FileText size={18} />, color: 'text-blue-500' },
             { label: 'STATUS', value: selectedDoc.status, icon: <Clock size={18} />, badge: true },
             { label: 'SUBMITTED', value: selectedDoc.time, icon: <Calendar size={18} /> }
           ].map((card, idx) => (
@@ -1975,7 +1993,7 @@ export const Inbox = () => {
                       <span className="inline-block px-4 py-1 border border-gray-100 text-gray-500 text-[10px] font-semibold rounded-lg bg-white shadow-sm group-hover:border-primary-green/20 group-hover:text-primary-green transition-all uppercase">
                         {item.type}
                       </span>
-                      {item.proposal_type !== '-' && (
+                      {item.proposal_type && item.proposal_type !== '-' && (
                         <span className="block text-[9px] font-bold text-primary-green mt-1 uppercase tracking-tight">
                           {item.proposal_type}
                         </span>
