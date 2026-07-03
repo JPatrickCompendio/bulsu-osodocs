@@ -288,6 +288,9 @@ export const MyDocuments = () => {
   const [accomReportComments, setAccomReportComments] = React.useState('');
   const [accomplishmentReport, setAccomplishmentReport] = React.useState(null);
   const [accomplishmentImages, setAccomplishmentImages] = React.useState([]);
+  const [accomParticipants, setAccomParticipants] = React.useState('');
+  const [accomBenefitingGroup, setAccomBenefitingGroup] = React.useState('');
+  const [accomResources, setAccomResources] = React.useState('');
   const [externalProofs, setExternalProofs] = React.useState([]);
   const [isDeanApproveSuccessModalOpen, setIsDeanApproveSuccessModalOpen] = React.useState(false);
   const normalizeRole = (role) => String(role || '').toLowerCase().replace('-', ' ').trim();
@@ -472,6 +475,9 @@ export const MyDocuments = () => {
       console.error('Error loading accomplishment report details:', err);
       setAccomplishmentReport(null);
       setAccomplishmentImages([]);
+      setAccomParticipants('');
+      setAccomBenefitingGroup('');
+      setAccomResources('');
     }
   };
 
@@ -797,6 +803,9 @@ export const MyDocuments = () => {
       setLocallyReturned({});
       setAccomplishmentReport(null);
       setAccomplishmentImages([]);
+      setAccomParticipants('');
+      setAccomBenefitingGroup('');
+      setAccomResources('');
       setExternalProofs([]);
     }
   }, [selectedDoc, selectedVersionId]);
@@ -2262,7 +2271,19 @@ export const MyDocuments = () => {
                 <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50/80 p-4 text-sm text-blue-900 shadow-sm">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-blue-700">Accomplishment Report</p>
                   <p className="mt-2 font-semibold">Submitted on {new Date(accomplishmentReport.submitted_at || accomplishmentReport.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
-                  <p className="mt-2 whitespace-pre-wrap text-blue-800">{accomplishmentReport.problems_encountered || 'No problems encountered were provided.'}</p>
+                  
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-blue-700 mt-4">Participants (College/Unit & Year Level)</p>
+                  <p className="mt-1 font-medium">{accomplishmentReport.participants || 'N/A'}</p>
+
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-blue-700 mt-3">Benefiting Group</p>
+                  <p className="mt-1 font-medium">{accomplishmentReport.benefiting_group || 'N/A'}</p>
+
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-blue-700 mt-3">Resources Used</p>
+                  <p className="mt-1 font-medium">{accomplishmentReport.resources_used || 'N/A'}</p>
+
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-blue-700 mt-3">Problem Encountered</p>
+                  <p className="mt-1 whitespace-pre-wrap text-blue-800">{accomplishmentReport.problems_encountered || 'No problems encountered were provided.'}</p>
+                  
                   {accomplishmentImages.length > 0 && (
                     <div className="mt-3 grid grid-cols-2 gap-3">
                       {accomplishmentImages.map((image, idx) => (
@@ -2307,6 +2328,36 @@ export const MyDocuments = () => {
                 </div>
                 <div className="flex-1 overflow-y-auto pr-2 space-y-4 mb-6">
                   <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Participants (College/Unit & Year Level) <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={accomParticipants}
+                      onChange={(e) => setAccomParticipants(e.target.value)}
+                      placeholder="e.g., CICS 3rd Year Students"
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Benefiting Group <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={accomBenefitingGroup}
+                      onChange={(e) => setAccomBenefitingGroup(e.target.value)}
+                      placeholder="e.g., Local Community, Student Body"
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Resources Used <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={accomResources}
+                      onChange={(e) => setAccomResources(e.target.value)}
+                      placeholder="e.g., Organization Funds, Donated Materials"
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    />
+                  </div>
+                  <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Problem Encountered</label>
                     <textarea
                       value={accomReportComments}
@@ -2318,15 +2369,47 @@ export const MyDocuments = () => {
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Attach proof images</label>
                     <div className="w-full border-2 border-dashed border-gray-300 rounded-xl p-6 flex flex-col items-center justify-center hover:border-blue-400 transition-all">
-                      <input
-                        type="file"
-                        accept=".jpg,.jpeg,.png,.gif,.webp"
-                        multiple
-                        onChange={(e) => setAccomReportFiles(Array.from(e.target.files || []))}
-                        className="w-full text-xs text-gray-500"
-                      />
-                      <span className="mt-2 text-xs text-gray-400">Upload one or more proof images to the accomplishment report folder.</span>
+                      <label className="cursor-pointer flex flex-col items-center">
+                        <div className="bg-blue-50 text-blue-600 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-100 transition-all mb-2">
+                          Select Images
+                        </div>
+                        <input
+                          type="file"
+                          accept=".jpg,.jpeg,.png,.gif,.webp"
+                          multiple
+                          onChange={(e) => {
+                            const newFiles = Array.from(e.target.files || []);
+                            setAccomReportFiles((prev) => [...prev, ...newFiles]);
+                            e.target.value = '';
+                            setTimeout(() => {
+                              document.getElementById('proof-images-gallery')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                            }, 100);
+                          }}
+                          className="hidden"
+                        />
+                        <span className="text-xs text-gray-400 text-center">Upload one or more proof images to the accomplishment report folder.</span>
+                      </label>
                     </div>
+                    {accomReportFiles.length > 0 && (
+                      <div id="proof-images-gallery" className="mt-4 grid grid-cols-3 gap-3">
+                        {accomReportFiles.map((file, idx) => (
+                          <div key={idx} className="relative group rounded-xl overflow-hidden border border-gray-200 aspect-video bg-gray-50">
+                            <img 
+                              src={URL.createObjectURL(file)} 
+                              alt="preview" 
+                              className="w-full h-full object-cover"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setAccomReportFiles(prev => prev.filter((_, i) => i !== idx))}
+                              className="absolute top-1 right-1 bg-red-500/90 hover:bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
@@ -2344,6 +2427,18 @@ export const MyDocuments = () => {
                       }
                       if (accomplishmentReport) {
                         setIsAccomReportModalOpen(false);
+                        return;
+                      }
+                      if (!accomParticipants.trim()) {
+                        alert('Please provide the Participants details.');
+                        return;
+                      }
+                      if (!accomBenefitingGroup.trim()) {
+                        alert('Please provide the Benefiting Group.');
+                        return;
+                      }
+                      if (!accomResources.trim()) {
+                        alert('Please provide the Resources Used.');
                         return;
                       }
                       if (accomReportFiles.length === 0) {
@@ -2395,7 +2490,10 @@ export const MyDocuments = () => {
                           .insert([{
                             submission_id: submissionId,
                             submitted_by: user.id,
-                            problems_encountered: accomReportComments || null
+                            participants: accomParticipants.trim() || null,
+                            benefiting_group: accomBenefitingGroup.trim() || null,
+                            resources_used: accomResources.trim() || null,
+                            problems_encountered: accomReportComments.trim() || null
                           }]);
 
                         if (accomErr) throw accomErr;
@@ -2437,6 +2535,9 @@ export const MyDocuments = () => {
                         setIsAccomReportModalOpen(false);
                         setAccomReportFiles([]);
                         setAccomReportComments('');
+                        setAccomParticipants('');
+                        setAccomBenefitingGroup('');
+                        setAccomResources('');
                         await fetchHandledLogs();
                         alert('Accomplishment report submitted!');
                         navigate('/completed', { state: { openDocId: submissionId } });

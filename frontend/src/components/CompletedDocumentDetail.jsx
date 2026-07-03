@@ -15,6 +15,7 @@ import {
 import { supabase } from '../supabaseClient';
 import SubmissionTimeline from './SubmissionTimeline';
 import ReportPreviewModal from './ReportPreviewModal';
+import AccomplishmentReportPreviewModal from './AccomplishmentReportPreviewModal';
 
 const getStoragePublicUrl = (fileUrl) => {
   let finalPath = fileUrl || '';
@@ -104,6 +105,7 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
   const [previewUrl, setPreviewUrl] = React.useState(null);
 
   const [isReportOpen, setIsReportOpen] = React.useState(false);
+  const [isAccomplishmentReportOpen, setIsAccomplishmentReportOpen] = React.useState(false);
   const [reportData, setReportData] = React.useState({ title: '', stats: [], headers: [], rows: [], secondHeaders: null, secondRows: null, secondTitle: '', filename: '' });
 
   const resolveExternalProofUrl = async (storagePath) => {
@@ -176,7 +178,7 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
 
         const { data: accomReport, error: accomErr } = await supabase
           .from('activity_accomplishments')
-          .select('id, submission_id, submitted_by, problems_encountered, submitted_at, created_at, updated_at')
+          .select('id, submission_id, submitted_by, problems_encountered, submitted_at, created_at, updated_at, participants, benefiting_group, resources_used')
           .eq('submission_id', submissionId)
           .maybeSingle();
 
@@ -383,6 +385,9 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
     tableData.push(['Attached Files', attachmentsList]);
 
     if (accomplishmentReport) {
+      tableData.push(['Accomplishment Participants', accomplishmentReport.participants || 'N/A']);
+      tableData.push(['Accomplishment Benefiting Group', accomplishmentReport.benefiting_group || 'N/A']);
+      tableData.push(['Accomplishment Resources Used', accomplishmentReport.resources_used || 'N/A']);
       tableData.push([
         'Accomplishment Problems',
         accomplishmentReport.problems_encountered || 'No problems encountered'
@@ -423,14 +428,27 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
         >
           <ChevronLeft size={22} />
         </button>
-        <button
-          type="button"
-          onClick={handleGenerateReport}
-          className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 text-gray-700 hover:border-primary-green rounded-xl transition-all font-semibold text-sm hover:text-primary-green hover:shadow-sm"
-        >
-          <FileText size={16} />
-          <span>Generate Report</span>
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleGenerateReport}
+            className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 text-gray-700 hover:border-primary-green rounded-xl transition-all font-semibold text-sm hover:text-primary-green hover:shadow-sm"
+          >
+            <FileText size={16} />
+            <span>Generate Report</span>
+          </button>
+          
+          {accomplishmentReport && (
+            <button
+              type="button"
+              onClick={() => setIsAccomplishmentReportOpen(true)}
+              className="flex items-center gap-2 px-5 py-2.5 bg-green-600 border border-green-600 text-white hover:bg-green-700 rounded-xl transition-all font-semibold text-sm hover:shadow-sm"
+            >
+              <FileText size={16} />
+              <span>Generate Accomplishment Report</span>
+            </button>
+          )}
+        </div>
       </div>
 
       <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 tracking-tight">{docTitle}</h1>
@@ -632,8 +650,19 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
         {accomplishmentReport && (
           <div className="rounded-2xl border border-blue-100 bg-blue-50/80 p-5">
             <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider mb-2">Accomplishment Report</h3>
-            <p className="text-xs uppercase tracking-widest text-blue-700">Submitted {formatSubmittedLabel(accomplishmentReport.submitted_at || accomplishmentReport.created_at)}</p>
-            <p className="mt-3 text-sm text-blue-900 whitespace-pre-wrap">{accomplishmentReport.problems_encountered || 'No problems encountered were provided.'}</p>
+            <p className="text-xs uppercase tracking-widest text-blue-700 mb-4">Submitted {formatSubmittedLabel(accomplishmentReport.submitted_at || accomplishmentReport.created_at)}</p>
+            
+            <p className="text-[10px] font-bold uppercase tracking-widest text-blue-700 mt-4">Participants (College/Unit & Year Level)</p>
+            <p className="mt-1 font-medium text-sm text-blue-900">{accomplishmentReport.participants || 'N/A'}</p>
+
+            <p className="text-[10px] font-bold uppercase tracking-widest text-blue-700 mt-3">Benefiting Group</p>
+            <p className="mt-1 font-medium text-sm text-blue-900">{accomplishmentReport.benefiting_group || 'N/A'}</p>
+
+            <p className="text-[10px] font-bold uppercase tracking-widest text-blue-700 mt-3">Resources Used</p>
+            <p className="mt-1 font-medium text-sm text-blue-900">{accomplishmentReport.resources_used || 'N/A'}</p>
+
+            <p className="text-[10px] font-bold uppercase tracking-widest text-blue-700 mt-3">Problem Encountered</p>
+            <p className="mt-1 text-sm text-blue-900 whitespace-pre-wrap">{accomplishmentReport.problems_encountered || 'No problems encountered were provided.'}</p>
           </div>
         )}
 
@@ -733,6 +762,15 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
         pdfFilename={reportData.filename}
         schoolYear={submission.school_years?.name || ''}
         proofImages={proofImages}
+      />
+
+      <AccomplishmentReportPreviewModal
+        isOpen={isAccomplishmentReportOpen}
+        onClose={() => setIsAccomplishmentReportOpen(false)}
+        submission={submission}
+        accomplishmentReport={accomplishmentReport}
+        proofImages={proofImages}
+        schoolYear={submission.school_years?.name || ''}
       />
     </div>
   );

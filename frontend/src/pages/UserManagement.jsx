@@ -231,7 +231,7 @@ const UserManagement = () => {
     setIsUpdatingStatus(true);
     const isCurrentlySuspended = suspendUser.status && suspendUser.status.startsWith('Suspended');
     const newStatus = isCurrentlySuspended
-      ? 'Active'
+      ? 'Active (Extended)'
       : (suspendMessage ? `Suspended: ${suspendMessage}` : 'Suspended');
 
     const payload = {
@@ -312,7 +312,7 @@ const UserManagement = () => {
     const totalUsers = filteredUsers.length;
     const orgPresidents = filteredUsers.filter(u => u.role === 'org-president').length;
     const osoStaff = filteredUsers.filter(u => u.role === 'chairman' || u.role === 'vice-chairman').length;
-    const activeUsers = filteredUsers.filter(u => u.status === 'Active').length;
+    const activeUsers = filteredUsers.filter(u => u.status === 'Active' || u.status === 'Active (Extended)').length;
     const suspendedUsers = filteredUsers.filter(u => u.status?.startsWith('Suspended')).length;
 
     const stats = [
@@ -828,32 +828,34 @@ const UserManagement = () => {
             </div>
 
             {/* User Type Toggle */}
-            <div className="p-6 border-b border-gray-100">
-              <div className="flex p-1 bg-gray-100 rounded-xl w-fit mx-auto text-gray-800">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setNewUserType('org');
-                    generatePassword('org');
-                    setFormData(prev => ({ ...prev, role: 'org-president', status: 'Inactive' }));
-                  }}
-                  className={`px-6 py-2 rounded-lg text-sm font-semibold transition-all ${newUserType === 'org' ? 'bg-white text-primary-green shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                >
-                  Student Organization
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setNewUserType('admin-staff');
-                    generatePassword('admin-staff');
-                    setFormData(prev => ({ ...prev, role: 'chairman', status: 'Active' }));
-                  }}
-                  className={`px-6 py-2 rounded-lg text-sm font-semibold transition-all ${newUserType === 'admin-staff' ? 'bg-white text-primary-green shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                >
-                  OSO Staff
-                </button>
+            {!isEditMode && (
+              <div className="p-6 border-b border-gray-100">
+                <div className="flex p-1 bg-gray-100 rounded-xl w-fit mx-auto text-gray-800">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewUserType('org');
+                      generatePassword('org');
+                      setFormData(prev => ({ ...prev, role: 'org-president', status: 'Inactive' }));
+                    }}
+                    className={`px-6 py-2 rounded-lg text-sm font-semibold transition-all ${newUserType === 'org' ? 'bg-white text-primary-green shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                  >
+                    Student Organization
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewUserType('admin-staff');
+                      generatePassword('admin-staff');
+                      setFormData(prev => ({ ...prev, role: 'chairman', status: 'Active' }));
+                    }}
+                    className={`px-6 py-2 rounded-lg text-sm font-semibold transition-all ${newUserType === 'admin-staff' ? 'bg-white text-primary-green shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                  >
+                    OSO Staff
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Form Body */}
             <form onSubmit={handleSaveUser} id="create-user-form" className="p-8 max-h-[60vh] overflow-y-auto text-gray-800">
@@ -989,6 +991,7 @@ const UserManagement = () => {
                           onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                         >
                           <option value="Active">Active</option>
+                          <option value="Active (Extended)">Active (Extended)</option>
                           <option value="Suspended">Suspended</option>
                           <option value="Inactive">Inactive</option>
                         </select>
@@ -1096,6 +1099,7 @@ const UserManagement = () => {
                         onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                       >
                         <option value="Active">Active</option>
+                        <option value="Active (Extended)">Active (Extended)</option>
                         <option value="Suspended">Suspended</option>
                         <option value="Inactive">Inactive</option>
                       </select>
