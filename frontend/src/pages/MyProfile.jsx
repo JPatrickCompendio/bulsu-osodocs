@@ -12,8 +12,11 @@ import {
   Lock, 
   CheckCircle2, 
   AlertCircle,
-  Loader2
+  Loader2,
+  Eye,
+  EyeOff
 } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
 
 const MyProfile = () => {
   const { user, refreshUser } = useAuth();
@@ -197,14 +200,13 @@ const MyProfile = () => {
         </div>
       )}
 
-      <div className="flex items-center gap-5 mb-10">
-        <div className="p-3 bg-primary-green rounded-xl shadow-lg">
-          <UserIcon className="text-white" size={28} />
-        </div>
-        <div>
-          <h1 className="text-3xl font-black text-gray-800 tracking-tight">My Profile</h1>
-          <p className="text-gray-400 font-bold text-sm">Manage your personal information and account security</p>
-        </div>
+      <div className="mb-10">
+        <PageHeader 
+          title="My Profile" 
+          subtitle="Manage your personal information and account security" 
+          icon={UserIcon} 
+          iconColor="slate" 
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

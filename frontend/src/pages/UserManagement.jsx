@@ -25,6 +25,7 @@ import {
   Clock,
   Ban
 } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../config/api';
 import Avatar from '../components/Avatar';
@@ -651,10 +652,12 @@ const UserManagement = () => {
       ) : (
         <>
           <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-800">User Management</h1>
-              <p className="text-gray-500 mt-1">Manage institutional users and student organizations.</p>
-            </div>
+            <PageHeader 
+              title="User Management" 
+              subtitle="Manage institutional users and student organizations." 
+              icon={UsersIcon} 
+              iconColor="purple" 
+            />
 
             <div className="flex gap-3">
               <button

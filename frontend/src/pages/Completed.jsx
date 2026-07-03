@@ -3,16 +3,9 @@ import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
 import CompletedDocumentDetail from '../components/CompletedDocumentDetail';
-import { Filter, ChevronDown, Eye, FileText } from 'lucide-react';
+import { Filter, ChevronDown, Eye, FileText, CheckCircle } from 'lucide-react';
 import ReportPreviewModal from '../components/ReportPreviewModal';
-
-
-const PageHeader = ({ title }) => (
-  <div className="mb-8">
-    <h1 className="text-3xl font-bold text-gray-800">{title}</h1>
-    <p className="text-gray-500 mt-1">Manage your {title.toLowerCase()} and activities here.</p>
-  </div>
-);
+import PageHeader from '../components/PageHeader';
 
 const normalizeStatus = (status) =>
   String(status || '')
@@ -367,8 +360,15 @@ const Completed = () => {
   }
 
   return (
-    <div>
-      <PageHeader title="Completed" />
+    <div className="animate-in fade-in slide-in-from-bottom-6 duration-1000 text-gray-800">
+      <div className="flex items-end justify-between mb-8 border-b border-gray-100 pb-6">
+        <PageHeader 
+          title="Completed" 
+          subtitle="Manage your completed documents and activities here." 
+          icon={CheckCircle} 
+          iconColor="green" 
+        />
+      </div>
 
       <div className="mb-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
@@ -437,7 +437,6 @@ const Completed = () => {
             />
           </div>
         </div>
-
       </div>
 
       <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">

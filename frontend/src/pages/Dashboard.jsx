@@ -196,7 +196,10 @@ const formatDate = (dateString) => {
 
 const LoadingSpinner = () => (
   <div className="flex h-[80vh] items-center justify-center">
-    <RefreshCcw className="animate-spin text-primary-green" size={40} />
+    <div className="flex flex-col items-center gap-4">
+      <div className="w-10 h-10 border-4 border-primary-green border-t-transparent rounded-full animate-spin"></div>
+      <span className="text-primary-green font-bold tracking-[0.2em] text-xs uppercase animate-pulse">Loading Data...</span>
+    </div>
   </div>
 );
 
@@ -304,9 +307,9 @@ const AdminDashboardView = () => {
   if (!stats) return <div className="p-8">Failed to load dashboard.</div>;
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] p-8 pb-32">
-      <div className="max-w-7xl mx-auto space-y-8">
-        <section className="relative rounded-[2rem] overflow-hidden mb-8 shadow-lg bg-black p-8 md:p-10 border border-gray-800">
+    <div className="pb-32">
+      <div className="w-full space-y-8">
+        <section className="relative rounded-2xl overflow-hidden mb-8 shadow-lg bg-black p-8 md:p-10 border border-gray-800">
           <video 
             autoPlay 
             loop 
@@ -664,9 +667,9 @@ const ChairmanDashboardView = ({ role }) => {
   const roleLabel = role === 'vice-chairman' ? 'Vice Chairman' : 'Chairman';
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] p-8 pb-32">
-      <div className="max-w-7xl mx-auto space-y-8">
-        <section className="relative rounded-[2rem] overflow-hidden mb-8 shadow-lg bg-black p-8 md:p-10 border border-gray-800">
+    <div className="pb-32">
+      <div className="w-full space-y-8">
+        <section className="relative rounded-2xl overflow-hidden mb-8 shadow-lg bg-black p-8 md:p-10 border border-gray-800">
           <video 
             autoPlay 
             loop 
@@ -1036,9 +1039,9 @@ const OrgDashboardView = () => {
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] p-8 pb-32">
-      <div className="max-w-7xl mx-auto space-y-8">
-        <section className="relative rounded-[2rem] overflow-hidden mb-8 shadow-lg bg-black p-8 md:p-10 border border-gray-800">
+    <div className="pb-32">
+      <div className="w-full space-y-8">
+        <section className="relative rounded-2xl overflow-hidden mb-8 shadow-lg bg-black p-8 md:p-10 border border-gray-800">
           <video 
             autoPlay 
             loop 

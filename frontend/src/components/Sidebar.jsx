@@ -139,7 +139,7 @@ const Sidebar = () => {
   const currentMenu = menuItems[roleKey] || [];
 
   return (
-    <div className="w-64 h-screen bg-primary-green text-white flex flex-col shadow-xl">
+    <div className="w-64 h-screen bg-[#073c2d] text-white flex flex-col shadow-xl">
       <div className="p-6 flex items-center gap-3 border-b border-white/10">
         <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center p-1">
            <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />

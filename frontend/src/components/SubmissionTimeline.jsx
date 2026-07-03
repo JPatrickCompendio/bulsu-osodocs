@@ -85,12 +85,14 @@ const SubmissionTimeline = ({
   const [proofLinks, setProofLinks] = React.useState({});
   const [selectedProof, setSelectedProof] = React.useState(null);
 
-  const { displayLogs, historyCount } = buildTimelineDisplayLogs(timelineLogs, {
-    submissionStatus,
-    allVersions,
-    viewingVersionId,
-    currentVersionId
-  });
+  const { displayLogs, historyCount } = React.useMemo(() => {
+    return buildTimelineDisplayLogs(timelineLogs, {
+      submissionStatus,
+      allVersions,
+      viewingVersionId,
+      currentVersionId
+    });
+  }, [timelineLogs, submissionStatus, allVersions, viewingVersionId, currentVersionId]);
 
   const resolveProofUrl = async (reference) => {
     const raw = String(reference || '').trim();

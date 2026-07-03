@@ -23,8 +23,11 @@ import {
   Calendar,
   Eye,
   ArrowUpRight,
-  Lock
+  Lock,
+  LogOut,
+  FolderOpen
 } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
 
 const getStatusColor = (status) => {
   const s = (status || '').toLowerCase().trim();
@@ -3743,17 +3746,12 @@ export const MyDocuments = () => {
     <div className="animate-in fade-in slide-in-from-bottom-6 duration-1000">
       {/* Page Header - Matching Inbox */}
       <div className="flex items-end justify-between mb-8 border-b border-gray-100 pb-6">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-primary-green rounded-xl flex items-center justify-center text-white shadow-lg shadow-primary-green/10">
-            <FileText size={24} />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800 tracking-tight flex items-center gap-3">
-              My Documents
-            </h1>
-            <p className="text-gray-400 text-sm">Track your handled and reviewed document status</p>
-          </div>
-        </div>
+        <PageHeader 
+          title="My Documents" 
+          subtitle="Track your handled and reviewed document status" 
+          icon={FileText} 
+          iconColor="blue" 
+        />
 
         <div className="flex items-center gap-3">
           <div className="flex p-1 bg-gray-100/50 rounded-xl border border-gray-100">

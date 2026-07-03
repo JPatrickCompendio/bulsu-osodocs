@@ -1,9 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { X, Printer, Download } from 'lucide-react';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import HEADER_IMG from '../assets/HEADER.png';
-import FOOTER_IMG from '../assets/FOOTER.png';
+import React, { useEffect, useState, useRef } from 'react';
+import { X, Printer, Edit3, Image as ImageIcon } from 'lucide-react';
+import JoditEditor from 'jodit-react';
+import DEFAULT_HEADER_IMG from '../assets/HEADER.png';
+import DEFAULT_FOOTER_IMG from '../assets/FOOTER.png';
 
 const AccomplishmentReportPreviewModal = ({
   isOpen,
@@ -13,240 +12,372 @@ const AccomplishmentReportPreviewModal = ({
   proofImages = [],
   schoolYear = ''
 }) => {
-  const [headerBase64, setHeaderBase64] = useState(null);
-  const [footerBase64, setFooterBase64] = useState(null);
-  const [preloadedImages, setPreloadedImages] = useState([]);
-  const [pdfUrl, setPdfUrl] = useState(null);
+  const [content, setContent] = useState('');
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [headerBase64, setHeaderBase64] = useState('');
+  const [footerBase64, setFooterBase64] = useState('');
+  
+  const editorRef = useRef(null);
+  const headerInputRef = useRef(null);
+  const footerInputRef = useRef(null);
 
-  // Convert Header/Footer and proofs to Base64
+  const getBase64 = (src) => new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = src;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => resolve(null);
+  });
+
   useEffect(() => {
-    if (!isOpen) return;
+    const loadDefaultImages = async () => {
+      if (!headerBase64) setHeaderBase64(await getBase64(DEFAULT_HEADER_IMG));
+      if (!footerBase64) setFooterBase64(await getBase64(DEFAULT_FOOTER_IMG));
+    };
+    if (isOpen) loadDefaultImages();
+  }, [isOpen]);
 
-    const getBase64 = (src) => new Promise((resolve) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.src = src;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-        resolve(canvas.toDataURL('image/png'));
-      };
-      img.onerror = () => resolve(null);
-    });
+  useEffect(() => {
+    if (!isOpen) {
+      setIsInitialized(false);
+      setContent('');
+      return;
+    }
+    if (isInitialized) return;
 
-    const initImages = async () => {
-      const hBase64 = await getBase64(HEADER_IMG);
-      const fBase64 = await getBase64(FOOTER_IMG);
-      setHeaderBase64(hBase64);
-      setFooterBase64(fBase64);
-
+    const buildInitialHtml = async () => {
+      let proofsHtml = '';
       if (proofImages && proofImages.length > 0) {
-        const loaded = await Promise.all(
+        const loadedProofs = await Promise.all(
           proofImages.map(async (img) => {
             if (!img.file_url && !img.url) return null;
             const b64 = await getBase64(img.file_url || img.url);
-            return { base64: b64, name: img.file_name || img.name || 'Proof Image' };
+            return b64 ? `<div style="margin-bottom: 20px;"><img src="${b64}" class="default-center-img" style="max-width: 80%; max-height: 400px; object-fit: contain;" /></div>` : '';
           })
         );
-        setPreloadedImages(loaded.filter(Boolean));
-      } else {
-        setPreloadedImages([]);
+        proofsHtml = loadedProofs.filter(Boolean).join('');
       }
-    };
-    initImages();
-  }, [isOpen, proofImages]);
 
-  useEffect(() => {
-    if (isOpen && headerBase64 && footerBase64) {
-      generatePDF(true); // render for preview
-    }
-  }, [isOpen, headerBase64, footerBase64, preloadedImages]);
+      const subtypeName = submission?.document_subtypes?.name || 'EXTERNAL CAMPUS';
+      const sy = schoolYear || submission?.school_years?.name || '2025-2026';
+      const cleanSy = sy.replace(/S\.Y\.\s*/ig, '').replace(/S\.Y\s*/ig, '').trim();
+
+      const details = Array.isArray(submission?.submission_versions?.[0]?.activity_proposal_details)
+        ? submission?.submission_versions[0].activity_proposal_details[0]
+        : submission?.submission_versions?.[0]?.activity_proposal_details || {};
+        
+      const orgName = details?.organization_name || submission?.users?.org_name || 'Organization Name';
+
+      let actNoDisplay = '';
+      if (details?.activity_number) {
+        let lastTwo = String(details.activity_number).slice(-2);
+        if (lastTwo.length === 2 && lastTwo.startsWith('0')) {
+          lastTwo = lastTwo.substring(1);
+        }
+        actNoDisplay = lastTwo;
+      }
+
+      const formatList = (val) => {
+        if (!val) return '';
+        try {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed)) return parsed.map(v => `<li>${v}</li>`).join('');
+        } catch(e) {}
+        if (Array.isArray(val)) return val.map(v => `<li>${v}</li>`).join('');
+        return `<ul>` + String(val).split('\n').map(l => {
+          const trimmed = l.trim();
+          if (!trimmed) return '';
+          return `<li>${trimmed.replace(/^[•-]\s*/, '')}</li>`;
+        }).filter(Boolean).join('') + `</ul>`;
+      };
+
+      const targetDateStr = details?.target_date ? new Date(details.target_date).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : '';
+      const targetTime = details?.target_time || '';
+      const place = 'Bulacan State University - Bustos Campus';
+      const dateTimePlace = [targetDateStr, targetTime, place].filter(Boolean).join(', ');
+
+      const initialHtml = `
+        <div style="padding: 30px 40px;">
+          <div style="text-align: center; font-family: 'Times New Roman', Times, serif; font-size: 14px; margin-bottom: 20px;">
+            <strong>STUDENT ORGANIZATIONS-${subtypeName.toUpperCase()} ACCOMPLISHMENT REPORT</strong><br/>
+            FOR S.Y. ${cleanSy}<br/><br/>
+            <strong style="text-decoration: underline;">${orgName.toUpperCase()}</strong><br/>
+            Name of Organization
+          </div>
+          
+          <table style="width: 100%; border-collapse: collapse; border: 1px solid black; font-family: 'Times New Roman', Times, serif; font-size: 13px;">
+            <tbody>
+              <tr>
+                <td style="border: 1px solid black; padding: 8px; width: 35%; font-weight: bold;">Activity No. ${actNoDisplay}</td>
+                <td style="border: 1px solid black; padding: 8px; width: 65%;"></td>
+              </tr>
+              <tr>
+                <td style="border: 1px solid black; padding: 8px; font-weight: bold;">Name of Activity</td>
+                <td style="border: 1px solid black; padding: 8px;">${details?.activity_title || submission?.documentType?.name || 'Activity'}</td>
+              </tr>
+              <tr>
+                <td style="border: 1px solid black; padding: 8px; font-weight: bold;">Date/Time/Place</td>
+                <td style="border: 1px solid black; padding: 8px;">${dateTimePlace}</td>
+              </tr>
+              <tr>
+                <td style="border: 1px solid black; padding: 8px; font-weight: bold;">Description</td>
+                <td style="border: 1px solid black; padding: 8px;">${formatList(details?.nature_of_activity || details?.satisfy_needs)}</td>
+              </tr>
+              <tr>
+                <td style="border: 1px solid black; padding: 8px; font-weight: bold;">Objective/s</td>
+                <td style="border: 1px solid black; padding: 8px;">${formatList(details?.objectives || details?.satisfy_goals)}</td>
+              </tr>
+              <tr>
+                <td style="border: 1px solid black; padding: 8px; font-weight: bold;">Participants (College/Unit & Year Level)</td>
+                <td style="border: 1px solid black; padding: 8px;">${accomplishmentReport?.participants || ''}</td>
+              </tr>
+              <tr>
+                <td style="border: 1px solid black; padding: 8px; font-weight: bold;">Benefiting Group</td>
+                <td style="border: 1px solid black; padding: 8px;">${accomplishmentReport?.benefiting_group || ''}</td>
+              </tr>
+              <tr>
+                <td style="border: 1px solid black; padding: 8px; font-weight: bold;">Resources Used</td>
+                <td style="border: 1px solid black; padding: 8px;">${accomplishmentReport?.resources_used || ''}</td>
+              </tr>
+              <tr>
+                <td style="border: 1px solid black; padding: 8px; font-weight: bold;">Co-sponsor (If any)</td>
+                <td style="border: 1px solid black; padding: 8px;">${details?.sponsors || 'N/A'}</td>
+              </tr>
+              <tr>
+                <td style="border: 1px solid black; padding: 8px; font-weight: bold;">Problem Encountered</td>
+                <td style="border: 1px solid black; padding: 8px;">${accomplishmentReport?.problems_encountered || 'N/A'}</td>
+              </tr>
+            </tbody>
+          </table>
+          <br/>
+          <div style="text-align: center; font-weight: bold; font-family: 'Times New Roman', Times, serif; font-size: 14px; margin-top: 30px; margin-bottom: 20px;">
+            PROOF OF ACTIVITY IMPLEMENTATION
+          </div>
+          ${proofsHtml}
+        </div>
+      `;
+
+      setContent(initialHtml);
+      setIsInitialized(true);
+    };
+
+    buildInitialHtml();
+  }, [isOpen, isInitialized, submission, accomplishmentReport, schoolYear, proofImages]);
 
   if (!isOpen) return null;
 
-  const generatePDF = (isPreview = false) => {
-    const doc = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4'
-    });
-
-    const pageWidth = doc.internal.pageSize.width;
-    const pageHeight = doc.internal.pageSize.height;
-
-    // Approximate header/footer sizes based on typical A4
-    const headerW = pageWidth;
-    const headerH = headerW * 0.17; // approx aspect ratio
-    const footerW = pageWidth;
-    const footerH = footerW * 0.11; 
-
-    const drawHeaderFooter = () => {
-      if (headerBase64) doc.addImage(headerBase64, 'PNG', 0, 0, headerW, headerH);
-      if (footerBase64) doc.addImage(footerBase64, 'PNG', 0, pageHeight - footerH, footerW, footerH);
-    };
-
-    drawHeaderFooter();
-
-    let currentY = headerH + 10;
-
-    doc.setFont('times', 'bold');
-    doc.setFontSize(10);
-    doc.setTextColor(0, 0, 0);
-    doc.text('STUDENT ORGANIZATIONS-EXTERNAL CAMPUS ACCOMPLISHMENT REPORT', pageWidth / 2, currentY, { align: 'center' });
-    currentY += 5;
-    
-    const sy = schoolYear || submission?.school_years?.name || '2025-2026';
-    doc.text(`FOR S.Y. ${sy}`, pageWidth / 2, currentY, { align: 'center' });
-    currentY += 12;
-
-    const details = Array.isArray(submission?.submission_versions?.[0]?.activity_proposal_details)
-      ? submission?.submission_versions[0].activity_proposal_details[0]
-      : submission?.submission_versions?.[0]?.activity_proposal_details || {};
-      
-    const orgName = details?.organization_name || submission?.users?.org_name || 'Organization Name';
-    
-    doc.setFont('times', 'bold');
-    doc.text(orgName.toUpperCase(), pageWidth / 2, currentY, { align: 'center' });
-    const orgWidth = doc.getTextWidth(orgName.toUpperCase());
-    doc.setLineWidth(0.3);
-    // Underline perfectly centered
-    doc.line((pageWidth - orgWidth) / 2, currentY + 1, (pageWidth + orgWidth) / 2, currentY + 1);
-    
-    currentY += 6;
-    doc.setFont('times', 'normal');
-    doc.text('Name of Organization', pageWidth / 2, currentY, { align: 'center' });
-    currentY += 10;
-
-    const formatList = (val) => {
-      if (!val) return '';
-      try {
-        const parsed = JSON.parse(val);
-        if (Array.isArray(parsed)) return parsed.map(v => `• ${v}`).join('\n');
-      } catch(e) {}
-      if (Array.isArray(val)) return val.map(v => `• ${v}`).join('\n');
-      return String(val).split('\n').map(l => {
-        const trimmed = l.trim();
-        if (!trimmed) return '';
-        return trimmed.startsWith('•') || trimmed.startsWith('-') ? trimmed : `• ${trimmed}`;
-      }).filter(Boolean).join('\n');
-    };
-
-    const targetDateStr = details?.target_date ? new Date(details.target_date).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : '';
-    const targetTime = details?.target_time || '';
-    const place = 'Bulacan State University - Bustos Campus';
-    const dateTimePlace = [targetDateStr, targetTime, place].filter(Boolean).join(', ');
-
-    let actNoDisplay = '';
-    if (details?.activity_number) {
-      let lastTwo = String(details.activity_number).slice(-2);
-      if (lastTwo.length === 2 && lastTwo.startsWith('0')) {
-        lastTwo = lastTwo.substring(1);
-      }
-      actNoDisplay = lastTwo;
-    }
-
-    const tableData = [
-      [`Activity No. ${actNoDisplay}`.trim(), ''],
-      ['Name of Activity', details?.activity_title || submission?.documentType?.name || 'Activity'],
-      ['Date/Time/Place', dateTimePlace],
-      ['Description', formatList(details?.nature_of_activity || details?.satisfy_needs)],
-      ['Objective/s', formatList(details?.objectives || details?.satisfy_goals)],
-      ['Participants (College/Unit & Year Level)', accomplishmentReport?.participants || ''],
-      ['Benefiting Group', accomplishmentReport?.benefiting_group || ''],
-      ['Resources Used', accomplishmentReport?.resources_used || ''],
-      ['Co-sponsor (If any)', details?.sponsors || 'N/A'],
-      ['Problem Encountered', accomplishmentReport?.problems_encountered || 'N/A']
-    ];
-
-    autoTable(doc, {
-      startY: currentY,
-      body: tableData,
-      theme: 'grid',
-      styles: {
-        font: 'times',
-        fontSize: 10,
-        textColor: [0, 0, 0],
-        lineColor: [0, 0, 0],
-        lineWidth: 0.3,
-        valign: 'middle'
-      },
-      columnStyles: {
-        0: { fontStyle: 'bold', cellWidth: 50 },
-        1: { cellWidth: 'auto' }
-      },
-      margin: { left: 15, right: 15, bottom: footerH + 10 },
-      didDrawPage: (data) => {
-        if (data.pageNumber > 1) {
-          drawHeaderFooter();
-        }
-      }
-    });
-
-    currentY = doc.lastAutoTable.finalY + 15;
-
-    // Render Proof Images
-    if (preloadedImages && preloadedImages.length > 0) {
-      preloadedImages.forEach((imgObj, idx) => {
-        const imgWidth = 140; 
-        const imgHeight = 90;
-        
-        if (currentY + imgHeight > pageHeight - footerH) {
-          doc.addPage();
-          drawHeaderFooter();
-          currentY = headerH + 10;
-        }
-
-        if (imgObj && imgObj.base64) {
-          doc.addImage(imgObj.base64, 'JPEG', (pageWidth - imgWidth) / 2, currentY, imgWidth, imgHeight);
-          currentY += imgHeight + 10;
-        }
-      });
-    }
-
-    if (isPreview) {
-      const pdfBlobUrl = doc.output('bloburl');
-      setPdfUrl(pdfBlobUrl);
-    } else {
-      const filename = `Accomplishment_Report_${submission?.id || 'doc'}.pdf`;
-      doc.save(filename);
+  const handleImageUpload = (e, type) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (type === 'header') setHeaderBase64(reader.result);
+        if (type === 'footer') setFooterBase64(reader.result);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
+  const handlePrint = () => {
+    const printIframe = document.createElement('iframe');
+    printIframe.style.position = 'absolute';
+    printIframe.style.width = '0px';
+    printIframe.style.height = '0px';
+    printIframe.style.border = 'none';
+    document.body.appendChild(printIframe);
+
+    const doc = printIframe.contentWindow.document;
+    doc.open();
+    doc.write(`
+      <html>
+        <head>
+          <title>Accomplishment Report Document</title>
+          <style>
+            @media print {
+              body { margin: 0; padding: 0; background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              @page { margin: 0; size: auto; }
+              thead { display: table-header-group; }
+              tfoot { display: table-footer-group; }
+              table { width: 100%; border-collapse: collapse; border: none; }
+              img { max-width: 100% !important; }
+            }
+            body { font-family: 'Times New Roman', Times, serif; color: black; background: white; margin: 0; }
+            .default-center-img { display: block; margin: 0 auto; }
+          </style>
+        </head>
+        <body>
+          <table style="width: 100%; border-collapse: collapse; border: none; background: white;">
+            <thead>
+              <tr><td style="border: none; padding: 0;">
+                <img src="${headerBase64}" style="width: 100%; display: block; max-height: 160px; object-fit: fill;" alt="Header" />
+              </td></tr>
+            </thead>
+            <tbody>
+              <tr><td style="border: none; padding: 0;">
+                ${content}
+              </td></tr>
+            </tbody>
+            <tfoot>
+              <tr><td style="border: none; padding: 0;">
+                <img src="${footerBase64}" style="width: 100%; display: block; max-height: 120px; object-fit: fill;" alt="Footer" />
+              </td></tr>
+            </tfoot>
+          </table>
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    printIframe.contentWindow.focus();
+    setTimeout(() => {
+      printIframe.contentWindow.print();
+      setTimeout(() => {
+        document.body.removeChild(printIframe);
+      }, 2000);
+    }, 500);
+  };
+
+  const config = {
+    readonly: false,
+    height: 'auto',
+    width: '100%',
+    toolbarAdaptive: false,
+    buttons: [
+      'bold', 'italic', 'underline', 'strikethrough', '|',
+      'font', 'fontsize', 'brush', 'paragraph', '|',
+      'image', 'table', 'link', '|',
+      'align', 'undo', 'redo', 'hr', 'eraser'
+    ],
+    uploader: { insertImageAsBase64URI: true }
+  };
+
   return (
-    <div className="fixed inset-0 bg-slate-900/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-3xl max-w-5xl w-full h-[90vh] shadow-2xl border border-gray-100 overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 flex-none">
+    <div 
+      className="fixed inset-0 bg-slate-900/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm" 
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="bg-white rounded-3xl max-w-[1000px] w-full h-[95vh] shadow-2xl border border-gray-100 overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 flex-none bg-white z-10">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
-              <Printer size={20} />
+              <Edit3 size={20} />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-gray-800">Accomplishment Report Preview</h3>
-              <p className="text-xs font-medium text-gray-500">Official Format</p>
+              <h3 className="text-lg font-bold text-gray-800">Advanced Document Editor</h3>
+              <p className="text-xs font-medium text-gray-500">Hover over Header/Footer to change images</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => generatePDF(false)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-bold transition-all">
-              <Download size={16} />
-              Download PDF
+            <button onClick={handlePrint} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-sm hover:shadow-md">
+              <Printer size={16} />
+              Print / Save as PDF
             </button>
-            <button onClick={onClose} className="rounded-full p-2 text-gray-400 hover:bg-gray-100 transition-colors">
+            <button onClick={onClose} className="rounded-full p-2 text-gray-400 hover:bg-gray-100 transition-colors ml-2">
               <X size={20} />
             </button>
           </div>
         </div>
-        <div className="p-6 bg-gray-50 flex-1 w-full relative">
-          {pdfUrl ? (
-            <div className="absolute inset-6">
-              <iframe src={pdfUrl} title="PDF Preview" className="w-full h-full rounded-xl shadow-sm border border-gray-200 bg-white" />
+
+        {/* Editor Area Wrapper */}
+        <div className="flex-1 w-full bg-gray-200 overflow-y-auto p-4 md:p-8 custom-scrollbar">
+          
+          <input type="file" ref={headerInputRef} accept="image/*" className="hidden" onChange={e => handleImageUpload(e, 'header')} />
+          <input type="file" ref={footerInputRef} accept="image/*" className="hidden" onChange={e => handleImageUpload(e, 'footer')} />
+
+          {/* Paper Container */}
+          <div className="max-w-[210mm] mx-auto bg-white shadow-xl min-h-[297mm] flex flex-col">
+            
+            {/* Visual Header */}
+            {headerBase64 && (
+              <div 
+                className="relative w-full cursor-pointer group"
+                onClick={() => headerInputRef.current.click()}
+              >
+                <img src={headerBase64} alt="Header" className="w-full max-h-[160px] object-fill block" />
+                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity text-white">
+                  <ImageIcon size={24} className="mb-2" />
+                  <span className="font-bold text-sm tracking-wider uppercase">Change Header</span>
+                </div>
+              </div>
+            )}
+
+            {/* Jodit Content (Body) */}
+            <div className="flex-1 jodit-seamless-wrapper relative">
+              {!isInitialized ? (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-8 h-8 border-4 border-gray-200 border-t-blue-500 rounded-full animate-spin"></div>
+                </div>
+              ) : (
+                <>
+                  <style>{`
+                    .jodit-seamless-wrapper .jodit-container {
+                      border: none !important;
+                    }
+                    .jodit-seamless-wrapper .jodit-toolbar__box {
+                      position: sticky;
+                      top: 0;
+                      z-index: 50;
+                      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                    }
+                    .jodit-seamless-wrapper .jodit-workplace {
+                      background: transparent !important;
+                    }
+                    .jodit-seamless-wrapper .jodit-wysiwyg {
+                      background: transparent !important;
+                      padding: 0 !important;
+                    }
+                    /* Hide the image properties (pencil) button in popups */
+                    button[aria-label="Image properties"],
+                    button[aria-label="Image"],
+                    .jodit-toolbar-button_image,
+                    .jodit-toolbar-button_pencil {
+                      display: none !important;
+                    }
+                    /* Class to natively center images but allow Jodit inline overrides */
+                    .default-center-img {
+                      display: block;
+                      margin: 0 auto;
+                    }
+                  `}</style>
+                  <JoditEditor
+                    ref={editorRef}
+                    value={content}
+                    config={config}
+                    onBlur={newContent => setContent(newContent)}
+                    onChange={() => {}} 
+                  />
+                </>
+              )}
             </div>
-          ) : (
-            <div className="text-gray-400 text-sm h-full flex items-center justify-center">Generating Preview...</div>
-          )}
+
+            {/* Visual Footer */}
+            {footerBase64 && (
+              <div 
+                className="relative w-full cursor-pointer group mt-auto"
+                onClick={() => footerInputRef.current.click()}
+              >
+                <img src={footerBase64} alt="Footer" className="w-full max-h-[120px] object-fill block" />
+                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity text-white">
+                  <ImageIcon size={24} className="mb-2" />
+                  <span className="font-bold text-sm tracking-wider uppercase">Change Footer</span>
+                </div>
+              </div>
+            )}
+
+          </div>
         </div>
+
       </div>
     </div>
   );

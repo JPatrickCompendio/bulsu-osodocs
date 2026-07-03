@@ -11,8 +11,9 @@ import {
   AlertCircle, Loader2, Info, Calendar, User, MapPin,
   Clock, Users, Search, ChevronRight, RefreshCcw, X,
   FileCheck, Download, Eye, Trash2, File as FileIcon,
-  Eraser, Check, CheckSquare, Lock, Paperclip
+  Eraser, Check, CheckSquare, Lock, Paperclip, Settings, FilePlus
 } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
 
 const SubmitNewDocument = () => {
   const { user, refreshUser } = useAuth();
@@ -624,7 +625,14 @@ const SubmitNewDocument = () => {
   }
 
   if (loading && view === 'dashboard') {
-    return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-primary-green" size={48} /></div>;
+    return (
+      <div className="flex h-[80vh] items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 border-4 border-primary-green border-t-transparent rounded-full animate-spin"></div>
+          <span className="text-primary-green font-bold tracking-[0.2em] text-xs uppercase animate-pulse">Loading Data...</span>
+        </div>
+      </div>
+    );
   }
 
   const isProposal = selectedType?.name.toLowerCase().includes('activity proposal');
@@ -705,17 +713,14 @@ const SubmitNewDocument = () => {
 
       {/* DASHBOARD VIEW */}
       {view === 'dashboard' && (
-        <div className="p-8 max-w-7xl mx-auto animate-in fade-in duration-500">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
-            <div className="flex items-center gap-5">
-              <div className="p-3 bg-primary-green rounded-xl shadow-lg">
-                <FileCheck className="text-white" size={28} />
-              </div>
-              <div>
-                <h1 className="text-3xl font-black text-gray-800 tracking-tight">Submit New Document</h1>
-                <p className="text-gray-400 font-bold text-sm">Select a category to start your submission</p>
-              </div>
-            </div>
+        <div className="animate-in fade-in duration-500">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 border-b border-gray-100 pb-6 gap-6">
+            <PageHeader 
+              title="Submit New Document" 
+              subtitle="Select a category to start your submission" 
+              icon={FilePlus} 
+              iconColor="gold" 
+            />
             <div className="relative w-full max-w-sm">
               <input
                 type="text" placeholder="Search"

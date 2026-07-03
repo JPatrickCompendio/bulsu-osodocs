@@ -14,7 +14,6 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import SubmissionTimeline from './SubmissionTimeline';
-import ReportPreviewModal from './ReportPreviewModal';
 import AccomplishmentReportPreviewModal from './AccomplishmentReportPreviewModal';
 
 const getStoragePublicUrl = (fileUrl) => {
@@ -104,9 +103,7 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
   const [isFilesOpen, setIsFilesOpen] = React.useState(true);
   const [previewUrl, setPreviewUrl] = React.useState(null);
 
-  const [isReportOpen, setIsReportOpen] = React.useState(false);
   const [isAccomplishmentReportOpen, setIsAccomplishmentReportOpen] = React.useState(false);
-  const [reportData, setReportData] = React.useState({ title: '', stats: [], headers: [], rows: [], secondHeaders: null, secondRows: null, secondTitle: '', filename: '' });
 
   const resolveExternalProofUrl = async (storagePath) => {
     const cleanPath = String(storagePath || '').replace(/^proof_path:/i, '').trim();
@@ -163,6 +160,7 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
             *,
             users ( org_name, student_no, full_name ),
             documentType ( name ),
+            document_subtypes ( name ),
             school_years ( name ),
             submission_versions!submission_id (
               *,
@@ -326,97 +324,6 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
 
   const statusMeta = getStatusDisplayMeta(submission.status);
 
-  const handleGenerateReport = () => {
-    const formatListValue = (val) => {
-      if (!val) return '—';
-      if (typeof val === 'string') {
-        try {
-          const parsed = JSON.parse(val);
-          if (Array.isArray(parsed)) {
-            return parsed.map((item) => `• ${item}`).join('\n');
-          }
-        } catch (e) {}
-        return val;
-      }
-      if (Array.isArray(val)) {
-        return val.map((item) => `• ${item}`).join('\n');
-      }
-      return String(val);
-    };
-
-    const reportStats = [
-      { label: 'Document Type', value: docTypeName },
-      { label: 'School Year', value: submission.school_years?.name || 'N/A' },
-      { label: 'Date Conducted', value: targetDate || 'N/A' },
-      { label: 'Status', value: statusMeta.label }
-    ];
-
-    const tableHeaders = ['Field', 'Details'];
-    const tableData = [
-      ['Reference ID', ref],
-      ['Document Title', docTitle],
-      ['Organization', orgName],
-      ['Document Type', docTypeName],
-      ['Person In-Charge', details?.person_in_charge || '—'],
-      ['Student ID No.', submission.users?.student_no || details?.student_id_number || '—'],
-      ['Contact Number', details?.contact_number || '—'],
-      ['Target Date & Time', targetDateTime],
-      ['Duration', details?.duration || '—'],
-      ['Students Involved', details?.number_of_students ? `${details.number_of_students} Students` : '—'],
-      ['Nature of Activity', details?.nature_of_activity || '—'],
-      ['Target Audience', 'BulSUans Only']
-    ];
-
-    if (isActivityProposal) {
-      tableData.push(['Objectives', formatListValue(details?.objectives)]);
-      
-      let goalSatisfaction = '—';
-      if (Array.isArray(details?.satisfy_goals) && details.satisfy_goals.length > 0) {
-        goalSatisfaction = details.satisfy_goals.map((g) => `• ${g}`).join('\n');
-      } else if (details?.satisfy_needs) {
-        goalSatisfaction = formatListValue(details.satisfy_needs);
-      }
-      tableData.push(['Goal Satisfaction', goalSatisfaction]);
-    }
-
-    const attachmentsList = fileAttachments.length > 0
-      ? fileAttachments.map(f => f.file_name).join('\n')
-      : 'None';
-    tableData.push(['Attached Files', attachmentsList]);
-
-    if (accomplishmentReport) {
-      tableData.push(['Accomplishment Participants', accomplishmentReport.participants || 'N/A']);
-      tableData.push(['Accomplishment Benefiting Group', accomplishmentReport.benefiting_group || 'N/A']);
-      tableData.push(['Accomplishment Resources Used', accomplishmentReport.resources_used || 'N/A']);
-      tableData.push([
-        'Accomplishment Problems',
-        accomplishmentReport.problems_encountered || 'No problems encountered'
-      ]);
-    }
-
-    const secondHeaders = ['Date & Time', 'Action By', 'Action & Comment'];
-    const secondRows = (timelineLogs || []).map(log => {
-      const date = new Date(log.created_at).toLocaleString();
-      const actor = log.users ? `${log.users.full_name} (${log.users.role})` : 'System';
-      const actionText = log.comment 
-        ? `${log.description || log.action_type || ''}\nComment: ${log.comment}`
-        : (log.description || log.action_type || 'Updated');
-      return [date, actor, actionText];
-    });
-
-    setReportData({
-      title: `${docTitle} - Detailed Document Report`,
-      stats: reportStats,
-      headers: tableHeaders,
-      rows: tableData,
-      secondHeaders: secondHeaders,
-      secondRows: secondRows,
-      secondTitle: 'Submission Lifecycle & Timeline Logs',
-      filename: `Detailed_Document_Report_${submissionId}.pdf`
-    });
-    setIsReportOpen(true);
-  };
-
   return (
     <div className="animate-in fade-in duration-500 max-w-5xl mx-auto pb-16">
       <div className="flex justify-between items-center mb-4">
@@ -429,15 +336,6 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
           <ChevronLeft size={22} />
         </button>
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={handleGenerateReport}
-            className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 text-gray-700 hover:border-primary-green rounded-xl transition-all font-semibold text-sm hover:text-primary-green hover:shadow-sm"
-          >
-            <FileText size={16} />
-            <span>Generate Report</span>
-          </button>
-          
           {accomplishmentReport && (
             <button
               type="button"
@@ -747,22 +645,6 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
           </div>
         </div>
       )}
-
-      <ReportPreviewModal
-        isOpen={isReportOpen}
-        onClose={() => setIsReportOpen(false)}
-        title={reportData.title}
-        generatedBy={submission.users?.full_name || 'System User'}
-        stats={reportData.stats}
-        tableHeaders={reportData.headers}
-        tableData={reportData.rows}
-        secondTableHeaders={reportData.secondHeaders}
-        secondTableData={reportData.secondRows}
-        secondTableTitle={reportData.secondTitle}
-        pdfFilename={reportData.filename}
-        schoolYear={submission.school_years?.name || ''}
-        proofImages={proofImages}
-      />
 
       <AccomplishmentReportPreviewModal
         isOpen={isAccomplishmentReportOpen}

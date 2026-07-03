@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../config/api';
 import { Calendar, Settings, Plus, Check, X, Edit, Trash2, CalendarDays, BookOpen, Clock, AlertCircle } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
 
 const AcademicSettings = () => {
   const { user } = useAuth();
@@ -173,7 +174,7 @@ const AcademicSettings = () => {
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto min-h-screen bg-gray-50 pb-32 relative">
+    <div className="min-h-screen bg-gray-50 pb-32 relative">
       {toast && (
         <div className={`fixed top-10 right-10 z-[200] px-6 py-4 rounded-xl shadow-xl flex items-center gap-3 text-white font-bold ${toast.type === 'error' ? 'bg-red-600' : 'bg-green-600'} animate-in slide-in-from-right`}>
           {toast.type === 'error' ? <AlertCircle size={20} /> : <Check size={20} />}
@@ -181,9 +182,13 @@ const AcademicSettings = () => {
         </div>
       )}
 
-      <div className="mb-8">
-        <h1 className="text-3xl font-black text-gray-800">Academic Settings</h1>
-        <p className="text-gray-500 font-medium">Manage School Years, Calendar Events, and Document Schedules</p>
+      <div className="flex items-end justify-between mb-8 border-b border-gray-100 pb-6">
+        <PageHeader 
+          title="Academic Settings" 
+          subtitle="Manage School Years, Calendar Events, and Document Schedules" 
+          icon={Calendar} 
+          iconColor="pink" 
+        />
       </div>
 
       <div className="flex gap-4 border-b border-gray-200 mb-8">

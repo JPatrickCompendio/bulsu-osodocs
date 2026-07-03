@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
 import { useNavigate, useLocation } from 'react-router-dom';
 import SubmissionTimeline from '../components/SubmissionTimeline';
+import PageHeader from '../components/PageHeader';
 import { 
   Search, 
   Filter, 
@@ -1775,17 +1776,12 @@ export const Inbox = () => {
     <div className="animate-in fade-in slide-in-from-bottom-6 duration-1000 text-gray-800">
       {/* Page Header */}
       <div className="flex items-end justify-between mb-8 border-b border-gray-100 pb-6">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-primary-green rounded-xl flex items-center justify-center text-white shadow-lg shadow-primary-green/10">
-            <Mail size={24} />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800 tracking-tight flex items-center gap-3">
-              Inbox
-            </h1>
-            <p className="text-gray-400 text-sm">Review and manage your institutional documents</p>
-          </div>
-        </div>
+        <PageHeader 
+          title="Inbox" 
+          subtitle="Review and manage your institutional documents" 
+          icon={Mail} 
+          iconColor="blue" 
+        />
 
         {!isOsoStaff && (
           <div className="flex p-1 bg-gray-100/50 rounded-xl border border-gray-100">

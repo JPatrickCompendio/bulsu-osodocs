@@ -5,6 +5,7 @@ import { Bell, Search, X, Check, CheckCircle2, Megaphone, FileText, ChevronRight
 import { useAuth } from '../context/AuthContext';
 import { apiClient, apiUrl } from '../config/apiClient';
 import { supabase } from '../supabaseClient';
+import PageTransition from './PageTransition';
 import {
   getNotificationDestination,
   extractSubmissionIdFromNotification,
@@ -480,10 +481,12 @@ const DashboardLayout = () => {
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
-        <main className="flex-1 overflow-y-auto p-8">
-          <div className="max-w-6xl mx-auto">
-            <Outlet />
-          </div>
+        <main className="flex-1 overflow-y-auto p-8 relative">
+          <PageTransition>
+            <div className="max-w-7xl mx-auto">
+              <Outlet />
+            </div>
+          </PageTransition>
         </main>
       </div>
     </div>

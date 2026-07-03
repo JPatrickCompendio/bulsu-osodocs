@@ -25,7 +25,9 @@ import {
   Paperclip,
   MoreHorizontal,
   Plus,
+  ListChecks,
 } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
 
 const getStoragePath = (filePath) => {
   let path = String(filePath || '').trim();
@@ -285,19 +287,12 @@ const ListOfRequirements = () => {
 
       {/* Header */}
       <div className="mb-16 flex flex-col xl:flex-row xl:items-center justify-between gap-10">
-        <div className="flex items-center gap-6">
-          <div className="p-3 bg-primary-green rounded-xl shadow-lg shadow-primary-green/20">
-            <LayoutGrid className="text-white" size={28} />
-          </div>
-          <div>
-            <h1 className="text-3xl font-black text-gray-800 uppercase tracking-tighter mb-1">Requirements</h1>
-            <div className="flex items-center gap-3 text-gray-400 font-bold uppercase tracking-widest text-[10px]">
-              <span className="text-primary-green">Document Management</span>
-              <ChevronRight size={14} />
-              <span>{selectedType ? selectedType.name : 'All Categories'}</span>
-            </div>
-          </div>
-        </div>
+        <PageHeader 
+          title="Requirements" 
+          subtitle={selectedType ? `Document Management / ${selectedType.name}` : 'Document Management / All Categories'} 
+          icon={ListChecks} 
+          iconColor="green" 
+        />
 
         <div className="flex flex-col md:flex-row items-center gap-6 w-full xl:max-w-xl">
           <div className="relative flex-1 w-full group">
@@ -572,7 +567,10 @@ const ListOfRequirements = () => {
           <div className="flex-1 p-10">
             <div className="bg-white mx-auto w-full max-w-7xl h-full rounded-[4rem] shadow-2xl overflow-hidden">
               {isPreviewLoading ? (
-                <div className="w-full h-full flex items-center justify-center"><Loader2 className="h-20 w-20 animate-spin text-primary-green" /></div>
+                <div className="w-full h-[60vh] flex flex-col items-center justify-center gap-4">
+                  <div className="w-10 h-10 border-4 border-primary-green border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-primary-green font-bold tracking-[0.2em] text-xs uppercase animate-pulse">Loading Document Preview...</span>
+                </div>
               ) : previewUrl?.toLowerCase().includes('.docx') ? (
                 <iframe src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(previewUrl)}`} className="w-full h-full border-none" title="Word Preview" />
               ) : (

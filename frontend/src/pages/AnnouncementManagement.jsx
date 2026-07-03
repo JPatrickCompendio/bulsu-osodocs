@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { apiClient, apiUrl } from '../config/apiClient';
 import { supabase } from '../supabaseClient';
+import PageHeader from '../components/PageHeader';
 
 const AnnouncementManagement = () => {
   const { user } = useAuth();
@@ -240,10 +241,12 @@ const AnnouncementManagement = () => {
   return (
     <div>
       <div className="mb-8 flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-800">Announcement Management</h1>
-          <p className="text-gray-500 mt-1">Create and manage system-wide announcements.</p>
-        </div>
+        <PageHeader 
+          title="Announcement Management" 
+          subtitle="Create and manage system-wide announcements." 
+          icon={Megaphone} 
+          iconColor="gold" 
+        />
         <button 
           onClick={() => openModal()}
           className="flex items-center gap-2 bg-primary-green text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"

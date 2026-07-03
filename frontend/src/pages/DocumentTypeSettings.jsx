@@ -20,6 +20,7 @@ import {
   Check,
   Settings,
 } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
 
 const DocumentTypeSettings = () => {
   const { typeId } = useParams();
@@ -418,8 +419,9 @@ const DocumentTypeSettings = () => {
 
   if (loading) {
     return (
-      <div className="flex h-64 items-center justify-center">
-        <Loader2 className="animate-spin text-primary-green" size={40} />
+      <div className="flex h-64 flex-col items-center justify-center gap-4">
+        <div className="w-10 h-10 border-4 border-primary-green border-t-transparent rounded-full animate-spin"></div>
+        <span className="text-primary-green font-bold tracking-[0.2em] text-xs uppercase animate-pulse">Loading Settings...</span>
       </div>
     );
   }
@@ -444,14 +446,14 @@ const DocumentTypeSettings = () => {
         <ArrowLeft size={18} />
         Back to Requirements
       </button>
-
-      <h1 className="text-3xl font-black text-gray-800 uppercase tracking-tighter mb-2">
-        {isNew ? 'New Document Category' : 'Document Type Settings'}
-      </h1>
-      <p className="text-gray-500 font-medium mb-10">
-        {isNew ? 'Create a category and add requirements below.' : `Manage ${documentType?.name || 'category'} settings and requirements.`}
-      </p>
-
+      <div className="mb-10">
+        <PageHeader 
+          title={isNew ? 'New Document Category' : 'Document Type Settings'} 
+          subtitle={isNew ? 'Create a category and add requirements below.' : `Manage ${documentType?.name || 'category'} settings and requirements.`} 
+          icon={Settings} 
+          iconColor="slate" 
+        />
+      </div>
       <form onSubmit={handleSaveType} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 space-y-6 mb-10">
         <h2 className="text-lg font-black text-gray-800 uppercase">Category Details</h2>
         <div className="space-y-2">
