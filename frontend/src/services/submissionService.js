@@ -190,13 +190,31 @@ export const uploadSubmissionFile = async (file, typeName, submissionId, version
   const timestamp = Date.now();
   const safeFileName = file.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
   
-  // New folder structure: submitted-documents/activity-proposal/in-campus/{id}/file.pdf
   let folderPath = `submitted-documents/${safeTypeName}`;
   if (subtypeSlug) {
     folderPath += `/${subtypeSlug.toLowerCase().replace(' ', '-')}`;
   }
+
+  // Ensure consistent folder path by fetching an existing attachment for this submission
+  const { data: existingAttachments } = await supabase
+    .from('submission_attachments')
+    .select('file_path')
+    .eq('submission_id', submissionId)
+    .not('file_path', 'is', null)
+    .limit(1);
+
+  if (existingAttachments && existingAttachments.length > 0) {
+    const existingPath = existingAttachments[0].file_path;
+    // Extract everything before /submissionId/
+    const match = existingPath.match(new RegExp(`^(.*)/${submissionId}/`));
+    if (match) {
+      folderPath = match[1];
+    }
+  }
   
-  const filePath = `${folderPath}/${submissionId}/v${versionNumber}/${timestamp}-${safeFileName}`;
+  // The user requested NO extra version folder outside of the submission folder.
+  // We will save directly inside `${folderPath}/${submissionId}/` to prevent multi-level nesting.
+  const filePath = `${folderPath}/${submissionId}/${timestamp}-${safeFileName}`;
 
   const { data, error } = await supabase.storage
     .from('documents')

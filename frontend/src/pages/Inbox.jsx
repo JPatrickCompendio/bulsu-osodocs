@@ -84,33 +84,14 @@ const getStoragePath = (filePath) => {
 };
 
 const SUBMISSION_SELECT = `
-  id,
-  user_id,
-  document_type_id,
-  status,
-  remarks,
-  created_at,
-  current_version_id,
-  users (
-    id,
-    full_name,
-    role,
-    org_name
-  ),
-  documentType (
-    id,
-    name
-  ),
+  *,
+  users (org_name, student_no, full_name, role),
+  documentType (name),
+  document_subtypes (name),
   submission_versions!submission_id (
-    id,
-    version_number,
-    status,
-    activity_proposal_details (*, activity_schedules (*), 
-      *
-    ),
-    submission_attachments (
-      *
-    )
+    *,
+    activity_proposal_details (*, activity_schedules (*)),
+    submission_attachments (*)
   )
 `;
 
@@ -197,7 +178,7 @@ const mapInboxSubmission = (sub, viewer, subtypesMap = {}) => {
     submitter_name: sub.users?.full_name || 'Unknown',
     title: (isActivityProposal && customDetails.activity_title) ? customDetails.activity_title.toUpperCase() : docTypeName.toUpperCase(),
     ref: `SUB-2026-03-${String(sub.id).padStart(3, '0')}`,
-    type: docTypeName,
+    type: docTypeName + (proposalTypeStr !== '-' ? ` - ${proposalTypeStr}` : ''),
     proposal_type: proposalType,
     status: statusLabel,
     time: new Date(sub.created_at).toLocaleString('en-US', {
@@ -1185,9 +1166,33 @@ export const Inbox = () => {
               <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                 <div className="bg-gray-50/80 border border-gray-100 rounded-2xl px-5 py-3.5">
                   <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 mb-1">Target Date and Time</p>
-                  <p className="font-bold text-gray-800 leading-snug break-words">
-                    {selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-' ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}` : selectedDoc.targetDate}
-                  </p>
+                    <div className="font-bold text-gray-800 leading-snug break-words">
+                      {Array.isArray(selectedDoc.schedules) && selectedDoc.schedules.length > 0 ? (
+                        <div className="flex flex-col gap-1">
+                          {selectedDoc.schedules.map((s, idx) => {
+                            let dateStr = 'TBD';
+                            if (s.activity_date) {
+                              try {
+                                dateStr = new Date(s.activity_date).toLocaleDateString('en-US', {
+                                  month: 'short', day: 'numeric', year: 'numeric'
+                                });
+                              } catch (e) {
+                                dateStr = s.activity_date;
+                              }
+                            }
+                            return (
+                              <span key={idx}>
+                                {dateStr} | {s.start_time || 'TBD'} - {s.end_time || 'TBD'}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <span>
+                          {selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-' ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}` : selectedDoc.targetDate}
+                        </span>
+                      )}
+                    </div>
                 </div>
                 <div className="bg-gray-50/80 border border-gray-100 rounded-2xl px-5 py-3.5">
                   <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 mb-1">Duration</p>

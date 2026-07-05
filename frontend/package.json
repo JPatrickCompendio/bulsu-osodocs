@@ -13,6 +13,7 @@
     "@supabase/supabase-js": "^2.105.4",
     "@tailwindcss/vite": "^4.2.4",
     "axios": "^1.18.0",
+    "dotenv": "^17.4.2",
     "jodit": "^4.12.35",
     "jodit-react": "^5.3.21",
     "jspdf": "^4.2.1",
