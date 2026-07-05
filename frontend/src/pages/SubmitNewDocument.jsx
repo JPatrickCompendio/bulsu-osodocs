@@ -64,6 +64,7 @@ const SubmitNewDocument = () => {
     person_in_charge: '', student_id_no: '', contact_number: '', target_venue: '',
     target_date: '', target_time: '', target_end_time: '', duration: '', is_indefinite_end_time: false, number_of_students: '',
     activity_dates: [], // Multi-date selection
+    schedules: [], // New schedules array
     target_audience: '', nature_of_activity: '', objectives: [], others_objective: '',
     satisfaction_goal_1: '', satisfaction_goal_2: '', satisfaction_goal_3: '', partners: '', sponsors: ''
   };
@@ -89,11 +90,11 @@ const SubmitNewDocument = () => {
       setDocTypes(types || []);
 
       // Fetch dynamic requirement counts
-      const reqs = await supabase.from('requirements').select('documentTypeID, proposal_type');
+      const reqs = await supabase.from('requirements').select('documentTypeID, subtype_id');
       const counts = {};
       if (reqs.data) {
         reqs.data.forEach(r => {
-          const key = r.proposal_type ? `${r.documentTypeID}-${r.proposal_type}` : r.documentTypeID;
+          const key = r.subtype_id ? `${r.documentTypeID}-${r.subtype_id}` : r.documentTypeID;
           counts[key] = (counts[key] || 0) + 1;
         });
       }
@@ -198,8 +199,8 @@ const SubmitNewDocument = () => {
       const rawDetails = version?.activity_proposal_details;
       const details = (Array.isArray(rawDetails) ? rawDetails[0] : rawDetails) || {};
       
-      const proposalTypeStr = isProposal ? humanizeProposalType(details?.proposal_type) : '';
-      let subtypeId = details?.subtype_id || null;
+      const proposalTypeStr = isProposal ? humanizeProposalType(submission?.proposal_type) : '';
+      let subtypeId = submission?.subtype_id || null;
       let matchedSubtype = null;
 
       if (!subtypeId && proposalTypeStr) {
@@ -227,9 +228,17 @@ const SubmitNewDocument = () => {
       setDraftNotice('Loaded draft from your previous session.');
 
       if (isProposal) {
+        const scheds = details.activity_schedules || [];
         setProposalDetails({
           ...defaultForm,
           ...details,
+          schedules: scheds.length > 0 ? scheds : (details.target_date ? details.target_date.split(',').map(d => ({
+            activity_date: d.trim(),
+            start_time: details.target_time || '',
+            end_time: details.target_end_time || '',
+            is_indefinite: details.is_indefinite_end_time || false,
+            duration_minutes: details.duration ? Math.round(parseFloat(details.duration) * 60) : 0
+          })).filter(s => s.activity_date) : []),
           activity_dates: details.target_date ? details.target_date.split(',').map(d => d.trim()).filter(Boolean) : [],
           organization_name: details.organization_name || user?.org_name || '',
           adviser_name: details.adviser_name || user?.adviser_name || '',
@@ -285,9 +294,17 @@ const SubmitNewDocument = () => {
         setDraftNotice('Continuing an existing draft for this category.');
 
         if (isProposal) {
+          const scheds = details.activity_schedules || [];
           setProposalDetails({
             ...defaultForm,
             ...details,
+            schedules: scheds.length > 0 ? scheds : (details.target_date ? details.target_date.split(',').map(d => ({
+              activity_date: d.trim(),
+              start_time: details.target_time || '',
+              end_time: details.target_end_time || '',
+              is_indefinite: details.is_indefinite_end_time || false,
+              duration_minutes: details.duration ? Math.round(parseFloat(details.duration) * 60) : 0
+            })).filter(s => s.activity_date) : []),
             activity_dates: details.target_date ? details.target_date.split(',').map(d => d.trim()).filter(Boolean) : [],
             activity_number: details.activity_number || `AP-${new Date().getFullYear()}-${(new Date().getMonth() + 1).toString().padStart(2, '0')}-001`,
             organization_name: details.organization_name || user?.org_name || '',
@@ -351,11 +368,11 @@ const SubmitNewDocument = () => {
 
   const attachedRequirementIds = useMemo(() => getAttachedRequirementIds(), [existingAttachments, localFiles]);
 
-  const getReqCount = (typeId, subName) => {
-    const pType = subName ? subName.toLowerCase().replace(' ', '-') : null;
-    const specificCount = reqCounts[`${typeId}-${pType}`] || 0;
+  const getReqCount = (typeId, subtypeObj) => {
+    const sId = subtypeObj ? subtypeObj.id : null;
+    const specificCount = sId ? (reqCounts[`${typeId}-${sId}`] || 0) : 0;
     const generalCount = reqCounts[typeId] || 0;
-    return pType ? specificCount + generalCount : generalCount;
+    return sId ? specificCount + generalCount : generalCount;
   };
 
   const handleSelectType = async (type, subtypeObj = null, subName = '') => {
@@ -386,7 +403,7 @@ const SubmitNewDocument = () => {
 
       // 1. Create submission and version records first if not existing
       if (!submissionId || !versionId) {
-        const { submission, version } = await subService.startNewSubmission(user.id, selectedType.id, selectedType.name, activeSchoolYearId);
+        const { submission, version } = await subService.startNewSubmission(user.id, selectedType.id, selectedType.name, activeSchoolYearId, selectedSubtypeObj?.id || null);
         submissionId = submission.id;
         versionId = version.id;
         versionNumber = version.version_number;
@@ -438,16 +455,18 @@ const SubmitNewDocument = () => {
     const isProposal = selectedType.name.toLowerCase().includes('activity proposal');
     if (isProposal) {
       const p = proposalDetails;
+      
+      const hasInvalidSchedule = p.schedules.length === 0 || p.schedules.some(s => 
+        !s.activity_date || !s.start_time || (!s.is_indefinite && !s.end_time)
+      );
+
       if (
         !p.activity_title ||
-        p.activity_dates.length === 0 ||
-        !p.target_time ||
-        (!p.is_indefinite_end_time && !p.target_end_time) ||
+        hasInvalidSchedule ||
         !p.person_in_charge ||
         !p.student_id_no ||
         !p.contact_number ||
         !p.target_venue ||
-        (!p.is_indefinite_end_time && !p.duration) ||
         !p.number_of_students ||
         !p.target_audience ||
         !p.nature_of_activity ||
@@ -554,16 +573,6 @@ const SubmitNewDocument = () => {
     }));
   };
 
-  // Auto calculate duration
-  useEffect(() => {
-    if (proposalDetails.target_time && proposalDetails.target_end_time && !proposalDetails.is_indefinite_end_time) {
-      const start = new Date(`1970-01-01T${proposalDetails.target_time}`);
-      const end = new Date(`1970-01-01T${proposalDetails.target_end_time}`);
-      let diff = (end - start) / (1000 * 60 * 60);
-      if (diff < 0) diff += 24; // Cross midnight
-      setProposalDetails(prev => ({ ...prev, duration: diff.toFixed(1) }));
-    }
-  }, [proposalDetails.target_time, proposalDetails.target_end_time, proposalDetails.is_indefinite_end_time]);
 
   if (isSuspended) {
     let suspensionMessage = 'Your account has been suspended due to system requirements or missing submissions.';
@@ -774,7 +783,7 @@ const SubmitNewDocument = () => {
                   >
                     <div className="flex items-center gap-6">
                       <span className="text-sm font-bold text-gray-500 group-hover/btn:text-primary-green">{subName}</span>
-                      <span className="text-[10px] font-black text-gray-300 uppercase">• {getReqCount(typeObj.id, subName === 'Renewal Document' ? null : subName)} Reqs</span>
+                      <span className="text-[10px] font-black text-gray-300 uppercase">• {getReqCount(typeObj.id, typeObj.__subtype)} Reqs</span>
                     </div>
                     <ChevronRight size={18} className="text-gray-300 group-hover/btn:text-primary-green" />
                   </button>
@@ -902,59 +911,154 @@ const SubmitNewDocument = () => {
                           <input type="text" required className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.target_venue} onChange={e => setProposalDetails({ ...proposalDetails, target_venue: e.target.value })} />
                         </div>
 
-                        {/* Multi-Date Selection */}
-                        <div className="space-y-3 md:col-span-2">
-                          <label className="text-xs font-black text-gray-600 uppercase">Activity Dates <span className="text-red-500">*</span></label>
-                          <div className="flex gap-4">
-                            <input
-                              type="date"
-                              className="flex-1 px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all"
-                              onChange={e => {
-                                handleAddDate(e.target.value);
-                                e.target.value = '';
-                              }}
-                            />
+                        {/* Multi-Date Schedules */}
+                        <div className="space-y-4 md:col-span-2">
+                          <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                            <label className="text-xs font-black text-gray-600 uppercase">Activity Schedules <span className="text-red-500">*</span></label>
+                            <button
+                              type="button"
+                              onClick={() => setProposalDetails(prev => ({
+                                ...prev,
+                                schedules: [...prev.schedules, { activity_date: '', start_time: '', end_time: '', is_indefinite: false, duration_minutes: 0 }]
+                              }))}
+                              className="text-xs font-bold text-primary-green hover:bg-green-50 px-3 py-1.5 rounded-lg transition-all"
+                            >
+                              + Add Schedule
+                            </button>
                           </div>
-                          {proposalDetails.activity_dates.length > 0 && (
-                            <div className="flex flex-wrap gap-2 mt-3">
-                              {proposalDetails.activity_dates.map(d => (
-                                <div key={d} className="flex items-center gap-2 bg-green-50 text-primary-green px-3 py-1.5 rounded-lg border border-green-200 shadow-sm">
-                                  <Calendar size={14} />
-                                  <span className="font-bold text-sm">{new Date(d).toLocaleDateString()}</span>
-                                  <button type="button" onClick={() => handleRemoveDate(d)} className="p-1 hover:bg-green-100 rounded-full transition-colors">
+                          
+                          {proposalDetails.schedules.length === 0 ? (
+                            <div className="text-center py-6 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                              <p className="text-xs font-bold text-gray-400 uppercase">No schedules added yet.</p>
+                            </div>
+                          ) : (
+                            <div className="space-y-4">
+                              {proposalDetails.schedules.map((sched, idx) => (
+                                <div key={idx} className="bg-white border border-gray-200 rounded-xl p-4 relative group hover:border-primary-green transition-colors">
+                                  <button
+                                    type="button"
+                                    onClick={() => setProposalDetails(prev => ({
+                                      ...prev,
+                                      schedules: prev.schedules.filter((_, i) => i !== idx)
+                                    }))}
+                                    className="absolute -top-3 -right-3 w-7 h-7 bg-white border border-red-200 text-red-500 rounded-full flex items-center justify-center hover:bg-red-50 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                                  >
                                     <X size={14} />
                                   </button>
+                                  
+                                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                    <div className="space-y-1">
+                                      <span className="text-[10px] font-bold text-gray-400 uppercase">Date</span>
+                                      <input
+                                        type="date"
+                                        required
+                                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary-green font-bold text-xs outline-none"
+                                        value={sched.activity_date}
+                                        onChange={e => {
+                                          const val = e.target.value;
+                                          const isBlocked = blockedEvents.some(ev => {
+                                            const evStart = new Date(ev.start_date);
+                                            const evEnd = ev.end_date ? new Date(ev.end_date) : evStart;
+                                            const check = new Date(val);
+                                            evStart.setHours(0,0,0,0);
+                                            evEnd.setHours(0,0,0,0);
+                                            check.setHours(0,0,0,0);
+                                            return check >= evStart && check <= evEnd;
+                                          });
+                                          
+                                          if (isBlocked) {
+                                            showToast(`Cannot select ${val}: This date is blocked by the Academic Calendar.`, 'error');
+                                            return;
+                                          }
+
+                                          const newScheds = [...proposalDetails.schedules];
+                                          newScheds[idx].activity_date = val;
+                                          setProposalDetails(prev => ({ ...prev, schedules: newScheds }));
+                                        }}
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <span className="text-[10px] font-bold text-gray-400 uppercase">Start Time</span>
+                                      <input
+                                        type="time"
+                                        required
+                                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary-green font-bold text-xs outline-none"
+                                        value={sched.start_time}
+                                        onChange={e => {
+                                          const newScheds = [...proposalDetails.schedules];
+                                          newScheds[idx].start_time = e.target.value;
+                                          
+                                          // calc duration
+                                          if (newScheds[idx].start_time && newScheds[idx].end_time && !newScheds[idx].is_indefinite) {
+                                            const start = new Date(`1970-01-01T${newScheds[idx].start_time}`);
+                                            const end = new Date(`1970-01-01T${newScheds[idx].end_time}`);
+                                            let diff = (end - start) / (1000 * 60);
+                                            if (diff < 0) diff += 24 * 60;
+                                            newScheds[idx].duration_minutes = Math.round(diff);
+                                          }
+                                          setProposalDetails(prev => ({ ...prev, schedules: newScheds }));
+                                        }}
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <span className="text-[10px] font-bold text-gray-400 uppercase">End Time</span>
+                                      <input
+                                        type="time"
+                                        required={!sched.is_indefinite}
+                                        disabled={sched.is_indefinite}
+                                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary-green font-bold text-xs outline-none disabled:opacity-50"
+                                        value={sched.end_time}
+                                        onChange={e => {
+                                          const newScheds = [...proposalDetails.schedules];
+                                          newScheds[idx].end_time = e.target.value;
+                                          
+                                          // calc duration
+                                          if (newScheds[idx].start_time && newScheds[idx].end_time && !newScheds[idx].is_indefinite) {
+                                            const start = new Date(`1970-01-01T${newScheds[idx].start_time}`);
+                                            const end = new Date(`1970-01-01T${newScheds[idx].end_time}`);
+                                            let diff = (end - start) / (1000 * 60);
+                                            if (diff < 0) diff += 24 * 60;
+                                            newScheds[idx].duration_minutes = Math.round(diff);
+                                          }
+                                          setProposalDetails(prev => ({ ...prev, schedules: newScheds }));
+                                        }}
+                                      />
+                                      <label className="flex items-center gap-2 cursor-pointer mt-1">
+                                        <input
+                                          type="checkbox"
+                                          checked={sched.is_indefinite}
+                                          onChange={e => {
+                                            const newScheds = [...proposalDetails.schedules];
+                                            newScheds[idx].is_indefinite = e.target.checked;
+                                            if (e.target.checked) {
+                                              newScheds[idx].end_time = '';
+                                              newScheds[idx].duration_minutes = 0;
+                                            }
+                                            setProposalDetails(prev => ({ ...prev, schedules: newScheds }));
+                                          }}
+                                          className="rounded text-primary-green focus:ring-primary-green"
+                                        />
+                                        <span className="text-[10px] font-bold text-gray-500">Indefinite</span>
+                                      </label>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <span className="text-[10px] font-bold text-gray-400 uppercase">Duration</span>
+                                      <div className="w-full px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg text-gray-500 font-bold text-xs flex items-center justify-between">
+                                        <span>{sched.is_indefinite ? 'N/A' : `${(sched.duration_minutes / 60).toFixed(1)} hrs`}</span>
+                                      </div>
+                                    </div>
+                                  </div>
                                 </div>
                               ))}
+                              
+                              <div className="flex justify-between items-center bg-green-50 p-4 rounded-xl border border-green-200">
+                                <span className="text-sm font-black text-green-800 uppercase tracking-wide">Total Duration</span>
+                                <span className="text-lg font-black text-primary-green">
+                                  {(proposalDetails.schedules.reduce((acc, s) => acc + (s.duration_minutes || 0), 0) / 60).toFixed(1)} Hours
+                                </span>
+                              </div>
                             </div>
                           )}
-                        </div>
-
-                        {/* Time combined visually */}
-                        <div className="space-y-3 md:col-span-2">
-                          <label className="text-xs font-black text-gray-600 uppercase">Target Time <span className="text-red-500">*</span></label>
-                          <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
-                            <div className="flex-1 w-full">
-                              <span className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Start Time</span>
-                              <input type="time" required className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.target_time} onChange={e => setProposalDetails({ ...proposalDetails, target_time: e.target.value })} />
-                            </div>
-                            <div className="flex-1 w-full">
-                              <span className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">End Time</span>
-                              <input type="time" required={!proposalDetails.is_indefinite_end_time} disabled={proposalDetails.is_indefinite_end_time} className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all disabled:opacity-50" value={proposalDetails.target_end_time} onChange={e => setProposalDetails({ ...proposalDetails, target_end_time: e.target.value })} />
-                            </div>
-                          </div>
-                          <label className="flex items-center gap-2 cursor-pointer group mt-2 w-fit">
-                            <div className={`w-5 h-5 rounded flex items-center justify-center border-2 shrink-0 ${proposalDetails.is_indefinite_end_time ? 'bg-primary-green border-primary-green text-white' : 'border-gray-300 group-hover:border-primary-green'}`}>
-                              {proposalDetails.is_indefinite_end_time && <Check size={14} strokeWidth={3} />}
-                            </div>
-                            <span className="text-sm font-bold text-gray-600">Indefinite End Time</span>
-                            <input type="checkbox" className="hidden" checked={proposalDetails.is_indefinite_end_time} onChange={(e) => setProposalDetails({ ...proposalDetails, is_indefinite_end_time: e.target.checked, target_end_time: e.target.checked ? '' : proposalDetails.target_end_time })} />
-                          </label>
-                        </div>
-
-                        <div className="space-y-2">
-                          <label className="text-xs font-black text-gray-600 uppercase">Duration (Hours)</label>
-                          <input type="text" required={!proposalDetails.is_indefinite_end_time} readOnly={!proposalDetails.is_indefinite_end_time} className={`w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all ${!proposalDetails.is_indefinite_end_time ? 'opacity-70 cursor-not-allowed bg-gray-100' : ''}`} value={proposalDetails.duration} onChange={e => setProposalDetails({ ...proposalDetails, duration: e.target.value.replace(/[^0-9.]/g, '') })} />
                         </div>
                         <div className="space-y-2">
                           <label className="text-xs font-black text-gray-600 uppercase">Number of Student Involved <span className="text-red-500">*</span></label>

@@ -98,10 +98,23 @@ const AccomplishmentReportPreviewModal = ({
         }).filter(Boolean).join('') + `</ul>`;
       };
 
-      const targetDateStr = details?.target_date ? new Date(details.target_date).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : '';
-      const targetTime = details?.target_time || '';
+      let dateStrings = [];
+      if (details?.activity_schedules && details.activity_schedules.length > 0) {
+        dateStrings = details.activity_schedules.map(sched => {
+           const d = new Date(sched.activity_date).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' });
+           const t = `${sched.start_time} - ${sched.is_indefinite ? 'Indefinite' : sched.end_time}`;
+           return `${d} ${t}`;
+        });
+      } else if (details?.target_date) {
+        const targetDateStr = new Date(details.target_date).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' });
+        const targetTime = details?.target_time || '';
+        if (targetDateStr) {
+          dateStrings.push([targetDateStr, targetTime].filter(Boolean).join(', '));
+        }
+      }
+      
       const place = 'Bulacan State University - Bustos Campus';
-      const dateTimePlace = [targetDateStr, targetTime, place].filter(Boolean).join(', ');
+      const dateTimePlace = dateStrings.length > 0 ? dateStrings.join(' | ') + ', ' + place : place;
 
       const initialHtml = `
         <div style="padding: 30px 40px;">

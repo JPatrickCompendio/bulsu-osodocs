@@ -22,13 +22,13 @@ const AcademicSettings = () => {
 
   const [showEventModal, setShowEventModal] = useState(false);
   const [eventForm, setEventForm] = useState({
-    id: null, school_year_id: '', title: '', description: '', event_type: 'ACTIVITY_BLOCK',
+    id: null, school_year_id: '', title: '', description: '', event_type: 'blocked_activity',
     document_type_id: '', start_date: '', end_date: '', is_active: true
   });
 
   const eventTypes = [
-    { value: 'ACTIVITY_BLOCK', label: 'Blocked Activity' },
-    { value: 'SUBMISSION_WINDOW', label: 'Document Submission' },
+    { value: 'blocked_activity', label: 'Blocked Activity' },
+    { value: 'document_submission', label: 'Document Submission' },
     { value: 'holiday', label: 'Holiday' },
     { value: 'exam_week', label: 'Exam Week' },
     { value: 'enrollment', label: 'Enrollment' },
@@ -129,6 +129,8 @@ const AcademicSettings = () => {
       if (!payload.start_date) payload.start_date = null;
       if (!payload.end_date) payload.end_date = null;
       if (!payload.document_type_id) payload.document_type_id = null;
+      if (payload.blocks_activity) payload.description = 'BLOCKS_ACTIVITY';
+      else if (payload.description === 'BLOCKS_ACTIVITY') payload.description = '';
 
       const res = await apiFetch(path, {
         method,
@@ -162,12 +164,19 @@ const AcademicSettings = () => {
 
   const openEventModal = (ev = null) => {
     if (ev) {
-      setEventForm({ ...ev, start_date: ev.start_date || '', end_date: ev.end_date || '', document_type_id: ev.document_type_id || '' });
+      setEventForm({
+        ...ev,
+        blocks_activity: ev.event_type === 'blocked_activity' || ev.description === 'BLOCKS_ACTIVITY',
+        start_date: ev.start_date ? ev.start_date.split('T')[0] : '',
+        end_date: ev.end_date ? ev.end_date.split('T')[0] : '',
+        document_type_id: ev.document_type_id || ''
+      });
     } else {
       const activeSy = schoolYears.find(s => s.is_active);
       setEventForm({
         id: null, school_year_id: activeSy ? activeSy.id : '', title: '', description: '',
-        event_type: 'ACTIVITY_BLOCK', document_type_id: '', start_date: '', end_date: '', is_active: true
+        blocks_activity: false,
+        event_type: 'blocked_activity', document_type_id: '', start_date: '', end_date: '', is_active: true
       });
     }
     setShowEventModal(true);
@@ -197,6 +206,12 @@ const AcademicSettings = () => {
           onClick={() => setActiveTab('school-years')}
         >
           <BookOpen size={18} /> School Years
+        </button>
+        <button 
+          className={`pb-4 px-4 font-bold transition-all border-b-2 flex items-center gap-2 ${activeTab === 'academic-events' ? 'border-primary-green text-primary-green' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          onClick={() => setActiveTab('academic-events')}
+        >
+          <CalendarDays size={18} /> Calendar Events
         </button>
       </div>
 
@@ -259,7 +274,68 @@ const AcademicSettings = () => {
             </div>
           )}
 
+          {/* ACADEMIC EVENTS TAB */}
+          {activeTab === 'academic-events' && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center bg-blue-50 p-4 rounded-xl border border-blue-100">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="text-blue-500 mt-0.5 shrink-0" size={20} />
+                  <div>
+                    <h4 className="font-bold text-blue-800">Activity Blocks & Calendar Events</h4>
+                    <p className="text-sm text-blue-600 mt-1">Configure blocked dates for Activity Proposals across the active school year.</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => openEventModal()}
+                  className="bg-primary-green text-white px-5 py-2.5 rounded-lg font-bold flex items-center gap-2 hover:bg-green-700 shadow-sm shrink-0"
+                >
+                  <Plus size={18} /> Add Event
+                </button>
+              </div>
 
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-gray-50 text-gray-600 font-bold border-b border-gray-100 uppercase tracking-wider text-xs">
+                    <tr>
+                      <th className="p-4">Event Title</th>
+                      <th className="p-4">Event Type</th>
+                      <th className="p-4">School Year</th>
+                      <th className="p-4">Duration</th>
+                      <th className="p-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {academicEvents.map(ev => {
+                      const sy = schoolYears.find(s => s.id === ev.school_year_id);
+                      return (
+                        <tr key={ev.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                          <td className="p-4 font-bold text-gray-800">{ev.title}</td>
+                          <td className="p-4">
+                            <span className="bg-gray-100 text-gray-600 px-3 py-1 rounded-full text-xs font-bold">{eventTypes.find(t => t.value === ev.event_type)?.label || ev.event_type}</span>
+                          </td>
+                          <td className="p-4 text-gray-500 font-medium">{sy ? sy.name : 'N/A'}</td>
+                          <td className="p-4 text-gray-500 font-medium">
+                            {ev.start_date && ev.end_date ? (
+                              <>{new Date(ev.start_date).toLocaleDateString()} - {new Date(ev.end_date).toLocaleDateString()}</>
+                            ) : (
+                              <span className="italic">Always Available</span>
+                            )}
+                          </td>
+                          <td className="p-4 text-right flex justify-end gap-2">
+                            <button onClick={() => openEventModal(ev)} className="p-1.5 text-gray-400 hover:text-primary-green hover:bg-green-50 rounded-lg"><Edit size={16} /></button>
+                            <button onClick={() => deleteEvent(ev.id)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={16} /></button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {academicEvents.length === 0 && (
+                      <tr><td colSpan="5" className="text-center p-8 text-gray-400 font-medium">No calendar events configured.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -311,7 +387,10 @@ const AcademicSettings = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-bold text-gray-500 uppercase">Event Type</label>
-                  <select required className="w-full mt-1 p-2 border rounded-lg outline-none focus:border-primary-green bg-white" value={eventForm.event_type} onChange={e => setEventForm({...eventForm, event_type: e.target.value})}>
+                  <select required className="w-full mt-1 p-2 border rounded-lg outline-none focus:border-primary-green bg-white" value={eventForm.event_type} onChange={e => {
+                    const newType = e.target.value;
+                    setEventForm({...eventForm, event_type: newType, blocks_activity: newType === 'blocked_activity' || eventForm.blocks_activity})
+                  }}>
                     {eventTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                   </select>
                 </div>
@@ -347,6 +426,20 @@ const AcademicSettings = () => {
                     <label className="text-[10px] font-bold text-gray-400 uppercase">End Date</label>
                     <input type="date" className="w-full mt-1 p-2 border rounded-lg outline-none focus:border-primary-green" value={eventForm.end_date || ''} onChange={e => setEventForm({...eventForm, end_date: e.target.value})} required={eventForm.event_type !== 'document_submission'} />
                   </div>
+                </div>
+
+                <div className="flex items-center gap-2 mt-4 pt-4 border-t border-gray-100">
+                  <input
+                    type="checkbox"
+                    id="blocksActivity"
+                    className="w-4 h-4 text-primary-green rounded focus:ring-primary-green"
+                    checked={eventForm.blocks_activity || eventForm.event_type === 'blocked_activity'}
+                    disabled={eventForm.event_type === 'blocked_activity'}
+                    onChange={e => setEventForm({...eventForm, blocks_activity: e.target.checked})}
+                  />
+                  <label htmlFor="blocksActivity" className="text-sm font-bold text-gray-700 cursor-pointer">
+                    Block Activity Proposals on these dates
+                  </label>
                 </div>
               </div>
 

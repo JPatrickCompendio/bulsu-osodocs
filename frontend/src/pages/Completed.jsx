@@ -225,7 +225,7 @@ const Completed = () => {
             submission_versions!submission_id (
               id,
               version_number,
-              activity_proposal_details (
+              activity_proposal_details (*, activity_schedules (*), 
                 activity_title,
                 target_date
               )

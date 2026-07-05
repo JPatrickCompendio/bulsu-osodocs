@@ -30,7 +30,7 @@ export const createLog = async (submissionId, userId, description, versionId = n
  */
 
 // Create initial submission and v1 draft
-export const startNewSubmission = async (userId, typeId, typeName = 'Document', schoolYearId = null) => {
+export const startNewSubmission = async (userId, typeId, typeName = 'Document', schoolYearId = null, subtypeId = null) => {
   const payload = {
     user_id: userId,
     document_type_id: typeId,
@@ -40,6 +40,9 @@ export const startNewSubmission = async (userId, typeId, typeName = 'Document', 
   
   if (schoolYearId) {
     payload.school_year_id = schoolYearId;
+  }
+  if (subtypeId) {
+    payload.subtype_id = subtypeId;
   }
 
   const { data: sub, error: subErr } = await supabase
@@ -90,12 +93,21 @@ const normalizeProposalType = (proposalType) => proposalType ? proposalType.toLo
 export const getDraftSubmission = async (userId, typeId, subtypeId = null, proposalType = null) => {
   const formattedType = normalizeProposalType(proposalType);
   // First fetch the submission record (latest draft)
-  const { data: subs, error: subErr } = await supabase
+  let query = supabase
     .from('submissions')
     .select('*, documentType (*)')
     .eq('user_id', userId)
     .eq('document_type_id', typeId)
-    .eq('status', 'draft')
+    .eq('status', 'draft');
+
+  if (subtypeId) {
+    query = query.eq('subtype_id', subtypeId);
+  } else {
+    // If we want to strictly match null subtype, we could do .is('subtype_id', null)
+    // but maybe some older drafts just have it null. Let's just order and limit.
+  }
+
+  const { data: subs, error: subErr } = await query
     .order('created_at', { ascending: false })
     .limit(1);
 
@@ -106,7 +118,7 @@ export const getDraftSubmission = async (userId, typeId, subtypeId = null, propo
   // Fetch versions separately to avoid ambiguous embedding
   const { data: versions, error: verErr } = await supabase
     .from('submission_versions')
-    .select('*, activity_proposal_details (*), submission_attachments (*)')
+    .select('*, activity_proposal_details (*, activity_schedules (*)), submission_attachments (*)')
     .eq('submission_id', submission.id)
     .order('created_at', { ascending: false });
 
@@ -116,18 +128,6 @@ export const getDraftSubmission = async (userId, typeId, subtypeId = null, propo
 
   // pick matching version
   let version = getCurrentVersion(submission);
-  if ((subtypeId || formattedType) && Array.isArray(versions)) {
-    const matchingVersion = versions.find(v => {
-      const details = Array.isArray(v.activity_proposal_details)
-        ? v.activity_proposal_details[0]
-        : v.activity_proposal_details;
-      // Match either by subtype_id or by legacy proposal_type
-      if (subtypeId && details?.subtype_id === subtypeId) return true;
-      if (formattedType && details?.proposal_type === formattedType) return true;
-      return false;
-    });
-    if (matchingVersion) version = matchingVersion;
-  }
 
   return { submission, version };
 };
@@ -145,7 +145,7 @@ export const getSubmissionById = async (submissionId) => {
 
   const { data: versions, error: verErr } = await supabase
     .from('submission_versions')
-    .select('*, activity_proposal_details (*), submission_attachments (*)')
+    .select('*, activity_proposal_details (*, activity_schedules (*)), submission_attachments (*)')
     .eq('submission_id', submission.id)
     .order('created_at', { ascending: false });
 
@@ -230,16 +230,58 @@ export const saveAttachmentRecord = async (versionId, requirementId, fileName, f
  */
 
 export const saveProposalDetails = async (versionId, details, subtypeId = null, proposalType = '') => {
+  // Extract schedules before modifying details
+  const schedulesToSave = details.schedules || [];
+  
+  // Calculate total duration from schedules if provided
+  let totalDuration = 0;
+  if (schedulesToSave.length > 0) {
+    totalDuration = schedulesToSave.reduce((sum, sched) => sum + (parseInt(sched.duration_minutes) || 0), 0);
+  } else if (details.duration) {
+    totalDuration = parseInt(details.duration) || 0;
+  }
+
+  // Validate schedules against blocked dates
+  if (schedulesToSave.length > 0) {
+    const { data: activeSy } = await supabase
+      .from('school_years')
+      .select('id')
+      .eq('is_active', true)
+      .single();
+
+    if (activeSy) {
+      const { data: events } = await supabase
+        .from('academic_calendar_events')
+        .select('start_date, end_date, event_type, description')
+        .eq('school_year_id', activeSy.id);
+
+      const blockingEvents = events?.filter(e => e.event_type === 'blocked_activity' || e.description === 'BLOCKS_ACTIVITY') || [];
+
+      if (blockingEvents.length > 0) {
+        for (const sched of schedulesToSave) {
+          const schedDate = new Date(sched.activity_date);
+          for (const ev of blockingEvents) {
+            const evStart = new Date(ev.start_date);
+            const evEnd = ev.end_date ? new Date(ev.end_date) : evStart;
+            if (schedDate >= evStart && schedDate <= evEnd) {
+              throw new Error(`Activity cannot be scheduled on ${sched.activity_date}. This date is blocked by the Academic Calendar.`);
+            }
+          }
+        }
+      }
+    }
+  }
+
   const safeDetails = {
     submission_version_id: versionId,
     ...details,
     target_date: Array.isArray(details.activity_dates) && details.activity_dates.length > 0 ? details.activity_dates.join(', ') : details.target_date,
-    subtype_id: subtypeId, // Use new subtype_id
-    proposal_type: proposalType ? proposalType.toLowerCase().replace(' ', '-') : null, // keep temporarily
     number_of_students: parseInt(details.number_of_students) || 0,
+    duration: totalDuration,
     created_at: new Date().toISOString()
   };
 
+  delete safeDetails.schedules;
   // Delete UI-only fields that do not exist in the database schema
   delete safeDetails.is_indefinite_end_time;
   delete safeDetails.target_end_time;
@@ -262,6 +304,31 @@ export const saveProposalDetails = async (versionId, details, subtypeId = null, 
     console.error('Proposal Details Error:', error);
     throw error;
   }
+
+  // Save Schedules
+  if (schedulesToSave.length > 0 && data.id) {
+    // Delete existing schedules for this proposal detail (in case of update)
+    await supabase.from('activity_schedules').delete().eq('proposal_detail_id', data.id);
+
+    const formattedSchedules = schedulesToSave.map(sched => ({
+      proposal_detail_id: data.id,
+      activity_date: sched.activity_date,
+      start_time: sched.start_time || null,
+      end_time: sched.end_time || null,
+      is_indefinite: sched.is_indefinite || false,
+      duration_minutes: sched.duration_minutes || 0
+    }));
+
+    const { error: schedError } = await supabase
+      .from('activity_schedules')
+      .insert(formattedSchedules);
+
+    if (schedError) {
+      console.error('Activity Schedules Error:', schedError);
+      throw schedError;
+    }
+  }
+
   return data;
 };
 

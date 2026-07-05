@@ -30,7 +30,7 @@ export const fetchActiveSchoolYear = async () => {
 /**
  * Create a new document type
  */
-export const createDocumentType = async (payload, scheduling = null, userId = null) => {
+export const createDocumentType = async (payload, userId = null) => {
   const { data, error } = await supabase
     .from('documentType')
     .insert([payload])
@@ -38,17 +38,13 @@ export const createDocumentType = async (payload, scheduling = null, userId = nu
   
   if (error) throw error;
   
-  if (scheduling && userId) {
-    await syncScheduling(data[0].id, payload.name, scheduling, userId);
-  }
-  
   return data[0];
 };
 
 /**
  * Update an existing document type
  */
-export const updateDocumentType = async (id, payload, scheduling = null, userId = null) => {
+export const updateDocumentType = async (id, payload, userId = null) => {
   const { data, error } = await supabase
     .from('documentType')
     .update(payload)
@@ -57,82 +53,7 @@ export const updateDocumentType = async (id, payload, scheduling = null, userId 
   
   if (error) throw error;
 
-  if (scheduling && userId) {
-    await syncScheduling(id, payload.name, scheduling, userId);
-  }
-
   return data[0];
-};
-
-/**
- * Sync scheduling events for a document type
- */
-export const syncScheduling = async (documentTypeId, documentTypeName, scheduling, userId) => {
-  const activeSy = await fetchActiveSchoolYear();
-  if (!activeSy) return; // Cannot schedule without an active school year
-
-  // 1. Delete existing events for this document type in the active school year
-  await supabase
-    .from('academic_calendar_events')
-    .delete()
-    .eq('document_type_id', documentTypeId)
-    .eq('school_year_id', activeSy.id);
-
-  const eventsToInsert = [];
-
-  // 2. (Removed) Submission Window is now handled via documentType columns.
-
-  // 3. Add activity blocks if provided
-  if (scheduling.activityBlocks && scheduling.activityBlocks.length > 0) {
-    scheduling.activityBlocks.forEach((block, index) => {
-      if (block.start_date || block.end_date) {
-        eventsToInsert.push({
-          school_year_id: activeSy.id,
-          title: `${documentTypeName} Block ${index + 1}`,
-          event_type: 'ACTIVITY_BLOCK',
-          document_type_id: documentTypeId,
-          start_date: block.start_date || null,
-          end_date: block.end_date || null,
-          created_by: userId
-        });
-      }
-    });
-  }
-
-  if (eventsToInsert.length > 0) {
-    const { error } = await supabase
-      .from('academic_calendar_events')
-      .insert(eventsToInsert);
-    if (error) {
-      console.error("Error inserting academic calendar events:", error);
-      throw error;
-    }
-  }
-};
-
-/**
- * Fetch scheduling events for a document type
- */
-export const fetchScheduling = async (documentTypeId) => {
-  const activeSy = await fetchActiveSchoolYear();
-  if (!activeSy) return { submissionWindow: {}, activityBlocks: [] };
-
-  const { data, error } = await supabase
-    .from('academic_calendar_events')
-    .select('*')
-    .eq('document_type_id', documentTypeId)
-    .eq('school_year_id', activeSy.id);
-  
-  if (error || !data) return { submissionWindow: {}, activityBlocks: [] };
-
-  const activityBlocks = data.filter(e => e.event_type === 'ACTIVITY_BLOCK') || [];
-
-  return {
-    activityBlocks: activityBlocks.map(b => ({
-      start_date: b.start_date || '',
-      end_date: b.end_date || ''
-    }))
-  };
 };
 
 /**

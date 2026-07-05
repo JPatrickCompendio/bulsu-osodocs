@@ -1256,7 +1256,7 @@ async function handleDocumentAvailability(url: URL) {
     .select('*')
     .eq('school_year_id', activeSy.id);
 
-  const blockedEvents = events?.filter((e) => e.event_type === 'ACTIVITY_BLOCK') || [];
+  const blockedEvents = events?.filter((e) => e.event_type === 'blocked_activity' || e.description === 'BLOCKS_ACTIVITY') || [];
   const availability: Record<string, { isAvailable: boolean; lockedReason: string | null; requiresEligibility: boolean }> = {};
 
   const isWithinBounds = (start_date: string | null, end_date: string | null) => {
@@ -1735,6 +1735,14 @@ async function routeRequest(req: Request): Promise<Response> {
   }
 
   if (method === 'GET' && path === '/announcements') return handleGetAnnouncements();
+  if (method === 'GET' && path === '/schema-debug') {
+    const supabase = getAdminClient();
+    const res = await supabase.rpc('get_schema_debug', {}); // wait, RPC won't exist. Let's do raw query? Supabase js doesn't support raw query.
+    // What if I just select from information_schema using select?
+    const { data } = await supabase.from('information_schema.columns').select('*').eq('table_name', 'academic_calendar_events');
+    const { data: con } = await supabase.from('information_schema.check_constraints').select('*');
+    return jsonResponse({ columns: data, constraints: con });
+  }
   if (method === 'POST' && path === '/announcements') return handlePostAnnouncements(body);
   if (method === 'PUT' && /^\/announcements\/[^/]+$/.test(path)) {
     return handlePutAnnouncements(path.split('/')[2], body);

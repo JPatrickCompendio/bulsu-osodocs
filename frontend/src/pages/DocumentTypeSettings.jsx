@@ -48,8 +48,7 @@ const DocumentTypeSettings = () => {
     description: '',
     availability_type: 'indefinite',
     requires_eligibility: false,
-    submissionWindow: { start_date: '', end_date: '' },
-    activityBlocks: [],
+    submissionWindow: { start_date: '', end_date: '' }
   });
 
   const [editingReqId, setEditingReqId] = useState(null);
@@ -105,7 +104,6 @@ const DocumentTypeSettings = () => {
         return;
       }
       setDocumentType(found);
-      const scheduling = await reqService.fetchScheduling(found.id);
       setTypeFormData({
         name: found.name,
         description: found.description || '',
@@ -114,8 +112,7 @@ const DocumentTypeSettings = () => {
         submissionWindow: {
           start_date: found.active_from ? found.active_from.split('T')[0] : '',
           end_date: found.active_until ? found.active_until.split('T')[0] : '',
-        },
-        activityBlocks: scheduling.activityBlocks || [],
+        }
       });
     } catch {
       showToast('Failed to load category', 'error');
@@ -170,16 +167,12 @@ const DocumentTypeSettings = () => {
             ? new Date(typeFormData.submissionWindow.end_date).toISOString()
             : null,
       };
-      const scheduling = {
-        activityBlocks: isProposal ? typeFormData.activityBlocks : null,
-      };
-
       if (isNew) {
-        const created = await reqService.createDocumentType(payload, scheduling, user.id);
+        const created = await reqService.createDocumentType(payload, user.id);
         showToast('Category created');
         navigate(`/requirements/settings/${created.id}`, { replace: true });
       } else {
-        await reqService.updateDocumentType(documentType.id, payload, scheduling, user.id);
+        await reqService.updateDocumentType(documentType.id, payload, user.id);
         showToast('Category updated');
         loadType();
       }
@@ -532,61 +525,6 @@ const DocumentTypeSettings = () => {
                 }
               />
             </div>
-          </div>
-        )}
-        {isProposal && (
-          <div className="space-y-4 border-t border-gray-100 pt-6">
-            <div className="flex items-center justify-between">
-              <h5 className="font-black text-sm text-gray-700 uppercase">Blocked Activity Dates</h5>
-              <button
-                type="button"
-                onClick={() =>
-                  setTypeFormData({
-                    ...typeFormData,
-                    activityBlocks: [...typeFormData.activityBlocks, { start_date: '', end_date: '' }],
-                  })
-                }
-                className="text-primary-green text-xs font-black uppercase flex items-center gap-1"
-              >
-                <Plus size={14} /> Add Block
-              </button>
-            </div>
-            {typeFormData.activityBlocks?.map((block, idx) => (
-              <div key={idx} className="flex items-center gap-4 bg-gray-50 p-4 rounded-xl">
-                <input
-                  type="date"
-                  className="flex-1 px-3 py-2 bg-white rounded-lg text-xs font-bold"
-                  value={block.start_date || ''}
-                  onChange={(e) => {
-                    const newBlocks = [...typeFormData.activityBlocks];
-                    newBlocks[idx].start_date = e.target.value;
-                    setTypeFormData({ ...typeFormData, activityBlocks: newBlocks });
-                  }}
-                />
-                <input
-                  type="date"
-                  className="flex-1 px-3 py-2 bg-white rounded-lg text-xs font-bold"
-                  value={block.end_date || ''}
-                  onChange={(e) => {
-                    const newBlocks = [...typeFormData.activityBlocks];
-                    newBlocks[idx].end_date = e.target.value;
-                    setTypeFormData({ ...typeFormData, activityBlocks: newBlocks });
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    setTypeFormData({
-                      ...typeFormData,
-                      activityBlocks: typeFormData.activityBlocks.filter((_, i) => i !== idx),
-                    })
-                  }
-                  className="text-red-400 p-2"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            ))}
           </div>
         )}
         <div className="flex flex-wrap gap-4 pt-4">

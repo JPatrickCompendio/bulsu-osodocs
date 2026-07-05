@@ -105,7 +105,7 @@ const SUBMISSION_SELECT = `
     id,
     version_number,
     status,
-    activity_proposal_details (
+    activity_proposal_details (*, activity_schedules (*), 
       *
     ),
     submission_attachments (
@@ -135,10 +135,10 @@ const mapInboxSubmission = (sub, viewer, subtypesMap = {}) => {
 
     if (details) {
       customDetails = details;
-      if (details.subtype_id && subtypesMap[details.subtype_id]) {
-        proposalType = subtypesMap[details.subtype_id].name;
-      } else if (details.proposal_type) {
-        const rawType = details.proposal_type;
+      if (sub.subtype_id && subtypesMap[sub.subtype_id]) {
+        proposalType = subtypesMap[sub.subtype_id].name;
+      } else if (sub.proposal_type) {
+        const rawType = sub.proposal_type;
         if (rawType.toLowerCase() === 'in-campus') {
           proposalType = 'In-Campus';
         } else if (rawType.toLowerCase() === 'off-campus') {
@@ -1148,18 +1148,6 @@ export const Inbox = () => {
               <span>{selectedDoc.contact}</span>
             </div>
             <div className="flex gap-2">
-              <span className="font-bold min-w-[200px]">Target Date and Time:</span>
-              <span>
-                {selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-' 
-                  ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}` 
-                  : selectedDoc.targetDate}
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <span className="font-bold min-w-[200px]">Duration:</span>
-              <span>{selectedDoc.duration}</span>
-            </div>
-            <div className="flex gap-2">
               <span className="font-bold min-w-[200px]">Number of Students:</span>
               <span>{selectedDoc.students}</span>
             </div>
@@ -1167,6 +1155,46 @@ export const Inbox = () => {
               <span className="font-bold min-w-[200px]">Nature of Activity:</span>
               <span>{selectedDoc.nature}</span>
             </div>
+
+            {selectedDoc.schedules && selectedDoc.schedules.length > 0 ? (
+              <div className="mt-6 bg-gray-50/80 border border-gray-100 rounded-2xl p-5">
+                <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 mb-3">Activity Schedules</p>
+                <div className="space-y-3">
+                  {selectedDoc.schedules.map((sched, idx) => (
+                    <div key={idx} className="flex items-center justify-between bg-white px-4 py-3 rounded-xl border border-gray-200">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-bold text-gray-800">{new Date(sched.activity_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                        <span className="text-[10px] text-gray-500 font-medium uppercase mt-0.5">
+                          {sched.start_time} - {sched.is_indefinite ? 'Indefinite' : sched.end_time}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-xs font-bold text-primary-green">
+                          {sched.is_indefinite ? 'N/A' : `${(sched.duration_minutes / 60).toFixed(1)} hrs`}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between pt-2 border-t border-gray-200 mt-2 px-1">
+                      <span className="text-xs font-extrabold uppercase text-gray-500">Total Duration</span>
+                      <span className="text-sm font-black text-primary-green">{selectedDoc.duration || (selectedDoc.schedules.reduce((acc, s) => acc + (s.duration_minutes || 0), 0) / 60).toFixed(1)} Hours</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                <div className="bg-gray-50/80 border border-gray-100 rounded-2xl px-5 py-3.5">
+                  <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 mb-1">Target Date and Time</p>
+                  <p className="font-bold text-gray-800 leading-snug break-words">
+                    {selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-' ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}` : selectedDoc.targetDate}
+                  </p>
+                </div>
+                <div className="bg-gray-50/80 border border-gray-100 rounded-2xl px-5 py-3.5">
+                  <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 mb-1">Duration</p>
+                  <p className="font-bold text-gray-800 leading-snug break-words">{selectedDoc.duration || '—'}</p>
+                </div>
+              </div>
+            )}
 
             <div className="mt-8">
               <p className="font-bold mb-3">Objectives of the Activity:</p>

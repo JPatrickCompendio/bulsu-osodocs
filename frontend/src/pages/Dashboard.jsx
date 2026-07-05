@@ -84,7 +84,7 @@ const fetchChairmanDashboardFallback = async (user, role) => {
       id, status, created_at,
       users (full_name, org_name),
       documentType (name),
-      submission_versions!submission_id (version_number, activity_proposal_details (activity_title))
+      submission_versions!submission_id (version_number, activity_proposal_details (*, activity_schedules (*), activity_title))
     `)
     .eq('status', 'submitted')
     .order('created_at', { ascending: false })

@@ -76,7 +76,7 @@ const MY_DOCS_SUBMISSION_SELECT = `
   documentType (name),
   submission_versions!submission_id (
     *,
-    activity_proposal_details (*),
+    activity_proposal_details (*, activity_schedules (*), *, activity_schedules (*)),
     submission_attachments (*)
   )
 `;
@@ -108,10 +108,10 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy, subtypesMap =
   }
 
   let proposalTypeStr = '-';
-  if (details?.subtype_id && subtypesMap[details.subtype_id]) {
-    proposalTypeStr = subtypesMap[details.subtype_id].name;
-  } else if (details?.proposal_type) {
-    const rawType = details.proposal_type;
+  if (submission?.subtype_id && subtypesMap[submission.subtype_id]) {
+    proposalTypeStr = subtypesMap[submission.subtype_id].name;
+  } else if (submission?.proposal_type) {
+    const rawType = submission.proposal_type;
     if (rawType.toLowerCase() === 'in-campus') proposalTypeStr = 'In-Campus';
     else if (rawType.toLowerCase() === 'off-campus') proposalTypeStr = 'Off-Campus';
     else proposalTypeStr = rawType.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
@@ -182,6 +182,7 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy, subtypesMap =
     targetDate,
     targetTime: details?.target_time || '-',
     duration: details?.duration || '-',
+    schedules: details?.activity_schedules || [],
     students: details?.number_of_students || '-',
     nature: details?.nature_of_activity || '-',
     objectives: details?.objectives || null,
@@ -888,7 +889,7 @@ export const MyDocuments = () => {
             documentType (name),
             submission_versions!submission_id (
               *,
-              activity_proposal_details (*),
+              activity_proposal_details (*, activity_schedules (*), *, activity_schedules (*)),
               submission_attachments (*)
             )
           `)
@@ -924,7 +925,7 @@ export const MyDocuments = () => {
             documentType (name),
             submission_versions!submission_id (
               *,
-              activity_proposal_details (*),
+              activity_proposal_details (*, activity_schedules (*), *, activity_schedules (*)),
               submission_attachments (*)
             )
           )
@@ -944,7 +945,7 @@ export const MyDocuments = () => {
               documentType (name),
               submission_versions!submission_id (
                 *,
-                activity_proposal_details (*),
+                activity_proposal_details (*, activity_schedules (*), *, activity_schedules (*)),
                 submission_attachments (*)
               )
             )
@@ -1546,10 +1547,10 @@ export const MyDocuments = () => {
     const proposalTitle = details?.activity_title || '-';
 
     let proposalTypeStr = '-';
-    if (details?.subtype_id && subtypesMap[details.subtype_id]) {
-      proposalTypeStr = subtypesMap[details.subtype_id].name;
-    } else if (details?.proposal_type) {
-      const rawType = details.proposal_type;
+    if (submission?.subtype_id && subtypesMap[submission.subtype_id]) {
+      proposalTypeStr = subtypesMap[submission.subtype_id].name;
+    } else if (submission?.proposal_type) {
+      const rawType = submission.proposal_type;
       if (rawType.toLowerCase() === 'in-campus') proposalTypeStr = 'In-Campus';
       else if (rawType.toLowerCase() === 'off-campus') proposalTypeStr = 'Off-Campus';
       else proposalTypeStr = rawType.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
@@ -1893,14 +1894,6 @@ export const MyDocuments = () => {
                   { label: 'Person In-Charge', value: selectedDoc.pic },
                   { label: 'Student ID No.', value: selectedDoc.studentId },
                   { label: 'Contact Number', value: selectedDoc.contact },
-                  {
-                    label: 'Target Date and Time',
-                    value:
-                      selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-'
-                        ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}`
-                        : selectedDoc.targetDate
-                  },
-                  { label: 'Duration', value: selectedDoc.duration },
                   { label: 'Number of Students', value: selectedDoc.students },
                   { label: 'Nature of Activity', value: selectedDoc.nature }
                 ].map((item) => (
@@ -1913,6 +1906,49 @@ export const MyDocuments = () => {
                     </p>
                   </div>
                 ))}
+              </div>
+
+              {selectedDoc.schedules && selectedDoc.schedules.length > 0 ? (
+                <div className="mt-6 bg-gray-50/80 border border-gray-100 rounded-2xl p-5">
+                  <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 mb-3">Activity Schedules</p>
+                  <div className="space-y-3">
+                    {selectedDoc.schedules.map((sched, idx) => (
+                      <div key={idx} className="flex items-center justify-between bg-white px-4 py-3 rounded-xl border border-gray-200">
+                        <div className="flex flex-col">
+                          <span className="text-xs font-bold text-gray-800">{new Date(sched.activity_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                          <span className="text-[10px] text-gray-500 font-medium uppercase mt-0.5">
+                            {sched.start_time} - {sched.is_indefinite ? 'Indefinite' : sched.end_time}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-xs font-bold text-primary-green">
+                            {sched.is_indefinite ? 'N/A' : `${(sched.duration_minutes / 60).toFixed(1)} hrs`}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between pt-2 border-t border-gray-200 mt-2 px-1">
+                        <span className="text-xs font-extrabold uppercase text-gray-500">Total Duration</span>
+                        <span className="text-sm font-black text-primary-green">{selectedDoc.duration || (selectedDoc.schedules.reduce((acc, s) => acc + (s.duration_minutes || 0), 0) / 60).toFixed(1)} Hours</span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                  <div className="bg-gray-50/80 border border-gray-100 rounded-2xl px-5 py-3.5">
+                    <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 mb-1">Target Date and Time</p>
+                    <p className="font-bold text-gray-800 leading-snug break-words">
+                      {selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-' ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}` : selectedDoc.targetDate}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50/80 border border-gray-100 rounded-2xl px-5 py-3.5">
+                    <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 mb-1">Duration</p>
+                    <p className="font-bold text-gray-800 leading-snug break-words">{selectedDoc.duration || '—'}</p>
+                  </div>
+                </div>
+              )}
+              
+              <div className="hidden">
               </div>
 
               <div className="mt-6 space-y-4">
