@@ -808,26 +808,37 @@ function isWorkflowLogRelevantForRole(
   if (!submission) return false;
 
   const status = normalizeWorkflowText(submission.status);
-  const phase = normalizeWorkflowText(log.workflow_phase);
   const actionType = normalizeWorkflowText(log.action_type);
+  const phase = normalizeWorkflowText(log.workflow_phase);
 
-  if (['created', 'viewed', 'attachment review'].includes(actionType)) return false;
   if (status === 'draft') return false;
-
-  if (role === 'chairman' || role === 'vice-chairman') {
-    const beforeChairmanReview = ['draft'];
-    if (beforeChairmanReview.includes(status)) return false;
-    if (phase.includes('sds review') || phase.includes('dean review') || phase.includes('external review')) {
-      return false;
-    }
-    return true;
-  }
+  if (actionType === 'created') return false; // Hide created events
 
   if (role === 'admin') {
-    const beforeAdminReview = ['submitted', 'pending', 'sds approved', 'chairman approved'];
-    if (beforeAdminReview.includes(status)) return false;
-    if (phase.includes('chairman review') && beforeAdminReview.includes(status)) return false;
-    return true;
+    // Admin only sees document retrieved and accomplishment report submitted in the workflow log.
+    if (['document retrieved', 'document_retrieved'].includes(actionType)) return true;
+    if (['accomplishment report', 'accomplishment_report', 'accomplishment report submitted'].includes(actionType)) return true;
+    if (actionType === 'submitted' && phase === 'accomplishment') return true;
+    return false;
+  }
+
+  if (role === 'chairman' || role === 'vice-chairman') {
+    // Chairman and Vice Chairman only receive 'Pending Review' inbox notifications which are handled in queueNotifications.
+    // They should not see workflow log updates.
+    return false;
+  }
+
+  if (role === 'org-president') {
+    if (['ready for retrieval', 'ready_for_retrieval'].includes(actionType)) return true;
+    if (['approved'].includes(actionType)) return true;
+    if (['forwarded'].includes(actionType)) return true; 
+    if (['ready_for_hardcopy', 'ready for hardcopy'].includes(actionType)) return true;
+    
+    // Also allow if description indicates proof of delivery
+    const logText = (String(log.description || '') + ' ' + String(log.message || '')).toLowerCase();
+    if (logText.includes('proof of delivery') || logText.includes('proof attachment')) return true;
+
+    return false;
   }
 
   return false;
@@ -836,9 +847,16 @@ function isWorkflowLogRelevantForRole(
 function formatWorkflowNotificationTitle(
   submission: Record<string, unknown> | null,
   actionLabel: string,
+  log: Record<string, unknown> | null = null,
 ) {
   const docTitle = getSubmissionDisplayTitle(submission);
-  return `${docTitle} — ${actionLabel}`;
+  let finalLabel = actionLabel.trim();
+  
+  if (log && log.workflow_phase === 'accomplishment' && finalLabel === 'SUBMITTED') {
+    finalLabel = 'REPORT SUBMITTED';
+  }
+  
+  return `${docTitle} — ${finalLabel}`;
 }
 
 async function handleGetNotifications(url: URL) {
@@ -907,7 +925,11 @@ async function handleGetNotifications(url: URL) {
       .neq('action_type', 'attachment_review')
       .order('created_at', { ascending: false })
       .limit(50);
-    logsData = data || [];
+      
+    logsData = (data || []).filter(log => {
+      const sub = log.submissions as Record<string, unknown> | null;
+      return isWorkflowLogRelevantForRole(role, log as Record<string, unknown>, sub);
+    });
   } else if (role === 'admin' || role === 'chairman' || role === 'vice-chairman') {
     const reviewStatuses = getReviewStatusesForRole(role);
     const { data: activeSy } = await supabase
@@ -970,7 +992,7 @@ async function handleGetNotifications(url: URL) {
         return {
           id: `log_${l.id}`,
           type: 'workflow',
-          title: formatWorkflowNotificationTitle(sub, actionLabel),
+          title: formatWorkflowNotificationTitle(sub, actionLabel, l as Record<string, unknown>),
           message: l.description || 'Status changed',
           timestamp: l.created_at,
           source: {
@@ -1019,7 +1041,7 @@ async function handleGetNotifications(url: URL) {
       return {
         id: `log_${l.id}`,
         type: 'workflow',
-        title: formatWorkflowNotificationTitle(sub, actionLabel),
+        title: formatWorkflowNotificationTitle(sub, actionLabel, l as Record<string, unknown>),
         message: l.description || l.message || 'Status changed',
         timestamp: l.timestamp || l.created_at,
         source: {

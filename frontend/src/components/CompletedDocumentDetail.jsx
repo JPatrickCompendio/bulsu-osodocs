@@ -323,6 +323,7 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
     targetDate && targetTime ? `${targetDate} | ${targetTime}` : targetDate || targetTime || '—';
 
   const statusMeta = getStatusDisplayMeta(submission.status);
+  const isDisapproved = statusMeta.label === 'Disapproved';
 
   return (
     <div className="animate-in fade-in duration-500 max-w-5xl mx-auto pb-16">
@@ -503,7 +504,7 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
           <button
             type="button"
             onClick={() => setIsFilesOpen(!isFilesOpen)}
-            className="w-full bg-[#3d5c45] text-white px-6 py-4 flex items-center justify-between hover:brightness-110 transition-all"
+            className={`w-full text-white px-6 py-4 flex items-center justify-between hover:brightness-110 transition-all ${isDisapproved ? 'bg-red-800' : 'bg-[#3d5c45]'}`}
           >
             <div className="flex items-center gap-3">
               <Paperclip size={18} />
@@ -532,13 +533,13 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
                   return (
                     <div
                       key={file.id || idx}
-                      className="bg-green-600 rounded-xl px-4 py-3 flex items-center justify-between gap-3"
+                      className={`rounded-xl px-4 py-3 flex items-center justify-between gap-3 ${isDisapproved ? 'bg-red-600' : 'bg-green-600'}`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         <CheckCircle size={18} className="text-white shrink-0" />
                         <div className="min-w-0">
                           <p className="text-white font-semibold text-sm truncate">{fileName}</p>
-                          {meta && <p className="text-green-100 text-[10px] uppercase">{meta}</p>}
+                          {meta && <p className={`text-[10px] uppercase ${isDisapproved ? 'text-red-100' : 'text-green-100'}`}>{meta}</p>}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">

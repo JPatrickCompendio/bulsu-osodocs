@@ -818,7 +818,12 @@ const ChairmanDashboardView = ({ role }) => {
                 <p className="text-xs font-bold text-gray-400">Distribution across review stages</p>
               </div>
               <div className="p-6 flex-1 space-y-4">
-                {Object.entries(stats.statusBreakdown || {}).map(([status, count]) => (
+                {Object.entries(stats.statusBreakdown || {})
+                  .filter(([status]) => {
+                    const s = status.toLowerCase();
+                    return !s.includes('chairman review');
+                  })
+                  .map(([status, count]) => (
                   <div key={status} className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getStatusColor(status) }} />

@@ -1668,11 +1668,8 @@ export const MyDocuments = () => {
     if (user?.role === 'chairman' && doc.category === 'OSO Staff review') {
       return false;
     }
-    // Completed and disapproved documents live on the Completed page for org president.
-    if (
-      user?.role === 'org-president' &&
-      (doc.category === 'Completed' || doc.category === 'Disapproved')
-    ) {
+    // Completed and disapproved documents live on the Completed page.
+    if (doc.category === 'Completed' || doc.category === 'Disapproved') {
       return false;
     }
     return true;

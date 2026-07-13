@@ -4,17 +4,14 @@ const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SU
 
 async function test() {
   const { data } = await supabase
-    .from('submissions')
-    .select(`
-      id,
-      submission_versions!submission_id (
-        *,
-        activity_proposal_details (*, activity_schedules (*))
-      )
-    `)
-    .limit(3)
-    .order('created_at', { ascending: false });
-
-  console.log(JSON.stringify(data, null, 2));
+    .from('submission_logs')
+    .select('action_type');
+  
+  if (data) {
+    const types = [...new Set(data.map(d => d.action_type))];
+    console.log('Action types:', types);
+  } else {
+    console.log('No data');
+  }
 }
 test();

@@ -16,6 +16,7 @@ import {
 import PageHeader from '../components/PageHeader';
 import DEFAULT_HEADER_IMG from '../assets/HEADER.png';
 import DEFAULT_FOOTER_IMG from '../assets/FOOTER.png';
+import ActivityProposalPreviewModal from '../components/ActivityProposalPreviewModal';
 const SubmitNewDocument = () => {
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
@@ -43,6 +44,7 @@ const SubmitNewDocument = () => {
   const [toast, setToast] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [isActivityPreviewOpen, setIsActivityPreviewOpen] = useState(false);
   const [adminEmail, setAdminEmail] = useState('');
   const [activeSchoolYearId, setActiveSchoolYearId] = useState(null);
 
@@ -117,8 +119,7 @@ const SubmitNewDocument = () => {
   const isActivityProposalFormComplete = useMemo(() => {
     if (!isProposal) return false;
     const {
-      activity_title, contact_number, target_venue, activity_dates,
-      target_time, target_end_time, duration, is_indefinite_end_time,
+      activity_title, contact_number, target_venue, schedules,
       number_of_students, target_audience, nature_of_activity, objectives,
       others_objective, satisfaction_goal_1, satisfaction_goal_2, satisfaction_goal_3
     } = proposalDetails;
@@ -126,11 +127,16 @@ const SubmitNewDocument = () => {
     if (!activity_title?.trim()) return false;
     if (!contact_number?.trim()) return false;
     if (!target_venue?.trim()) return false;
-    if (!activity_dates || activity_dates.length === 0) return false;
-    if (!target_time?.trim()) return false;
-    if (!is_indefinite_end_time && !target_end_time?.trim()) return false;
-    if (!is_indefinite_end_time && !duration?.trim()) return false;
-    if (!number_of_students?.trim()) return false;
+    
+    if (!schedules || schedules.length === 0) return false;
+    for (const sched of schedules) {
+      if (!sched.activity_date) return false;
+      if (!sched.start_time) return false;
+      if (!sched.is_indefinite && !sched.end_time) return false;
+      if (!sched.is_indefinite && (sched.duration_minutes === undefined || sched.duration_minutes <= 0)) return false;
+    }
+
+    if (!String(number_of_students || '').trim()) return false;
     if (!target_audience?.trim()) return false;
     if (!nature_of_activity?.trim()) return false;
     if (!objectives || objectives.length === 0) return false;
@@ -747,7 +753,7 @@ const SubmitNewDocument = () => {
 
   const handleRegisterDocument = (e) => {
     e.preventDefault();
-    if (isSaving) return;
+    if (isSavingRef.current || isSaving) return;
 
     // Validate form inputs if proposal
     const isProposal = selectedType.name.toLowerCase().includes('activity proposal');
@@ -1503,12 +1509,12 @@ const SubmitNewDocument = () => {
                 {isProposal && (
                   <button
                     type="button"
-                    onClick={handlePrintActivityProposal}
+                    onClick={() => setIsActivityPreviewOpen(true)}
                     disabled={!isActivityProposalFormComplete}
                     className="px-4 py-2.5 bg-blue-50 text-blue-600 border border-blue-200 font-black rounded-lg hover:bg-blue-100 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest disabled:opacity-40 disabled:cursor-not-allowed"
                     title={!isActivityProposalFormComplete ? "Please fill all required fields to download" : "Download PDF"}
                   >
-                    <Download size={14} /> Download Activity Proposal Form
+                    <Eye size={14} /> Preview Activity Proposal Form
                   </button>
                 )}
                 <button
@@ -1635,6 +1641,13 @@ const SubmitNewDocument = () => {
         </div>
       )}
 
+
+      <ActivityProposalPreviewModal
+        isOpen={isActivityPreviewOpen}
+        onClose={() => setIsActivityPreviewOpen(false)}
+        proposalDetails={proposalDetails}
+        user={user}
+      />
     </div>
   );
 };
