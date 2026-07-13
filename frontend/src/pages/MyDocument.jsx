@@ -1923,29 +1923,22 @@ export const MyDocuments = () => {
 
               {isActivityProposal && (
                 <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                {[
-                  { label: 'Person In-Charge', value: selectedDoc.pic },
-                  { label: 'Student ID No.', value: selectedDoc.studentId },
-                  { label: 'Contact Number', value: selectedDoc.contact },
-                  { label: 'Number of Students', value: selectedDoc.students },
-                  { label: 'Nature of Activity', value: selectedDoc.nature }
-                ].map((item) => (
-                  <div key={item.label} className="bg-gray-50/80 border border-gray-100 rounded-2xl px-5 py-3.5">
-                    <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 mb-1">
-                      {item.label}
-                    </p>
-                    <p className="font-bold text-gray-800 leading-snug break-words">
-                      {item.value || '—'}
-                    </p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                <div className="bg-gray-50/80 border border-gray-100 rounded-2xl px-5 py-3.5 md:col-span-2">
-                  <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 mb-1">Target Date and Time</p>
-                  <div className="font-bold text-gray-800 leading-snug break-words">
+                  <div className="space-y-4 text-gray-700 max-w-4xl">
+                <div className="flex gap-2">
+                  <span className="font-bold min-w-[200px]">Person In-Charge:</span>
+                  <span>{selectedDoc.pic || '—'}</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="font-bold min-w-[200px]">Student ID No.:</span>
+                  <span>{selectedDoc.studentId || '—'}</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="font-bold min-w-[200px]">Contact Number of Person-in-Charge:</span>
+                  <span>{selectedDoc.contact || '—'}</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="font-bold min-w-[200px]">Target Date and Time:</span>
+                  <span>
                     {selectedDoc.schedules && selectedDoc.schedules.length > 0 ? (
                       `[${selectedDoc.schedules.map(s => {
                         let dateStr = 'TBD';
@@ -1958,26 +1951,37 @@ export const MyDocuments = () => {
                             dateStr = String(s.activity_date).toUpperCase();
                           }
                         }
-                        return `${dateStr}, ${s.start_time || 'TBD'}-${s.is_indefinite ? 'INDEFINITE' : (s.end_time || 'TBD')}`;
+                        const formatTime = (t) => {
+                          if (!t) return 'TBD';
+                          try {
+                            const [h, m] = t.split(':');
+                            const d = new Date(); d.setHours(parseInt(h, 10)); d.setMinutes(parseInt(m, 10));
+                            return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toUpperCase();
+                          } catch (e) { return t; }
+                        };
+                        return `${dateStr}, ${formatTime(s.start_time)} - ${s.is_indefinite ? 'INDEFINITE' : formatTime(s.end_time)}`;
                       }).join('; ')}]`
                     ) : (
-                      <span>
-                        {selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-' ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}` : selectedDoc.targetDate}
-                      </span>
+                      selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-' ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}` : selectedDoc.targetDate
                     )}
-                  </div>
+                  </span>
                 </div>
-                <div className="bg-gray-50/80 border border-gray-100 rounded-2xl px-5 py-3.5">
-                  <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 mb-1">Duration</p>
-                  <p className="font-bold text-gray-800 leading-snug break-words">
+                <div className="flex gap-2">
+                  <span className="font-bold min-w-[200px]">Duration:</span>
+                  <span>
                     {selectedDoc.schedules && selectedDoc.schedules.length > 0 
                       ? `${(selectedDoc.schedules.reduce((acc, s) => acc + (s.duration_minutes || 0), 0) / 60).toFixed(1)} Hours`
                       : selectedDoc.duration ? `${(Number(selectedDoc.duration) / 60).toFixed(1)} Hours` : '—'}
-                  </p>
+                  </span>
                 </div>
-              </div>
-              
-              <div className="hidden">
+                <div className="flex gap-2">
+                  <span className="font-bold min-w-[200px]">Number of Students Involved:</span>
+                  <span>{selectedDoc.students || '—'}</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="font-bold min-w-[200px]">Nature of Activity:</span>
+                  <span>{selectedDoc.nature || '—'}</span>
+                </div>
               </div>
 
               <div className="mt-6 space-y-4">
@@ -2963,59 +2967,44 @@ export const MyDocuments = () => {
                 <span className="font-bold min-w-[200px]">Contact Number:</span>
                 <span>{selectedDoc.contact}</span>
               </div>
-              {Array.isArray(selectedDoc.schedules) && selectedDoc.schedules.length > 0 ? (
-                <div className="mt-6 bg-gray-50/80 border border-gray-100 rounded-2xl p-5 mb-6">
-                  <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 mb-3">Activity Schedules</p>
-                  <div className="space-y-3">
-                    {selectedDoc.schedules.map((sched, idx) => {
+              <div className="flex gap-2">
+                <span className="font-bold min-w-[200px]">Target Date and Time:</span>
+                <span>
+                  {Array.isArray(selectedDoc.schedules) && selectedDoc.schedules.length > 0 ? (
+                    `[${selectedDoc.schedules.map(s => {
                       let dateStr = 'TBD';
-                      if (sched.activity_date) {
+                      if (s.activity_date) {
                         try {
-                          dateStr = new Date(sched.activity_date).toLocaleDateString('en-US', {
-                            month: 'short', day: 'numeric', year: 'numeric'
-                          });
+                          dateStr = new Date(s.activity_date).toLocaleDateString('en-US', {
+                            month: 'long', day: 'numeric', year: 'numeric'
+                          }).toUpperCase();
                         } catch (e) {
-                          dateStr = sched.activity_date;
+                          dateStr = String(s.activity_date).toUpperCase();
                         }
                       }
-                      return (
-                        <div key={idx} className="flex items-center justify-between bg-white px-4 py-3 rounded-xl border border-gray-200 shadow-sm">
-                          <div className="flex flex-col">
-                            <span className="text-xs font-bold text-gray-800">{dateStr}</span>
-                            <span className="text-[10px] text-gray-500 font-medium uppercase mt-0.5">
-                              {sched.start_time || 'TBD'} - {sched.is_indefinite ? 'Indefinite' : (sched.end_time || 'TBD')}
-                            </span>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-xs font-bold text-primary-green">
-                              {sched.is_indefinite ? 'N/A' : `${(sched.duration_minutes / 60).toFixed(1)} hrs`}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    <div className="flex items-center justify-between pt-2 border-t border-gray-200 mt-2 px-1">
-                        <span className="text-xs font-extrabold uppercase text-gray-500">Total Duration</span>
-                        <span className="text-sm font-black text-primary-green">{(selectedDoc.schedules.reduce((acc, s) => acc + (s.duration_minutes || 0), 0) / 60).toFixed(1)} Hours</span>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="flex gap-2">
-                    <span className="font-bold min-w-[200px]">Target Date and Time:</span>
-                    <span>
-                      {selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-'
-                        ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}`
-                        : selectedDoc.targetDate}
-                    </span>
-                  </div>
-                  <div className="flex gap-2">
-                    <span className="font-bold min-w-[200px]">Duration:</span>
-                    <span>{formatDuration(selectedDoc.duration)}</span>
-                  </div>
-                </>
-              )}
+                      const formatTime = (t) => {
+                        if (!t) return 'TBD';
+                        try {
+                          const [h, m] = t.split(':');
+                          const d = new Date(); d.setHours(parseInt(h, 10)); d.setMinutes(parseInt(m, 10));
+                          return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toUpperCase();
+                        } catch (e) { return t; }
+                      };
+                      return `${dateStr}, ${formatTime(s.start_time)} - ${s.is_indefinite ? 'INDEFINITE' : formatTime(s.end_time)}`;
+                    }).join('; ')}]`
+                  ) : (
+                    selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-' ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}` : selectedDoc.targetDate
+                  )}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-bold min-w-[200px]">Duration:</span>
+                <span>
+                  {Array.isArray(selectedDoc.schedules) && selectedDoc.schedules.length > 0
+                    ? `${(selectedDoc.schedules.reduce((acc, s) => acc + (s.duration_minutes || 0), 0) / 60).toFixed(1)} Hours`
+                    : selectedDoc.duration ? `${(Number(selectedDoc.duration) / 60).toFixed(1)} Hours` : '—'}
+                </span>
+              </div>
               <div className="flex gap-2">
                 <span className="font-bold min-w-[200px]">Number of Students:</span>
                 <span>{selectedDoc.students}</span>

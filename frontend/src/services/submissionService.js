@@ -74,7 +74,7 @@ export const startNewSubmission = async (userId, typeId, typeName = 'Document', 
 
   if (updateErr) throw updateErr;
 
-  await createLog(sub.id, userId, `Started new submission for ${typeName}`, version.id, 'submission', 'created');
+  await createLog(sub.id, userId, `Created a draft`, version.id, 'submission', 'draft');
 
   return { submission: sub, version };
 };
@@ -212,9 +212,8 @@ export const uploadSubmissionFile = async (file, typeName, submissionId, version
     }
   }
   
-  // The user requested NO extra version folder outside of the submission folder.
-  // We will save directly inside `${folderPath}/${submissionId}/` to prevent multi-level nesting.
-  const filePath = `${folderPath}/${submissionId}/${timestamp}-${safeFileName}`;
+  // Organize attachments inside the submission folder by their specific version
+  const filePath = `${folderPath}/${submissionId}/version-${versionNumber}/${timestamp}-${safeFileName}`;
 
   const { data, error } = await supabase.storage
     .from('documents')
@@ -228,6 +227,13 @@ export const uploadSubmissionFile = async (file, typeName, submissionId, version
 };
 
 export const saveAttachmentRecord = async (versionId, requirementId, fileName, filePath) => {
+  // Prevent database duplicates by deleting the existing attachment for this requirement in this version
+  await supabase
+    .from('submission_attachments')
+    .delete()
+    .eq('submission_version_id', versionId)
+    .eq('requirement_id', requirementId);
+
   const { data, error } = await supabase
     .from('submission_attachments')
     .insert([{
@@ -300,6 +306,7 @@ export const saveProposalDetails = async (versionId, details, subtypeId = null, 
   };
 
   delete safeDetails.schedules;
+  delete safeDetails.activity_schedules;
   // Delete UI-only fields that do not exist in the database schema
   delete safeDetails.is_indefinite_end_time;
   delete safeDetails.target_end_time;
@@ -421,11 +428,34 @@ export const createNewVersion = async (submissionId, oldVersionId, userId) => {
 
   if (!detailsErr && oldDetails && oldDetails.length > 0) {
     const detailsToCopy = { ...oldDetails[0] };
+    const oldDetailId = detailsToCopy.id;
     delete detailsToCopy.id;
     delete detailsToCopy.submission_version_id;
     detailsToCopy.submission_version_id = newVersion.id;
 
-    await supabase.from('activity_proposal_details').insert([detailsToCopy]);
+    const { data: insertedDetails, error: insertErr } = await supabase
+      .from('activity_proposal_details')
+      .insert([detailsToCopy])
+      .select()
+      .single();
+
+    if (!insertErr && insertedDetails && oldDetailId) {
+      // Duplicate Activity Schedules linked to this proposal detail
+      const { data: oldSchedules, error: schedErr } = await supabase
+        .from('activity_schedules')
+        .select('*')
+        .eq('proposal_detail_id', oldDetailId);
+
+      if (!schedErr && oldSchedules && oldSchedules.length > 0) {
+        const schedulesToCopy = oldSchedules.map(sched => {
+          const s = { ...sched };
+          delete s.id;
+          s.proposal_detail_id = insertedDetails.id;
+          return s;
+        });
+        await supabase.from('activity_schedules').insert(schedulesToCopy);
+      }
+    }
   }
 
   // 4. Update the main submissions table to point to the new version and reset status

@@ -1119,58 +1119,53 @@ export const Inbox = () => {
           <div className="space-y-4 text-gray-700 max-w-4xl">
             <div className="flex gap-2">
               <span className="font-bold min-w-[200px]">Person In-Charge:</span>
-              <span>{selectedDoc.pic}</span>
+              <span>{selectedDoc.pic || '—'}</span>
             </div>
             <div className="flex gap-2">
               <span className="font-bold min-w-[200px]">Student ID No.:</span>
-              <span>{selectedDoc.studentId}</span>
+              <span>{selectedDoc.studentId || '—'}</span>
             </div>
             <div className="flex gap-2">
-              <span className="font-bold min-w-[200px]">Contact Number:</span>
-              <span>{selectedDoc.contact}</span>
+              <span className="font-bold min-w-[200px]">Contact Number of Person-in-Charge:</span>
+              <span>{selectedDoc.contact || '—'}</span>
             </div>
             <div className="flex gap-2">
-              <span className="font-bold min-w-[200px]">Number of Students:</span>
-              <span>{selectedDoc.students}</span>
+              <span className="font-bold min-w-[200px]">Target Date and Time:</span>
+              <span>
+                {selectedDoc.schedules && selectedDoc.schedules.length > 0 ? (
+                  `[${selectedDoc.schedules.map(s => {
+                    let dateStr = 'TBD';
+                    if (s.activity_date) {
+                      try {
+                        dateStr = new Date(s.activity_date).toLocaleDateString('en-US', {
+                          month: 'long', day: 'numeric', year: 'numeric'
+                        }).toUpperCase();
+                      } catch (e) {
+                        dateStr = String(s.activity_date).toUpperCase();
+                      }
+                    }
+                    return `${dateStr}, ${s.start_time || 'TBD'} - ${s.is_indefinite ? 'INDEFINITE' : (s.end_time || 'TBD')}`;
+                  }).join('; ')}]`
+                ) : (
+                  selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-' ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}` : selectedDoc.targetDate
+                )}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <span className="font-bold min-w-[200px]">Duration:</span>
+              <span>
+                {selectedDoc.schedules && selectedDoc.schedules.length > 0 
+                  ? `${(selectedDoc.schedules.reduce((acc, s) => acc + (s.duration_minutes || 0), 0) / 60).toFixed(1)} Hours`
+                  : selectedDoc.duration ? `${(Number(selectedDoc.duration) / 60).toFixed(1)} Hours` : '—'}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <span className="font-bold min-w-[200px]">Number of Students Involved:</span>
+              <span>{selectedDoc.students || '—'}</span>
             </div>
             <div className="flex gap-2">
               <span className="font-bold min-w-[200px]">Nature of Activity:</span>
-              <span>{selectedDoc.nature}</span>
-            </div>
-
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-              <div className="bg-gray-50/80 border border-gray-100 rounded-2xl px-5 py-3.5 md:col-span-2">
-                <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 mb-1">Target Date and Time</p>
-                <div className="font-bold text-gray-800 leading-snug break-words">
-                  {selectedDoc.schedules && selectedDoc.schedules.length > 0 ? (
-                    `[${selectedDoc.schedules.map(s => {
-                      let dateStr = 'TBD';
-                      if (s.activity_date) {
-                        try {
-                          dateStr = new Date(s.activity_date).toLocaleDateString('en-US', {
-                            month: 'long', day: 'numeric', year: 'numeric'
-                          }).toUpperCase();
-                        } catch (e) {
-                          dateStr = String(s.activity_date).toUpperCase();
-                        }
-                      }
-                      return `${dateStr}, ${s.start_time || 'TBD'}-${s.is_indefinite ? 'INDEFINITE' : (s.end_time || 'TBD')}`;
-                    }).join('; ')}]`
-                  ) : (
-                    <span>
-                      {selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-' ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}` : selectedDoc.targetDate}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div className="bg-gray-50/80 border border-gray-100 rounded-2xl px-5 py-3.5">
-                <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 mb-1">Duration</p>
-                <p className="font-bold text-gray-800 leading-snug break-words">
-                  {selectedDoc.schedules && selectedDoc.schedules.length > 0 
-                    ? `${(selectedDoc.schedules.reduce((acc, s) => acc + (s.duration_minutes || 0), 0) / 60).toFixed(1)} Hours`
-                    : selectedDoc.duration ? `${(Number(selectedDoc.duration) / 60).toFixed(1)} Hours` : '—'}
-                </p>
-              </div>
+              <span>{selectedDoc.nature || '—'}</span>
             </div>
 
             <div className="mt-8">

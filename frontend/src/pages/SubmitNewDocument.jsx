@@ -39,6 +39,7 @@ const SubmitNewDocument = () => {
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const isSavingRef = useRef(false);
   const [toast, setToast] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -633,17 +634,34 @@ const SubmitNewDocument = () => {
     setLocalFiles(prev => ({ ...prev, [reqId]: file }));
   };
 
+  const savedStateRef = useRef({
+    files: '',
+    details: ''
+  });
+
   useEffect(() => {
-    // Detect if the user has made any meaningful unsaved changes
-    const isDirty = Object.keys(localFiles).length > 0 ||
-      proposalDetails.activity_title.trim() !== '' ||
-      proposalDetails.target_date !== '' ||
-      proposalDetails.target_venue !== '' ||
-      proposalDetails.nature_of_activity !== '';
-    setHasUnsavedChanges(isDirty);
+    // Detect if the user has made any meaningful unsaved changes from the last save
+    const currentFilesStr = JSON.stringify(Object.keys(localFiles));
+    const currentDetailsStr = JSON.stringify(proposalDetails);
+    
+    if (
+      currentFilesStr !== savedStateRef.current.files ||
+      currentDetailsStr !== savedStateRef.current.details
+    ) {
+      // Only set dirty if it's actually not empty
+      const isNotEmpty = Object.keys(localFiles).length > 0 ||
+        proposalDetails.activity_title.trim() !== '' ||
+        proposalDetails.target_venue !== '';
+        
+      if (isNotEmpty) {
+        setHasUnsavedChanges(true);
+      }
+    }
   }, [proposalDetails, localFiles]);
 
   const processUploadsAndSave = async (status) => {
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
     setIsSaving(true);
     try {
       let submissionId = activeDraft.submissionId;
@@ -679,14 +697,25 @@ const SubmitNewDocument = () => {
       }
 
       // 2. Upload all local files to bucket
+      const newlyUploaded = [];
       for (const [reqId, file] of Object.entries(localFiles)) {
         const path = await subService.uploadSubmissionFile(file, selectedType.name, submissionId, versionNumber, subType);
-        await subService.saveAttachmentRecord(versionId, reqId, file.name, path);
+        const record = await subService.saveAttachmentRecord(versionId, reqId, file.name, path);
+        newlyUploaded.push(record);
       }
 
       // Clear local files to avoid re-uploading the same files on next draft save
       if (status !== 'submitted') {
         setLocalFiles({});
+        if (newlyUploaded.length > 0) {
+          setExistingAttachments(prev => [...prev, ...newlyUploaded]);
+        }
+        
+        // Update saved state ref to prevent infinite autosave loop
+        savedStateRef.current = {
+          files: '[]', // because localFiles is cleared
+          details: JSON.stringify(proposalDetails)
+        };
       }
 
       // 3. Save Proposal Details if it's an Activity Proposal
@@ -711,6 +740,7 @@ const SubmitNewDocument = () => {
       console.error('Registration error:', err);
       showToast('Action failed: ' + (err.message || ''), 'error');
     } finally {
+      isSavingRef.current = false;
       setIsSaving(false);
     }
   };
@@ -1224,14 +1254,11 @@ const SubmitNewDocument = () => {
                                         value={sched.activity_date}
                                         onChange={e => {
                                           const val = e.target.value;
+                                          const checkDateStr = val; // YYYY-MM-DD format
                                           const isBlocked = blockedEvents.some(ev => {
-                                            const evStart = new Date(ev.start_date);
-                                            const evEnd = ev.end_date ? new Date(ev.end_date) : evStart;
-                                            const check = new Date(val);
-                                            evStart.setHours(0,0,0,0);
-                                            evEnd.setHours(0,0,0,0);
-                                            check.setHours(0,0,0,0);
-                                            return check >= evStart && check <= evEnd;
+                                            const evStart = ev.start_date; // YYYY-MM-DD
+                                            const evEnd = ev.end_date || ev.start_date;
+                                            return checkDateStr >= evStart && checkDateStr <= evEnd;
                                           });
                                           
                                           if (isBlocked) {

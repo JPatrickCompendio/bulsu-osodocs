@@ -406,34 +406,22 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
               Document Title: {docTitle}
             </p>
 
-            <div className="space-y-2 text-sm text-gray-700">
-              <p>
-                <span className="font-bold">Person In-Charge:</span> {details?.person_in_charge || '—'}
-              </p>
-              <p>
-                <span className="font-bold">Student ID No.:</span>{' '}
-                {submission.users?.student_no || details?.student_id_number || '—'}
-              </p>
-              <p>
-                <span className="font-bold">Contact Number:</span> {details?.contact_number || '—'}
-              </p>
-              <p>
-                <span className="font-bold">Target Audience / Participants:</span>{' '}
-                <span className="font-normal">BulSUans Only</span>
-              </p>
-              <p>
-                <span className="font-bold">Number of Students Involved:</span>{' '}
-                {details?.number_of_students ? `${details.number_of_students} Students` : '—'}
-              </p>
-              <p>
-                <span className="font-bold">Nature of Activity:</span> {details?.nature_of_activity || '—'}
-              </p>
-            </div>
-
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-              <div className="bg-gray-50/80 border border-gray-100 rounded-2xl px-5 py-3.5 md:col-span-2">
-                <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 mb-1">Target Date and Time</p>
-                <div className="font-bold text-gray-800 leading-snug break-words">
+            <div className="space-y-4 text-sm text-gray-700">
+              <div className="flex gap-2">
+                <span className="font-bold min-w-[200px]">Person In-Charge:</span>
+                <span>{details?.person_in_charge || '—'}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-bold min-w-[200px]">Student ID No.:</span>
+                <span>{submission.users?.student_no || details?.student_id_number || '—'}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-bold min-w-[200px]">Contact Number of Person-in-Charge:</span>
+                <span>{details?.contact_number || '—'}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-bold min-w-[200px]">Target Date and Time:</span>
+                <span>
                   {details?.activity_schedules && details.activity_schedules.length > 0 ? (
                     `[${details.activity_schedules.map(s => {
                       let dateStr = 'TBD';
@@ -446,20 +434,28 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
                           dateStr = String(s.activity_date).toUpperCase();
                         }
                       }
-                      return `${dateStr}, ${s.start_time || 'TBD'}-${s.is_indefinite ? 'INDEFINITE' : (s.end_time || 'TBD')}`;
+                      return `${dateStr}, ${s.start_time || 'TBD'} - ${s.is_indefinite ? 'INDEFINITE' : (s.end_time || 'TBD')}`;
                     }).join('; ')}]`
                   ) : (
                     <span>{targetDateTime}</span>
                   )}
-                </div>
+                </span>
               </div>
-              <div className="bg-gray-50/80 border border-gray-100 rounded-2xl px-5 py-3.5">
-                <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 mb-1">Duration</p>
-                <p className="font-bold text-gray-800 leading-snug break-words">
+              <div className="flex gap-2">
+                <span className="font-bold min-w-[200px]">Duration:</span>
+                <span>
                   {details?.activity_schedules && details.activity_schedules.length > 0
                     ? `${(details.activity_schedules.reduce((acc, s) => acc + (s.duration_minutes || 0), 0) / 60).toFixed(1)} Hours`
                     : details?.duration ? `${(Number(details.duration) / 60).toFixed(1)} Hours` : '—'}
-                </p>
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-bold min-w-[200px]">Number of Students Involved:</span>
+                <span>{details?.number_of_students ? `${details.number_of_students} Students` : '—'}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-bold min-w-[200px]">Nature of Activity:</span>
+                <span>{details?.nature_of_activity || '—'}</span>
               </div>
             </div>
 
@@ -478,10 +474,9 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
                   </ul>
                 )}
               </div>
-              <p className="text-sm">
-                <span className="font-bold">Target Audience / Participants:</span>{' '}
-                <span className="font-normal">BulSUans Only</span>
-              </p>
+              <div>
+                <p className="font-bold text-sm mb-1">Target Audience / Participants: <span className="font-normal">BulSUans Only</span></p>
+              </div>
               <div>
                 <p className="font-bold text-sm mb-2">
                   Describe how this activity will satisfy the needs of the organization and how it will help the
