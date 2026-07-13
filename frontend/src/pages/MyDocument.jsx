@@ -3933,6 +3933,11 @@ export const MyDocuments = () => {
                       <span className="inline-block px-4 py-1 border border-gray-100 text-gray-500 text-[10px] font-semibold rounded-lg bg-white shadow-sm group-hover:border-primary-green/20 group-hover:text-primary-green transition-all uppercase">
                         {doc.type}
                       </span>
+                      {doc.proposal_type && doc.proposal_type !== '-' && (
+                        <span className="block text-[9px] font-bold text-primary-green mt-1 uppercase tracking-tight">
+                          {doc.proposal_type}
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-5 text-sm text-gray-500 font-medium">
                       {doc.submittedDate}

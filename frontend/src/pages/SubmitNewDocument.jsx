@@ -517,13 +517,19 @@ const SubmitNewDocument = () => {
     }
   };
 
-  const initializeSubmissionForm = async (type, subtypeObj = null, subName = '') => {
+  const initializeSubmissionForm = async (type, subtypeObj = null, subName = '', resumeSubmissionId = null) => {
     setLoading(true);
     try {
       const isProposal = type.name.toLowerCase().includes('activity proposal');
       const subtypeId = subtypeObj ? subtypeObj.id : null;
       const proposalType = isProposal ? subName : null;
-      const draft = await subService.getDraftSubmission(user.id, type.id, subtypeId, proposalType);
+      
+      let draft = null;
+      if (resumeSubmissionId) {
+        draft = await subService.getSubmissionById(resumeSubmissionId);
+      } else {
+        draft = await subService.getDraftSubmission(user.id, type.id, subtypeId, proposalType);
+      }
       const reqs = await subService.getRequirementsForType(type.id, subtypeId, proposalType);
 
       setRequirements(reqs || []);
@@ -626,7 +632,40 @@ const SubmitNewDocument = () => {
   };
 
   const handleSelectType = async (type, subtypeObj = null, subName = '') => {
-    await initializeSubmissionForm(type, subtypeObj, subName);
+    if (!user) return;
+    try {
+      setLoading(true);
+      const params = {
+        userId: user.id,
+        documentTypeId: type.id
+      };
+      if (subtypeObj?.id) {
+        params.subtypeId = subtypeObj.id;
+      }
+      
+      const res = await apiClient.get(apiUrl('/api/system/submission-decision'), { params });
+      
+      if (res.data?.action === 'blocked') {
+        let msg = res.data.reason;
+        if (res.data.submissionWindow) {
+           msg += ` (Scheduled: ${new Date(res.data.submissionWindow.start).toLocaleDateString()} - ${new Date(res.data.submissionWindow.end).toLocaleDateString()})`;
+        }
+        showToast(msg, 'error');
+        setLoading(false);
+        return;
+      } else if (res.data?.action === 'error') {
+        showToast(res.data.reason, 'error');
+        setLoading(false);
+        return;
+      }
+      
+      const resumeId = res.data?.action === 'resume' ? res.data.submissionId : null;
+      await initializeSubmissionForm(type, subtypeObj, subName, resumeId);
+    } catch (err) {
+      console.error(err);
+      showToast('Error checking document availability', 'error');
+      setLoading(false);
+    }
   };
 
   const handleFileUpload = (reqId, file) => {

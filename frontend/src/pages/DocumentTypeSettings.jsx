@@ -46,9 +46,8 @@ const DocumentTypeSettings = () => {
   const [typeFormData, setTypeFormData] = useState({
     name: '',
     description: '',
-    availability_type: 'indefinite',
     requires_eligibility: false,
-    submissionWindow: { start_date: '', end_date: '' }
+    allow_multiple_submissions: false
   });
 
   const [editingReqId, setEditingReqId] = useState(null);
@@ -107,12 +106,8 @@ const DocumentTypeSettings = () => {
       setTypeFormData({
         name: found.name,
         description: found.description || '',
-        availability_type: found.availability_type || 'indefinite',
         requires_eligibility: found.requires_eligibility || false,
-        submissionWindow: {
-          start_date: found.active_from ? found.active_from.split('T')[0] : '',
-          end_date: found.active_until ? found.active_until.split('T')[0] : '',
-        }
+        allow_multiple_submissions: found.allow_multiple_submissions || false,
       });
     } catch {
       showToast('Failed to load category', 'error');
@@ -156,16 +151,8 @@ const DocumentTypeSettings = () => {
         name: typeFormData.name,
         description: typeFormData.description,
         status: 'active',
-        availability_type: typeFormData.availability_type,
         requires_eligibility: typeFormData.requires_eligibility,
-        active_from:
-          typeFormData.availability_type === 'scheduled' && typeFormData.submissionWindow?.start_date
-            ? new Date(typeFormData.submissionWindow.start_date).toISOString()
-            : null,
-        active_until:
-          typeFormData.availability_type === 'scheduled' && typeFormData.submissionWindow?.end_date
-            ? new Date(typeFormData.submissionWindow.end_date).toISOString()
-            : null,
+        allow_multiple_submissions: typeFormData.allow_multiple_submissions,
       };
       if (isNew) {
         const created = await reqService.createDocumentType(payload, user.id);
@@ -468,65 +455,41 @@ const DocumentTypeSettings = () => {
             onChange={(e) => setTypeFormData({ ...typeFormData, description: e.target.value })}
           />
         </div>
-        <div className="space-y-2">
-          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">Submission Mode</label>
-          <select
-            className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-xl font-bold text-gray-700"
-            value={typeFormData.availability_type}
-            onChange={(e) => setTypeFormData({ ...typeFormData, availability_type: e.target.value })}
-          >
-            <option value="indefinite">Indefinite (Open all School Year)</option>
-            <option value="scheduled">Scheduled Window</option>
-          </select>
-        </div>
-        <div
-          className="flex items-center gap-4 px-4 bg-gray-50 p-5 rounded-xl cursor-pointer"
-          onClick={() => setTypeFormData({ ...typeFormData, requires_eligibility: !typeFormData.requires_eligibility })}
-        >
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div
-            className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-              typeFormData.requires_eligibility ? 'bg-primary-green text-white' : 'bg-gray-200 text-transparent'
-            }`}
+            className="flex items-center gap-4 px-4 bg-gray-50 p-5 rounded-xl cursor-pointer"
+            onClick={() => setTypeFormData({ ...typeFormData, requires_eligibility: !typeFormData.requires_eligibility })}
           >
-            <Check size={18} strokeWidth={3} />
+            <div
+              className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                typeFormData.requires_eligibility ? 'bg-primary-green text-white' : 'bg-gray-200 text-transparent'
+              }`}
+            >
+              <Check size={18} strokeWidth={3} />
+            </div>
+            <div>
+              <h4 className="font-black text-gray-700 text-sm uppercase">Requires Eligibility</h4>
+              <p className="text-gray-400 text-xs font-bold leading-tight">Users must have approved requirements from previous term</p>
+            </div>
           </div>
-          <div>
-            <h4 className="font-black text-gray-700 text-sm uppercase">Requires Eligibility</h4>
-            <p className="text-gray-400 text-xs font-bold">Users must have approved requirements from the previous term/year</p>
+          
+          <div
+            className="flex items-center gap-4 px-4 bg-gray-50 p-5 rounded-xl cursor-pointer"
+            onClick={() => setTypeFormData({ ...typeFormData, allow_multiple_submissions: !typeFormData.allow_multiple_submissions })}
+          >
+            <div
+              className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                typeFormData.allow_multiple_submissions ? 'bg-primary-green text-white' : 'bg-gray-200 text-transparent'
+              }`}
+            >
+              <Check size={18} strokeWidth={3} />
+            </div>
+            <div>
+              <h4 className="font-black text-gray-700 text-sm uppercase">Allow Multiple Submissions</h4>
+              <p className="text-gray-400 text-xs font-bold leading-tight">Organizations may submit this document multiple times</p>
+            </div>
           </div>
         </div>
-        {typeFormData.availability_type === 'scheduled' && (
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Start Date</label>
-              <input
-                type="date"
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl border border-gray-200 font-bold text-sm"
-                value={typeFormData.submissionWindow?.start_date || ''}
-                onChange={(e) =>
-                  setTypeFormData({
-                    ...typeFormData,
-                    submissionWindow: { ...typeFormData.submissionWindow, start_date: e.target.value },
-                  })
-                }
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">End Date</label>
-              <input
-                type="date"
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl border border-gray-200 font-bold text-sm"
-                value={typeFormData.submissionWindow?.end_date || ''}
-                onChange={(e) =>
-                  setTypeFormData({
-                    ...typeFormData,
-                    submissionWindow: { ...typeFormData.submissionWindow, end_date: e.target.value },
-                  })
-                }
-              />
-            </div>
-          </div>
-        )}
         <div className="flex flex-wrap gap-4 pt-4">
           <button
             type="submit"

@@ -216,10 +216,11 @@ const Completed = () => {
           .from('submissions')
           .select(`
             id,
-            created_at,
             updated_at,
             status,
+            subtype_id,
             current_version_id,
+            document_subtypes ( name ),
             users ( org_name ),
             documentType ( name ),
             submission_versions!submission_id (
@@ -262,12 +263,28 @@ const Completed = () => {
             });
             const semester = getSemesterFromDate(details?.target_date || completedAt);
 
+            let proposalType = '-';
+            const docTypeName = sub.documentType?.name || 'Document';
+            const isActivityProposal = docTypeName.toLowerCase() === 'activity proposal' || docTypeName.toLowerCase().includes('proposal');
+
+            if (isActivityProposal) {
+              if (sub.document_subtypes?.name) {
+                proposalType = sub.document_subtypes.name;
+              } else if (details?.proposal_type) {
+                const rawType = details.proposal_type;
+                if (rawType.toLowerCase() === 'in-campus') proposalType = 'In-Campus';
+                else if (rawType.toLowerCase() === 'off-campus') proposalType = 'Off-Campus';
+                else proposalType = rawType.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+              }
+            }
+
             return {
               id: sub.id,
               title,
               ref: `SUB-2026-03-${String(sub.id).padStart(3, '0')}`,
               sender: sub.users?.org_name || '-',
               type: sub.documentType?.name || 'Document',
+              proposal_type: proposalType,
               completedDate,
               completedAt,
               semester,
@@ -480,9 +497,14 @@ const Completed = () => {
                     </td>
                     <td className="px-6 py-5 text-sm font-medium text-gray-600 uppercase tracking-tight">{doc.sender}</td>
                     <td className="px-6 py-5 text-center">
-                      <span className="inline-block px-4 py-1 border border-gray-100 text-gray-500 text-[10px] font-semibold rounded-lg bg-white shadow-sm uppercase">
+                      <span className="inline-block px-4 py-1 border border-gray-100 text-gray-500 text-[10px] font-semibold rounded-lg bg-white shadow-sm group-hover:border-primary-green/20 group-hover:text-primary-green transition-all uppercase">
                         {doc.type}
                       </span>
+                      {doc.proposal_type && doc.proposal_type !== '-' && (
+                        <span className="block text-[9px] font-bold text-primary-green mt-1 uppercase tracking-tight">
+                          {doc.proposal_type}
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-5 text-sm text-gray-500 font-medium">{doc.completedDate}</td>
                     <td className="px-6 py-5 text-center">
