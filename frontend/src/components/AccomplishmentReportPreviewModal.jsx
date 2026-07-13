@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { X, Printer, Edit3, Image as ImageIcon } from 'lucide-react';
 import JoditEditor from 'jodit-react';
 import DEFAULT_HEADER_IMG from '../assets/HEADER.png';
@@ -20,6 +20,20 @@ const AccomplishmentReportPreviewModal = ({
   const editorRef = useRef(null);
   const headerInputRef = useRef(null);
   const footerInputRef = useRef(null);
+
+  const config = useMemo(() => ({
+    readonly: false,
+    height: 'auto',
+    width: '100%',
+    toolbarAdaptive: false,
+    buttons: [
+      'bold', 'italic', 'underline', 'strikethrough', '|',
+      'font', 'fontsize', 'brush', 'paragraph', '|',
+      'image', 'table', 'link', '|',
+      'align', 'undo', 'redo', 'hr', 'eraser'
+    ],
+    uploader: { insertImageAsBase64URI: true }
+  }), []);
 
   const getBase64 = (src) => new Promise((resolve) => {
     const img = new Image();
@@ -244,20 +258,6 @@ const AccomplishmentReportPreviewModal = ({
     }, 500);
   };
 
-  const config = {
-    readonly: false,
-    height: 'auto',
-    width: '100%',
-    toolbarAdaptive: false,
-    buttons: [
-      'bold', 'italic', 'underline', 'strikethrough', '|',
-      'font', 'fontsize', 'brush', 'paragraph', '|',
-      'image', 'table', 'link', '|',
-      'align', 'undo', 'redo', 'hr', 'eraser'
-    ],
-    uploader: { insertImageAsBase64URI: true }
-  };
-
   return (
     <div 
       className="fixed inset-0 bg-slate-900/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm" 
@@ -296,7 +296,12 @@ const AccomplishmentReportPreviewModal = ({
           <input type="file" ref={footerInputRef} accept="image/*" className="hidden" onChange={e => handleImageUpload(e, 'footer')} />
 
           {/* Paper Container */}
-          <div className="max-w-[210mm] mx-auto bg-white shadow-xl min-h-[297mm] flex flex-col">
+          <div 
+            className="max-w-[794px] mx-auto min-h-[1123px] flex flex-col relative bg-white"
+            style={{
+              boxShadow: '0 0 20px rgba(0,0,0,0.15)'
+            }}
+          >
             
             {/* Visual Header */}
             {headerBase64 && (

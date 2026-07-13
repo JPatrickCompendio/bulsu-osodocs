@@ -299,7 +299,7 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
   const docTypeName = submission.documentType?.name || 'Document';
   const isActivityProposal = docTypeName.toLowerCase().includes('activity proposal');
   const docTitle = details?.activity_title || docTypeName;
-  const ref = `AP-2026-03-${String(submission.id).padStart(3, '0')}`;
+  const ref = details?.activity_number ? `ACTIVITY NO. ${details.activity_number}` : `AP-2026-03-${String(submission.id).padStart(3, '0')}`;
   const orgName = details?.organization_name || submission.users?.org_name || '—';
 
   const proofFromRemarks = parseProofUrls(submission.remarks);
@@ -546,21 +546,31 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
         </div>
 
         {accomplishmentReport && (
-          <div className="rounded-2xl border border-blue-100 bg-blue-50/80 p-5">
-            <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider mb-2">Accomplishment Report</h3>
-            <p className="text-xs uppercase tracking-widest text-blue-700 mb-4">Submitted {formatSubmittedLabel(accomplishmentReport.submitted_at || accomplishmentReport.created_at)}</p>
+          <div className="rounded-2xl border border-gray-200 bg-gray-50 p-6 shadow-sm">
+            <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest mb-2 border-b border-gray-200 pb-3">Accomplishment Report</h3>
+            <p className="text-[10px] uppercase tracking-widest text-gray-500 mb-6">Submitted {formatSubmittedLabel(accomplishmentReport.submitted_at || accomplishmentReport.created_at)}</p>
             
-            <p className="text-[10px] font-bold uppercase tracking-widest text-blue-700 mt-4">Participants (College/Unit & Year Level)</p>
-            <p className="mt-1 font-medium text-sm text-blue-900">{accomplishmentReport.participants || 'N/A'}</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Participants (College/Unit & Year Level)</p>
+                <p className="mt-1 font-semibold text-sm text-gray-800">{accomplishmentReport.participants || 'N/A'}</p>
+              </div>
 
-            <p className="text-[10px] font-bold uppercase tracking-widest text-blue-700 mt-3">Benefiting Group</p>
-            <p className="mt-1 font-medium text-sm text-blue-900">{accomplishmentReport.benefiting_group || 'N/A'}</p>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Benefiting Group</p>
+                <p className="mt-1 font-semibold text-sm text-gray-800">{accomplishmentReport.benefiting_group || 'N/A'}</p>
+              </div>
 
-            <p className="text-[10px] font-bold uppercase tracking-widest text-blue-700 mt-3">Resources Used</p>
-            <p className="mt-1 font-medium text-sm text-blue-900">{accomplishmentReport.resources_used || 'N/A'}</p>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Resources Used</p>
+                <p className="mt-1 font-semibold text-sm text-gray-800">{accomplishmentReport.resources_used || 'N/A'}</p>
+              </div>
 
-            <p className="text-[10px] font-bold uppercase tracking-widest text-blue-700 mt-3">Problem Encountered</p>
-            <p className="mt-1 text-sm text-blue-900 whitespace-pre-wrap">{accomplishmentReport.problems_encountered || 'No problems encountered were provided.'}</p>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Problem Encountered</p>
+                <p className="mt-1 text-sm text-gray-800 whitespace-pre-wrap">{accomplishmentReport.problems_encountered || 'No problems encountered were provided.'}</p>
+              </div>
+            </div>
           </div>
         )}
 

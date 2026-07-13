@@ -14,7 +14,8 @@ import {
   Eraser, Check, CheckSquare, Lock, Paperclip, Settings, FilePlus
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
-
+import DEFAULT_HEADER_IMG from '../assets/HEADER.png';
+import DEFAULT_FOOTER_IMG from '../assets/FOOTER.png';
 const SubmitNewDocument = () => {
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
@@ -44,6 +45,32 @@ const SubmitNewDocument = () => {
   const [adminEmail, setAdminEmail] = useState('');
   const [activeSchoolYearId, setActiveSchoolYearId] = useState(null);
 
+  // Print Images State
+  const [headerBase64, setHeaderBase64] = useState('');
+  const [footerBase64, setFooterBase64] = useState('');
+
+  const getBase64 = (src) => new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = src;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => resolve(null);
+  });
+
+  useEffect(() => {
+    const loadDefaultImages = async () => {
+      if (!headerBase64) setHeaderBase64(await getBase64(DEFAULT_HEADER_IMG));
+      if (!footerBase64) setFooterBase64(await getBase64(DEFAULT_FOOTER_IMG));
+    };
+    loadDefaultImages();
+  }, []);
   const isSuspended = user?.status?.startsWith('Suspended') && user?.role === 'org-president';
 
   useEffect(() => {
@@ -82,6 +109,228 @@ const SubmitNewDocument = () => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
   };
+
+  const isProposal = selectedType?.name.toLowerCase().includes('activity proposal');
+
+  const isActivityProposalFormComplete = useMemo(() => {
+    if (!isProposal) return false;
+    const {
+      activity_title, contact_number, target_venue, activity_dates,
+      target_time, target_end_time, duration, is_indefinite_end_time,
+      number_of_students, target_audience, nature_of_activity, objectives,
+      others_objective, satisfaction_goal_1, satisfaction_goal_2, satisfaction_goal_3
+    } = proposalDetails;
+
+    if (!activity_title?.trim()) return false;
+    if (!contact_number?.trim()) return false;
+    if (!target_venue?.trim()) return false;
+    if (!activity_dates || activity_dates.length === 0) return false;
+    if (!target_time?.trim()) return false;
+    if (!is_indefinite_end_time && !target_end_time?.trim()) return false;
+    if (!is_indefinite_end_time && !duration?.trim()) return false;
+    if (!number_of_students?.trim()) return false;
+    if (!target_audience?.trim()) return false;
+    if (!nature_of_activity?.trim()) return false;
+    if (!objectives || objectives.length === 0) return false;
+    if (objectives.includes('Others') && !others_objective?.trim()) return false;
+    if (!satisfaction_goal_1?.trim()) return false;
+    if (!satisfaction_goal_2?.trim()) return false;
+    if (!satisfaction_goal_3?.trim()) return false;
+
+    return true;
+  }, [isProposal, proposalDetails]);
+
+  const handlePrintActivityProposal = () => {
+    const printIframe = document.createElement('iframe');
+    printIframe.style.position = 'absolute';
+    printIframe.style.width = '0px';
+    printIframe.style.height = '0px';
+    printIframe.style.border = 'none';
+    document.body.appendChild(printIframe);
+
+    const doc = printIframe.contentWindow.document;
+
+    const renderCheckbox = (label, isChecked) => `
+      <div style="display: flex; align-items: center; margin-right: 30px; font-size: 13px; font-weight: bold; margin-bottom: 8px;">
+        <div style="display: flex; justify-content: center; align-items: center; width: 14px; height: 14px; border: 1.5px solid black; margin-right: 8px; font-size: 14px; flex-shrink: 0;">
+          ${isChecked ? '✓' : ''}
+        </div>
+        ${label}
+      </div>
+    `;
+
+    const getObjectiveChecked = (val) => proposalDetails.objectives?.includes(val);
+
+    doc.open();
+    doc.write(`
+      <html>
+        <head>
+          <title>Activity Proposal Form</title>
+          <style>
+            @media print {
+              body { margin: 0; padding: 0; background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              @page { margin: 0; size: auto; }
+              thead { display: table-header-group; }
+              tfoot { display: table-footer-group; }
+              table { width: 100%; border-collapse: collapse; border: none; }
+              img { max-width: 100% !important; }
+              .fixed-header { position: fixed; top: 0; left: 0; width: 100%; z-index: 1000; }
+              .fixed-footer { position: fixed; bottom: 0; left: 0; width: 100%; z-index: 1000; }
+            }
+            body { font-family: Arial, Helvetica, sans-serif; color: black; background: white; margin: 0; font-size: 13px; }
+            .form-row { display: flex; align-items: flex-end; margin-bottom: 18px; }
+            .form-label { font-weight: bold; font-size: 13px; margin-right: 5px; white-space: nowrap; }
+            .form-line { flex-grow: 1; border-bottom: 2px solid black; min-height: 16px; font-size: 13px; font-weight: bold; padding-bottom: 2px; text-align: center; }
+            .section-title { font-weight: bold; font-size: 13px; margin-top: 20px; margin-bottom: 12px; }
+          </style>
+        </head>
+        <body>
+          <div class="fixed-header">
+            <img src="${headerBase64}" style="width: 100%; display: block; max-height: 160px; object-fit: fill;" alt="Header" />
+          </div>
+          <div class="fixed-footer">
+            <img src="${footerBase64}" style="width: 100%; display: block; max-height: 120px; object-fit: fill;" alt="Footer" />
+          </div>
+          <table style="width: 100%; border-collapse: collapse; border: none; background: transparent;">
+            <thead>
+              <tr><td style="border: none; padding: 0;">
+                <div style="height: 160px;"></div>
+              </td></tr>
+            </thead>
+            <tbody>
+              <tr><td style="border: none; padding: 30px 50px;">
+                <div style="text-align: center; font-size: 16px; font-weight: bold; margin-bottom: 35px;">Activity Proposal Form</div>
+                
+                <div class="form-row">
+                  <div class="form-label">Name of Student Organization:</div>
+                  <div class="form-line">${proposalDetails.organization_name || ''}</div>
+                </div>
+                <div class="form-row">
+                  <div class="form-label">Name of Adviser:</div>
+                  <div class="form-line">${proposalDetails.adviser_name || ''}</div>
+                </div>
+                <div class="form-row">
+                  <div class="form-label">Activity Number:</div>
+                  <div class="form-line">${proposalDetails.activity_number || ''}</div>
+                </div>
+                <div class="form-row">
+                  <div class="form-label">Activity Title:</div>
+                  <div class="form-line">${proposalDetails.activity_title || ''}</div>
+                </div>
+                <div class="form-row">
+                  <div class="form-label">Name of Person-in-Charge:</div>
+                  <div class="form-line" style="flex-grow: 0.6; margin-right: 15px;">${proposalDetails.person_in_charge || ''}</div>
+                  <div class="form-label">Student ID No.:</div>
+                  <div class="form-line">${proposalDetails.student_id_no || ''}</div>
+                </div>
+                <div class="form-row">
+                  <div class="form-label">Contact Number of Person-in-Charge:</div>
+                  <div class="form-line">${proposalDetails.contact_number || ''}</div>
+                </div>
+                <div class="form-row">
+                  <div class="form-label">Target Venue:</div>
+                  <div class="form-line">${proposalDetails.target_venue || ''}</div>
+                </div>
+                <div class="form-row">
+                  <div class="form-label">Target Date and Time:</div>
+                  <div class="form-line">
+                    ${proposalDetails.activity_dates.map(d => new Date(d).toLocaleDateString()).join(', ')} 
+                    | ${proposalDetails.target_time} - ${proposalDetails.is_indefinite_end_time ? 'Indefinite' : proposalDetails.target_end_time}
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-label">Duration:</div>
+                  <div class="form-line">${proposalDetails.is_indefinite_end_time ? 'Indefinite' : proposalDetails.duration + (proposalDetails.duration ? ' Hours' : '')}</div>
+                </div>
+                <div class="form-row">
+                  <div class="form-label">Number of Student Involved:</div>
+                  <div class="form-line">${proposalDetails.number_of_students || ''}</div>
+                </div>
+
+                <div class="section-title">Target Audience/Participants:</div>
+                <div style="margin-left: 20px; margin-bottom: 20px; display: flex;">
+                  ${renderCheckbox('Members only', proposalDetails.target_audience === 'Members only')}
+                  ${renderCheckbox('BulSUans only', proposalDetails.target_audience === 'BulSUans only')}
+                  ${renderCheckbox('Open to the public', proposalDetails.target_audience === 'Open to the public')}
+                </div>
+
+                <div class="section-title">Nature of Activity:</div>
+                <div style="margin-left: 20px; margin-bottom: 20px; display: flex;">
+                  ${renderCheckbox('Co-Curricular', proposalDetails.nature_of_activity === 'Co-Curricular')}
+                  ${renderCheckbox('Extra-Curricular', proposalDetails.nature_of_activity === 'Extra-Curricular')}
+                </div>
+
+                <div class="section-title">Objectives of the Activity:</div>
+                <div style="margin-left: 20px; margin-bottom: 25px; display: flex; flex-direction: column;">
+                  ${renderCheckbox('Leadership Development and Formation', getObjectiveChecked('Leadership Development and Formation'))}
+                  ${renderCheckbox('Membership Development and Formation', getObjectiveChecked('Membership Development and Formation'))}
+                  ${renderCheckbox('Organizational Program Management', getObjectiveChecked('Organizational Program Management'))}
+                  ${renderCheckbox('Values Enrichment', getObjectiveChecked('Values Enrichment'))}
+                  ${renderCheckbox('Skills Enhancement', getObjectiveChecked('Skills Enhancement'))}
+                  <div class="form-row" style="margin-top: 5px; margin-bottom: 0;">
+                    ${renderCheckbox('Others:', getObjectiveChecked('Others'))}
+                    <div class="form-line" style="margin-left: -20px; text-align: left;">${proposalDetails.others_objective || ''}</div>
+                  </div>
+                </div>
+
+                <div style="font-size: 12px; margin-left: 40px; margin-top: 35px; margin-bottom: 25px;">
+                  Describe how this activity will satisfy the needs of the organization and how it will help the<br/>organization achieve its goals:
+                </div>
+                <div class="form-row" style="margin-left: 40px;"><div class="form-label">1.</div><div class="form-line" style="text-align: left;">${proposalDetails.satisfaction_goal_1 || ''}</div></div>
+                <div class="form-row" style="margin-left: 40px;"><div class="form-label">2.</div><div class="form-line" style="text-align: left;">${proposalDetails.satisfaction_goal_2 || ''}</div></div>
+                <div class="form-row" style="margin-left: 40px;"><div class="form-label">3.</div><div class="form-line" style="text-align: left;">${proposalDetails.satisfaction_goal_3 || ''}</div></div>
+
+                <div style="margin-top: 50px; border-top: 1px solid #ccc; padding-top: 30px;">
+                  <div class="form-row">
+                    <div class="form-label">Name of Partners (if any):</div>
+                    <div class="form-line" style="text-align: left;">${proposalDetails.partners || ''}</div>
+                  </div>
+                  <div class="form-row">
+                    <div class="form-label">Name of Sponsors (if any):</div>
+                    <div class="form-line" style="text-align: left;">${proposalDetails.sponsors || ''}</div>
+                  </div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; margin-top: 60px;">
+                  <div style="width: 40%; text-align: center;">
+                    <div style="border-bottom: 1.5px solid black; height: 20px; font-size: 13px; font-weight: bold; margin-bottom: 5px;">
+                      ${user?.name || ''}
+                    </div>
+                    <div style="font-size: 10px; font-style: italic;">(Signature over printed name)</div>
+                    <div style="font-size: 12px; margin-top: 5px;">President, Student Organization</div>
+                  </div>
+                  <div style="width: 40%; text-align: center;">
+                    <div style="border-bottom: 1.5px solid black; height: 20px; font-size: 13px; font-weight: bold; margin-bottom: 5px;">
+                      ${proposalDetails.adviser_name || ''}
+                    </div>
+                    <div style="font-size: 10px; font-style: italic;">(Signature over printed name)</div>
+                    <div style="font-size: 12px; margin-top: 5px;">Adviser, Student Organization</div>
+                  </div>
+                </div>
+
+              </td></tr>
+            </tbody>
+            <tfoot>
+              <tr><td style="border: none; padding: 0;">
+                <div style="height: 120px;"></div>
+              </td></tr>
+            </tfoot>
+          </table>
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    printIframe.contentWindow.focus();
+    setTimeout(() => {
+      printIframe.contentWindow.print();
+      setTimeout(() => {
+        document.body.removeChild(printIframe);
+      }, 2000);
+    }, 500);
+  };
+
+
 
   const loadDocumentTypes = async () => {
     try {
@@ -635,7 +884,6 @@ const SubmitNewDocument = () => {
     );
   }
 
-  const isProposal = selectedType?.name.toLowerCase().includes('activity proposal');
 
   const renderRequirementsList = (isModal = false) => (
     <div className={`space-y-4 ${isModal ? '' : 'w-full max-w-5xl mx-auto'}`}>
@@ -1100,6 +1348,17 @@ const SubmitNewDocument = () => {
                     </button>
                     <div className="h-6 w-px bg-gray-200 mx-2"></div>
                   </>
+                )}
+                {isProposal && (
+                  <button
+                    type="button"
+                    onClick={handlePrintActivityProposal}
+                    disabled={!isActivityProposalFormComplete}
+                    className="px-4 py-2.5 bg-blue-50 text-blue-600 border border-blue-200 font-black rounded-lg hover:bg-blue-100 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest disabled:opacity-40 disabled:cursor-not-allowed"
+                    title={!isActivityProposalFormComplete ? "Please fill all required fields to download" : "Download PDF"}
+                  >
+                    <Download size={14} /> Download Activity Proposal Form
+                  </button>
                 )}
                 <button
                   type="button"
