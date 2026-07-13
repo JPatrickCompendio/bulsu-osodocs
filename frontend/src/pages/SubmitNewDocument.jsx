@@ -410,6 +410,25 @@ const SubmitNewDocument = () => {
         setActiveDraft({ submissionId, versionId });
       }
 
+      // 1.5 Delete removed attachments to prevent duplicates
+      if (versionId) {
+        const { data: dbAttachments } = await supabase
+          .from('submission_attachments')
+          .select('id, requirement_id')
+          .eq('submission_version_id', versionId);
+          
+        if (dbAttachments && dbAttachments.length > 0) {
+          const validReqIds = existingAttachments.map(a => a.requirement_id);
+          const toDeleteIds = dbAttachments
+            .filter(dbAtt => !validReqIds.includes(dbAtt.requirement_id))
+            .map(a => a.id);
+            
+          if (toDeleteIds.length > 0) {
+            await supabase.from('submission_attachments').delete().in('id', toDeleteIds);
+          }
+        }
+      }
+
       // 2. Upload all local files to bucket
       for (const [reqId, file] of Object.entries(localFiles)) {
         const path = await subService.uploadSubmissionFile(file, selectedType.name, submissionId, versionNumber, subType);
@@ -952,6 +971,7 @@ const SubmitNewDocument = () => {
                                       <input
                                         type="date"
                                         required
+                                        min={new Date().toISOString().split('T')[0]}
                                         className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary-green font-bold text-xs outline-none"
                                         value={sched.activity_date}
                                         onChange={e => {

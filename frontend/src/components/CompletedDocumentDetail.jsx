@@ -430,45 +430,38 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
               </p>
             </div>
 
-            {details?.activity_schedules && details.activity_schedules.length > 0 ? (
-              <div className="mt-6 bg-gray-50/80 border border-gray-100 rounded-2xl p-5">
-                <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 mb-3">Activity Schedules</p>
-                <div className="space-y-3">
-                  {details.activity_schedules.map((sched, idx) => (
-                    <div key={idx} className="flex items-center justify-between bg-white px-4 py-3 rounded-xl border border-gray-200">
-                      <div className="flex flex-col">
-                        <span className="text-xs font-bold text-gray-800">{new Date(sched.activity_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                        <span className="text-[10px] text-gray-500 font-medium uppercase mt-0.5">
-                          {sched.start_time} - {sched.is_indefinite ? 'Indefinite' : sched.end_time}
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-xs font-bold text-primary-green">
-                          {sched.is_indefinite ? 'N/A' : `${(sched.duration_minutes / 60).toFixed(1)} hrs`}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                  <div className="flex items-center justify-between pt-2 border-t border-gray-200 mt-2 px-1">
-                      <span className="text-xs font-extrabold uppercase text-gray-500">Total Duration</span>
-                      <span className="text-sm font-black text-primary-green">{details.duration || (details.activity_schedules.reduce((acc, s) => acc + (s.duration_minutes || 0), 0) / 60).toFixed(1)} Hours</span>
-                  </div>
+            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+              <div className="bg-gray-50/80 border border-gray-100 rounded-2xl px-5 py-3.5 md:col-span-2">
+                <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 mb-1">Target Date and Time</p>
+                <div className="font-bold text-gray-800 leading-snug break-words">
+                  {details?.activity_schedules && details.activity_schedules.length > 0 ? (
+                    `[${details.activity_schedules.map(s => {
+                      let dateStr = 'TBD';
+                      if (s.activity_date) {
+                        try {
+                          dateStr = new Date(s.activity_date).toLocaleDateString('en-US', {
+                            month: 'long', day: 'numeric', year: 'numeric'
+                          }).toUpperCase();
+                        } catch (e) {
+                          dateStr = String(s.activity_date).toUpperCase();
+                        }
+                      }
+                      return `${dateStr}, ${s.start_time || 'TBD'}-${s.is_indefinite ? 'INDEFINITE' : (s.end_time || 'TBD')}`;
+                    }).join('; ')}]`
+                  ) : (
+                    <span>{targetDateTime}</span>
+                  )}
                 </div>
               </div>
-            ) : (
-              <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                <div className="bg-gray-50/80 border border-gray-100 rounded-2xl px-5 py-3.5">
-                  <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 mb-1">Target Date and Time</p>
-                  <p className="font-bold text-gray-800 leading-snug break-words">
-                    {targetDateTime}
-                  </p>
-                </div>
-                <div className="bg-gray-50/80 border border-gray-100 rounded-2xl px-5 py-3.5">
-                  <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 mb-1">Duration</p>
-                  <p className="font-bold text-gray-800 leading-snug break-words">{details?.duration || '—'}</p>
-                </div>
+              <div className="bg-gray-50/80 border border-gray-100 rounded-2xl px-5 py-3.5">
+                <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 mb-1">Duration</p>
+                <p className="font-bold text-gray-800 leading-snug break-words">
+                  {details?.activity_schedules && details.activity_schedules.length > 0
+                    ? `${(details.activity_schedules.reduce((acc, s) => acc + (s.duration_minutes || 0), 0) / 60).toFixed(1)} Hours`
+                    : details?.duration ? `${(Number(details.duration) / 60).toFixed(1)} Hours` : '—'}
+                </p>
               </div>
-            )}
+            </div>
 
             <div className="mt-6 space-y-4">
               <div>

@@ -413,13 +413,22 @@ const ListOfRequirements = () => {
             </button>
 
             {isAdmin && (
-              <button
-                onClick={() => navigate(`/requirements/settings/${selectedType.id}`)}
-                className="flex items-center gap-2 px-5 py-3 bg-gray-100 text-gray-700 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-gray-200 transition-all"
-              >
-                <Settings size={18} />
-                Settings
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => navigate(`/admin/academic-settings`)}
+                  className="flex items-center gap-2 px-5 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-blue-100 transition-all"
+                >
+                  <Calendar size={18} />
+                  Submission Window
+                </button>
+                <button
+                  onClick={() => navigate(`/requirements/settings/${selectedType.id}`)}
+                  className="flex items-center gap-2 px-5 py-3 bg-gray-100 text-gray-700 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-gray-200 transition-all"
+                >
+                  <Settings size={18} />
+                  Category Settings
+                </button>
+              </div>
             )}
           </div>
 
