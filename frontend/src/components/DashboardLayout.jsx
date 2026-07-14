@@ -12,6 +12,7 @@ import {
   extractSubmissionStatusFromNotification,
   normalizeWorkflowStatus,
 } from '../utils/workflowNotificationUtils';
+import SchoolYearCalendarModal from './SchoolYearCalendarModal';
 
 const Header = () => {
   const { user } = useAuth();
@@ -28,6 +29,7 @@ const Header = () => {
 
   const [selectedAnnouncement, setSelectedAnnouncement] = useState(null);
   const [announcementAttachments, setAnnouncementAttachments] = useState([]);
+  const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
 
   const fetchNotifications = async () => {
     if (!user?.id || !user?.role) return;
@@ -173,17 +175,21 @@ const Header = () => {
   return (
     <>
       <header className="h-16 bg-white border-b border-gray-100 flex items-center justify-between px-8 sticky top-0 z-30 shadow-sm">
-        <div className="flex items-center gap-2 text-gray-700 relative group cursor-pointer">
+        <div className="flex items-center gap-2 text-gray-700 relative group cursor-pointer" onClick={() => setIsCalendarModalOpen(true)}>
           <Calendar size={20} />
-          <span className="text-sm font-bold">{activeSy ? ` ${activeSy.name}` : 'Loading S.Y...'}</span>
+          <span className="text-sm font-bold hover:text-primary-green transition-colors">{activeSy ? ` ${activeSy.name}` : 'Loading S.Y...'}</span>
           
           {activeSy && (
             <div className="absolute top-full left-0 mt-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 bg-white text-gray-800 rounded-lg p-4 shadow-xl border border-gray-100 z-50 min-w-[250px]">
               <p className="text-xs font-bold text-gray-400 uppercase mb-2">{activeSy.semester_type || 'Semester'} Dates</p>
-              <div className="flex justify-between items-center text-sm font-semibold">
+              <div className="flex justify-between items-center text-sm font-semibold mb-2">
                 <span className="text-green-600">{new Date(activeSy.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                 <span className="text-gray-300">-</span>
                 <span className="text-red-500">{new Date(activeSy.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+              </div>
+              <div className="text-xs text-primary-green font-bold text-center mt-3 pt-3 border-t border-gray-50 flex items-center justify-center gap-1">
+                <Calendar size={12} />
+                Click to view Calendar Events
               </div>
             </div>
           )}
@@ -470,6 +476,13 @@ const Header = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {isCalendarModalOpen && (
+        <SchoolYearCalendarModal
+          activeSy={activeSy}
+          onClose={() => setIsCalendarModalOpen(false)}
+        />
       )}
     </>
   );

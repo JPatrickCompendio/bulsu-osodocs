@@ -28,7 +28,7 @@ const AcademicSettings = () => {
 
   const eventTypes = [
     { value: 'blocked_activity', label: 'Blocked Activity' },
-    { value: 'document_submission', label: 'Document Submission' },
+    { value: 'submission_window', label: 'Submission Window' },
     { value: 'holiday', label: 'Holiday' },
     { value: 'exam_week', label: 'Exam Week' },
     { value: 'enrollment', label: 'Enrollment' },
@@ -128,7 +128,7 @@ const AcademicSettings = () => {
       const payload = { ...eventForm, created_by: user?.id };
       if (!payload.start_date) payload.start_date = null;
       if (!payload.end_date) payload.end_date = null;
-      if (!payload.document_type_id) payload.document_type_id = null;
+      if (payload.event_type !== 'submission_window') payload.document_type_id = null;
       if (payload.blocks_activity) payload.description = 'BLOCKS_ACTIVITY';
       else if (payload.description === 'BLOCKS_ACTIVITY') payload.description = '';
 
@@ -379,6 +379,38 @@ const AcademicSettings = () => {
                   <option value="">Select School Year...</option>
                   {schoolYears.map(sy => <option key={sy.id} value={sy.id}>{sy.name}</option>)}
                 </select>
+                {eventForm.event_type === 'submission_window' && eventForm.school_year_id && (() => {
+                  const selectedSy = schoolYears.find(sy => sy.id === eventForm.school_year_id);
+                  const isEntireSy = selectedSy && eventForm.start_date === selectedSy.start_date.split('T')[0] && eventForm.end_date === selectedSy.end_date.split('T')[0];
+                  return (
+                    <div className="flex items-center gap-2 mt-3 p-2 bg-green-50/50 border border-green-100 rounded-lg">
+                      <input
+                        type="checkbox"
+                        id="entireSyCheckbox"
+                        className="w-4 h-4 text-primary-green rounded focus:ring-primary-green cursor-pointer"
+                        checked={!!isEntireSy}
+                        onChange={(e) => {
+                          if (e.target.checked && selectedSy) {
+                            setEventForm({
+                              ...eventForm,
+                              start_date: selectedSy.start_date.split('T')[0],
+                              end_date: selectedSy.end_date.split('T')[0]
+                            });
+                          } else {
+                            setEventForm({
+                              ...eventForm,
+                              start_date: '',
+                              end_date: ''
+                            });
+                          }
+                        }}
+                      />
+                      <label htmlFor="entireSyCheckbox" className="text-sm font-bold text-green-800 cursor-pointer select-none">
+                        Entire School Year
+                      </label>
+                    </div>
+                  );
+                })()}
               </div>
               <div>
                 <label className="text-xs font-bold text-gray-500 uppercase">Event Title</label>
@@ -394,7 +426,7 @@ const AcademicSettings = () => {
                     {eventTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                   </select>
                 </div>
-                {eventForm.event_type === 'document_submission' && (
+                {eventForm.event_type === 'submission_window' && (
                   <div>
                     <label className="text-xs font-bold text-gray-500 uppercase">Document Type</label>
                     <select required className="w-full mt-1 p-2 border rounded-lg outline-none focus:border-primary-green bg-white" value={eventForm.document_type_id} onChange={e => setEventForm({...eventForm, document_type_id: e.target.value})}>
@@ -408,24 +440,25 @@ const AcademicSettings = () => {
               <div className="border border-gray-100 rounded-xl p-4 bg-gray-50/50 mt-4">
                 <div className="flex items-center justify-between mb-3">
                   <label className="text-xs font-bold text-gray-500 uppercase">Schedule</label>
-                  {eventForm.event_type === 'document_submission' && (
-                    <label className="flex items-center gap-2 text-xs font-bold text-blue-600 cursor-pointer">
-                      <input type="checkbox" checked={!eventForm.start_date && !eventForm.end_date} onChange={(e) => {
-                        if(e.target.checked) setEventForm({...eventForm, start_date: '', end_date: ''});
-                      }} /> Always Available
-                    </label>
-                  )}
                 </div>
                 
-                <div className={`grid grid-cols-2 gap-4 transition-opacity ${eventForm.event_type === 'document_submission' && !eventForm.start_date && !eventForm.end_date && eventForm.id !== null ? 'opacity-50 pointer-events-none' : ''}`}>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase">Start Date</label>
-                    <input type="date" className="w-full mt-1 p-2 border rounded-lg outline-none focus:border-primary-green" value={eventForm.start_date || ''} onChange={e => setEventForm({...eventForm, start_date: e.target.value})} required={eventForm.event_type !== 'document_submission'} />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase">End Date</label>
-                    <input type="date" className="w-full mt-1 p-2 border rounded-lg outline-none focus:border-primary-green" value={eventForm.end_date || ''} onChange={e => setEventForm({...eventForm, end_date: e.target.value})} required={eventForm.event_type !== 'document_submission'} />
-                  </div>
+                <div className="grid grid-cols-2 gap-4">
+                  {(() => {
+                    const selectedSy = schoolYears.find(sy => sy.id === eventForm.school_year_id);
+                    const isEntireSy = eventForm.event_type === 'submission_window' && selectedSy && eventForm.start_date === selectedSy.start_date.split('T')[0] && eventForm.end_date === selectedSy.end_date.split('T')[0];
+                    return (
+                      <>
+                        <div>
+                          <label className="text-[10px] font-bold text-gray-400 uppercase">Start Date</label>
+                          <input type="date" className={`w-full mt-1 p-2 border rounded-lg outline-none focus:border-primary-green ${isEntireSy ? 'bg-gray-100 text-gray-500 cursor-not-allowed border-gray-200' : 'bg-white'}`} value={eventForm.start_date || ''} onChange={e => setEventForm({...eventForm, start_date: e.target.value})} required disabled={isEntireSy} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-gray-400 uppercase">End Date</label>
+                          <input type="date" className={`w-full mt-1 p-2 border rounded-lg outline-none focus:border-primary-green ${isEntireSy ? 'bg-gray-100 text-gray-500 cursor-not-allowed border-gray-200' : 'bg-white'}`} value={eventForm.end_date || ''} onChange={e => setEventForm({...eventForm, end_date: e.target.value})} required disabled={isEntireSy} />
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
 
                 <div className="flex items-center gap-2 mt-4 pt-4 border-t border-gray-100">

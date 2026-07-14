@@ -1186,12 +1186,16 @@ async function handleGetAcademicEvents() {
 
 async function handlePostAcademicEvents(body: Record<string, unknown>) {
   const supabase = getAdminClient();
-  const { school_year_id, title, description, event_type, document_type_id, start_date, end_date, created_by } =
+  let { school_year_id, title, description, event_type, document_type_id, start_date, end_date, created_by } =
     body as Record<string, unknown>;
 
   if (!school_year_id || !title || !event_type) {
     return jsonResponse({ error: 'school_year_id, title, and event_type are required' }, 400);
   }
+
+  if (document_type_id === '') document_type_id = null;
+  if (start_date === '') start_date = null;
+  if (end_date === '') end_date = null;
 
   const { data, error } = await supabase
     .from('academic_calendar_events')
@@ -1209,7 +1213,11 @@ async function handlePostAcademicEvents(body: Record<string, unknown>) {
 
 async function handlePutAcademicEvents(id: string, body: Record<string, unknown>) {
   const supabase = getAdminClient();
-  const { title, description, event_type, document_type_id, start_date, end_date } = body as Record<string, unknown>;
+  let { title, description, event_type, document_type_id, start_date, end_date } = body as Record<string, unknown>;
+
+  if (document_type_id === '') document_type_id = null;
+  if (start_date === '') start_date = null;
+  if (end_date === '') end_date = null;
 
   const { data, error } = await supabase
     .from('academic_calendar_events')
@@ -1279,7 +1287,8 @@ async function handleDocumentAvailability(url: URL) {
     .eq('school_year_id', activeSy.id);
 
   const blockedEvents = events?.filter((e) => e.event_type === 'blocked_activity' || e.description === 'BLOCKS_ACTIVITY') || [];
-  const availability: Record<string, { isAvailable: boolean; lockedReason: string | null; requiresEligibility: boolean }> = {};
+  const submissionWindows = events?.filter((e) => e.event_type === 'submission_window') || [];
+  const availability: Record<string, { isAvailable: boolean; lockedReason: string | null; requiresEligibility: boolean, submissionWindow?: any }> = {};
 
   const isWithinBounds = (start_date: string | null, end_date: string | null) => {
     if (!start_date && !end_date) return true;
@@ -1293,54 +1302,59 @@ async function handleDocumentAvailability(url: URL) {
 
   let isRenewalEligible = false;
   const missingRenewalRequirements: string[] = [];
-
   const existingDocTypesThisYear = new Set<string>();
 
   if (userId) {
-    const { data: userSubs } = await supabase
-      .from('submissions')
-      .select('status, document_type_id, documentType:document_type_id(name)')
-      .eq('user_id', userId)
-      .eq('school_year_id', activeSy.id);
+    const { data: userRecord } = await supabase.from('users').select('org_name').eq('id', userId).single();
+    if (userRecord?.org_name) {
+      const { data: orgSubs } = await supabase
+        .from('submissions')
+        .select('status, document_type_id, documentType:document_type_id(name), users!inner(org_name)')
+        .eq('users.org_name', userRecord.org_name)
+        .eq('school_year_id', activeSy.id);
 
-    if (userSubs) {
-      const completedSubs = userSubs.filter((s) => s.status === 'completed');
-      const hasApprovedMidYear = completedSubs.some((s) =>
-        (s.documentType as Record<string, unknown>)?.name?.toString().toLowerCase().includes('mid-year'),
-      );
-      const hasApprovedYearEnd = completedSubs.some((s) =>
-        (s.documentType as Record<string, unknown>)?.name?.toString().toLowerCase().includes('year-end'),
-      );
+      if (orgSubs) {
+        const completedSubs = orgSubs.filter((s) => s.status === 'completed');
+        const hasApprovedMidYear = completedSubs.some((s) =>
+          (s.documentType as Record<string, unknown>)?.name?.toString().toLowerCase().includes('mid-year'),
+        );
+        const hasApprovedYearEnd = completedSubs.some((s) =>
+          (s.documentType as Record<string, unknown>)?.name?.toString().toLowerCase().includes('year-end'),
+        );
 
-      if (!hasApprovedMidYear) missingRenewalRequirements.push('Approved Mid-Year Report');
-      if (!hasApprovedYearEnd) missingRenewalRequirements.push('Approved Year-End Report');
+        if (!hasApprovedMidYear) missingRenewalRequirements.push('Approved Mid-Year Report');
+        if (!hasApprovedYearEnd) missingRenewalRequirements.push('Approved Year-End Report');
 
-      isRenewalEligible = Boolean(hasApprovedMidYear && hasApprovedYearEnd);
+        isRenewalEligible = Boolean(hasApprovedMidYear && hasApprovedYearEnd);
 
-      userSubs.forEach((s) => {
-        if (s.status !== 'disapproved' && s.document_type_id) {
-          existingDocTypesThisYear.add(String(s.document_type_id));
-        }
-      });
+        orgSubs.forEach((s) => {
+          if (s.status !== 'disapproved' && s.document_type_id) {
+            existingDocTypesThisYear.add(String(s.document_type_id));
+          }
+        });
+      }
     }
   }
 
   for (const dt of docTypes || []) {
     let isAvailable = false;
     let lockedReason: string | null = null;
+    let subWindow = null;
 
     if (dt.status !== 'active') {
       lockedReason = 'Document type is inactive';
-    } else if (dt.availability_type === 'scheduled') {
-      if (!dt.active_from && !dt.active_until) {
-        lockedReason = 'No active submission period configured';
-      } else if (!isWithinBounds(dt.active_from, dt.active_until)) {
-        lockedReason = 'Submission Period Closed';
-      } else {
-        isAvailable = true;
-      }
     } else {
-      isAvailable = true;
+      const windowEvent = submissionWindows.find(w => w.document_type_id === dt.id);
+      if (!windowEvent) {
+        lockedReason = 'No submission window is currently available.';
+      } else {
+        if (!isWithinBounds(windowEvent.start_date, windowEvent.end_date)) {
+          lockedReason = 'Submission Window Closed';
+          subWindow = { start: windowEvent.start_date, end: windowEvent.end_date };
+        } else {
+          isAvailable = true;
+        }
+      }
     }
 
     if (isAvailable && dt.requires_eligibility && dt.name.toLowerCase().includes('renewal')) {
@@ -1350,16 +1364,17 @@ async function handleDocumentAvailability(url: URL) {
       }
     }
 
-    const isActivityProposal = dt.name.toLowerCase() === 'activity proposal' || dt.name.toLowerCase().includes('proposal');
-    if (isAvailable && !isActivityProposal && existingDocTypesThisYear.has(String(dt.id))) {
-      isAvailable = false;
-      lockedReason = 'You already have an active submission for this category. Check your My Documents page.';
+    if (isAvailable && !dt.allow_multiple_submissions && existingDocTypesThisYear.has(String(dt.id))) {
+      // It might be a draft/returned, which means it's available to "resume", so we don't fully lock it visually in the UI.
+      // But we will leave it "available" so they can click it and trigger the decision engine.
+      isAvailable = true; 
     }
 
     availability[dt.id] = {
       isAvailable,
       lockedReason,
       requiresEligibility: dt.requires_eligibility,
+      submissionWindow: subWindow
     };
   }
 
@@ -1369,6 +1384,104 @@ async function handleDocumentAvailability(url: URL) {
     availability,
     blockedEvents,
   });
+}
+
+async function handleSubmissionDecision(url: URL) {
+  const supabase = getAdminClient();
+  const userId = url.searchParams.get('userId');
+  const documentTypeId = url.searchParams.get('documentTypeId');
+  const subtypeId = url.searchParams.get('subtypeId');
+
+  if (!userId || !documentTypeId) {
+    return jsonResponse({ action: 'error', reason: 'Missing required parameters' });
+  }
+
+  const { data: dt } = await supabase.from('documentType').select('*').eq('id', documentTypeId).single();
+  if (!dt || dt.status !== 'active') {
+    return jsonResponse({ action: 'blocked', reason: 'Document type is inactive.' });
+  }
+
+  const { data: activeSy } = await supabase.from('school_years').select('*').eq('is_active', true).single();
+  if (!activeSy) {
+    return jsonResponse({ action: 'blocked', reason: 'No active school year.' });
+  }
+
+  const { data: events } = await supabase
+    .from('academic_calendar_events')
+    .select('*')
+    .eq('school_year_id', activeSy.id)
+    .eq('document_type_id', documentTypeId)
+    .eq('event_type', 'submission_window');
+
+  const windowEvent = events?.[0];
+  let isWithinBounds = true;
+  if (!windowEvent) {
+    return jsonResponse({ action: 'blocked', reason: 'No submission window is currently available.' });
+  } else {
+    const currentDate = new Date();
+    const start = windowEvent.start_date ? new Date(windowEvent.start_date) : null;
+    const end = windowEvent.end_date ? new Date(windowEvent.end_date) : null;
+    if (start && end) isWithinBounds = currentDate >= start && currentDate <= end;
+    else if (start) isWithinBounds = currentDate >= start;
+    else if (end) isWithinBounds = currentDate <= end;
+    
+    if (!isWithinBounds) {
+      return jsonResponse({
+        action: 'blocked',
+        reason: 'Submission Window Closed',
+        submissionWindow: { start: windowEvent.start_date, end: windowEvent.end_date }
+      });
+    }
+  }
+
+  if (dt.requires_eligibility && dt.name.toLowerCase().includes('renewal')) {
+    const { data: userSubs } = await supabase
+      .from('submissions')
+      .select('status, documentType:document_type_id(name)')
+      .eq('user_id', userId)
+      .eq('school_year_id', activeSy.id);
+
+    const completedSubs = (userSubs || []).filter((s) => s.status === 'completed');
+    const hasApprovedMidYear = completedSubs.some((s) => (s.documentType as any)?.name?.toString().toLowerCase().includes('mid-year'));
+    const hasApprovedYearEnd = completedSubs.some((s) => (s.documentType as any)?.name?.toString().toLowerCase().includes('year-end'));
+
+    if (!hasApprovedMidYear || !hasApprovedYearEnd) {
+      const missing = [];
+      if (!hasApprovedMidYear) missing.push('Approved Mid-Year Report');
+      if (!hasApprovedYearEnd) missing.push('Approved Year-End Report');
+      return jsonResponse({ action: 'blocked', reason: 'Missing Requirements: ' + missing.join(', ') });
+    }
+  }
+
+  if (!dt.allow_multiple_submissions) {
+    const { data: userRecord } = await supabase.from('users').select('org_name').eq('id', userId).single();
+    if (!userRecord || !userRecord.org_name) {
+       return jsonResponse({ action: 'error', reason: 'User organization not found.' });
+    }
+
+    let subQuery = supabase
+      .from('submissions')
+      .select('id, status, users!inner(org_name)')
+      .eq('users.org_name', userRecord.org_name)
+      .eq('document_type_id', documentTypeId)
+      .eq('school_year_id', activeSy.id);
+      
+    if (subtypeId) subQuery = subQuery.eq('subtype_id', subtypeId);
+    else subQuery = subQuery.is('subtype_id', null);
+
+    const { data: existingSubs } = await subQuery.order('created_at', { ascending: false }).limit(1);
+
+    if (existingSubs && existingSubs.length > 0) {
+      const existing = existingSubs[0];
+      if (existing.status === 'draft' || existing.status === 'returned') {
+        return jsonResponse({ action: 'resume', submissionId: existing.id, activeSchoolYear: activeSy });
+      } else if (existing.status !== 'disapproved') {
+        return jsonResponse({ action: 'blocked', reason: 'Your organization already has an active submission for this category in the current school year.' });
+      }
+    }
+  }
+
+  return jsonResponse({ action: 'create', activeSchoolYear: activeSy });
 }
 
 async function handleAdminDashboard() {
@@ -1798,6 +1911,9 @@ async function routeRequest(req: Request): Promise<Response> {
 
   if (method === 'GET' && path === '/system/document-availability') {
     return handleDocumentAvailability(url);
+  }
+  if (method === 'GET' && path === '/system/submission-decision') {
+    return handleSubmissionDecision(url);
   }
   if (method === 'GET' && path === '/system/admin-email') {
     return handleGetAdminEmail();
