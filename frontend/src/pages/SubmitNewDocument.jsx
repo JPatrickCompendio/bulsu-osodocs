@@ -669,6 +669,7 @@ const SubmitNewDocument = () => {
     if (isSavingRef.current) return;
     isSavingRef.current = true;
     setIsSaving(true);
+    let isSuccessSubmit = false;
     try {
       let submissionId = activeDraft.submissionId;
       let versionId = activeDraft.versionId;
@@ -737,6 +738,7 @@ const SubmitNewDocument = () => {
           await refreshUser();
         }
         showToast('Document Registered Successfully!');
+        isSuccessSubmit = true;
         setTimeout(() => navigate('/my-documents', { state: { highlightedId: submissionId } }), 2000);
       } else {
         showToast('Progress Saved as Draft!', 'success');
@@ -746,8 +748,10 @@ const SubmitNewDocument = () => {
       console.error('Registration error:', err);
       showToast('Action failed: ' + (err.message || ''), 'error');
     } finally {
-      isSavingRef.current = false;
-      setIsSaving(false);
+      if (!isSuccessSubmit) {
+        isSavingRef.current = false;
+        setIsSaving(false);
+      }
     }
   };
 
@@ -797,7 +801,7 @@ const SubmitNewDocument = () => {
   };
 
   const handleSaveDraft = () => {
-    if (isSaving) return;
+    if (isSavingRef.current || isSaving) return;
     if (Object.keys(localFiles).length === 0 && !hasUnsavedChanges) {
       showToast('Nothing to save yet.', 'error');
       return;
