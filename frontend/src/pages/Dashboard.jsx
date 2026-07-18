@@ -223,11 +223,11 @@ const AdminDashboardView = () => {
       { label: 'All-Time Docs', value: stats.statistics.allTimeCount }
     ];
 
-    const tableHeaders = ['Submission ID', 'Document Title', 'Organization', 'Document Type', 'Status'];
+    const tableHeaders = ['Tracking No.', 'Document Title', 'Organization', 'Document Type', 'Status'];
     const tableData = (stats.activeDocuments || []).map(doc => {
       const docTitle = formatSubmissionTitle(doc, stats?.hero?.activeSy);
       return [
-        `SUB-${doc.id.substring(0, 8).toUpperCase()}`,
+        doc.tracking_number || (doc.documentType?.name?.toLowerCase().includes('proposal') ? 'PENDING NO.' : 'DRAFT'),
         docTitle,
         doc.users?.org_name || 'N/A',
         doc.documentType?.name || 'Unknown',
@@ -565,11 +565,11 @@ const ChairmanDashboardView = ({ role }) => {
       { label: 'All-Time Docs', value: stats.statistics?.allTimeCount || 0 }
     ];
 
-    const tableHeaders = ['Submission ID', 'Document Title', 'Organization', 'Document Type', 'Status'];
+    const tableHeaders = ['Tracking No.', 'Document Title', 'Organization', 'Document Type', 'Status'];
     const tableData = (stats.activeDocuments || []).map(doc => {
       const docTitle = formatSubmissionTitle(doc, stats?.hero?.activeSy);
       return [
-        `SUB-${doc.id.substring(0, 8).toUpperCase()}`,
+        doc.tracking_number || (doc.documentType?.name?.toLowerCase().includes('proposal') ? 'PENDING NO.' : 'DRAFT'),
         docTitle,
         doc.users?.org_name || 'N/A',
         doc.documentType?.name || 'Unknown',

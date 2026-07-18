@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient';
 import { useNavigate, useLocation } from 'react-router-dom';
 import SubmissionTimeline from '../components/SubmissionTimeline';
 import PageHeader from '../components/PageHeader';
+import { useToast } from '../hooks/useToast';
 import { 
   Search, 
   Filter, 
@@ -177,7 +178,7 @@ const mapInboxSubmission = (sub, viewer, subtypesMap = {}) => {
     org: customDetails.organization_name || sub.users?.org_name || '-',
     submitter_name: sub.users?.full_name || 'Unknown',
     title: (isActivityProposal && customDetails.activity_title) ? customDetails.activity_title.toUpperCase() : docTypeName.toUpperCase(),
-    ref: `SUB-2026-03-${String(sub.id).padStart(3, '0')}`,
+    ref: sub.tracking_number || (docTypeName.toLowerCase().includes('proposal') ? 'PENDING NO.' : 'DRAFT'),
     type: docTypeName,
     proposal_type: proposalType,
     status: statusLabel,
@@ -600,7 +601,7 @@ export const Inbox = () => {
       document.body.removeChild(link);
     } catch (error) {
       console.error('Download failed:', error);
-      alert('Download failed. Please try again.');
+      showToast('Download failed. Please try again.');
     }
   };
   
@@ -608,6 +609,7 @@ export const Inbox = () => {
   const [archiveData, setArchiveData] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState('');
+  const { showToast, ToastComponent } = useToast();
   const [subtypesMap, setSubtypesMap] = React.useState({});
 
   // Fetch subtypes on mount
@@ -796,11 +798,11 @@ export const Inbox = () => {
       await fetchSubmissions();
       setSelectedDoc(null);
       window.dispatchEvent(new CustomEvent('inbox-updated'));
-      alert('Submission approved successfully!');
+      showToast('Submission approved successfully!');
       navigate('/my-documents', { state: { highlightedId: selectedDoc.id } });
     } catch (err) {
       console.error('Error approving submission:', err);
-      alert('Failed to approve submission.');
+      showToast('Failed to approve submission.');
     } finally {
       setLoading(false);
     }
@@ -855,11 +857,11 @@ export const Inbox = () => {
       await fetchSubmissions();
       setSelectedDoc(null);
       window.dispatchEvent(new CustomEvent('inbox-updated'));
-      alert('Submission returned for edits successfully!');
+      showToast('Submission returned for edits successfully!');
       navigate('/my-documents', { state: { highlightedId: selectedDoc.id } });
     } catch (err) {
       console.error('Error returning submission:', err);
-      alert('Failed to return submission.');
+      showToast('Failed to return submission.');
     } finally {
       setLoading(false);
     }
@@ -911,11 +913,11 @@ export const Inbox = () => {
       await fetchSubmissions();
       setSelectedDoc(null);
       window.dispatchEvent(new CustomEvent('inbox-updated'));
-      alert('Submission disapproved successfully!');
+      showToast('Submission disapproved successfully!');
       navigate('/completed', { state: { openDocId: disapprovedId } });
     } catch (err) {
       console.error('Error disapproving submission:', err);
-      alert('Failed to disapprove submission.');
+      showToast('Failed to disapprove submission.');
     } finally {
       setLoading(false);
     }
@@ -2132,6 +2134,8 @@ export const Inbox = () => {
           </div>
         );
       })()}
+
+      <ToastComponent />
     </div>
   );
 };

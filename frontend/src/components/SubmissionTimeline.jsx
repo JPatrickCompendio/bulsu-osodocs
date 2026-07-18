@@ -311,7 +311,7 @@ const SubmissionTimeline = ({
     </div>
 
     {selectedProof && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 p-4 backdrop-blur-sm">
+      <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-900/80 p-4 backdrop-blur-sm">
         <div className="w-full max-w-4xl rounded-3xl bg-white shadow-2xl border border-gray-100 overflow-hidden">
           <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
             <div>

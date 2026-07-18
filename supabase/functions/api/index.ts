@@ -375,7 +375,7 @@ async function handleGetUserDetail(id: string) {
     const { data: subs } = await supabase
       .from('submissions')
       .select(
-        'id, status, created_at, school_year_id, documentType:document_type_id(name), submission_versions!submission_id(version_number, activity_proposal_details(activity_title))',
+'id, tracking_number, status, created_at, school_year_id, documentType:document_type_id(name), submission_versions!submission_id(version_number, activity_proposal_details(activity_title))',
       )
       .eq('user_id', id)
       .neq('status', 'draft')
@@ -391,7 +391,7 @@ async function handleGetUserDetail(id: string) {
     if (validSubIds.length > 0) {
       const { data: logs } = await supabase
         .from('submission_logs')
-        .select('*, submissions(id, school_year_id)')
+        .select('*, submissions(tracking_number,  school_year_id)')
         .eq('user_id', id)
         .in('submission_id', validSubIds)
         .order('created_at', { ascending: false })
@@ -470,7 +470,7 @@ async function handleGetUserDetail(id: string) {
 
     let logsQuery = supabase
       .from('submission_logs')
-      .select('*, submissions(id, status, school_year_id, documentType:document_type_id(name), submission_versions!submission_id(version_number, activity_proposal_details(activity_title)))')
+      .select('*, submissions(tracking_number,  status, school_year_id, documentType:document_type_id(name), submission_versions!submission_id(version_number, activity_proposal_details(activity_title)))')
       .eq('user_id', id)
       .order('created_at', { ascending: false })
       .limit(50);
@@ -917,7 +917,7 @@ async function handleGetNotifications(url: URL) {
   if (role === 'org-president') {
     const { data } = await supabase
       .from('submission_logs')
-      .select('*, submissions!inner(id, user_id, school_year_id)')
+      .select('*, submissions!inner(tracking_number,  user_id, school_year_id)')
       .eq('submissions.user_id', userId)
       .neq('user_id', userId)
       .neq('action_type', 'created')
@@ -940,7 +940,8 @@ async function handleGetNotifications(url: URL) {
 
     const { data: queueSubs } = await supabase
       .from('submissions')
-      .select('id, status, created_at, updated_at, school_year_id, documentType:document_type_id(name), users:user_id(full_name, org_name), submission_versions!submission_id(version_number, activity_proposal_details(activity_title))')
+      .select(
+'id, tracking_number, status, created_at, updated_at, school_year_id, documentType:document_type_id(name), users:user_id(full_name, org_name), submission_versions!submission_id(version_number, activity_proposal_details(activity_title))')
       .in('status', reviewStatuses)
       .order('created_at', { ascending: false })
       .limit(25);
@@ -971,7 +972,7 @@ async function handleGetNotifications(url: URL) {
 
     const { data: allLogs } = await supabase
       .from('submission_logs')
-      .select('*, submissions(id, status, school_year_id, document_type_id, user_id, users:user_id(org_name, full_name), documentType:document_type_id(name), submission_versions!submission_id(version_number, activity_proposal_details(activity_title)))')
+      .select('*, submissions(tracking_number,  status, school_year_id, document_type_id, user_id, users:user_id(org_name, full_name), documentType:document_type_id(name), submission_versions!submission_id(version_number, activity_proposal_details(activity_title)))')
       .neq('user_id', userId)
       .not('action_type', 'in', '("viewed","attachment_review","created")')
       .order('created_at', { ascending: false })
@@ -1461,7 +1462,8 @@ async function handleSubmissionDecision(url: URL) {
 
     let subQuery = supabase
       .from('submissions')
-      .select('id, status, users!inner(org_name)')
+      .select(
+'id, tracking_number, status, users!inner(org_name)')
       .eq('users.org_name', userRecord.org_name)
       .eq('document_type_id', documentTypeId)
       .eq('school_year_id', activeSy.id);
@@ -1521,7 +1523,7 @@ async function handleAdminDashboard() {
   const { data: allSubmissions } = await supabase
     .from('submissions')
     .select(
-      'id, status, school_year_id, user_id, current_version_id, documentType:document_type_id(name, id), users:user_id(org_name, full_name), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title))',
+'id, tracking_number, status, school_year_id, user_id, current_version_id, documentType:document_type_id(name, id), users:user_id(org_name, full_name), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title))',
     )
     .order('created_at', { ascending: false });
 
@@ -1689,7 +1691,7 @@ async function handleOrgDashboard(url: URL) {
   const { data: userSubmissions } = await supabase
     .from('submissions')
     .select(
-      'id, status, school_year_id, created_at, documentType:document_type_id(name, id), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title))',
+'id, tracking_number, status, school_year_id, created_at, documentType:document_type_id(name, id), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title))',
     )
     .eq('user_id', userId)
     .order('created_at', { ascending: false });

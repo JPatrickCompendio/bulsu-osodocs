@@ -86,4 +86,24 @@ body {
   animation: row-glow 2s cubic-bezier(0.25, 1, 0.50, 1) forwards;
 }
 
+@keyframes unread-pulse {
+  0% {
+    background-color: rgba(235, 178, 7, 0.05);
+    box-shadow: inset 0 0 5px rgba(235, 178, 7, 0.15);
+  }
+  50% {
+    background-color: rgba(235, 178, 7, 0.15);
+    box-shadow: inset 0 0 15px rgba(235, 178, 7, 0.3);
+  }
+  100% {
+    background-color: rgba(235, 178, 7, 0.05);
+    box-shadow: inset 0 0 5px rgba(235, 178, 7, 0.15);
+  }
+}
+
+.unread-glow {
+  animation: unread-pulse 3s infinite ease-in-out;
+  border-left: 3px solid #ebb207;
+}
+
 

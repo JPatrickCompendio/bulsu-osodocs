@@ -311,6 +311,7 @@ export const saveProposalDetails = async (versionId, details, subtypeId = null, 
   delete safeDetails.is_indefinite_end_time;
   delete safeDetails.target_end_time;
   delete safeDetails.activity_dates;
+  delete safeDetails.activity_number;
 
   // Clean up empty strings to null to avoid Postgres type errors for date/time/numeric columns
   Object.keys(safeDetails).forEach(key => {
@@ -366,12 +367,52 @@ export const submitForReview = async (submissionId, versionId, userId) => {
 
   if (verErr) throw verErr;
 
+  const { data: subData } = await supabase
+    .from('submissions')
+    .select('tracking_number, documentType (name)')
+    .eq('id', submissionId)
+    .single();
+
+  let finalTrackingNumber = subData?.tracking_number;
+
+  if (!finalTrackingNumber) {
+    const { data: user } = await supabase.from('users').select('abbreviation').eq('id', userId).single();
+    const orgAbbr = user?.abbreviation || 'ORG';
+    const typeName = (subData?.documentType?.name) || 'Document';
+    const prefix = typeName.split(' ').map(w => w[0].toUpperCase()).join('');
+    
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    
+    const baseString = `${prefix}-${orgAbbr}-${year}-${month}`;
+    
+    const { data: existing } = await supabase
+      .from('submissions')
+      .select('tracking_number')
+      .ilike('tracking_number', `${baseString}-%`)
+      .order('tracking_number', { ascending: false })
+      .limit(1);
+      
+    let increment = 1;
+    if (existing && existing.length > 0 && existing[0].tracking_number) {
+      const lastNumStr = existing[0].tracking_number.split('-').pop();
+      const lastNum = parseInt(lastNumStr, 10);
+      if (!isNaN(lastNum)) {
+        increment = lastNum + 1;
+      }
+    }
+    
+    finalTrackingNumber = `${baseString}-${String(increment)}`;
+  }
+
   const { error: subErr } = await supabase
     .from('submissions')
     .update({ 
       status: 'submitted', 
       submitted_at: new Date().toISOString(),
-      current_version_id: versionId
+      current_version_id: versionId,
+      tracking_number: finalTrackingNumber
     })
     .eq('id', submissionId);
 

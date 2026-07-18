@@ -23,6 +23,7 @@ const MyProfile = () => {
   
   // Profile Info State
   const [fullName, setFullName] = useState('');
+  const [abbreviation, setAbbreviation] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   
   // Password State
@@ -41,6 +42,7 @@ const MyProfile = () => {
   useEffect(() => {
     if (user) {
       setFullName(user.full_name || user.username || '');
+      setAbbreviation(user.abbreviation || '');
     }
   }, [user]);
 
@@ -122,9 +124,20 @@ const MyProfile = () => {
 
     setIsSavingProfile(true);
     try {
+      const payload = { full_name: fullName.trim() };
+      if (user.role === 'org-president') {
+        const trimmedAbbr = abbreviation.trim();
+        if (trimmedAbbr.length > 15) {
+          showToast('Organization Abbreviation cannot exceed 15 characters', 'error');
+          setIsSavingProfile(false);
+          return;
+        }
+        payload.abbreviation = trimmedAbbr;
+      }
+
       const { error } = await supabase
         .from('users')
-        .update({ full_name: fullName.trim() })
+        .update(payload)
         .eq('id', user.id);
 
       if (error) throw error;
@@ -334,10 +347,27 @@ const MyProfile = () => {
                 </p>
               </div>
               
+              {user.role === 'org-president' && (
+                <div>
+                  <label className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-2 block">Organization Abbreviation</label>
+                  <input 
+                    type="text" 
+                    value={abbreviation}
+                    onChange={(e) => setAbbreviation(e.target.value)}
+                    maxLength={15}
+                    className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-primary-green focus:bg-white focus:ring-4 focus:ring-primary-green/10 font-medium text-gray-800 outline-none transition-all"
+                    placeholder="e.g. ASICS"
+                  />
+                  <p className="text-[10px] text-gray-400 font-medium mt-2 flex items-center gap-1">
+                    <AlertCircle size={12} /> Used to generate your document tracking numbers.
+                  </p>
+                </div>
+              )}
+              
               <div className="flex justify-end pt-4 border-t border-gray-50">
                 <button 
                   type="submit" 
-                  disabled={isSavingProfile || fullName === (user.full_name || user.username)}
+                  disabled={isSavingProfile || (fullName === (user.full_name || user.username) && abbreviation === (user.abbreviation || ''))}
                   className="flex items-center gap-2 px-6 py-3 bg-primary-green text-white font-bold rounded-xl hover:bg-green-700 hover:shadow-lg hover:shadow-green-700/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSavingProfile ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}

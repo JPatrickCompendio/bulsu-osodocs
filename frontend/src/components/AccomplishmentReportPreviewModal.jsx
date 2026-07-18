@@ -90,12 +90,8 @@ const AccomplishmentReportPreviewModal = ({
       const orgName = details?.organization_name || submission?.users?.org_name || 'Organization Name';
 
       let actNoDisplay = '';
-      if (details?.activity_number) {
-        let lastTwo = String(details.activity_number).slice(-2);
-        if (lastTwo.length === 2 && lastTwo.startsWith('0')) {
-          lastTwo = lastTwo.substring(1);
-        }
-        actNoDisplay = lastTwo;
+      if (submission?.tracking_number) {
+        actNoDisplay = submission.tracking_number;
       }
 
       const formatList = (val) => {

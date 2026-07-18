@@ -137,7 +137,7 @@ const Completed = () => {
 
     const tableHeaders = ['Ref ID', 'Document Title', 'Sender Organization', 'Document Type', 'Date Completed', 'Status'];
     const tableData = filteredDocs.map(doc => [
-      doc.ref || `SUB-${doc.id.substring(0, 8).toUpperCase()}`,
+      doc.tracking_number || (doc.documentType?.name?.toLowerCase().includes('proposal') ? 'PENDING NO.' : 'DRAFT'),
       doc.title || 'Untitled Document',
       doc.sender || '—',
       doc.type || '—',
@@ -164,6 +164,7 @@ const Completed = () => {
       if (!readIds.includes(docId)) {
         readIds.push(docId);
         localStorage.setItem('completed_read_ids', JSON.stringify(readIds));
+        setUnreadDocIds(prev => prev.filter(id => id !== docId));
         window.dispatchEvent(new CustomEvent('completed-updated'));
       }
     } catch (e) {
@@ -179,14 +180,7 @@ const Completed = () => {
     }
   }, [location.state]);
 
-  React.useEffect(() => {
-    if (unreadDocIds.length > 0) {
-      const timer = setTimeout(() => {
-        setUnreadDocIds([]);
-      }, 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [unreadDocIds]);
+
 
   React.useEffect(() => {
     const handleClickOutside = () => setOpenFilter(null);
@@ -216,6 +210,7 @@ const Completed = () => {
           .from('submissions')
           .select(`
             id,
+            tracking_number,
             updated_at,
             status,
             subtype_id,
@@ -281,7 +276,7 @@ const Completed = () => {
             return {
               id: sub.id,
               title,
-              ref: `SUB-2026-03-${String(sub.id).padStart(3, '0')}`,
+              ref: sub.tracking_number || (isActivityProposal ? 'PENDING NO.' : 'DRAFT'),
               sender: sub.users?.org_name || '-',
               type: sub.documentType?.name || 'Document',
               proposal_type: proposalType,
@@ -482,7 +477,7 @@ const Completed = () => {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {filteredDocs.map((doc) => (
-                  <tr key={doc.id} className={`group transition-all duration-300 hover:bg-gray-50/50 ${unreadDocIds.includes(doc.id) ? 'newly-added-glow' : ''}`}>
+                  <tr key={doc.id} className={`group transition-all duration-300 hover:bg-gray-50/50 ${unreadDocIds.includes(doc.id) ? 'unread-glow' : ''}`}>
                     <td
                       className="px-6 py-5 cursor-pointer"
                       onClick={() => {

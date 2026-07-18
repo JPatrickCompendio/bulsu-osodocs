@@ -299,7 +299,7 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
   const docTypeName = submission.documentType?.name || 'Document';
   const isActivityProposal = docTypeName.toLowerCase().includes('activity proposal');
   const docTitle = details?.activity_title || docTypeName;
-  const ref = details?.activity_number ? `ACTIVITY NO. ${details.activity_number}` : `AP-2026-03-${String(submission.id).padStart(3, '0')}`;
+  const ref = submission.tracking_number || (docTypeName.toLowerCase().includes('proposal') ? 'PENDING NO.' : 'DRAFT');
   const orgName = details?.organization_name || submission.users?.org_name || '—';
 
   const proofFromRemarks = parseProofUrls(submission.remarks);

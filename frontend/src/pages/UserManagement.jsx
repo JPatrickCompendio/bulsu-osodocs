@@ -30,9 +30,11 @@ import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../config/api';
 import Avatar from '../components/Avatar';
 import ReportPreviewModal from '../components/ReportPreviewModal';
+import { useToast } from '../hooks/useToast';
 
 const UserManagement = () => {
   const [users, setUsers] = useState([]);
+  const { showToast, ToastComponent } = useToast();
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
@@ -263,7 +265,7 @@ const UserManagement = () => {
         fetchUsers();
         fetchUserDetail(suspendUser.id);
       } else {
-        alert('Error: ' + result.error);
+        showToast('Error: ' + result.error);
       }
     } catch (error) {
       console.error('Error updating status:', error);
@@ -300,7 +302,7 @@ const UserManagement = () => {
         setIsSuccessModalOpen(true);
         fetchUsers();
       } else {
-        alert('Error: ' + result.error);
+        showToast('Error: ' + result.error);
       }
     } catch (error) {
       console.error('Error deleting user:', error);
@@ -393,7 +395,7 @@ const UserManagement = () => {
           fetchUserDetail(editingUserId);
         }
       } else {
-        alert('Error: ' + result.error);
+        showToast('Error: ' + result.error);
       }
     } catch (error) {
       console.error('Error saving user:', error);
@@ -1443,6 +1445,8 @@ const UserManagement = () => {
         pdfFilename={reportData.filename}
         generatedBy={currentUser?.full_name || 'System Administrator'}
       />
+
+      <ToastComponent />
     </div>
   );
 };

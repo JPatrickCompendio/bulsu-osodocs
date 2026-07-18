@@ -21,6 +21,7 @@ const Sidebar = () => {
   const [showLogoutConfirm, setShowLogoutConfirm] = React.useState(false);
   const [inboxCount, setInboxCount] = React.useState(0);
   const [completedCount, setCompletedCount] = React.useState(0);
+  const [myDocsCount, setMyDocsCount] = React.useState(0);
 
   React.useEffect(() => {
     if (!user) return;
@@ -72,24 +73,62 @@ const Sidebar = () => {
         console.error('Error fetching completed count:', err);
       }
     };
+
+    const fetchMyDocsCount = async () => {
+      try {
+        if (user.role !== 'org-president') {
+          setMyDocsCount(0);
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from('submissions')
+          .select('id, status, submission_logs(created_at, action_type)')
+          .eq('user_id', user.id);
+
+        if (!error && isMounted) {
+          const activeList = (data || []).filter(sub => {
+            const s = String(sub.status || '').toLowerCase();
+            return s !== 'draft' && s !== 'completed' && !s.includes('disapproved') && s !== 'rejected';
+          });
+          const viewedObj = JSON.parse(localStorage.getItem(`my_docs_viewed_${user.id}`) || '{}');
+          const unreadCount = activeList.filter(sub => {
+             const logs = (sub.submission_logs || []).filter(l => l.action_type !== 'viewed');
+             if (logs.length === 0) {
+               // Fallback to updated_at if no meaningful logs
+               const lastViewed = viewedObj[sub.id];
+               return !lastViewed || new Date(sub.updated_at || new Date()) > new Date(lastViewed);
+             }
+             
+             // Get the latest log date excluding 'viewed' actions
+             const latestLogDate = new Date(Math.max(...logs.map(l => new Date(l.created_at))));
+             const lastViewed = viewedObj[sub.id];
+             return !lastViewed || latestLogDate > new Date(lastViewed);
+          }).length;
+          setMyDocsCount(unreadCount);
+        }
+      } catch (err) {
+        console.error('Error fetching my docs count:', err);
+      }
+    };
     
     fetchInboxCount();
     fetchCompletedCount();
+    fetchMyDocsCount();
     
-    const handleInboxUpdate = () => {
-      fetchInboxCount();
-    };
-    const handleCompletedUpdate = () => {
-      fetchCompletedCount();
-    };
+    const handleInboxUpdate = () => fetchInboxCount();
+    const handleCompletedUpdate = () => fetchCompletedCount();
+    const handleMyDocsUpdate = () => fetchMyDocsCount();
 
     window.addEventListener('inbox-updated', handleInboxUpdate);
     window.addEventListener('completed-updated', handleCompletedUpdate);
+    window.addEventListener('my-docs-updated', handleMyDocsUpdate);
     
     const channel = supabase.channel('submissions_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'submissions' }, () => {
         fetchInboxCount();
         fetchCompletedCount();
+        fetchMyDocsCount();
       })
       .subscribe();
 
@@ -97,6 +136,7 @@ const Sidebar = () => {
       isMounted = false;
       window.removeEventListener('inbox-updated', handleInboxUpdate);
       window.removeEventListener('completed-updated', handleCompletedUpdate);
+      window.removeEventListener('my-docs-updated', handleMyDocsUpdate);
       supabase.removeChannel(channel);
     };
   }, [user]);
@@ -173,6 +213,11 @@ const Sidebar = () => {
             {item.name === 'Completed' && completedCount > 0 && (
               <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm animate-pulse">
                 {completedCount > 99 ? '99+' : completedCount}
+              </span>
+            )}
+            {item.name === 'My Documents' && myDocsCount > 0 && (
+              <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm animate-pulse">
+                {myDocsCount > 99 ? '99+' : myDocsCount}
               </span>
             )}
           </NavLink>

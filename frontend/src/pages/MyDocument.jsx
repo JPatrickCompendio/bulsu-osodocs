@@ -28,6 +28,7 @@ import {
   FolderOpen
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
+import { useToast } from '../hooks/useToast';
 
 const getStatusColor = (status) => {
   const s = (status || '').toLowerCase().trim();
@@ -164,7 +165,7 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy, subtypesMap =
     id: submission.id,
     isActivityProposal,
     title: proposalTitle && proposalTitle !== '-' ? proposalTitle : docTypeName,
-    ref: `SUB-2026-03-${String(submission.id).padStart(3, '0')}`,
+    ref: submission.tracking_number || (docTypeName.toLowerCase().includes('proposal') ? 'PENDING NO.' : 'DRAFT'),
     sender: orgName,
     type: docTypeName,
     submittedDate,
@@ -271,8 +272,18 @@ export const MyDocuments = () => {
 
   // Detail View State
   const [selectedDoc, setSelectedDoc] = React.useState(null);
+  const [documentTypes, setDocumentTypes] = React.useState([]);
   const [activeSy, setActiveSy] = React.useState(null);
+  const [viewedDocs, setViewedDocs] = React.useState({});
+  const { showToast, ToastComponent } = useToast();
 
+  React.useEffect(() => {
+    if (user?.id) {
+      setViewedDocs(JSON.parse(localStorage.getItem(`my_docs_viewed_${user.id}`) || '{}'));
+    }
+  }, [user]);
+
+  // Load document types
   React.useEffect(() => {
     const fetchSy = async () => {
       const { data } = await supabase
@@ -453,7 +464,7 @@ export const MyDocuments = () => {
       document.body.removeChild(link);
     } catch (error) {
       console.error('Download failed:', error);
-      alert('Download failed. Please try again.');
+      showToast('Download failed. Please try again.');
     }
   };
 
@@ -714,7 +725,7 @@ export const MyDocuments = () => {
     if (error) throw error;
   };
 
-  const handleSaveAttachmentFeedback = () => {
+  const handleSaveAttachmentFeedback = async () => {
     if (!previewFile || !selectedDoc || !reviewAction) return;
     setLocallyReturned((prev) => ({
       ...prev,
@@ -727,10 +738,10 @@ export const MyDocuments = () => {
     setReviewAction('');
     setReviewComments('');
     setPreviewFile(null);
-    alert('Attachment marked for return. Confirm via the footer Return button.');
+    showToast('Attachment marked for return. Confirm via the footer Return button.');
   };
 
-  const handleApproveAttachment = () => {
+  const handleApproveAttachment = async () => {
     if (!previewFile || !selectedDoc) return;
     setLocallyApproved((prev) => [...new Set([...prev, previewFile.id])]);
     setLocallyReturned((prev) => {
@@ -741,7 +752,7 @@ export const MyDocuments = () => {
     setReviewAction('');
     setReviewComments('');
     setPreviewFile(null);
-    alert('Attachment approved locally. Confirm via the footer action button.');
+    showToast('Attachment approved locally. Confirm via the footer action button.');
   };
 
   // Fetch timeline logs for detailed view
@@ -889,6 +900,7 @@ export const MyDocuments = () => {
             users (org_name, student_no, full_name, role),
             documentType (name),
             document_subtypes (name),
+            submission_logs (created_at, action_type),
             submission_versions!submission_id (
               *,
               activity_proposal_details (*, activity_schedules (*)),
@@ -903,15 +915,19 @@ export const MyDocuments = () => {
         const activeSubs = (subs || []).filter((sub) => String(sub.status || '').toLowerCase() !== 'completed');
 
         // Normalize into the same shape expected by the existing mapper (logsData items with `.submissions`)
-        data = activeSubs.map((sub) => ({
-          id: `sub-${sub.id}`,
-          submission_id: sub.id,
-          created_at: sub.updated_at || sub.created_at,
-          workflow_phase: null,
-          review_action: null,
-          action_type: null,
-          submissions: sub
-        }));
+        data = activeSubs.map((sub) => {
+          const logs = (sub.submission_logs || []).filter(l => l.action_type !== 'viewed');
+          const maxLogDate = logs.length > 0 ? new Date(Math.max(...logs.map(l => new Date(l.created_at)))).toISOString() : null;
+          return {
+            id: `sub-${sub.id}`,
+            submission_id: sub.id,
+            created_at: maxLogDate || sub.updated_at || sub.created_at,
+            workflow_phase: null,
+            review_action: null,
+            action_type: null,
+            submissions: sub
+          };
+        });
 
         setLogsData(data);
         return;
@@ -1027,10 +1043,10 @@ export const MyDocuments = () => {
       setLocallyReturned({});
       setSelectedDoc(null);
       await fetchHandledLogs();
-      alert('Submission returned for edits successfully!');
+      showToast('Submission returned for edits successfully!');
     } catch (err) {
       console.error('Error returning submission:', err);
-      alert('Failed to return submission.');
+      showToast('Failed to return submission.');
     } finally {
       setLoading(false);
     }
@@ -1058,7 +1074,7 @@ export const MyDocuments = () => {
 
       // Validate all returned files have replacements
       if (Object.keys(resubmitFiles).length < returnedAttachments.length) {
-        alert('Please upload all required replacements.');
+        showToast('Please upload all required replacements.');
         return;
       }
 
@@ -1083,10 +1099,10 @@ export const MyDocuments = () => {
       if (refreshUser) {
         await refreshUser();
       }
-      alert('Document resubmitted successfully!');
+      showToast('Document resubmitted successfully!');
     } catch (err) {
       console.error('Error resubmitting:', err);
-      alert('Failed to resubmit document.');
+      showToast('Failed to resubmit document.');
     } finally {
       setIsResubmitting(false);
     }
@@ -1142,13 +1158,13 @@ export const MyDocuments = () => {
       const disapprovedId = selectedDoc.id;
       setSelectedDoc(null);
       await fetchHandledLogs();
-      alert('Submission disapproved successfully!');
+      showToast('Submission disapproved successfully!');
       if (isChairmanLikeReviewer(user?.role) || user?.role === 'admin') {
         navigate('/completed', { state: { openDocId: disapprovedId } });
       }
     } catch (err) {
       console.error('Error disapproving submission:', err);
-      alert('Failed to disapprove submission.');
+      showToast('Failed to disapprove submission.');
     } finally {
       setLoading(false);
     }
@@ -1196,10 +1212,10 @@ export const MyDocuments = () => {
       setLocallyReturned({});
       setSelectedDoc(null);
       await fetchHandledLogs();
-      alert('Submission forwarded successfully!');
+      showToast('Submission forwarded successfully!');
     } catch (err) {
       console.error('Error forwarding submission:', err);
-      alert('Failed to forward submission.');
+      showToast('Failed to forward submission.');
     } finally {
       setLoading(false);
     }
@@ -1261,10 +1277,10 @@ export const MyDocuments = () => {
       setExternalProofFile(null);
       setSelectedDoc(null);
       await fetchHandledLogs();
-      alert('Sent to External Campus successfully!');
+      showToast('Sent to External Campus successfully!');
     } catch (err) {
       console.error('Error sending to external:', err);
-      alert('Failed to send to external campus.');
+      showToast('Failed to send to external campus.');
     } finally {
       setLoading(false);
       setExternalProofUploading(false);
@@ -1319,10 +1335,10 @@ export const MyDocuments = () => {
         }
       } : prev);
       await fetchHandledLogs();
-      alert('Document marked ready for retrieval successfully!');
+      showToast('Document marked ready for retrieval successfully!');
     } catch (err) {
       console.error('Error marking ready for retrieval:', err);
-      alert('Failed to mark document ready for retrieval.');
+      showToast('Failed to mark document ready for retrieval.');
     } finally {
       setLoading(false);
     }
@@ -1433,10 +1449,10 @@ export const MyDocuments = () => {
 
       setSelectedDoc(null);
       await fetchHandledLogs();
-      alert('Submission approved successfully!');
+      showToast('Submission approved successfully!');
     } catch (err) {
       console.error('Error approving submission:', err);
-      alert('Failed to approve submission.');
+      showToast('Failed to approve submission.');
     } finally {
       setLoading(false);
     }
@@ -1628,7 +1644,7 @@ export const MyDocuments = () => {
       isActivityProposal,
 
       title: proposalTitle && proposalTitle !== '-' ? proposalTitle : docTypeName,
-      ref: `SUB-2026-03-${String(submission.id).padStart(3, '0')}`,
+      ref: submission.tracking_number || (isActivityProposal ? 'PENDING NO.' : 'DRAFT'),
       sender: orgName,
       type: docTypeName,
       submittedDate,
@@ -1657,6 +1673,7 @@ export const MyDocuments = () => {
       satisfy_needs: details?.satisfy_needs || null,
       isActivityProposal,
       schedules: details?.activity_schedules || [],
+      latestLogDate: latestLog?.created_at,
       raw: submission
     };
   });
@@ -1702,6 +1719,65 @@ export const MyDocuments = () => {
     ...(user?.role === 'chairman' ? [{ name: 'To Forward', count: countByTab('To Forward') }] : []),
     { name: 'Returned', count: countByTab('Returned') }
   ];
+
+  const renderDeliveryProofModal = () => {
+    if (!isDeliveryProofModalOpen) return null;
+    return (
+      <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-900/80 p-4 backdrop-blur-sm">
+        <div className="w-full max-w-5xl rounded-3xl bg-white shadow-2xl border border-gray-100 overflow-hidden">
+          <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+            <div>
+              <h3 className="text-lg font-bold text-gray-800">Proof of Delivery</h3>
+              <p className="text-xs font-medium text-gray-500 mt-1">External Campus Submission Proof</p>
+            </div>
+            <button
+              onClick={() => setIsDeliveryProofModalOpen(false)}
+              className="rounded-full p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
+          <div className="p-6 bg-gray-50/50 flex flex-col items-center justify-center min-h-[500px]">
+            {externalProofs && externalProofs.length > 0 ? (
+              externalProofs.map((proof, idx) => (
+                <div key={idx} className="mb-4 w-full flex justify-center">
+                  {isImageUrl(proof.name) ? (
+                    <img
+                      src={proof.url}
+                      alt={`Delivery Proof ${idx + 1}`}
+                      className="max-h-[70vh] rounded-xl shadow-md border border-gray-200 object-contain"
+                    />
+                  ) : (
+                    <iframe
+                      src={`${proof.url}#toolbar=0`}
+                      className="h-[70vh] w-full rounded-xl shadow-md border border-gray-200 bg-white"
+                      title={`Delivery Proof PDF ${idx + 1}`}
+                    />
+                  )}
+                </div>
+              ))
+            ) : (
+              <div className="mb-4 w-full flex justify-center">
+                {isImageUrl(deliveryProofUrl) ? (
+                  <img
+                    src={deliveryProofUrl}
+                    alt="Delivery Proof"
+                    className="max-h-[70vh] rounded-xl shadow-md border border-gray-200 object-contain"
+                  />
+                ) : (
+                  <iframe
+                    src={deliveryProofUrl ? `${deliveryProofUrl}#toolbar=0` : ''}
+                    className="h-[70vh] w-full rounded-xl shadow-md border border-gray-200 bg-white"
+                    title="Delivery Proof PDF"
+                  />
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   if (selectedDoc) {
     const isActivityProposal = selectedDoc.isActivityProposal;
@@ -2347,10 +2423,10 @@ export const MyDocuments = () => {
                         }
                       } : prev);
                       await fetchHandledLogs();
-                      alert('Document marked as retrieved!');
+                      showToast('Document marked as retrieved!');
                     } catch (err) {
                       console.error('Error marking document retrieved:', err);
-                      alert('Failed to mark as retrieved.');
+                      showToast('Failed to mark as retrieved.');
                     } finally {
                       setLoading(false);
                     }
@@ -2526,7 +2602,7 @@ export const MyDocuments = () => {
                   <button
                     onClick={async () => {
                       if (!selectedDoc) {
-                        alert('No activity proposal selected.');
+                        showToast('No activity proposal selected.');
                         return;
                       }
                       if (accomplishmentReport) {
@@ -2534,19 +2610,19 @@ export const MyDocuments = () => {
                         return;
                       }
                       if (!accomParticipants.trim()) {
-                        alert('Please provide the Participants details.');
+                        showToast('Please provide the Participants details.');
                         return;
                       }
                       if (!accomBenefitingGroup.trim()) {
-                        alert('Please provide the Benefiting Group.');
+                        showToast('Please provide the Benefiting Group.');
                         return;
                       }
                       if (!accomResources.trim()) {
-                        alert('Please provide the Resources Used.');
+                        showToast('Please provide the Resources Used.');
                         return;
                       }
                       if (accomReportFiles.length === 0) {
-                        alert('Please attach at least one proof image.');
+                        showToast('Please attach at least one proof image.');
                         return;
                       }
 
@@ -2575,7 +2651,7 @@ export const MyDocuments = () => {
 
                         if (accomCheckErr) throw accomCheckErr;
                         if (existingReport) {
-                          alert('An accomplishment report already exists for this activity proposal.');
+                          showToast('An accomplishment report already exists for this activity proposal.');
                           return;
                         }
 
@@ -2643,11 +2719,11 @@ export const MyDocuments = () => {
                         setAccomBenefitingGroup('');
                         setAccomResources('');
                         await fetchHandledLogs();
-                        alert('Accomplishment report submitted!');
+                        showToast('Accomplishment report submitted!');
                         navigate('/completed', { state: { openDocId: submissionId } });
                       } catch (err) {
                         console.error('Error submitting accomplishment report:', err);
-                        alert(err?.message || 'Failed to submit accomplishment report.');
+                        showToast(err?.message || 'Failed to submit accomplishment report.');
                       } finally {
                         setLoading(false);
                       }
@@ -2850,6 +2926,7 @@ export const MyDocuments = () => {
               </div>
             );
           })()}
+          {renderDeliveryProofModal()}
         </div>
       );
     }
@@ -3216,43 +3293,45 @@ export const MyDocuments = () => {
 
         {/* Action buttons (Chairman / Vice Chairman - Bottom of the page) */}
         {isChairmanLikeReviewer(user?.role) && !disableVersionActions && (
-          <div className="flex items-center justify-center gap-4 mt-10 p-6 bg-gray-50 border border-gray-100 rounded-3xl shadow-sm max-w-xl mx-auto">
-            <button
-              onClick={() => {
-                setDecisionType('return');
-                setReturnComments('');
-                setIsReturnModalOpen(true);
-              }}
-              disabled={disableVersionActions || selectedDoc.category !== 'To Forward'}
-              className="flex items-center justify-center gap-3 px-8 py-3.5 bg-amber-500 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-lg shadow-amber-500/20 uppercase tracking-widest animate-in"
-            >
-              <RotateCcw size={16} />
-              <span>Return</span>
-            </button>
+          <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100]">
+            <div className="bg-white/80 backdrop-blur-2xl px-10 py-5 rounded-[2rem] border border-white/50 shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex items-center gap-6 animate-in slide-in-from-bottom-12 duration-1000">
+              <button
+                onClick={() => {
+                  setDecisionType('return');
+                  setReturnComments('');
+                  setIsReturnModalOpen(true);
+                }}
+                disabled={disableVersionActions || selectedDoc.category !== 'To Forward'}
+                className="flex items-center justify-center gap-3 px-8 py-3.5 bg-amber-500 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-lg shadow-amber-500/20 uppercase tracking-widest animate-in"
+              >
+                <RotateCcw size={16} />
+                <span>Return</span>
+              </button>
 
-            <button
-              onClick={() => {
-                setDecisionType('disapprove');
-                setReturnComments('');
-                setIsReturnModalOpen(true);
-              }}
-              disabled={disableVersionActions || (selectedDoc.category !== 'To Forward' && selectedDoc.category !== 'Returned')}
-              className="flex items-center justify-center gap-3 px-8 py-3.5 bg-red-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-lg shadow-red-600/20 uppercase tracking-widest animate-in"
-            >
-              <X size={16} />
-              <span>Disapprove</span>
-            </button>
+              <button
+                onClick={() => {
+                  setDecisionType('disapprove');
+                  setReturnComments('');
+                  setIsReturnModalOpen(true);
+                }}
+                disabled={disableVersionActions || (selectedDoc.category !== 'To Forward' && selectedDoc.category !== 'Returned')}
+                className="flex items-center justify-center gap-3 px-8 py-3.5 bg-red-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-lg shadow-red-600/20 uppercase tracking-widest animate-in"
+              >
+                <X size={16} />
+                <span>Disapprove</span>
+              </button>
 
-            <button
-              onClick={() => {
-                setIsForwardModalOpen(true);
-              }}
-              disabled={disableVersionActions || selectedDoc.category !== 'To Forward' || hasBlockingReturnedAttachments}
-              className="flex items-center justify-center gap-3 px-8 py-3.5 bg-green-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-lg shadow-green-600/20 uppercase tracking-widest animate-in"
-            >
-              <CheckCircle size={16} />
-              <span>To Forward</span>
-            </button>
+              <button
+                onClick={() => {
+                  setIsForwardModalOpen(true);
+                }}
+                disabled={disableVersionActions || selectedDoc.category !== 'To Forward' || hasBlockingReturnedAttachments}
+                className="flex items-center justify-center gap-3 px-8 py-3.5 bg-green-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-lg shadow-green-600/20 uppercase tracking-widest animate-in"
+              >
+                <CheckCircle size={16} />
+                <span>Forward</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -3602,9 +3681,9 @@ export const MyDocuments = () => {
             confirmBtnText = 'Confirm Send';
             confirmBtnBg = 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/10';
             disableConfirm = !externalProofFile;
-            onConfirm = () => {
+            onConfirm = async () => {
               if (!externalProofFile) {
-                alert('Please upload proof that the document was sent to the external campus.');
+                showToast('Please upload proof that the document was sent to the external campus.');
                 return;
               }
               handleSendToExternal(returnComments);
@@ -3830,6 +3909,7 @@ export const MyDocuments = () => {
             </div>
           );
         })()}
+        {renderDeliveryProofModal()}
       </div>
     );
   }
@@ -3904,14 +3984,24 @@ export const MyDocuments = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {filteredDocs.map((doc) => (
+                {filteredDocs.map((doc) => {
+                  const isUnread = user?.role === 'org-president' && (!viewedDocs[doc.id] || new Date(doc.latestLogDate || doc.raw.updated_at) > new Date(viewedDocs[doc.id]));
+                  return (
                   <tr
                     key={doc.id}
-                    className={`group transition-all duration-300 hover:bg-gray-50/50 ${doc.id === highlightedDocId ? 'newly-added-glow' : ''}`}
+                    className={`group transition-all duration-300 hover:bg-gray-50/50 ${doc.id === highlightedDocId ? 'newly-added-glow' : ''} ${isUnread ? 'unread-glow' : ''}`}
                   >
                     <td
                       className="px-6 py-5 cursor-pointer"
-                      onClick={() => setSelectedDoc(doc)}
+                      onClick={() => {
+                        setSelectedDoc(doc);
+                        if (user?.role === 'org-president') {
+                          const updatedViewed = { ...viewedDocs, [doc.id]: new Date().toISOString() };
+                          setViewedDocs(updatedViewed);
+                          localStorage.setItem(`my_docs_viewed_${user.id}`, JSON.stringify(updatedViewed));
+                          window.dispatchEvent(new CustomEvent('my-docs-updated'));
+                        }
+                      }}
                     >
                       <div className="flex items-center gap-3">
                         <FileText className="text-secondary-gold opacity-50" size={20} />
@@ -3951,7 +4041,8 @@ export const MyDocuments = () => {
                     </td>
                     <td className="px-6 py-5 text-right text-sm text-gray-500 font-medium">{doc.lastAction}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           ) : (
@@ -3964,61 +4055,7 @@ export const MyDocuments = () => {
         </div>
       </div>
 
-      {isDeliveryProofModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-5xl rounded-3xl bg-white shadow-2xl border border-gray-100 overflow-hidden">
-            <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-              <div>
-                <h3 className="text-lg font-bold text-gray-800">Proof of Delivery</h3>
-                <p className="text-xs font-medium text-gray-500 mt-1">External Campus Submission Proof</p>
-              </div>
-              <button
-                onClick={() => setIsDeliveryProofModalOpen(false)}
-                className="rounded-full p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div className="p-6 bg-gray-50/50 flex flex-col items-center justify-center min-h-[500px]">
-              {externalProofs && externalProofs.length > 0 ? (
-                externalProofs.map((proof, idx) => (
-                  <div key={idx} className="mb-4 w-full flex justify-center">
-                    {isImageUrl(proof.name) ? (
-                      <img
-                        src={proof.url}
-                        alt={`Delivery Proof ${idx + 1}`}
-                        className="max-h-[70vh] rounded-xl shadow-md border border-gray-200 object-contain"
-                      />
-                    ) : (
-                      <iframe
-                        src={`${proof.url}#toolbar=0`}
-                        className="h-[70vh] w-full rounded-xl shadow-md border border-gray-200 bg-white"
-                        title={`Delivery Proof PDF ${idx + 1}`}
-                      />
-                    )}
-                  </div>
-                ))
-              ) : (
-                <div className="mb-4 w-full flex justify-center">
-                  {isImageUrl(deliveryProofUrl) ? (
-                    <img
-                      src={deliveryProofUrl}
-                      alt="Delivery Proof"
-                      className="max-h-[70vh] rounded-xl shadow-md border border-gray-200 object-contain"
-                    />
-                  ) : (
-                    <iframe
-                      src={deliveryProofUrl ? `${deliveryProofUrl}#toolbar=0` : ''}
-                      className="h-[70vh] w-full rounded-xl shadow-md border border-gray-200 bg-white"
-                      title="Delivery Proof PDF"
-                    />
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {renderDeliveryProofModal()}
 
       {showSuspendedModal && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[9999] flex items-center justify-center p-4">
@@ -4073,6 +4110,8 @@ export const MyDocuments = () => {
           </div>
         </div>
       )}
+
+      <ToastComponent />
     </div>
   );
 };

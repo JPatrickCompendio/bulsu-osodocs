@@ -13,6 +13,7 @@ import {
   normalizeWorkflowStatus,
 } from '../utils/workflowNotificationUtils';
 import SchoolYearCalendarModal from './SchoolYearCalendarModal';
+import OnboardingOverlay from './OnboardingOverlay';
 
 const Header = () => {
   const { user } = useAuth();
@@ -489,6 +490,12 @@ const Header = () => {
 };
 
 const DashboardLayout = () => {
+  const { user } = useAuth();
+  
+  if (user?.role === 'org-president' && !user?.abbreviation) {
+    return <OnboardingOverlay />;
+  }
+
   return (
     <div className="flex h-screen bg-[#f8fafc]">
       <Sidebar />

@@ -16,6 +16,7 @@ import {
 import { apiClient, apiUrl } from '../config/apiClient';
 import { supabase } from '../supabaseClient';
 import PageHeader from '../components/PageHeader';
+import { useToast } from '../hooks/useToast';
 
 const AnnouncementManagement = () => {
   const { user } = useAuth();
@@ -27,6 +28,7 @@ const AnnouncementManagement = () => {
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [existingFiles, setExistingFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const { showToast, ToastComponent } = useToast();
   
   const [formData, setFormData] = useState({
     title: '',
@@ -104,7 +106,7 @@ const AnnouncementManagement = () => {
       await Promise.all(uploadPromises);
     } catch (err) {
       console.error('Error uploading file:', err);
-      alert('Failed to upload file');
+      showToast('Failed to upload file');
     } finally {
       setUploading(false);
     }
@@ -118,7 +120,7 @@ const AnnouncementManagement = () => {
       setExistingFiles(prev => prev.filter(f => f.name !== fileName));
     } catch (err) {
       console.error('Error removing file:', err);
-      alert('Failed to remove file');
+      showToast('Failed to remove file');
     }
   };
 
@@ -181,7 +183,7 @@ const AnnouncementManagement = () => {
       let finalAudience = formData.target_audience;
       if (finalAudience === 'specific-org') {
         if (!specificOrg) {
-          alert('Please select an organization');
+          showToast('Please select an organization');
           return;
         }
         finalAudience = `org:${specificOrg}`;
@@ -210,7 +212,7 @@ const AnnouncementManagement = () => {
       closeModal();
     } catch (err) {
       console.error('Error saving announcement:', err);
-      alert('Failed to save announcement.');
+      showToast('Failed to save announcement.');
     }
   };
 
@@ -221,7 +223,7 @@ const AnnouncementManagement = () => {
         fetchAnnouncements();
       } catch (err) {
         console.error('Error deleting announcement:', err);
-        alert('Failed to delete announcement.');
+        showToast('Failed to delete announcement.');
       }
     }
   };
@@ -491,6 +493,8 @@ const AnnouncementManagement = () => {
           </div>
         </div>
       )}
+
+      <ToastComponent />
     </div>
   );
 };

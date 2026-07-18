@@ -76,6 +76,27 @@ const ActivityProposalPreviewModal = ({
 
       const getObjectiveChecked = (val) => proposalDetails.objectives?.includes(val);
 
+      const formatTime = (t) => {
+        if (!t || t === 'TBD') return 'TBD';
+        try {
+          const [h, m] = t.split(':');
+          let hours = parseInt(h, 10);
+          const suffix = hours >= 12 ? 'PM' : 'AM';
+          hours = hours % 12 || 12;
+          return `${hours}:${m} ${suffix}`;
+        } catch (e) { return t; }
+      };
+
+      const formatDuration = (mins) => {
+        if (!mins) return '—';
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        let res = [];
+        if (h > 0) res.push(`${h} hour${h > 1 ? 's' : ''}`);
+        if (m > 0) res.push(`${m} minute${m > 1 ? 's' : ''}`);
+        return res.join(' and ') || '—';
+      };
+
       const initialHtml = `
         <style>
           .form-row { display: flex; align-items: flex-end; margin-bottom: 18px; }
@@ -96,7 +117,7 @@ const ActivityProposalPreviewModal = ({
           </div>
           <div class="form-row">
             <div class="form-label">Activity Number:</div>
-            <div class="form-line">${proposalDetails.activity_number || ''}</div>
+            <div class="form-line">${proposalDetails.activity_number || proposalDetails.tracking_number || ''}</div>
           </div>
           <div class="form-row">
             <div class="form-label">Activity Title:</div>
@@ -121,7 +142,7 @@ const ActivityProposalPreviewModal = ({
             <div class="form-line">
               ${(proposalDetails.schedules && proposalDetails.schedules.length > 0) ? proposalDetails.schedules.map(sched => {
                 const dateStr = sched.activity_date ? new Date(sched.activity_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'TBD';
-                return `${dateStr}, ${sched.start_time || 'TBD'} - ${sched.is_indefinite ? 'INDEFINITE' : (sched.end_time || 'TBD')}`;
+                return `${dateStr}, ${formatTime(sched.start_time)} - ${sched.is_indefinite ? 'INDEFINITE' : formatTime(sched.end_time)}`;
               }).join(' | ') : '—'}
             </div>
           </div>
@@ -129,7 +150,7 @@ const ActivityProposalPreviewModal = ({
             <div class="form-label">Duration:</div>
             <div class="form-line">
               ${(proposalDetails.schedules && proposalDetails.schedules.length > 0) 
-                ? `${(proposalDetails.schedules.reduce((acc, s) => acc + (s.duration_minutes || 0), 0) / 60).toFixed(1)} Hours` 
+                ? formatDuration(proposalDetails.schedules.reduce((acc, s) => acc + (s.duration_minutes || 0), 0))
                 : '—'}
             </div>
           </div>
@@ -184,14 +205,14 @@ const ActivityProposalPreviewModal = ({
 
           <div style="display: flex; justify-content: space-between; margin-top: 60px;">
             <div style="width: 40%; text-align: center;">
-              <div style="border-bottom: 1.5px solid black; height: 20px; font-size: 13px; font-weight: bold; margin-bottom: 5px;">
-                ${user?.name || ''}
+              <div style="border-bottom: 1.5px solid black; height: 20px; font-size: 13px; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;">
+                ${user?.full_name || ''}
               </div>
               <div style="font-size: 10px; font-style: italic;">(Signature over printed name)</div>
               <div style="font-size: 12px; margin-top: 5px;">President, Student Organization</div>
             </div>
             <div style="width: 40%; text-align: center;">
-              <div style="border-bottom: 1.5px solid black; height: 20px; font-size: 13px; font-weight: bold; margin-bottom: 5px;">
+              <div style="border-bottom: 1.5px solid black; height: 20px; font-size: 13px; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;">
                 ${proposalDetails.adviser_name || ''}
               </div>
               <div style="font-size: 10px; font-style: italic;">(Signature over printed name)</div>

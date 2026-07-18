@@ -169,6 +169,27 @@ const SubmitNewDocument = () => {
 
     const getObjectiveChecked = (val) => proposalDetails.objectives?.includes(val);
 
+    const formatTime = (t) => {
+      if (!t || t === 'TBD') return 'TBD';
+      try {
+        const [h, m] = t.split(':');
+        let hours = parseInt(h, 10);
+        const suffix = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12 || 12;
+        return `${hours}:${m} ${suffix}`;
+      } catch (e) { return t; }
+    };
+
+    const formatDuration = (mins) => {
+      if (!mins) return '—';
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      let res = [];
+      if (h > 0) res.push(`${h} hour${h > 1 ? 's' : ''}`);
+      if (m > 0) res.push(`${m} minute${m > 1 ? 's' : ''}`);
+      return res.join(' and ') || '—';
+    };
+
     doc.open();
     doc.write(`
       <html>
@@ -242,13 +263,13 @@ const SubmitNewDocument = () => {
                 <div class="form-row">
                   <div class="form-label">Target Date and Time:</div>
                   <div class="form-line">
-                    ${proposalDetails.activity_dates.map(d => new Date(d).toLocaleDateString()).join(', ')} 
-                    | ${proposalDetails.target_time} - ${proposalDetails.is_indefinite_end_time ? 'Indefinite' : proposalDetails.target_end_time}
+                    ${proposalDetails.activity_dates.map(d => new Date(d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })).join(', ')} 
+                    | ${formatTime(proposalDetails.target_time)} - ${proposalDetails.is_indefinite_end_time ? 'INDEFINITE' : formatTime(proposalDetails.target_end_time)}
                   </div>
                 </div>
                 <div class="form-row">
                   <div class="form-label">Duration:</div>
-                  <div class="form-line">${proposalDetails.is_indefinite_end_time ? 'Indefinite' : proposalDetails.duration + (proposalDetails.duration ? ' Hours' : '')}</div>
+                  <div class="form-line">${proposalDetails.is_indefinite_end_time ? 'INDEFINITE' : formatDuration(Math.round(parseFloat(proposalDetails.duration || 0) * 60))}</div>
                 </div>
                 <div class="form-row">
                   <div class="form-label">Number of Student Involved:</div>
@@ -301,14 +322,14 @@ const SubmitNewDocument = () => {
 
                 <div style="display: flex; justify-content: space-between; margin-top: 60px;">
                   <div style="width: 40%; text-align: center;">
-                    <div style="border-bottom: 1.5px solid black; height: 20px; font-size: 13px; font-weight: bold; margin-bottom: 5px;">
-                      ${user?.name || ''}
+                    <div style="border-bottom: 1.5px solid black; height: 20px; font-size: 13px; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;">
+                      ${user?.full_name || ''}
                     </div>
                     <div style="font-size: 10px; font-style: italic;">(Signature over printed name)</div>
                     <div style="font-size: 12px; margin-top: 5px;">President, Student Organization</div>
                   </div>
                   <div style="width: 40%; text-align: center;">
-                    <div style="border-bottom: 1.5px solid black; height: 20px; font-size: 13px; font-weight: bold; margin-bottom: 5px;">
+                    <div style="border-bottom: 1.5px solid black; height: 20px; font-size: 13px; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;">
                       ${proposalDetails.adviser_name || ''}
                     </div>
                     <div style="font-size: 10px; font-style: italic;">(Signature over printed name)</div>
@@ -523,6 +544,37 @@ const SubmitNewDocument = () => {
     }
   };
 
+  const fetchNextActivityNumber = async () => {
+    try {
+      const { data: userData } = await supabase.from('users').select('abbreviation').eq('id', user.id).single();
+      const orgAbbr = userData?.abbreviation || 'ORG';
+      const date = new Date();
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const baseString = `AP-${orgAbbr}-${year}-${month}`;
+      
+      const { data: existing } = await supabase
+        .from('submissions')
+        .select('tracking_number')
+        .ilike('tracking_number', `${baseString}-%`);
+
+      let maxIncrement = 0;
+      if (existing && existing.length > 0) {
+        existing.forEach(sub => {
+           const parts = (sub.tracking_number || '').split('-');
+           const lastNum = parseInt(parts[parts.length - 1], 10);
+           if (!isNaN(lastNum) && lastNum > maxIncrement) {
+              maxIncrement = lastNum;
+           }
+        });
+      }
+      return String(maxIncrement + 1);
+    } catch (e) {
+      console.error('Failed to fetch next activity number:', e);
+      return '1';
+    }
+  };
+
   const initializeSubmissionForm = async (type, subtypeObj = null, subName = '', resumeSubmissionId = null) => {
     setLoading(true);
     try {
@@ -568,7 +620,7 @@ const SubmitNewDocument = () => {
               duration_minutes: details.duration ? Math.round(parseFloat(details.duration) * 60) : 0
             })).filter(s => s.activity_date) : []),
             activity_dates: details.target_date ? details.target_date.split(',').map(d => d.trim()).filter(Boolean) : [],
-            activity_number: details.activity_number || `AP-${new Date().getFullYear()}-${(new Date().getMonth() + 1).toString().padStart(2, '0')}-001`,
+            activity_number: details.activity_number || await fetchNextActivityNumber(),
             organization_name: details.organization_name || user?.org_name || '',
             adviser_name: details.adviser_name || user?.adviser_name || '',
             person_in_charge: details.person_in_charge || user?.full_name || '',
@@ -587,10 +639,10 @@ const SubmitNewDocument = () => {
         }
       } else {
         if (isProposal) {
-          const dateStr = `${new Date().getFullYear()}-${(new Date().getMonth() + 1).toString().padStart(2, '0')}`;
+          const nextActNum = await fetchNextActivityNumber();
           setProposalDetails({
             ...defaultForm,
-            activity_number: `AP-${dateStr}-001`,
+            activity_number: nextActNum,
             organization_name: user?.org_name || '',
             adviser_name: user?.adviser_name || '',
             person_in_charge: user?.full_name || '',
