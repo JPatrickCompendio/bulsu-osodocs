@@ -357,7 +357,7 @@ async function handleGetUserDetail(id: string) {
     else if (status === 'submitted' || status === 'pending') displayStatus = 'OSO Staff Review';
     else if (status === 'oso approved' || status === 'sds coordinator review') displayStatus = 'SDS Coordinator Review';
     else if (status === 'sds approved' || status === 'chairman approved') displayStatus = 'Chairman Review';
-    else if (status === 'vice chairman approved' || status === 'external review') displayStatus = 'External Review';
+    else if (status === 'vice chairman approved' || status === 'main campus review') displayStatus = 'main campus review';
     else if (status === 'external approved' || status === 'dean review') displayStatus = 'Dean Review';
     else if (status === 'approved') displayStatus = 'Approved';
     else if (status === 'to forward') displayStatus = 'To Forward';
@@ -412,7 +412,7 @@ async function handleGetUserDetail(id: string) {
           'sds coordinator review',
           'vice chairman approved',
           'external approved',
-          'external review',
+          'main campus review',
           'dean review',
           'dean approved',
           'approved',
@@ -1556,7 +1556,7 @@ async function handleAdminDashboard() {
     'chairman and vice chairman review': 0,
     'sds coordinator review': 0,
     'dean review': 0,
-    'external review': 0,
+    'main campus review': 0,
     approved: 0,
     disapproved: 0,
     returned: 0,
@@ -1572,7 +1572,7 @@ async function handleAdminDashboard() {
       else if (s.status === 'oso approved') displayStatus = 'sds coordinator review';
       else if (s.status === 'sds approved' || s.status === 'chairman approved') {
         displayStatus = 'chairman and vice chairman review';
-      } else if (s.status === 'vice chairman approved') displayStatus = 'external review';
+      } else if (s.status === 'vice chairman approved') displayStatus = 'main campus review';
       else if (s.status === 'external approved') displayStatus = 'dean review';
       else if (s.status === 'dean approved') displayStatus = 'approved';
       else if (s.status === 'returned') displayStatus = 'returned';

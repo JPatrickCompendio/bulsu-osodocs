@@ -47,7 +47,7 @@ const getStatusColor = (status) => {
   if (s.includes('dean approved')) {
     return '#1d4ed8';
   }
-  if (s.includes('external review')) {
+  if (s.includes('main campus review')) {
     return '#d76b0d';
   }
   if (s.includes('waiting for accomplishment report')) {
@@ -132,9 +132,8 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy, subtypesMap =
   else if (subStatus === 'to forward') category = user?.role === 'org-president' ? 'OSO Staff review' : 'To Forward';
   else if (subStatus === 'submitted' || subStatus === 'pending') category = 'OSO Staff review';
   else if (subStatus.includes('sds')) category = 'SDS Review';
-  else if (subStatus.includes('dean approved')) category = 'Dean Review';
-  else if (subStatus.includes('dean review')) category = 'Dean Review';
-  else if (subStatus.includes('external review')) category = 'External Review';
+  else if (subStatus.includes('dean approved') || subStatus.includes('dean review') || subStatus.includes('external approved')) category = 'Dean Review';
+  else if (subStatus.includes('main campus review') || subStatus.includes('external review') || subStatus.includes('vice chairman approved')) category = 'Main Campus Review';
   else if (subStatus.includes('ready for retrieval')) category = 'Approved';
   else if (subStatus.includes('waiting for accomplishment report')) category = 'Approved';
   else if (subStatus === 'approved') category = 'Approved';
@@ -142,8 +141,8 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy, subtypesMap =
   else if (subStatus.includes('disapproved') || subStatus.includes('rejected')) category = 'Disapproved';
   else {
     if (wpNorm === 'sds review') category = 'SDS Review';
-    else if (wpNorm === 'dean review') category = 'Dean Review';
-    else if (wpNorm === 'external review') category = 'External Review';
+    else if (wpNorm === 'dean review' || wpNorm === 'external approved') category = 'Dean Review';
+    else if (wpNorm === 'main campus review' || wpNorm === 'external review') category = 'Main Campus Review';
     else if (wpNorm === 'chairman review') category = 'Chairman Review';
     else if (ra === 'ready-for-hardcopy') category = user?.role === 'org-president' ? 'OSO Staff review' : 'To Forward';
     else if (ra === 'approved') category = 'Approved';
@@ -559,7 +558,7 @@ export const MyDocuments = () => {
 
   const getAttachmentWorkflowPhase = (doc) => {
     const currentStatus = (doc?.raw?.status || doc?.status || '').toLowerCase();
-    if (currentStatus.includes('external review')) return 'external-review';
+    if (currentStatus.includes('main campus review')) return 'main-campus-review';
     if (currentStatus.includes('dean review') || currentStatus === 'dean approved') return 'dean-review';
     if (currentStatus.includes('sds')) return 'sds-review';
     return 'Chairman Review';
@@ -627,7 +626,7 @@ export const MyDocuments = () => {
       docStatus.includes('sds') ||
       docStatus.includes('dean review') ||
       docStatus.includes('dean approved') ||
-      docStatus.includes('external review');
+      docStatus.includes('main campus review');
 
     const isApprovedStage =
       docStatus === 'dean approved' ||
@@ -1249,7 +1248,7 @@ export const MyDocuments = () => {
       const { error: subErr } = await supabase
         .from('submissions')
         .update({
-          status: 'external review',
+          status: 'main campus review',
           remarks: finalRemarks || null
         })
         .eq('id', selectedDoc.id);
@@ -1262,7 +1261,7 @@ export const MyDocuments = () => {
           submission_id: selectedDoc.id,
           submission_version_id: activeVersionId,
           user_id: user.id,
-          workflow_phase: 'external-review',
+          workflow_phase: 'main-campus-review',
           action_type: 'forwarded',
           review_action: 'forwarded',
           description: adminComment || 'Documents Sent to Main Campus for Review',
@@ -1277,10 +1276,10 @@ export const MyDocuments = () => {
       setExternalProofFile(null);
       setSelectedDoc(null);
       await fetchHandledLogs();
-      showToast('Sent to External Campus successfully!');
+      showToast('Sent to Main Campus successfully!');
     } catch (err) {
-      console.error('Error sending to external:', err);
-      showToast('Failed to send to external campus.');
+      console.error('Error sending to main campus:', err);
+      showToast('Failed to send to main campus review.');
     } finally {
       setLoading(false);
       setExternalProofUploading(false);
@@ -1312,7 +1311,7 @@ export const MyDocuments = () => {
           submission_id: selectedDoc.id,
           submission_version_id: activeVersionId,
           user_id: user.id,
-          workflow_phase: 'external-review',
+          workflow_phase: 'main-campus-review',
           action_type: 'ready_for_retrieval',
           review_action: 'ready-for-retrieval',
           description: comments || 'Document is ready for retrieval',
@@ -1372,10 +1371,10 @@ export const MyDocuments = () => {
         workflowPhaseStr = 'dean-review';
         descriptionStr = comments || 'Approved by Dean';
         stayOnDocument = true;
-      } else if (currentStatus.includes('external review')) {
+      } else if (currentStatus.includes('main campus review')) {
         newStatus = 'approved';
-        workflowPhaseStr = 'external-review';
-        descriptionStr = comments || 'Approved by External Campus';
+        workflowPhaseStr = 'main-campus-review';
+        descriptionStr = comments || 'Approved by Main Campus';
       } else {
         newStatus = 'to forward';
         insertHardcopyLog = true;
@@ -1603,8 +1602,8 @@ export const MyDocuments = () => {
       category = 'Dean Review';
     } else if (subStatus.includes('dean review')) {
       category = 'Dean Review';
-    } else if (subStatus.includes('external review')) {
-      category = 'External Review';
+    } else if (subStatus.includes('main campus review')) {
+      category = 'main campus review';
     } else if (subStatus.includes('ready for retrieval')) {
       category = 'Approved';
     } else if (subStatus.includes('waiting for accomplishment report')) {
@@ -1619,7 +1618,7 @@ export const MyDocuments = () => {
       // Fallback to logs only when status is missing/unknown
       if (wpNorm === 'sds review') category = 'SDS Review';
       else if (wpNorm === 'dean review') category = 'Dean Review';
-      else if (wpNorm === 'external review') category = 'External Review';
+      else if (wpNorm === 'main campus review') category = 'main campus review';
       else if (wpNorm === 'chairman review') category = 'Chairman Review';
       else if (ra === 'ready-for-hardcopy') category = user?.role === 'org-president' ? 'OSO Staff review' : 'To Forward';
       else if (ra === 'approved') category = 'Approved';
@@ -1713,7 +1712,7 @@ export const MyDocuments = () => {
     ...(user?.role === 'org-president' ? [{ name: 'OSO Staff review', count: countByTab('OSO Staff review') }] : []),
     ...(user?.role !== 'admin' ? [{ name: 'SDS Review', count: countByTab('SDS Review') }] : []),
     { name: 'Dean Review', count: countByTab('Dean Review') },
-    { name: 'External Review', count: countByTab('External Review') },
+    { name: 'Main Campus Review', count: countByTab('Main Campus Review') },
     { name: 'Approved', count: countByTab('Approved') },
     ...(user?.role !== 'org-president' && user?.role !== 'admin' && user?.role !== 'chairman' ? [{ name: 'Completed', count: countByTab('Completed') }] : []),
     ...(user?.role === 'chairman' ? [{ name: 'To Forward', count: countByTab('To Forward') }] : []),
@@ -1728,7 +1727,10 @@ export const MyDocuments = () => {
           <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
             <div>
               <h3 className="text-lg font-bold text-gray-800">Proof of Delivery</h3>
-              <p className="text-xs font-medium text-gray-500 mt-1">External Campus Submission Proof</p>
+              <div className="flex items-center gap-2 mb-4 bg-gray-50 p-3 rounded-xl border border-gray-100">
+                <FolderOpen size={16} className="text-gray-400" />
+                <p className="text-xs font-medium text-gray-500 mt-1">Main Campus Submission Proof</p>
+              </div>
             </div>
             <button
               onClick={() => setIsDeliveryProofModalOpen(false)}
@@ -1905,7 +1907,7 @@ export const MyDocuments = () => {
           .replace(/\s{2,}/g, ' ')
           .replace(/\s+([,.!?])/g, '$1')
           .trim();
-      const isExternalReviewStatus = docStatusLower.includes('external review');
+      const isExternalReviewStatus = docStatusLower.includes('main campus review');
       let systemRemarksText = '';
       if (isExternalReviewStatus) {
         systemRemarksText = 'Sent to Main Campus\nWaiting for Main Campus Approval';
@@ -2013,16 +2015,18 @@ export const MyDocuments = () => {
                   <span className="font-bold min-w-[200px]">Target Date and Time:</span>
                   <span>
                     {selectedDoc.schedules && selectedDoc.schedules.length > 0 ? (
-                      `[${selectedDoc.schedules.map(s => {
+                      selectedDoc.schedules.map((s, idx) => {
                         let dateStr = 'TBD';
                         if (s.activity_date) {
                           try {
-                            dateStr = new Date(s.activity_date).toLocaleDateString('en-US', {
-                              month: 'long', day: 'numeric', year: 'numeric'
-                            }).toUpperCase();
+                            dateStr = new Date(s.activity_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase();
                           } catch (e) {
                             dateStr = String(s.activity_date).toUpperCase();
                           }
+                        }
+                        if (s.end_date) {
+                          const endStr = new Date(s.end_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase();
+                          return <span key={idx} className="block">{`${dateStr} – ${endStr}`}</span>;
                         }
                         const formatTime = (t) => {
                           if (!t) return 'TBD';
@@ -2032,19 +2036,11 @@ export const MyDocuments = () => {
                             return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toUpperCase();
                           } catch (e) { return t; }
                         };
-                        return `${dateStr}, ${formatTime(s.start_time)} - ${s.is_indefinite ? 'INDEFINITE' : formatTime(s.end_time)}`;
-                      }).join('; ')}]`
+                        return <span key={idx} className="block">{`${dateStr} — ${formatTime(s.start_time)} – ${s.is_indefinite ? 'INDEFINITE' : formatTime(s.end_time)}`}</span>;
+                      })
                     ) : (
                       selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-' ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}` : selectedDoc.targetDate
                     )}
-                  </span>
-                </div>
-                <div className="flex gap-2">
-                  <span className="font-bold min-w-[200px]">Duration:</span>
-                  <span>
-                    {selectedDoc.schedules && selectedDoc.schedules.length > 0 
-                      ? `${(selectedDoc.schedules.reduce((acc, s) => acc + (s.duration_minutes || 0), 0) / 60).toFixed(1)} Hours`
-                      : selectedDoc.duration ? `${(Number(selectedDoc.duration) / 60).toFixed(1)} Hours` : '—'}
                   </span>
                 </div>
                 <div className="flex gap-2">
@@ -2370,6 +2366,15 @@ export const MyDocuments = () => {
                   ) : null}
                 </div>
               </div>
+
+              {(user?.role === 'org-president' && selectedDoc.status === 'DRAFT') && (
+                <button
+                  onClick={handleContinueClick}
+                  className="w-full px-5 py-3.5 bg-primary-green text-white rounded-xl text-sm font-semibold hover:bg-green-600 transition-all shadow-sm"
+                >
+                  Continue Submission
+                </button>
+              )}
 
               {isReturnedStatus && (
                 <button
@@ -2977,7 +2982,7 @@ export const MyDocuments = () => {
               </div>
             )}
 
-            {(user?.role === 'org-president' && (selectedDoc.status === 'DRAFT' || selectedDoc.status === 'RETURNED')) && (
+            {(user?.role === 'org-president' && selectedDoc.status === 'RETURNED') && (
               <button
                 onClick={handleContinueClick}
                 className="self-start mt-1 px-5 py-3 bg-primary-green text-white rounded-2xl text-xs font-bold uppercase tracking-widest shadow-lg shadow-primary-green/20 hover:bg-green-700 transition-all"
@@ -3045,16 +3050,18 @@ export const MyDocuments = () => {
                 <span className="font-bold min-w-[200px]">Target Date and Time:</span>
                 <span>
                   {Array.isArray(selectedDoc.schedules) && selectedDoc.schedules.length > 0 ? (
-                    `[${selectedDoc.schedules.map(s => {
+                    selectedDoc.schedules.map((s, idx) => {
                       let dateStr = 'TBD';
                       if (s.activity_date) {
                         try {
-                          dateStr = new Date(s.activity_date).toLocaleDateString('en-US', {
-                            month: 'long', day: 'numeric', year: 'numeric'
-                          }).toUpperCase();
+                          dateStr = new Date(s.activity_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase();
                         } catch (e) {
                           dateStr = String(s.activity_date).toUpperCase();
                         }
+                      }
+                      if (s.end_date) {
+                        const endStr = new Date(s.end_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase();
+                        return <span key={idx} className="block">{`${dateStr} – ${endStr}`}</span>;
                       }
                       const formatTime = (t) => {
                         if (!t) return 'TBD';
@@ -3064,19 +3071,11 @@ export const MyDocuments = () => {
                           return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toUpperCase();
                         } catch (e) { return t; }
                       };
-                      return `${dateStr}, ${formatTime(s.start_time)} - ${s.is_indefinite ? 'INDEFINITE' : formatTime(s.end_time)}`;
-                    }).join('; ')}]`
+                      return <span key={idx} className="block">{`${dateStr} — ${formatTime(s.start_time)} – ${s.is_indefinite ? 'INDEFINITE' : formatTime(s.end_time)}`}</span>;
+                    })
                   ) : (
                     selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-' ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}` : selectedDoc.targetDate
                   )}
-                </span>
-              </div>
-              <div className="flex gap-2">
-                <span className="font-bold min-w-[200px]">Duration:</span>
-                <span>
-                  {Array.isArray(selectedDoc.schedules) && selectedDoc.schedules.length > 0
-                    ? `${(selectedDoc.schedules.reduce((acc, s) => acc + (s.duration_minutes || 0), 0) / 60).toFixed(1)} Hours`
-                    : selectedDoc.duration ? `${(Number(selectedDoc.duration) / 60).toFixed(1)} Hours` : '—'}
                 </span>
               </div>
               <div className="flex gap-2">
@@ -3336,7 +3335,7 @@ export const MyDocuments = () => {
         )}
 
         {/* Admin workflow actions in My Documents */}
-        {user?.role === 'admin' && !disableVersionActions && (
+        {(user?.role || '').toLowerCase() === 'admin' && (
           <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50">
             <div className="bg-white/80 backdrop-blur-2xl px-8 py-4 rounded-[2rem] border border-white/50 shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex items-center gap-4 animate-in slide-in-from-bottom-12 duration-1000">
               {isDeanApprovedDoc ? (
@@ -3350,7 +3349,7 @@ export const MyDocuments = () => {
                   className="flex items-center justify-center gap-3 px-8 py-3.5 bg-blue-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-blue-600/20 uppercase tracking-widest"
                 >
                   <ArrowUpRight size={16} />
-                  <span>Sent to external</span>
+                  <span>Sent to main campus</span>
                 </button>
               ) : isReadyForOrgPickup ? (
                 <button
@@ -3373,7 +3372,7 @@ export const MyDocuments = () => {
                   <CheckCircle size={16} />
                   <span>Ready for retrieval</span>
                 </button>
-              ) : (selectedDoc?.category === 'Dean Review' || selectedDoc?.category === 'SDS Review' || selectedDoc?.category === 'External Review') && (
+              ) : (selectedDoc?.category === 'Dean Review' || selectedDoc?.category === 'SDS Review' || selectedDoc?.category === 'Main Campus Review') && (
                 <>
                   <button
                     onClick={() => {
@@ -3590,8 +3589,8 @@ export const MyDocuments = () => {
                 <CheckCircle size={28} />
               </div>
               <h3 className="font-bold text-gray-800 text-lg mb-2 text-center">Dean Review Approved</h3>
-              <p className="text-gray-500 text-sm mb-8 leading-relaxed text-center">
-                The document has been approved successfully. You can now send it to the external campus for review.
+              <p className="text-gray-500 text-sm mt-1 text-center">
+                The document has been approved successfully. You can now send it to the main campus for review.
               </p>
               <div className="flex flex-col gap-3">
                 <button
@@ -3605,7 +3604,7 @@ export const MyDocuments = () => {
                   className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20 uppercase text-xs tracking-wider"
                 >
                   <ArrowUpRight size={16} />
-                  <span>Sent to External</span>
+                  <span>Sent to Main Campus</span>
                 </button>
                 <button
                   onClick={() => setIsDeanApproveSuccessModalOpen(false)}
@@ -3669,11 +3668,11 @@ export const MyDocuments = () => {
           } else if (decisionType === 'send_to_external') {
             modalIcon = <ArrowUpRight size={24} />;
             modalIconBg = 'bg-blue-50 text-blue-600';
-            modalTitle = 'Send to External Campus';
+            modalTitle = 'Send to Main Campus Review';
             modalDescription = (
               <>
-                Confirm this document has been sent to the external campus.
-                Upload proof (PDF or image) and optional comments. Status will move to <strong className="text-blue-600">External Review</strong>.
+                Confirm this document has been sent to the main campus.
+                Upload proof (PDF or image) and optional comments. Status will move to <strong className="text-blue-600">Main Campus Review</strong>.
               </>
             );
             placeholderText = 'Enter optional comments...';
@@ -3683,7 +3682,7 @@ export const MyDocuments = () => {
             disableConfirm = !externalProofFile;
             onConfirm = async () => {
               if (!externalProofFile) {
-                showToast('Please upload proof that the document was sent to the external campus.');
+                showToast('Please upload proof that the document was sent to the main campus.');
                 return;
               }
               handleSendToExternal(returnComments);
@@ -3728,16 +3727,18 @@ export const MyDocuments = () => {
 
                 {decisionType === 'send_to_external' && (
                   <div className="space-y-2 mb-6">
-                    <label htmlFor="externalProof" className="text-xs font-bold text-gray-500 uppercase tracking-widest block">Proof of sent document (required)</label>
-                    <input
-                      id="externalProof"
-                      type="file"
-                      accept="image/*,.pdf,.doc,.docx"
-                      onChange={(e) => setExternalProofFile(e.target.files?.[0] || null)}
-                      className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700 file:mr-4 file:rounded-full file:border-0 file:bg-blue-50 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-blue-700 hover:bg-gray-100"
-                    />
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Upload Proof <span className="text-red-500">*</span></label>
+                    <p className="text-xs text-gray-400">Attach a screenshot, PDF, or document proof that this submission was sent to the main campus.</p>
+                    <div className="mt-3 w-full border-2 border-dashed border-gray-300 rounded-xl p-6 flex flex-col items-center justify-center hover:border-indigo-400 transition-all bg-gray-50">
+                      <input
+                        id="externalProof"
+                        type="file"
+                        accept="image/*,.pdf,.doc,.docx"
+                        onChange={(e) => setExternalProofFile(e.target.files?.[0] || null)}
+                        className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700 file:mr-4 file:rounded-full file:border-0 file:bg-blue-50 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-blue-700 hover:bg-gray-100"
+                      />
+                    </div>
                     {externalProofFile && <p className="text-xs text-gray-500">Selected proof file: {externalProofFile.name}</p>}
-                    <p className="text-xs text-gray-400">Attach a screenshot, PDF, or document proof that this submission was sent to the external campus.</p>
                   </div>
                 )}
 

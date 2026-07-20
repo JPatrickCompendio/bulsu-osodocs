@@ -424,32 +424,27 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
                 <span className="font-bold min-w-[200px]">Target Date and Time:</span>
                 <span>
                   {details?.activity_schedules && details.activity_schedules.length > 0 ? (
-                    `[${details.activity_schedules.map(s => {
+                    details.activity_schedules.map((s, idx) => {
                       let dateStr = 'TBD';
                       if (s.activity_date) {
                         try {
-                          dateStr = new Date(s.activity_date).toLocaleDateString('en-US', {
-                            month: 'long', day: 'numeric', year: 'numeric'
-                          }).toUpperCase();
+                          dateStr = new Date(s.activity_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase();
                         } catch (e) {
                           dateStr = String(s.activity_date).toUpperCase();
                         }
                       }
-                      return `${dateStr}, ${s.start_time || 'TBD'} - ${s.is_indefinite ? 'INDEFINITE' : (s.end_time || 'TBD')}`;
-                    }).join('; ')}]`
+                      if (s.end_date) {
+                        const endStr = new Date(s.end_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase();
+                        return <span key={idx} className="block">{`${dateStr} – ${endStr}`}</span>;
+                      }
+                      return <span key={idx} className="block">{`${dateStr} — ${s.start_time || 'TBD'} – ${s.is_indefinite ? 'INDEFINITE' : (s.end_time || 'TBD')}`}</span>;
+                    })
                   ) : (
                     <span>{targetDateTime}</span>
                   )}
                 </span>
               </div>
-              <div className="flex gap-2">
-                <span className="font-bold min-w-[200px]">Duration:</span>
-                <span>
-                  {details?.activity_schedules && details.activity_schedules.length > 0
-                    ? `${(details.activity_schedules.reduce((acc, s) => acc + (s.duration_minutes || 0), 0) / 60).toFixed(1)} Hours`
-                    : details?.duration ? `${(Number(details.duration) / 60).toFixed(1)} Hours` : '—'}
-                </span>
-              </div>
+
               <div className="flex gap-2">
                 <span className="font-bold min-w-[200px]">Number of Students Involved:</span>
                 <span>{details?.number_of_students ? `${details.number_of_students} Students` : '—'}</span>

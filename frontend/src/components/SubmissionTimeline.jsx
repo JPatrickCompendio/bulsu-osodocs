@@ -274,7 +274,7 @@ const SubmissionTimeline = ({
                       >
                         <Eye size={12} /> View proof
                       </button>
-                    ) : (hasDeliveryProof && log.workflow_phase === 'external-review' && log.action_type === 'forwarded') ? (
+                    ) : (hasDeliveryProof && log.workflow_phase === 'main-campus-review' && log.action_type === 'forwarded') ? (
                       <button
                         type="button"
                         onClick={onViewDeliveryProof}

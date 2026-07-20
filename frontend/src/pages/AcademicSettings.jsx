@@ -22,12 +22,12 @@ const AcademicSettings = () => {
 
   const [showEventModal, setShowEventModal] = useState(false);
   const [eventForm, setEventForm] = useState({
-    id: null, school_year_id: '', title: '', description: '', event_type: 'blocked_activity',
+    id: null, school_year_id: '', title: '', description: '', event_type: 'school_event',
     document_type_id: '', start_date: '', end_date: '', is_active: true
   });
 
   const eventTypes = [
-    { value: 'blocked_activity', label: 'Blocked Activity' },
+    { value: 'school_event', label: 'School Event' },
     { value: 'submission_window', label: 'Submission Window' },
     { value: 'holiday', label: 'Holiday' },
     { value: 'exam_week', label: 'Exam Week' },
@@ -166,7 +166,7 @@ const AcademicSettings = () => {
     if (ev) {
       setEventForm({
         ...ev,
-        blocks_activity: ev.event_type === 'blocked_activity' || ev.description === 'BLOCKS_ACTIVITY',
+        blocks_activity: ev.event_type === 'blocked_activity' || ev.event_type === 'school_event' && ev.description === 'BLOCKS_ACTIVITY' || ev.description === 'BLOCKS_ACTIVITY',
         start_date: ev.start_date ? ev.start_date.split('T')[0] : '',
         end_date: ev.end_date ? ev.end_date.split('T')[0] : '',
         document_type_id: ev.document_type_id || ''
@@ -176,7 +176,7 @@ const AcademicSettings = () => {
       setEventForm({
         id: null, school_year_id: activeSy ? activeSy.id : '', title: '', description: '',
         blocks_activity: false,
-        event_type: 'blocked_activity', document_type_id: '', start_date: '', end_date: '', is_active: true
+        event_type: 'school_event', document_type_id: '', start_date: '', end_date: '', is_active: true
       });
     }
     setShowEventModal(true);
@@ -379,38 +379,6 @@ const AcademicSettings = () => {
                   <option value="">Select School Year...</option>
                   {schoolYears.map(sy => <option key={sy.id} value={sy.id}>{sy.name}</option>)}
                 </select>
-                {eventForm.event_type === 'submission_window' && eventForm.school_year_id && (() => {
-                  const selectedSy = schoolYears.find(sy => sy.id === eventForm.school_year_id);
-                  const isEntireSy = selectedSy && eventForm.start_date === selectedSy.start_date.split('T')[0] && eventForm.end_date === selectedSy.end_date.split('T')[0];
-                  return (
-                    <div className="flex items-center gap-2 mt-3 p-2 bg-green-50/50 border border-green-100 rounded-lg">
-                      <input
-                        type="checkbox"
-                        id="entireSyCheckbox"
-                        className="w-4 h-4 text-primary-green rounded focus:ring-primary-green cursor-pointer"
-                        checked={!!isEntireSy}
-                        onChange={(e) => {
-                          if (e.target.checked && selectedSy) {
-                            setEventForm({
-                              ...eventForm,
-                              start_date: selectedSy.start_date.split('T')[0],
-                              end_date: selectedSy.end_date.split('T')[0]
-                            });
-                          } else {
-                            setEventForm({
-                              ...eventForm,
-                              start_date: '',
-                              end_date: ''
-                            });
-                          }
-                        }}
-                      />
-                      <label htmlFor="entireSyCheckbox" className="text-sm font-bold text-green-800 cursor-pointer select-none">
-                        Entire School Year
-                      </label>
-                    </div>
-                  );
-                })()}
               </div>
               <div>
                 <label className="text-xs font-bold text-gray-500 uppercase">Event Title</label>
@@ -421,7 +389,7 @@ const AcademicSettings = () => {
                   <label className="text-xs font-bold text-gray-500 uppercase">Event Type</label>
                   <select required className="w-full mt-1 p-2 border rounded-lg outline-none focus:border-primary-green bg-white" value={eventForm.event_type} onChange={e => {
                     const newType = e.target.value;
-                    setEventForm({...eventForm, event_type: newType, blocks_activity: newType === 'blocked_activity' || eventForm.blocks_activity})
+                    setEventForm({...eventForm, event_type: newType, blocks_activity: (newType === 'school_event' && eventForm.blocks_activity) || eventForm.blocks_activity})
                   }}>
                     {eventTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                   </select>
@@ -461,18 +429,50 @@ const AcademicSettings = () => {
                   })()}
                 </div>
 
-                <div className="flex items-center gap-2 mt-4 pt-4 border-t border-gray-100">
-                  <input
-                    type="checkbox"
-                    id="blocksActivity"
-                    className="w-4 h-4 text-primary-green rounded focus:ring-primary-green"
-                    checked={eventForm.blocks_activity || eventForm.event_type === 'blocked_activity'}
-                    disabled={eventForm.event_type === 'blocked_activity'}
-                    onChange={e => setEventForm({...eventForm, blocks_activity: e.target.checked})}
-                  />
-                  <label htmlFor="blocksActivity" className="text-sm font-bold text-gray-700 cursor-pointer">
-                    Block Activity Proposals on these dates
-                  </label>
+                <div className="flex flex-col gap-4 mt-4 pt-4 border-t border-gray-100">
+                  {eventForm.event_type === 'submission_window' && eventForm.school_year_id && (() => {
+                    const selectedSy = schoolYears.find(sy => sy.id === eventForm.school_year_id);
+                    const isEntireSy = selectedSy && eventForm.start_date === selectedSy.start_date.split('T')[0] && eventForm.end_date === selectedSy.end_date.split('T')[0];
+                    return (
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-bold text-gray-700 cursor-pointer select-none">
+                          Entire School Year
+                        </label>
+                        <div 
+                          className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors ${isEntireSy ? 'bg-primary-green' : 'bg-gray-300'}`}
+                          onClick={() => {
+                            if (!isEntireSy && selectedSy) {
+                              setEventForm({
+                                ...eventForm,
+                                start_date: selectedSy.start_date.split('T')[0],
+                                end_date: selectedSy.end_date.split('T')[0]
+                              });
+                            } else {
+                              setEventForm({
+                                ...eventForm,
+                                start_date: '',
+                                end_date: ''
+                              });
+                            }
+                          }}
+                        >
+                          <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${isEntireSy ? 'translate-x-5' : ''}`}></div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-bold text-gray-700 cursor-pointer select-none">
+                      Block Activity Proposals on these dates
+                    </label>
+                    <div 
+                      className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors ${eventForm.blocks_activity ? 'bg-primary-green' : 'bg-gray-300'}`}
+                      onClick={() => setEventForm({...eventForm, blocks_activity: !eventForm.blocks_activity})}
+                    >
+                      <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${eventForm.blocks_activity ? 'translate-x-5' : ''}`}></div>
+                    </div>
+                  </div>
                 </div>
               </div>
 

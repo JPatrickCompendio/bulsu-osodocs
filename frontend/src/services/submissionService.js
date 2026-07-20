@@ -257,13 +257,7 @@ export const saveProposalDetails = async (versionId, details, subtypeId = null, 
   // Extract schedules before modifying details
   const schedulesToSave = details.schedules || [];
   
-  // Calculate total duration from schedules if provided
-  let totalDuration = 0;
-  if (schedulesToSave.length > 0) {
-    totalDuration = schedulesToSave.reduce((sum, sched) => sum + (parseInt(sched.duration_minutes) || 0), 0);
-  } else if (details.duration) {
-    totalDuration = parseInt(details.duration) || 0;
-  }
+  // Removed total duration calculation as per requirements
 
   // Validate schedules against blocked dates
   if (schedulesToSave.length > 0) {
@@ -283,13 +277,22 @@ export const saveProposalDetails = async (versionId, details, subtypeId = null, 
 
       if (blockingEvents.length > 0) {
         for (const sched of schedulesToSave) {
-          const schedDate = new Date(sched.activity_date);
-          for (const ev of blockingEvents) {
-            const evStart = new Date(ev.start_date);
-            const evEnd = ev.end_date ? new Date(ev.end_date) : evStart;
-            if (schedDate >= evStart && schedDate <= evEnd) {
-              throw new Error(`Activity cannot be scheduled on ${sched.activity_date}. This date is blocked by the Academic Calendar.`);
+          if (!sched.activity_date) continue;
+          
+          const startDate = new Date(sched.activity_date);
+          const endDate = sched.end_date ? new Date(sched.end_date) : startDate;
+          
+          let current = new Date(startDate);
+          while (current <= endDate) {
+            for (const ev of blockingEvents) {
+              const evStart = new Date(ev.start_date);
+              const evEnd = ev.end_date ? new Date(ev.end_date) : evStart;
+              if (current >= evStart && current <= evEnd) {
+                const dateStr = current.toISOString().split('T')[0];
+                throw new Error(`Activity cannot be scheduled on ${dateStr}. This date is blocked by the Academic Calendar.`);
+              }
             }
+            current.setDate(current.getDate() + 1);
           }
         }
       }
@@ -301,7 +304,7 @@ export const saveProposalDetails = async (versionId, details, subtypeId = null, 
     ...details,
     target_date: Array.isArray(details.activity_dates) && details.activity_dates.length > 0 ? details.activity_dates.join(', ') : details.target_date,
     number_of_students: parseInt(details.number_of_students) || 0,
-    duration: totalDuration,
+    duration: null,
     created_at: new Date().toISOString()
   };
 
@@ -336,14 +339,18 @@ export const saveProposalDetails = async (versionId, details, subtypeId = null, 
     // Delete existing schedules for this proposal detail (in case of update)
     await supabase.from('activity_schedules').delete().eq('proposal_detail_id', data.id);
 
-    const formattedSchedules = schedulesToSave.map(sched => ({
-      proposal_detail_id: data.id,
-      activity_date: sched.activity_date,
-      start_time: sched.start_time || null,
-      end_time: sched.end_time || null,
-      is_indefinite: sched.is_indefinite || false,
-      duration_minutes: sched.duration_minutes || 0
-    }));
+    const formattedSchedules = schedulesToSave.map(sched => {
+      const isDateRange = !!sched.end_date;
+      return {
+        proposal_detail_id: data.id,
+        activity_date: sched.activity_date,
+        end_date: isDateRange ? sched.end_date : null,
+        start_time: isDateRange ? null : (sched.start_time || null),
+        end_time: isDateRange ? null : (sched.end_time || null),
+        is_indefinite: isDateRange ? false : (sched.is_indefinite || false),
+        duration_minutes: isDateRange ? null : (sched.duration_minutes || null)
+      };
+    });
 
     const { error: schedError } = await supabase
       .from('activity_schedules')

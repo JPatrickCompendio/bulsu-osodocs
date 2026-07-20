@@ -141,19 +141,16 @@ const ActivityProposalPreviewModal = ({
             <div class="form-label">Target Date and Time:</div>
             <div class="form-line">
               ${(proposalDetails.schedules && proposalDetails.schedules.length > 0) ? proposalDetails.schedules.map(sched => {
-                const dateStr = sched.activity_date ? new Date(sched.activity_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'TBD';
-                return `${dateStr}, ${formatTime(sched.start_time)} - ${sched.is_indefinite ? 'INDEFINITE' : formatTime(sched.end_time)}`;
+                const startStr = sched.activity_date ? new Date(sched.activity_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'TBD';
+                if (sched.end_date) {
+                  const endStr = new Date(sched.end_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+                  return `${startStr} – ${endStr}`;
+                }
+                return `${startStr} — ${formatTime(sched.start_time)} – ${sched.is_indefinite ? 'INDEFINITE' : formatTime(sched.end_time)}`;
               }).join(' | ') : '—'}
             </div>
           </div>
-          <div class="form-row">
-            <div class="form-label">Duration:</div>
-            <div class="form-line">
-              ${(proposalDetails.schedules && proposalDetails.schedules.length > 0) 
-                ? formatDuration(proposalDetails.schedules.reduce((acc, s) => acc + (s.duration_minutes || 0), 0))
-                : '—'}
-            </div>
-          </div>
+
           <div class="form-row">
             <div class="form-label">Number of Student Involved:</div>
             <div class="form-line">${proposalDetails.number_of_students || ''}</div>
@@ -206,17 +203,17 @@ const ActivityProposalPreviewModal = ({
           <div style="display: flex; justify-content: space-between; margin-top: 60px;">
             <div style="width: 40%; text-align: center;">
               <div style="border-bottom: 1.5px solid black; height: 20px; font-size: 13px; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;">
-                ${user?.full_name || ''}
+                ${proposalDetails.person_in_charge || user?.full_name || ''}
               </div>
               <div style="font-size: 10px; font-style: italic;">(Signature over printed name)</div>
-              <div style="font-size: 12px; margin-top: 5px;">President, Student Organization</div>
+              <div style="font-size: 12px; margin-top: 5px;">President, ${proposalDetails.organization_name || 'Student Organization'}</div>
             </div>
             <div style="width: 40%; text-align: center;">
               <div style="border-bottom: 1.5px solid black; height: 20px; font-size: 13px; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;">
                 ${proposalDetails.adviser_name || ''}
               </div>
               <div style="font-size: 10px; font-style: italic;">(Signature over printed name)</div>
-              <div style="font-size: 12px; margin-top: 5px;">Adviser, Student Organization</div>
+              <div style="font-size: 12px; margin-top: 5px;">Adviser, ${proposalDetails.organization_name || 'Student Organization'}</div>
             </div>
           </div>
 

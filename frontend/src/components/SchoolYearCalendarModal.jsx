@@ -293,7 +293,7 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
               <div>
                 <h2 className="text-xl font-bold text-gray-900">School Year Calendar</h2>
                 <p className="text-sm font-medium text-gray-500">
-                  {activeSy ? `${activeSy.name} (${activeSy.semester_type || 'Semester'})` : 'Loading...'}
+                  {activeSy ? `${activeSy.name} (Academic Dates)` : 'Loading...'}
                 </p>
               </div>
             </div>

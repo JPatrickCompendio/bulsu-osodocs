@@ -127,9 +127,9 @@ const phaseMatchers = {
     (logText(log).includes('dean') || norm(log?.workflow_phase).includes('dean')),
   forwarded_external: (log) =>
     norm(log?.action_type) === 'forwarded' &&
-    (logText(log).includes('external') || logText(log).includes('proof attachment')),
+    (logText(log).includes('external') || logText(log).includes('main campus') || logText(log).includes('proof attachment')),
   approved_external: (log) =>
-    norm(log?.action_type) === 'approved' && logText(log).includes('external'),
+    norm(log?.action_type) === 'approved' && (logText(log).includes('external') || logText(log).includes('main campus')),
   ready_for_retrieval: (log) => {
     const type = norm(log?.action_type);
     const review = norm(log?.review_action);
@@ -170,7 +170,7 @@ const STATUS_TO_NEXT_PHASE = {
   'sds coordinator review': 'approved_sds',
   'dean review': 'approved_dean',
   'dean approved': 'forwarded_external',
-  'external review': 'approved_external',
+  'main campus review': 'approved_external',
   approved: 'ready_for_retrieval',
   'ready for retrieval': 'document_retrieved',
   'waiting for accomplishment report': 'accomplishment_report'
@@ -220,16 +220,16 @@ const PENDING_PHASE_TEMPLATES = {
   },
   forwarded_external: {
     action_type: 'forwarded',
-    workflow_phase: 'external-review',
-    description: 'Proof attachment and forward to External Campus for approval',
+    workflow_phase: 'main-campus-review',
+    description: 'Proof attachment and forward to Main Campus for approval',
     users: { full_name: 'Pending', role: 'admin' },
     displayName: 'SDS Coordinator',
     displayRole: 'ADMIN'
   },
   approved_external: {
     action_type: 'approved',
-    workflow_phase: 'external-review',
-    description: 'Approved by External Campus',
+    workflow_phase: 'main-campus-review',
+    description: 'Approved by Main Campus',
     users: { full_name: 'Pending', role: 'admin' },
     displayName: 'SDS Coordinator',
     displayRole: 'ADMIN'
@@ -237,7 +237,7 @@ const PENDING_PHASE_TEMPLATES = {
   ready_for_retrieval: {
     action_type: 'ready_for_retrieval',
     review_action: 'ready-for-retrieval',
-    workflow_phase: 'external-review',
+    workflow_phase: 'main-campus-review',
     description: 'Document is ready for retrieval',
     users: { full_name: 'Pending', role: 'admin' },
     displayName: 'SDS Coordinator',

@@ -136,7 +136,7 @@ const getStatusColor = (status) => {
   if (s.includes('dean approved')) {
     return '#1d4ed8';
   }
-  if (s.includes('external review')) {
+  if (s.includes('main campus review')) {
     return '#d76b0d';
   }
   if (s.includes('waiting for accomplishment report')) {
@@ -174,7 +174,7 @@ const formatStatus = (s, viewerRole = 'org-president') => {
   if (s === 'submitted') return 'OSO Staff Review';
   if (s === 'oso approved') return 'SDS coordinator review';
   if (s === 'sds approved' || s === 'chairman approved') return 'Chairman and vice chairman review';
-  if (s === 'vice chairman approved') return 'External review';
+  if (s === 'vice chairman approved' || s === 'external review' || s === 'main campus review') return 'Main Campus review';
   if (s === 'external approved') return 'Dean review';
   if (s === 'dean approved' || s === 'waiting for accomplishment report') return 'Approved';
   if (s === 'to forward') return 'To Forward';
@@ -184,6 +184,7 @@ const formatStatus = (s, viewerRole = 'org-president') => {
 const formatBreakdownLabel = (status) => {
   if (status === 'to forward') return 'To Forward';
   if (status === 'submitted' || status === 'oso staff review') return 'OSO Staff Review';
+  if (status === 'main campus review' || status === 'external review') return 'Main Campus Review';
   return status;
 };
 
@@ -452,7 +453,9 @@ const AdminDashboardView = () => {
               <p className="text-xs font-bold text-gray-400">Distribution across review stages</p>
             </div>
             <div className="p-6 flex-1 space-y-4">
-              {Object.entries(stats.statusBreakdown).map(([status, count]) => (
+              {Object.entries(stats.statusBreakdown)
+                .filter(([status]) => !status.toLowerCase().includes('chairman') && !status.toLowerCase().includes('vice chairman'))
+                .map(([status, count]) => (
                 <div key={status} className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getStatusColor(status) }} />

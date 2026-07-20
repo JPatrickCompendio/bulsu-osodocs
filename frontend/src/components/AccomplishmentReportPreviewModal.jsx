@@ -16,7 +16,7 @@ const AccomplishmentReportPreviewModal = ({
   const [isInitialized, setIsInitialized] = useState(false);
   const [headerBase64, setHeaderBase64] = useState('');
   const [footerBase64, setFooterBase64] = useState('');
-  
+
   const editorRef = useRef(null);
   const headerInputRef = useRef(null);
   const footerInputRef = useRef(null);
@@ -79,14 +79,14 @@ const AccomplishmentReportPreviewModal = ({
         proofsHtml = loadedProofs.filter(Boolean).join('');
       }
 
-      const subtypeName = submission?.document_subtypes?.name || 'EXTERNAL CAMPUS';
+      const subtypeName = submission?.document_subtypes?.name || 'MAIN CAMPUS';
       const sy = schoolYear || submission?.school_years?.name || '2025-2026';
       const cleanSy = sy.replace(/S\.Y\.\s*/ig, '').replace(/S\.Y\s*/ig, '').trim();
 
       const details = Array.isArray(submission?.submission_versions?.[0]?.activity_proposal_details)
         ? submission?.submission_versions[0].activity_proposal_details[0]
         : submission?.submission_versions?.[0]?.activity_proposal_details || {};
-        
+
       const orgName = details?.organization_name || submission?.users?.org_name || 'Organization Name';
 
       let actNoDisplay = '';
@@ -99,7 +99,7 @@ const AccomplishmentReportPreviewModal = ({
         try {
           const parsed = JSON.parse(val);
           if (Array.isArray(parsed)) return parsed.map(v => `<li>${v}</li>`).join('');
-        } catch(e) {}
+        } catch (e) { }
         if (Array.isArray(val)) return val.map(v => `<li>${v}</li>`).join('');
         return `<ul>` + String(val).split('\n').map(l => {
           const trimmed = l.trim();
@@ -111,9 +111,13 @@ const AccomplishmentReportPreviewModal = ({
       let dateStrings = [];
       if (details?.activity_schedules && details.activity_schedules.length > 0) {
         dateStrings = details.activity_schedules.map(sched => {
-           const d = new Date(sched.activity_date).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' });
-           const t = `${sched.start_time} - ${sched.is_indefinite ? 'Indefinite' : sched.end_time}`;
-           return `${d} ${t}`;
+          const d = new Date(sched.activity_date).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' });
+          if (sched.end_date) {
+            const e = new Date(sched.end_date).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' });
+            return `${d} – ${e}`;
+          }
+          const t = `${sched.start_time} - ${sched.is_indefinite ? 'Indefinite' : sched.end_time}`;
+          return `${d} ${t}`;
         });
       } else if (details?.target_date) {
         const targetDateStr = new Date(details.target_date).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' });
@@ -122,7 +126,7 @@ const AccomplishmentReportPreviewModal = ({
           dateStrings.push([targetDateStr, targetTime].filter(Boolean).join(', '));
         }
       }
-      
+
       const place = 'Bulacan State University - Bustos Campus';
       const dateTimePlace = dateStrings.length > 0 ? dateStrings.join(' | ') + ', ' + place : place;
 
@@ -268,14 +272,14 @@ const AccomplishmentReportPreviewModal = ({
   };
 
   return (
-    <div 
-      className="fixed inset-0 bg-slate-900/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm" 
+    <div
+      className="fixed inset-0 bg-slate-900/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div className="bg-white rounded-3xl max-w-[1000px] w-full h-[95vh] shadow-2xl border border-gray-100 overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-        
+
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 flex-none bg-white z-10">
           <div className="flex items-center gap-3">
@@ -300,21 +304,21 @@ const AccomplishmentReportPreviewModal = ({
 
         {/* Editor Area Wrapper */}
         <div className="flex-1 w-full bg-gray-200 overflow-y-auto p-4 md:p-8 custom-scrollbar">
-          
+
           <input type="file" ref={headerInputRef} accept="image/*" className="hidden" onChange={e => handleImageUpload(e, 'header')} />
           <input type="file" ref={footerInputRef} accept="image/*" className="hidden" onChange={e => handleImageUpload(e, 'footer')} />
 
           {/* Paper Container */}
-          <div 
+          <div
             className="max-w-[794px] mx-auto min-h-[1123px] flex flex-col relative bg-white"
             style={{
               boxShadow: '0 0 20px rgba(0,0,0,0.15)'
             }}
           >
-            
+
             {/* Visual Header */}
             {headerBase64 && (
-              <div 
+              <div
                 className="relative w-full cursor-pointer group"
                 onClick={() => headerInputRef.current.click()}
               >
@@ -369,7 +373,7 @@ const AccomplishmentReportPreviewModal = ({
                     value={content}
                     config={config}
                     onBlur={newContent => setContent(newContent)}
-                    onChange={() => {}} 
+                    onChange={() => { }}
                   />
                 </>
               )}
@@ -377,7 +381,7 @@ const AccomplishmentReportPreviewModal = ({
 
             {/* Visual Footer */}
             {footerBase64 && (
-              <div 
+              <div
                 className="relative w-full cursor-pointer group mt-auto"
                 onClick={() => footerInputRef.current.click()}
               >

@@ -182,7 +182,7 @@ const Header = () => {
           
           {activeSy && (
             <div className="absolute top-full left-0 mt-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 bg-white text-gray-800 rounded-lg p-4 shadow-xl border border-gray-100 z-50 min-w-[250px]">
-              <p className="text-xs font-bold text-gray-400 uppercase mb-2">{activeSy.semester_type || 'Semester'} Dates</p>
+              <p className="text-xs font-bold text-gray-400 uppercase mb-2">Academic Dates</p>
               <div className="flex justify-between items-center text-sm font-semibold mb-2">
                 <span className="text-green-600">{new Date(activeSy.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                 <span className="text-gray-300">-</span>

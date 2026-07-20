@@ -19,6 +19,8 @@ import {
   Upload,
   Check,
   Settings,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 
@@ -28,6 +30,9 @@ const DocumentTypeSettings = () => {
   const { user } = useAuth();
   const isNew = typeId === 'new';
   const fileInputRef = useRef(null);
+
+  const [isCategoryDetailsOpen, setIsCategoryDetailsOpen] = useState(true);
+  const [isRequirementsOpen, setIsRequirementsOpen] = useState(true);
 
   const [loading, setLoading] = useState(!isNew);
   const [isSaving, setIsSaving] = useState(false);
@@ -126,7 +131,7 @@ const DocumentTypeSettings = () => {
   };
 
   const resetReqForm = () => {
-    setReqForm({ title: '', referenceCode: '', description: '', file: null, file_url: '' });
+    setReqForm({ title: '', referenceCode: '', description: '', file: null, file_url: '', is_optional: false });
     setEditingReqId(null);
     setShowAddForm(false);
   };
@@ -140,6 +145,7 @@ const DocumentTypeSettings = () => {
       description: req.description || '',
       file: null,
       file_url: req.file_url || '',
+      is_optional: req.is_optional || false,
     });
   };
 
@@ -199,6 +205,7 @@ const DocumentTypeSettings = () => {
         file_url: finalFilePath,
         subtype_id: subType, // New field instead of proposal_type
         updatedAt: new Date().toISOString(),
+        is_optional: reqForm.is_optional || false,
       };
 
       if (editingReqId) {
@@ -338,6 +345,18 @@ const DocumentTypeSettings = () => {
           onChange={(e) => setReqForm({ ...reqForm, description: e.target.value })}
         />
       </div>
+      <div className="md:col-span-3 flex items-center gap-3 bg-white border border-gray-200 px-4 py-3 rounded-xl">
+        <input 
+          type="checkbox" 
+          id="is_optional" 
+          className="w-4 h-4 text-primary-green focus:ring-primary-green rounded border-gray-300"
+          checked={reqForm.is_optional || false}
+          onChange={(e) => setReqForm({ ...reqForm, is_optional: e.target.checked })}
+        />
+        <label htmlFor="is_optional" className="text-sm font-bold text-gray-700 cursor-pointer w-full">
+          Make this requirement optional
+        </label>
+      </div>
       <div>
         <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Template</label>
         <div
@@ -410,7 +429,7 @@ const DocumentTypeSettings = () => {
     <div className="w-full max-w-5xl mx-auto animate-in fade-in duration-500 pb-20">
       {toast && (
         <div
-          className={`fixed top-10 right-10 z-[200] flex items-center gap-4 px-8 py-5 rounded-2xl shadow-2xl ${
+          className={`fixed top-10 right-10 z-[99999] flex items-center gap-4 px-8 py-5 rounded-2xl shadow-2xl ${
             toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-primary-green text-white'
           }`}
         >
@@ -434,9 +453,17 @@ const DocumentTypeSettings = () => {
           iconColor="slate" 
         />
       </div>
-      <form onSubmit={handleSaveType} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 space-y-6 mb-10">
-        <h2 className="text-lg font-black text-gray-800 uppercase">Category Details</h2>
-        <div className="space-y-2">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-10">
+        <div 
+          className="p-8 border-b border-gray-100 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors"
+          onClick={() => setIsCategoryDetailsOpen(!isCategoryDetailsOpen)}
+        >
+          <h2 className="text-lg font-black text-gray-800 uppercase">Category Details</h2>
+          {isCategoryDetailsOpen ? <ChevronUp className="text-gray-400" /> : <ChevronDown className="text-gray-400" />}
+        </div>
+        {isCategoryDetailsOpen && (
+          <form onSubmit={handleSaveType} className="p-8 space-y-6">
+            <div className="space-y-2">
           <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">Category Name</label>
           <input
             type="text"
@@ -509,15 +536,23 @@ const DocumentTypeSettings = () => {
               Delete Category
             </button>
           )}
-        </div>
-      </form>
+            </div>
+          </form>
+        )}
+      </div>
 
       {!isNew && (
         <section className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="p-8 border-b border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-black text-gray-800 uppercase">Requirements & Subtypes</h2>
-              <p className="text-xs font-bold text-gray-400 mt-1">Manage subtypes and requirements</p>
+            <div 
+              className="flex items-center gap-3 cursor-pointer"
+              onClick={() => setIsRequirementsOpen(!isRequirementsOpen)}
+            >
+              <div>
+                <h2 className="text-lg font-black text-gray-800 uppercase hover:text-primary-green transition-colors">Requirements & Subtypes</h2>
+                <p className="text-xs font-bold text-gray-400 mt-1">Manage subtypes and requirements</p>
+              </div>
+              {isRequirementsOpen ? <ChevronUp className="text-gray-400" /> : <ChevronDown className="text-gray-400" />}
             </div>
             
             <div className="flex flex-col gap-2">
@@ -535,8 +570,10 @@ const DocumentTypeSettings = () => {
             </div>
           </div>
           
-          <div className="border-b border-gray-100 px-8 py-3 bg-gray-50 flex items-center gap-2 overflow-x-auto">
-            <button
+          {isRequirementsOpen && (
+            <>
+              <div className="border-b border-gray-100 px-8 py-3 bg-gray-50 flex items-center gap-2 overflow-x-auto">
+                <button
               type="button"
               onClick={() => setSubType(null)}
               className={`px-5 py-2 rounded-lg text-xs font-black uppercase whitespace-nowrap ${
@@ -585,7 +622,14 @@ const DocumentTypeSettings = () => {
                           <FileText size={20} />
                         </div>
                         <div>
-                          <p className="font-black text-gray-800">{req.title}</p>
+                          <p className="font-black text-gray-800 flex items-center gap-2">
+                            {req.title}
+                            {req.is_optional && (
+                              <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                                Optional
+                              </span>
+                            )}
+                          </p>
                           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1">
                             {req.referenceCode || 'GENERAL'}
                           </p>
@@ -616,6 +660,8 @@ const DocumentTypeSettings = () => {
               ))
             )}
           </div>
+            </>
+          )}
         </section>
       )}
 

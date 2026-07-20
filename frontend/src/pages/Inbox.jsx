@@ -47,7 +47,7 @@ const getStatusColor = (status) => {
   if (s.includes('dean review')) {
     return '#1e3a8a';
   }
-  if (s.includes('external review')) {
+  if (s.includes('main campus review')) {
     return '#d76b0d';
   }
   if (s === 'approved') {
@@ -146,8 +146,8 @@ const mapInboxSubmission = (sub, viewer, subtypesMap = {}) => {
     statusLabel = 'SDS coordinator review';
   } else if (rawStatus === 'dean review' || rawStatus === 'external approved') {
     statusLabel = 'Dean Review';
-  } else if (rawStatus === 'external review' || rawStatus === 'vice chairman approved') {
-    statusLabel = 'External Review';
+  } else if (rawStatus === 'main campus review' || rawStatus === 'vice chairman approved') {
+    statusLabel = 'Main Campus Review';
   } else if (rawStatus === 'sds approved' || rawStatus === 'chairman approved') {
     statusLabel = 'Chairman Review';
   } else if (rawStatus === 'returned') {
@@ -1135,30 +1135,32 @@ export const Inbox = () => {
               <span className="font-bold min-w-[200px]">Target Date and Time:</span>
               <span>
                 {selectedDoc.schedules && selectedDoc.schedules.length > 0 ? (
-                  `[${selectedDoc.schedules.map(s => {
+                  selectedDoc.schedules.map((s, idx) => {
                     let dateStr = 'TBD';
                     if (s.activity_date) {
                       try {
-                        dateStr = new Date(s.activity_date).toLocaleDateString('en-US', {
-                          month: 'long', day: 'numeric', year: 'numeric'
-                        }).toUpperCase();
+                        dateStr = new Date(s.activity_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase();
                       } catch (e) {
                         dateStr = String(s.activity_date).toUpperCase();
                       }
                     }
-                    return `${dateStr}, ${s.start_time || 'TBD'} - ${s.is_indefinite ? 'INDEFINITE' : (s.end_time || 'TBD')}`;
-                  }).join('; ')}]`
+                    if (s.end_date) {
+                      const endStr = new Date(s.end_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase();
+                      return <span key={idx} className="block">{`${dateStr} – ${endStr}`}</span>;
+                    }
+                    const formatTime = (t) => {
+                      if (!t) return 'TBD';
+                      try {
+                        const [h, m] = t.split(':');
+                        const d = new Date(); d.setHours(parseInt(h, 10)); d.setMinutes(parseInt(m, 10));
+                        return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toUpperCase();
+                      } catch (e) { return t; }
+                    };
+                    return <span key={idx} className="block">{`${dateStr} — ${formatTime(s.start_time)} – ${s.is_indefinite ? 'INDEFINITE' : formatTime(s.end_time)}`}</span>;
+                  })
                 ) : (
                   selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-' ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}` : selectedDoc.targetDate
                 )}
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <span className="font-bold min-w-[200px]">Duration:</span>
-              <span>
-                {selectedDoc.schedules && selectedDoc.schedules.length > 0 
-                  ? `${(selectedDoc.schedules.reduce((acc, s) => acc + (s.duration_minutes || 0), 0) / 60).toFixed(1)} Hours`
-                  : selectedDoc.duration ? `${(Number(selectedDoc.duration) / 60).toFixed(1)} Hours` : '—'}
               </span>
             </div>
             <div className="flex gap-2">
