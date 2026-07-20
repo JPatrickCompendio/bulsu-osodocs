@@ -488,7 +488,14 @@ const ListOfRequirements = () => {
                         className={`hover:bg-gray-50/20 transition-all group ${highlightReqId === req.id ? 'bg-primary-green/10 ring-2 ring-primary-green/30 ring-inset' : ''}`}
                       >
                         <td className="px-6 py-4">
-                          <div className="font-black text-lg text-gray-800">{req.title}</div>
+                          <div className="font-black text-lg text-gray-800 flex flex-wrap items-center gap-2">
+                            {req.title}
+                            {(req.is_optional === true || String(req.is_optional) === 'true') && (
+                              <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 text-[10px] font-black uppercase rounded shadow-sm">
+                                Optional
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-6 py-4">
                           <span className="px-3 py-1.5 bg-gray-100 text-gray-500 rounded-lg text-[10px] font-black tracking-widest border border-gray-200/50">

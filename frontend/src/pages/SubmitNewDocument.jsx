@@ -11,7 +11,7 @@ import {
   AlertCircle, Loader2, Info, Calendar, User, MapPin,
   Clock, Users, Search, ChevronRight, RefreshCcw, X,
   FileCheck, Download, Eye, Trash2, File as FileIcon,
-  Eraser, Check, CheckSquare, Lock, Paperclip, Settings, FilePlus
+  Eraser, Check, CheckSquare, Lock, Paperclip, Settings, FilePlus, ChevronDown
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import DEFAULT_HEADER_IMG from '../assets/HEADER.png';
@@ -23,6 +23,7 @@ const SubmitNewDocument = () => {
 
   // Navigation & State
   const [view, setView] = useState('dashboard'); // 'dashboard' or 'form'
+  const [selectedTypeForSubtypes, setSelectedTypeForSubtypes] = useState(null);
   const [loading, setLoading] = useState(true);
   const [docTypes, setDocTypes] = useState([]);
   const [reqCounts, setReqCounts] = useState({}); // Dynamic counts
@@ -606,8 +607,6 @@ const SubmitNewDocument = () => {
       let draft = null;
       if (resumeSubmissionId) {
         draft = await subService.getSubmissionById(resumeSubmissionId);
-      } else {
-        draft = await subService.getDraftSubmission(user.id, type.id, subtypeId, proposalType);
       }
       const reqs = await subService.getRequirementsForType(type.id, subtypeId, proposalType);
 
@@ -1106,7 +1105,12 @@ const SubmitNewDocument = () => {
                 {i + 1}
               </div>
               <div className="flex flex-col">
-                <h4 className="text-sm font-black text-gray-800 leading-tight uppercase">{req.title}</h4>
+                <h4 className="text-sm font-black text-gray-800 leading-tight uppercase flex items-center gap-2">
+                  {req.title}
+                  {(req.is_optional === true || String(req.is_optional) === 'true') && (
+                    <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 text-[9px] font-black uppercase rounded">Optional</span>
+                  )}
+                </h4>
                 <p className="text-[11px] font-bold text-gray-500 mt-1">{req.description || 'Please provide the requested document'}</p>
                 <span className="text-[11px] font-bold text-gray-400 mt-2 block">{req.referenceCode || 'REQ'}</span>
               </div>
@@ -1267,12 +1271,15 @@ const SubmitNewDocument = () => {
                             <p className="text-gray-400 text-xs font-bold mt-1">{desc}</p>
                           </div>
                         </div>
-                        <div className="mt-auto border-t border-gray-50 bg-gray-50/30 flex flex-col h-full justify-end">
+                        <div className="mt-auto border-t border-gray-50 bg-gray-50/30">
                           {subtypes.length > 0 ? (
-                            subtypes.map((st, idx) => {
-                              const tObj = { ...typeObj, __subtype: st };
-                              return renderCategoryItem(tObj, st.name, idx === subtypes.length - 1);
-                            })
+                            <button
+                              onClick={() => setSelectedTypeForSubtypes({ typeObj, subtypes })}
+                              className="w-full px-6 py-4 flex items-center justify-between hover:bg-white transition-all group/btn"
+                            >
+                              <span className="text-sm font-bold text-gray-500 group-hover/btn:text-primary-green">Select Subtype</span>
+                              <ChevronRight size={18} className="text-gray-300 group-hover/btn:text-primary-green" />
+                            </button>
                           ) : (
                             renderCategoryItem(typeObj, typeObj.name, true)
                           )}
@@ -1284,6 +1291,49 @@ const SubmitNewDocument = () => {
               );
             })()}
           </div>
+          
+          {selectedTypeForSubtypes && (
+            <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
+              <div className="bg-white rounded-[2rem] w-full max-w-3xl p-8 flex flex-col shadow-2xl animate-in zoom-in-95 duration-300">
+                <div className="flex items-center justify-between mb-8 border-b border-gray-100 pb-4">
+                  <div>
+                    <h2 className="text-2xl font-black text-gray-800 uppercase tracking-tight">{selectedTypeForSubtypes.typeObj.name} Subtypes</h2>
+                    <p className="text-sm font-bold text-gray-400 mt-1">Select the specific category for your submission</p>
+                  </div>
+                  <button onClick={() => setSelectedTypeForSubtypes(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                    <X size={24} className="text-gray-400" />
+                  </button>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {selectedTypeForSubtypes.subtypes.map(st => {
+                    const tObj = { ...selectedTypeForSubtypes.typeObj, __subtype: st };
+                    const avail = availability[tObj.id] || availability[selectedTypeForSubtypes.typeObj.id];
+                    const isLocked = avail && !avail.isAvailable;
+                    
+                    return (
+                      <button
+                        key={st.id}
+                        disabled={isLocked}
+                        onClick={() => {
+                          setSelectedTypeForSubtypes(null);
+                          handleSelectType(tObj, st, st.name);
+                        }}
+                        className={`p-6 rounded-xl border text-left transition-all ${isLocked ? 'border-red-100 bg-red-50 opacity-60 cursor-not-allowed' : 'border-gray-200 bg-white hover:border-primary-green hover:shadow-lg hover:-translate-y-1 cursor-pointer'}`}
+                      >
+                        <h3 className="text-lg font-black text-gray-800 uppercase">{st.name}</h3>
+                        {isLocked ? (
+                          <p className="text-xs font-bold text-red-500 mt-2 flex items-center gap-1"><Lock size={14} /> Locked: {avail?.lockedReason}</p>
+                        ) : (
+                          <p className="text-xs font-bold text-gray-500 mt-2 flex items-center gap-1"><FileText size={14} /> {getReqCount(selectedTypeForSubtypes.typeObj.id, st)} Required Documents</p>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1304,14 +1354,20 @@ const SubmitNewDocument = () => {
                   <h1 className="text-xl font-black text-gray-800 uppercase">{selectedType.name}</h1>
                   <p className="text-gray-400 font-bold text-[10px] uppercase tracking-widest">{subType}</p>
                   {draftNotice && (
-                    <p className="text-[10px] text-blue-600 font-bold mt-1">{draftNotice}</p>
+                    <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 text-amber-600 border border-amber-200/50 rounded-md">
+                      <span className="text-[10px] font-black uppercase tracking-wider">{draftNotice}</span>
+                    </div>
                   )}
                 </div>
               </div>
             </div>
 
-            <div className="text-xs font-bold text-gray-400 uppercase tracking-widest bg-gray-50 px-4 py-2 rounded-lg border border-gray-100">
-              Draft Mode
+            <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-100 rounded-lg shadow-sm">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+              </span>
+              <span className="text-xs font-black text-amber-700 uppercase tracking-widest">Draft Mode</span>
             </div>
           </div>
 
@@ -1322,8 +1378,14 @@ const SubmitNewDocument = () => {
               {isProposal && (
                 <div className="space-y-8">
                   <div className="bg-white p-10 rounded-2xl shadow-sm border border-gray-100 space-y-8">
-                    <div className="text-center pb-8 border-b border-gray-100">
-                      <h2 className="text-2xl font-black text-gray-800 uppercase tracking-widest">Activity Proposal Form</h2>
+                    <div className="flex items-center gap-4 pb-6 border-b border-gray-100">
+                      <div className="w-10 h-10 bg-primary-green/10 rounded-xl flex items-center justify-center text-primary-green shrink-0">
+                        <FileText size={20} />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-black text-gray-800 uppercase tracking-widest">General Information</h2>
+                        <p className="text-xs font-bold text-gray-400 mt-1">Please fill in the required details for your submission</p>
+                      </div>
                     </div>
 
                     <div className="space-y-6">

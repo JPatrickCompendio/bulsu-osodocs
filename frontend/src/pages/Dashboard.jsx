@@ -47,7 +47,7 @@ const formatSubmissionTitle = (doc, activeSy) => {
     const details = Array.isArray(latest.activity_proposal_details)
       ? latest.activity_proposal_details[0]
       : latest.activity_proposal_details;
-      
+
     if (isActivityProposal) {
       if (details?.activity_title) {
         docTitle = details.activity_title;
@@ -311,17 +311,17 @@ const AdminDashboardView = () => {
     <div className="pb-32">
       <div className="w-full space-y-8">
         <section className="relative rounded-2xl overflow-hidden mb-8 shadow-lg bg-black p-8 md:p-10 border border-gray-800">
-          <video 
-            autoPlay 
-            loop 
-            muted 
+          <video
+            autoPlay
+            loop
+            muted
             playsInline
             className="absolute inset-0 w-full h-full object-cover mix-blend-screen opacity-50"
           >
             <source src="/loginbgvid.mp4" type="video/mp4" />
           </video>
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent"></div>
-          
+
           <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-10">
             <div>
               <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-2 drop-shadow-md uppercase">Admin Dashboard</h1>
@@ -453,17 +453,23 @@ const AdminDashboardView = () => {
               <p className="text-xs font-bold text-gray-400">Distribution across review stages</p>
             </div>
             <div className="p-6 flex-1 space-y-4">
-              {Object.entries(stats.statusBreakdown)
+              {Object.entries(
+                  Object.entries(stats.statusBreakdown || {}).reduce((acc, [status, count]) => {
+                    const label = formatBreakdownLabel(status).toLowerCase();
+                    acc[label] = (acc[label] || 0) + count;
+                    return acc;
+                  }, {})
+                )
                 .filter(([status]) => !status.toLowerCase().includes('chairman') && !status.toLowerCase().includes('vice chairman'))
                 .map(([status, count]) => (
-                <div key={status} className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getStatusColor(status) }} />
-                    <span className="text-sm font-bold text-gray-600 capitalize">{formatBreakdownLabel(status)}</span>
+                  <div key={status} className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getStatusColor(status) }} />
+                      <span className="text-sm font-bold text-gray-600 capitalize">{status}</span>
+                    </div>
+                    <span className="font-black text-gray-800 bg-gray-50 px-3 py-1 rounded-lg border border-gray-100">{count}</span>
                   </div>
-                  <span className="font-black text-gray-800 bg-gray-50 px-3 py-1 rounded-lg border border-gray-100">{count}</span>
-                </div>
-              ))}
+                ))}
             </div>
           </section>
 
@@ -650,7 +656,7 @@ const ChairmanDashboardView = ({ role }) => {
           .eq('is_active', true)
           .maybeSingle();
         setActiveSy(sy);
-        
+
         if (dashboardStats) {
           setData({ stats: dashboardStats, announcements });
         }
@@ -673,17 +679,17 @@ const ChairmanDashboardView = ({ role }) => {
     <div className="pb-32">
       <div className="w-full space-y-8">
         <section className="relative rounded-2xl overflow-hidden mb-8 shadow-lg bg-black p-8 md:p-10 border border-gray-800">
-          <video 
-            autoPlay 
-            loop 
-            muted 
+          <video
+            autoPlay
+            loop
+            muted
             playsInline
             className="absolute inset-0 w-full h-full object-cover mix-blend-screen opacity-50"
           >
             <source src="/loginbgvid.mp4" type="video/mp4" />
           </video>
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent"></div>
-          
+
           <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-10">
             <div>
               <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-2 drop-shadow-md uppercase">{roleLabel} Dashboard</h1>
@@ -821,23 +827,29 @@ const ChairmanDashboardView = ({ role }) => {
                 <p className="text-xs font-bold text-gray-400">Distribution across review stages</p>
               </div>
               <div className="p-6 flex-1 space-y-4">
-                {Object.entries(stats.statusBreakdown || {})
+                {Object.entries(
+                    Object.entries(stats.statusBreakdown || {}).reduce((acc, [status, count]) => {
+                      const label = formatBreakdownLabel(status).toLowerCase();
+                      acc[label] = (acc[label] || 0) + count;
+                      return acc;
+                    }, {})
+                  )
                   .filter(([status]) => {
                     const s = status.toLowerCase();
                     return !s.includes('chairman review');
                   })
                   .map(([status, count]) => (
-                  <div key={status} className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getStatusColor(status) }} />
-                      <span className="text-sm font-bold text-gray-600 capitalize">{formatBreakdownLabel(status)}</span>
+                    <div key={status} className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getStatusColor(status) }} />
+                        <span className="text-sm font-bold text-gray-600 capitalize">{status}</span>
+                      </div>
+                      <span className="font-black text-gray-800 bg-gray-50 px-3 py-1 rounded-lg border border-gray-100">{count}</span>
                     </div>
-                    <span className="font-black text-gray-800 bg-gray-50 px-3 py-1 rounded-lg border border-gray-100">{count}</span>
-                  </div>
-                ))}
+                  ))}
               </div>
             </section>
-            
+
             <section className="bg-white rounded-2xl shadow-sm border border-gray-100">
               <div className="p-6 border-b border-gray-50">
                 <h2 className="text-lg font-black text-gray-800 uppercase">Common Submission Errors</h2>
@@ -968,8 +980,8 @@ const OrgDashboardView = () => {
     const tableData = data.activeDocuments.map(doc => [
       doc.title || 'Untitled Document',
       doc.type || '—',
-      doc.latestLog 
-        ? `${doc.latestLog.description || doc.latestLog.comment || 'Status updated'} (${new Date(doc.latestLog.created_at).toLocaleDateString()})` 
+      doc.latestLog
+        ? `${doc.latestLog.description || doc.latestLog.comment || 'Status updated'} (${new Date(doc.latestLog.created_at).toLocaleDateString()})`
         : 'No logs yet',
       formatStatus(doc.status, 'org-president').toUpperCase()
     ]);
@@ -1050,10 +1062,10 @@ const OrgDashboardView = () => {
     <div className="pb-32">
       <div className="w-full space-y-8">
         <section className="relative rounded-2xl overflow-hidden mb-8 shadow-lg bg-black p-8 md:p-10 border border-gray-800">
-          <video 
-            autoPlay 
-            loop 
-            muted 
+          <video
+            autoPlay
+            loop
+            muted
             playsInline
             className="absolute inset-0 w-full h-full object-cover mix-blend-screen opacity-50"
           >
@@ -1131,7 +1143,7 @@ const OrgDashboardView = () => {
                       const isActivityProposal = doc.type.toLowerCase() === 'activity proposal' || doc.type.toLowerCase().includes('proposal');
                       const orgNameStr = data.hero?.user?.org_name || '-';
                       const docTitle = isActivityProposal ? doc.title : `${orgNameStr} ${doc.type} ${data.hero?.activeSy?.name || ''}`.toUpperCase().trim();
-                      
+
                       return (
                         <tr key={doc.id} className="hover:bg-gray-50/50 transition-colors cursor-pointer" onClick={() => navigate(`/my-documents?submissionId=${doc.id}`)}>
                           <td className="px-6 py-4">

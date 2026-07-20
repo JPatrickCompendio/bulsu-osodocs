@@ -1602,8 +1602,8 @@ export const MyDocuments = () => {
       category = 'Dean Review';
     } else if (subStatus.includes('dean review')) {
       category = 'Dean Review';
-    } else if (subStatus.includes('main campus review')) {
-      category = 'main campus review';
+    } else if (subStatus.includes('main campus review') || subStatus.includes('external review') || subStatus.includes('vice chairman approved')) {
+      category = 'Main Campus Review';
     } else if (subStatus.includes('ready for retrieval')) {
       category = 'Approved';
     } else if (subStatus.includes('waiting for accomplishment report')) {
@@ -1618,7 +1618,7 @@ export const MyDocuments = () => {
       // Fallback to logs only when status is missing/unknown
       if (wpNorm === 'sds review') category = 'SDS Review';
       else if (wpNorm === 'dean review') category = 'Dean Review';
-      else if (wpNorm === 'main campus review') category = 'main campus review';
+      else if (wpNorm === 'main campus review' || wpNorm === 'external review') category = 'Main Campus Review';
       else if (wpNorm === 'chairman review') category = 'Chairman Review';
       else if (ra === 'ready-for-hardcopy') category = user?.role === 'org-president' ? 'OSO Staff review' : 'To Forward';
       else if (ra === 'approved') category = 'Approved';
@@ -1783,6 +1783,7 @@ export const MyDocuments = () => {
 
   if (selectedDoc) {
     const isActivityProposal = selectedDoc.isActivityProposal;
+
 
     const allVersions = Array.isArray(selectedDoc.raw?.submission_versions)
       ? [...selectedDoc.raw.submission_versions].sort((a, b) => b.version_number - a.version_number)

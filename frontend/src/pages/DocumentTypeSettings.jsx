@@ -345,18 +345,6 @@ const DocumentTypeSettings = () => {
           onChange={(e) => setReqForm({ ...reqForm, description: e.target.value })}
         />
       </div>
-      <div className="md:col-span-3 flex items-center gap-3 bg-white border border-gray-200 px-4 py-3 rounded-xl">
-        <input 
-          type="checkbox" 
-          id="is_optional" 
-          className="w-4 h-4 text-primary-green focus:ring-primary-green rounded border-gray-300"
-          checked={reqForm.is_optional || false}
-          onChange={(e) => setReqForm({ ...reqForm, is_optional: e.target.checked })}
-        />
-        <label htmlFor="is_optional" className="text-sm font-bold text-gray-700 cursor-pointer w-full">
-          Make this requirement optional
-        </label>
-      </div>
       <div>
         <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Template</label>
         <div
@@ -375,6 +363,21 @@ const DocumentTypeSettings = () => {
             onChange={(e) => e.target.files[0] && setReqForm({ ...reqForm, file: e.target.files[0] })}
           />
         </div>
+      </div>
+      <div className="flex items-center justify-between bg-white border border-gray-200 px-5 py-4 rounded-xl mt-2">
+        <div>
+          <h4 className="text-sm font-bold text-gray-800">Optional Requirement</h4>
+          <p className="text-[10px] font-medium text-gray-400 mt-0.5">Allow students to skip this requirement if not applicable</p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={reqForm.is_optional === true || String(reqForm.is_optional) === 'true'}
+          onClick={() => setReqForm({ ...reqForm, is_optional: !(reqForm.is_optional === true || String(reqForm.is_optional) === 'true') })}
+          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-green focus:ring-offset-2 ${reqForm.is_optional === true || String(reqForm.is_optional) === 'true' ? 'bg-primary-green' : 'bg-gray-200'}`}
+        >
+          <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${reqForm.is_optional === true || String(reqForm.is_optional) === 'true' ? 'translate-x-5' : 'translate-x-0'}`} />
+        </button>
       </div>
       <button
         type="submit"
@@ -624,7 +627,7 @@ const DocumentTypeSettings = () => {
                         <div>
                           <p className="font-black text-gray-800 flex items-center gap-2">
                             {req.title}
-                            {req.is_optional && (
+                            {(req.is_optional === true || String(req.is_optional) === 'true') && (
                               <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
                                 Optional
                               </span>
