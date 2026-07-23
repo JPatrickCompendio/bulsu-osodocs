@@ -149,6 +149,34 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
     }
   };
 
+  const handleAttachmentAction = async (filePath, action = 'view', fileName = 'download') => {
+    try {
+      let finalPath = filePath || '';
+      if (finalPath.startsWith('documents/')) {
+        finalPath = finalPath.replace('documents/', '');
+      }
+      const { data, error } = await supabase.storage.from('documents').createSignedUrl(finalPath, 3600);
+      
+      if (error || !data?.signedUrl) {
+        console.error('Failed to get signed URL for attachment:', error);
+        return;
+      }
+
+      if (action === 'view') {
+        setPreviewUrl(data.signedUrl);
+      } else if (action === 'download') {
+        const link = document.createElement('a');
+        link.href = data.signedUrl;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    } catch (err) {
+      console.error('Error handling attachment action:', err);
+    }
+  };
+
   React.useEffect(() => {
     const load = async () => {
       if (!submissionId) return;
@@ -540,22 +568,20 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
                       <div className="flex items-center gap-2 shrink-0">
                         <button
                           type="button"
-                          onClick={() => setPreviewUrl(fileUrl)}
+                          onClick={() => handleAttachmentAction(file.file_url, 'view')}
                           className="inline-flex items-center gap-1 bg-secondary-gold text-white px-4 py-2 rounded-lg text-xs font-bold hover:brightness-110"
                         >
                           <Eye size={12} />
                           View
                         </button>
-                        <a
-                          href={fileUrl}
-                          download
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => handleAttachmentAction(file.file_url, 'download', fileName)}
                           className="inline-flex items-center gap-1 bg-secondary-gold text-white px-4 py-2 rounded-lg text-xs font-bold hover:brightness-110"
                         >
                           <Download size={12} />
                           Download
-                        </a>
+                        </button>
                       </div>
                     </div>
                   );

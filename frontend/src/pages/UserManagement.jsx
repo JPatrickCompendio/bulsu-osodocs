@@ -6,6 +6,7 @@ import {
   Search,
   X,
   Check,
+  Plus,
   MoreVertical,
   Mail,
   Users as UsersIcon,
@@ -74,6 +75,7 @@ const UserManagement = () => {
     org_name: '',
     no_member: '',
     adviser_name: '',
+    co_advisers: [],
     joined_date: '',
     contact_no: '',
     student_no: '',
@@ -163,6 +165,7 @@ const UserManagement = () => {
       org_name: '',
       no_member: '',
       adviser_name: '',
+      co_advisers: [],
       joined_date: '',
       contact_no: '',
       student_no: '',
@@ -185,6 +188,7 @@ const UserManagement = () => {
         org_name: '',
         no_member: '',
         adviser_name: '',
+        co_advisers: [],
         joined_date: '',
         contact_no: user.contact_no || '',
         student_no: '',
@@ -207,6 +211,7 @@ const UserManagement = () => {
         org_name: user.org_name || '',
         no_member: user.no_member || '',
         adviser_name: user.adviser_name || '',
+        co_advisers: user.co_advisers || [],
         joined_date: user.joined_date || '',
         contact_no: user.contact_no || '',
         student_no: user.student_no || '',
@@ -245,6 +250,7 @@ const UserManagement = () => {
       org_name: suspendUser.org_name || null,
       no_member: suspendUser.no_member || null,
       adviser_name: suspendUser.adviser_name || null,
+      co_advisers: suspendUser.co_advisers || [],
       joined_date: suspendUser.joined_date || null,
       contact_no: suspendUser.contact_no || null,
       student_no: suspendUser.student_no || null
@@ -364,6 +370,7 @@ const UserManagement = () => {
       org_name: formData.org_name || null,
       no_member: formData.no_member ? parseInt(formData.no_member) : null,
       adviser_name: formData.adviser_name || null,
+      co_advisers: formData.co_advisers || [],
       joined_date: formData.joined_date || null,
       contact_no: formData.contact_no != null && formData.contact_no !== '' ? String(formData.contact_no) : null,
       student_no: formData.student_no || null
@@ -424,7 +431,7 @@ const UserManagement = () => {
     const infoCards = isOrg
       ? [
           { label: 'President', value: profile.full_name, sub: profile.student_no ? `SN: ${profile.student_no}` : '' },
-          { label: 'Adviser', value: profile.adviser_name || '—', sub: 'CICT Faculty' },
+          { label: 'Advisers', value: profile.adviser_name || '—', sub: (profile.co_advisers?.length > 0) ? `+ ${profile.co_advisers.length} Co-Adviser(s)` : 'Main Adviser' },
           { label: 'Official Email', value: profile.email || '—', sub: '' },
           { label: 'Contact Number', value: profile.contact_no || '—', sub: '' },
           { label: 'Total Members', value: `${profile.no_member || 0} Active Members`, sub: '' },
@@ -694,17 +701,23 @@ const UserManagement = () => {
               />
             </div>
 
-            <div className="flex items-center gap-2 w-full md:w-auto">
-              <Filter size={18} className="text-gray-400" />
-              <select
-                className="flex-1 md:flex-none px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-green outline-none bg-white"
-                value={filterType}
-                onChange={(e) => setFilterType(e.target.value)}
-              >
-                <option value="all">All Roles</option>
-                <option value="staff">Chairman / Vice Chairman</option>
-                <option value="org">Organization President</option>
-              </select>
+            <div className="flex items-center gap-4 w-full md:w-auto">
+              <div className="hidden md:flex text-sm font-medium text-gray-500 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100 items-center gap-1.5 shrink-0">
+                <UsersIcon size={16} className="text-gray-400" />
+                Total Users: <span className="font-bold text-gray-800">{filteredUsers.length}</span>
+              </div>
+              <div className="flex items-center gap-2 w-full md:w-auto">
+                <Filter size={18} className="text-gray-400 shrink-0" />
+                <select
+                  className="flex-1 md:flex-none px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-green outline-none bg-white"
+                  value={filterType}
+                  onChange={(e) => setFilterType(e.target.value)}
+                >
+                  <option value="all">All Roles</option>
+                  <option value="staff">Chairman / Vice Chairman</option>
+                  <option value="org">Organization President</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -722,7 +735,6 @@ const UserManagement = () => {
                     <tr className="bg-gray-50/50 border-b border-gray-100">
                       <th className="px-6 py-4 font-semibold text-gray-600 text-sm">User Details</th>
                       <th className="px-6 py-4 font-semibold text-gray-600 text-sm">Role</th>
-                      <th className="px-6 py-4 font-semibold text-gray-600 text-sm">Organization</th>
                       <th className="px-6 py-4 font-semibold text-gray-600 text-sm">Adviser</th>
                       <th className="px-6 py-4 font-semibold text-gray-600 text-sm text-center">Members</th>
                       <th className="px-6 py-4 font-semibold text-gray-600 text-sm">Status</th>
@@ -737,17 +749,29 @@ const UserManagement = () => {
                           <div className="flex items-center gap-3">
                             <Avatar
                               profileImage={user.profile_image}
-                              name={user.full_name}
+                              name={user.role === 'org-president' ? (user.org_name || user.full_name) : user.full_name}
                               className="w-10 h-10 rounded-full shadow-sm"
                               fallbackClassName={`text-white ${user.role === 'org-president' ? 'bg-secondary-gold text-primary-green' : 'bg-primary-green'}`}
                             />
-                            <div>
-                              <div className="font-semibold text-gray-800">{user.full_name}</div>
-                              <div className="text-[10px] text-gray-400 font-mono">
-                                {user.student_no ? `SN: ${user.student_no} | ` : ''}ID: {user.id.substring(0, 8)}
+                            <div className="min-w-0">
+                              <div 
+                                className="font-semibold text-gray-800 truncate max-w-[180px]" 
+                                title={user.role === 'org-president' ? (user.org_name || user.full_name) : user.full_name}
+                              >
+                                {user.role === 'org-president' ? (user.org_name || user.full_name) : user.full_name}
+                              </div>
+                              <div 
+                                className="text-[10px] text-gray-400 font-mono truncate max-w-[180px]"
+                                title={user.role === 'org-president' ? user.full_name : ''}
+                              >
+                                {user.role === 'org-president' ? (
+                                  user.full_name
+                                ) : (
+                                  <>{user.student_no ? `SN: ${user.student_no} | ` : ''}ID: {user.id.substring(0, 8)}</>
+                                )}
                               </div>
                               {user.contact_no && (
-                                <div className="text-[11px] text-gray-500 font-medium mt-0.5 flex items-center gap-1">
+                                <div className="text-[11px] text-gray-500 font-medium mt-0.5 flex items-center gap-1 truncate max-w-[180px]">
                                   <span>📞 {user.contact_no}</span>
                                 </div>
                               )}
@@ -759,10 +783,7 @@ const UserManagement = () => {
                             {user.role}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-600 font-medium">
-                          {user.org_name || <span className="text-gray-300">—</span>}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-600">
+                        <td className="px-6 py-4 text-sm text-gray-600 max-w-[150px] truncate" title={user.adviser_name || ''}>
                           {user.adviser_name || <span className="text-gray-300">—</span>}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-600 text-center font-mono">
@@ -924,7 +945,7 @@ const UserManagement = () => {
                         value={formData.org_name}
                         onChange={(e) => setFormData({ ...formData, org_name: e.target.value })}
                         minLength="2"
-                        pattern="^[A-Za-z0-9\s.,()&'-]+$"
+                        pattern="^[A-Za-z0-9\s.,()&'\-]+$"
                         title="Organization name must contain at least 2 characters and no special symbols except standard punctuation"
                       />
                     </div>
@@ -955,9 +976,51 @@ const UserManagement = () => {
                       value={formData.adviser_name}
                       onChange={(e) => setFormData({ ...formData, adviser_name: e.target.value })}
                       minLength="2"
-                      pattern="^[A-Za-z\s.,'-]+$"
+                      pattern="^[A-Za-z\s.,'\-]+$"
                       title="Adviser name must be a valid alphabetical name of at least 2 characters"
                     />
+                  </div>
+                  <div className="md:col-span-2 space-y-2 mt-4">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-sm font-medium text-gray-700">Co-Advisers (Optional)</label>
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, co_advisers: [...(formData.co_advisers || []), ''] })}
+                        className="text-xs font-bold text-primary-green hover:text-[#0b5c2a] flex items-center gap-1"
+                      >
+                        <Plus size={14} /> Add Co-Adviser
+                      </button>
+                    </div>
+                    {formData.co_advisers?.map((coAdviser, idx) => (
+                      <div key={idx} className="flex gap-2 items-center animate-in fade-in zoom-in duration-200">
+                        <input
+                          type="text"
+                          className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-green text-gray-800"
+                          placeholder={`Co-Adviser ${idx + 1} Name`}
+                          value={coAdviser}
+                          onChange={(e) => {
+                            const newCoAdvisers = [...formData.co_advisers];
+                            newCoAdvisers[idx] = e.target.value;
+                            setFormData({ ...formData, co_advisers: newCoAdvisers });
+                          }}
+                          pattern="^[A-Za-z\s.,'\-]+$"
+                          title="Co-Adviser name must be a valid alphabetical name"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newCoAdvisers = formData.co_advisers.filter((_, i) => i !== idx);
+                            setFormData({ ...formData, co_advisers: newCoAdvisers });
+                          }}
+                          className="p-2.5 text-red-500 hover:bg-red-50 rounded-xl transition-colors shrink-0"
+                        >
+                          <X size={18} />
+                        </button>
+                      </div>
+                    ))}
+                    {(!formData.co_advisers || formData.co_advisers.length === 0) && (
+                      <div className="text-xs text-gray-400 italic">No co-advisers added yet. Click "Add Co-Adviser" to add one.</div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Date of Formation</label>

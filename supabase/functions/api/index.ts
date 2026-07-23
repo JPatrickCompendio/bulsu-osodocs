@@ -540,10 +540,11 @@ async function handlePostUsers(body: Record<string, unknown>) {
     org_name,
     no_member,
     adviser_name,
+    co_advisers,
     joined_date,
     contact_no,
     student_no,
-  } = body as Record<string, string | null | undefined>;
+  } = body as Record<string, string | null | undefined | string[]>;
 
   if (!full_name || !role || !email || !password) {
     return jsonResponse({ error: 'Full name, role, email, and password are required' }, 400);
@@ -571,6 +572,7 @@ async function handlePostUsers(body: Record<string, unknown>) {
         org_name: org_name || null,
         no_member: no_member || null,
         adviser_name: adviser_name || null,
+        co_advisers: co_advisers || [],
         joined_date: joined_date || null,
         contact_no: contact_no != null && contact_no !== '' ? String(contact_no) : null,
         student_no: student_no || null,
@@ -595,11 +597,12 @@ async function handlePutUsers(id: string, body: Record<string, unknown>) {
     org_name,
     no_member,
     adviser_name,
+    co_advisers,
     joined_date,
     contact_no,
     student_no,
     email,
-  } = body as Record<string, string | null | undefined>;
+  } = body as Record<string, string | null | undefined | string[]>;
 
   const { data: existingUser, error: existingError } = await supabase
     .from('users')
@@ -625,6 +628,7 @@ async function handlePutUsers(id: string, body: Record<string, unknown>) {
     org_name: org_name || null,
     no_member: no_member || null,
     adviser_name: adviser_name || null,
+    co_advisers: co_advisers || [],
     joined_date: joined_date || null,
     contact_no: contact_no != null && contact_no !== '' ? String(contact_no) : null,
     student_no: student_no || null,
