@@ -9,7 +9,7 @@ export const corsHeaders = {
 export function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store, no-cache, must-revalidate' },
   });
 }
 
@@ -318,8 +318,13 @@ async function handleGetUserDetail(id: string) {
     return jsonResponse({ error: 'User not found' }, 404);
   }
 
-  const { data: authUser } = await supabase.auth.admin.getUserById(id);
-  const email = authUser?.user?.email || null;
+  let email = null;
+  try {
+    const { data: authUser } = await supabase.auth.admin.getUserById(id);
+    email = authUser?.user?.email || null;
+  } catch (err) {
+    console.error('Error fetching auth user by id:', err);
+  }
 
   const { data: activeSy } = await supabase
     .from('school_years')
@@ -334,6 +339,10 @@ async function handleGetUserDetail(id: string) {
   const formatDocumentLog = (doc: Record<string, unknown>) => {
     let docTitle = `Submission #${String(doc.id).substring(0, 6).toUpperCase()}`;
     const versions = doc.submission_versions as Array<Record<string, unknown>> | undefined;
+    let venue = '-';
+    let personInCharge = '-';
+    let contactNumber = '-';
+    const trackingNumber = (doc.tracking_number as string) || `REF-${String(doc.id).substring(0, 6).toUpperCase()}`;
 
     if (versions && versions.length > 0) {
       const latest = versions.reduce((max, v) =>
@@ -342,10 +351,16 @@ async function handleGetUserDetail(id: string) {
       const details = Array.isArray(latest.activity_proposal_details)
         ? latest.activity_proposal_details[0]
         : latest.activity_proposal_details;
-      if (details && (details as Record<string, unknown>).activity_title) {
-        docTitle = (details as Record<string, unknown>).activity_title as string;
-      } else {
-        docTitle = `${(doc.documentType as Record<string, unknown>)?.name || 'Document'} #${String(doc.id).substring(0, 6).toUpperCase()}`;
+      if (details) {
+        const detObj = details as Record<string, unknown>;
+        if (detObj.activity_title) {
+          docTitle = detObj.activity_title as string;
+        } else {
+          docTitle = `${(doc.documentType as Record<string, unknown>)?.name || 'Document'} #${String(doc.id).substring(0, 6).toUpperCase()}`;
+        }
+        if (detObj.target_venue) venue = detObj.target_venue as string;
+        if (detObj.person_in_charge) personInCharge = detObj.person_in_charge as string;
+        if (detObj.contact_number) contactNumber = detObj.contact_number as string;
       }
     }
 
@@ -364,18 +379,22 @@ async function handleGetUserDetail(id: string) {
 
     return {
       id: doc.id,
+      trackingNumber,
       title: docTitle,
       type: (doc.documentType as Record<string, unknown>)?.name || 'Unknown',
       dateSubmitted: doc.created_at,
       status: displayStatus,
+      venue,
+      personInCharge,
+      contactNumber,
     };
   };
 
   if (user.role === 'org-president') {
-    const { data: subs } = await supabase
+    const { data: subs, error: subsError } = await supabase
       .from('submissions')
       .select(
-'id, tracking_number, status, created_at, school_year_id, documentType:document_type_id(name), submission_versions!submission_id(version_number, activity_proposal_details(activity_title))',
+        'id, tracking_number, status, created_at, school_year_id, documentType:document_type_id(name), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title, target_venue, person_in_charge, contact_number))',
       )
       .eq('user_id', id)
       .neq('status', 'draft')
@@ -383,27 +402,54 @@ async function handleGetUserDetail(id: string) {
     submissions = subs || [];
 
     const currentSySubmissions = activeSy
-      ? submissions.filter((s) => s.school_year_id === activeSy.id)
+      ? submissions.filter((s) => !s.school_year_id || s.school_year_id === activeSy.id)
       : submissions;
 
-    const validSubIds = currentSySubmissions.map((s) => s.id);
+    const validSubIds = submissions.map((s) => s.id);
 
-    if (validSubIds.length > 0) {
-      const { data: logs } = await supabase
-        .from('submission_logs')
-        .select('*, submissions(tracking_number,  school_year_id)')
-        .eq('user_id', id)
-        .in('submission_id', validSubIds)
-        .order('created_at', { ascending: false })
-        .limit(20);
-      activityHistory = (logs || []).filter((log) => {
+    let logsQuery = supabase
+      .from('submission_logs')
+      .select('*, submissions(tracking_number, school_year_id, documentType:document_type_id(name), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title)))')
+      .eq('user_id', id)
+      .order('created_at', { ascending: false })
+      .limit(25);
+
+    const { data: logs } = await logsQuery;
+    activityHistory = (logs || [])
+      .filter((log) => {
         const sub = log.submissions as Record<string, unknown> | null;
         return !activeSy || !sub?.school_year_id || sub.school_year_id === activeSy.id;
+      })
+      .map((log) => {
+        const sub = log.submissions as Record<string, unknown> | null;
+        let docTitle = null;
+        if (sub) {
+          const versions = sub.submission_versions as Array<Record<string, unknown>> | undefined;
+          if (versions && versions.length > 0) {
+            const latest = versions.reduce(
+              (max, v) => ((v.version_number as number) > (max.version_number as number) ? v : max),
+              versions[0],
+            );
+            const details = Array.isArray(latest.activity_proposal_details)
+              ? latest.activity_proposal_details[0]
+              : latest.activity_proposal_details;
+            if (details && (details as Record<string, unknown>).activity_title) {
+              docTitle = (details as Record<string, unknown>).activity_title as string;
+            }
+          }
+          if (!docTitle) {
+            docTitle = (sub.documentType as Record<string, unknown>)?.name as string || null;
+          }
+        }
+        return {
+          ...log,
+          docTitle,
+          trackingNumber: sub?.tracking_number || null,
+        };
       });
-    }
   } else {
     const submissionSelect =
-      'id, status, created_at, school_year_id, documentType:document_type_id(name), submission_versions!submission_id(version_number, activity_proposal_details(activity_title))';
+      'id, status, created_at, school_year_id, documentType:document_type_id(name), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title, target_venue, person_in_charge, contact_number))';
 
     const getStaffPipelineStatuses = (role: string) => {
       if (role === 'admin') {
@@ -470,7 +516,7 @@ async function handleGetUserDetail(id: string) {
 
     let logsQuery = supabase
       .from('submission_logs')
-      .select('*, submissions(tracking_number,  status, school_year_id, documentType:document_type_id(name), submission_versions!submission_id(version_number, activity_proposal_details(activity_title)))')
+      .select('*, submissions(tracking_number,  status, school_year_id, documentType:document_type_id(name), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title)))')
       .eq('user_id', id)
       .order('created_at', { ascending: false })
       .limit(50);
@@ -483,7 +529,7 @@ async function handleGetUserDetail(id: string) {
   }
 
   const currentSySubmissions = activeSy
-    ? submissions.filter((s) => s.school_year_id === activeSy.id)
+    ? submissions.filter((s) => !s.school_year_id || s.school_year_id === activeSy.id)
     : submissions;
 
   let hasMidYear = false;
@@ -944,8 +990,8 @@ async function handleGetNotifications(url: URL) {
 
     const { data: queueSubs } = await supabase
       .from('submissions')
-      .select(
-'id, tracking_number, status, created_at, updated_at, school_year_id, documentType:document_type_id(name), users:user_id(full_name, org_name), submission_versions!submission_id(version_number, activity_proposal_details(activity_title))')
+      .select('id, tracking_number, status, created_at, updated_at, school_year_id, documentType:document_type_id(name), users:user_id(full_name, org_name), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title))')
+      .neq('status', 'draft')
       .in('status', reviewStatuses)
       .order('created_at', { ascending: false })
       .limit(25);
@@ -976,7 +1022,8 @@ async function handleGetNotifications(url: URL) {
 
     const { data: allLogs } = await supabase
       .from('submission_logs')
-      .select('*, submissions(tracking_number,  status, school_year_id, document_type_id, user_id, users:user_id(org_name, full_name), documentType:document_type_id(name), submission_versions!submission_id(version_number, activity_proposal_details(activity_title)))')
+      .select('*, submissions(tracking_number,  status, school_year_id, document_type_id, user_id, users:user_id(org_name, full_name), documentType:document_type_id(name), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title)))')
+      .in('action_type', ['submitted', 'returned', 'forwarded', 'approved', 'disapproved', 'completed'])
       .neq('user_id', userId)
       .not('action_type', 'in', '("viewed","attachment_review","created")')
       .order('created_at', { ascending: false })

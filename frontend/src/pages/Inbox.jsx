@@ -112,7 +112,7 @@ const mapInboxSubmission = (sub, viewer, subtypesMap = {}) => {
 
   if (isActivityProposal && activeVersion && activeVersion.activity_proposal_details) {
     const details = Array.isArray(activeVersion.activity_proposal_details)
-      ? activeVersion.activity_proposal_details[0]
+      ? activeVersion.activity_proposal_details[activeVersion.activity_proposal_details.length - 1]
       : activeVersion.activity_proposal_details;
 
     if (details) {
@@ -1025,12 +1025,14 @@ export const Inbox = () => {
 
     const currentVersionIdToUse = selectedVersionId || selectedDoc.raw?.current_version_id;
     const activeVersion = allVersions.find(v => v.id === currentVersionIdToUse) || allVersions[0];
-    const details = Array.isArray(activeVersion?.activity_proposal_details)
-      ? activeVersion?.activity_proposal_details[0]
-      : activeVersion?.activity_proposal_details;
 
     const documentTypeName = selectedDoc?.raw?.documentType?.name || selectedDoc?.type || "";
-    const isActivityProposal = documentTypeName.toLowerCase() === "activity proposal" || documentTypeName.toLowerCase().includes("proposal") || !!details;
+    const isActivityProposal = documentTypeName.toLowerCase() === "activity proposal" || documentTypeName.toLowerCase().includes("proposal") || !!activeVersion?.activity_proposal_details;
+    const details = isActivityProposal
+      ? (Array.isArray(activeVersion?.activity_proposal_details)
+        ? activeVersion.activity_proposal_details[activeVersion.activity_proposal_details.length - 1]
+        : activeVersion?.activity_proposal_details) || {}
+      : {};
 
     // We MUST pass activeVersion's attachments to the map later
     selectedDoc.attachments = activeVersion?.submission_attachments || [];
@@ -1194,26 +1196,21 @@ export const Inbox = () => {
             </div>
 
             {/* Satisfaction Goals section - Numbered list if dynamic goals exist */}
-            {isActivityProposal && (selectedDoc.satisfy_goals && selectedDoc.satisfy_goals.length > 0) ? (
+            {isActivityProposal && (
               <div className="mt-8">
                 <p className="font-bold mb-4 text-sm leading-relaxed">
                   Describe how this activity will satisfy the needs of the organization and how it will help the organization achieve its goals:
                 </p>
                 <div className="bg-gray-50 p-6 rounded-2xl text-sm leading-relaxed text-gray-600 border border-gray-100 italic">
-                  <ol className="list-decimal pl-5 space-y-2">
-                    {selectedDoc.satisfy_goals.map((goal, idx) => (
-                      <li key={idx} className="font-medium">{goal}</li>
-                    ))}
-                  </ol>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-8">
-                <p className="font-bold mb-4 text-sm leading-relaxed">
-                  Describe how this activity will satisfy the needs of the organization and how it will help the organization achieve its goals:
-                </p>
-                <div className="bg-gray-50 p-6 rounded-2xl text-sm leading-relaxed text-gray-600 border border-gray-100 italic">
-                  {selectedDoc.satisfy_needs || '"The ASICS Summit aims to connect students with experienced IT professionals and industry experts who will share their knowledge, career experiences and current trends in the field of information technology..."'}
+                  {selectedDoc.satisfy_goals && selectedDoc.satisfy_goals.length > 0 ? (
+                    <ol className="list-decimal pl-5 space-y-2">
+                      {selectedDoc.satisfy_goals.map((goal, idx) => (
+                        <li key={idx} className="font-medium">{goal}</li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <span className="text-gray-400 italic">No goals provided.</span>
+                  )}
                 </div>
               </div>
             )}

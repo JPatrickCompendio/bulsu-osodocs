@@ -45,7 +45,7 @@ const formatSubmissionTitle = (doc, activeSy) => {
   if (versions?.length > 0) {
     const latest = versions.reduce((max, v) => (v.version_number > max.version_number ? v : max), versions[0]);
     const details = Array.isArray(latest.activity_proposal_details)
-      ? latest.activity_proposal_details[0]
+      ? latest.activity_proposal_details[latest.activity_proposal_details.length - 1]
       : latest.activity_proposal_details;
 
     if (isActivityProposal) {

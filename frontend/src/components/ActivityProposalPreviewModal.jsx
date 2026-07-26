@@ -8,7 +8,9 @@ const ActivityProposalPreviewModal = ({
   isOpen,
   onClose,
   proposalDetails,
-  user
+  user,
+  inline = false,
+  onDownload
 }) => {
   const [content, setContent] = useState('');
   const [isInitialized, setIsInitialized] = useState(false);
@@ -57,7 +59,7 @@ const ActivityProposalPreviewModal = ({
   }, [isOpen]);
 
   useEffect(() => {
-    if (!isOpen) {
+    if (!isOpen && !inline) {
       setIsInitialized(false);
       setContent('');
       return;
@@ -302,37 +304,47 @@ const ActivityProposalPreviewModal = ({
     `);
     doc.close();
 
+    const originalTitle = document.title;
+    document.title = "Activity Proposal Form";
+
     printIframe.contentWindow.focus();
     setTimeout(() => {
       printIframe.contentWindow.print();
+      document.title = originalTitle;
+      
+      if (onDownload) onDownload();
       setTimeout(() => {
         document.body.removeChild(printIframe);
       }, 2000);
     }, 500);
   };
 
+  if (!isOpen && !inline) return null;
+
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 md:p-6 animate-in fade-in duration-300">
-      <div className="bg-white rounded-3xl w-full max-w-5xl h-[90vh] flex flex-col shadow-2xl overflow-hidden shadow-black/20">
+    <div className={inline ? "w-full animate-in fade-in duration-300" : "fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 md:p-6 animate-in fade-in duration-300"}>
+      <div className={`bg-white overflow-hidden flex flex-col ${inline ? 'rounded-2xl border border-gray-200 shadow-sm' : 'rounded-3xl w-full max-w-5xl h-[90vh] shadow-2xl shadow-black/20'}`}>
         
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-white shrink-0 relative z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
-              <Edit3 size={20} />
+        {!inline && (
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-white shrink-0 relative z-10">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
+                <Edit3 size={20} />
+              </div>
+              <div>
+                <h2 className="text-lg font-extrabold text-gray-900 tracking-tight">Advanced Document Editor</h2>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mt-0.5">Edit Layout & Content</p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-lg font-extrabold text-gray-900 tracking-tight">Advanced Document Editor</h2>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mt-0.5">Edit Layout & Content</p>
-            </div>
+            <button 
+              onClick={onClose}
+              className="w-10 h-10 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+            >
+              <X size={20} />
+            </button>
           </div>
-          <button 
-            onClick={onClose}
-            className="w-10 h-10 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-          >
-            <X size={20} />
-          </button>
-        </div>
+        )}
 
         {/* Toolbar */}
         <div className="px-6 py-3 border-b border-gray-100 bg-gray-50/50 flex flex-wrap items-center gap-4 shrink-0 relative z-10">
@@ -355,6 +367,7 @@ const ActivityProposalPreviewModal = ({
           <div className="flex-1"></div>
           
           <button 
+            type="button"
             onClick={handlePrint}
             className="flex items-center gap-2 px-5 py-2 bg-primary-green hover:bg-green-700 text-white rounded-xl text-sm font-bold shadow-md shadow-green-600/20 transition-all active:scale-95"
           >
@@ -364,11 +377,11 @@ const ActivityProposalPreviewModal = ({
         </div>
 
         {/* Editor Area Wrapper */}
-        <div className="flex-1 w-full bg-gray-200 overflow-y-auto p-4 md:p-8 custom-scrollbar">
+        <div className={`flex-1 w-full bg-gray-200 p-4 md:p-8 ${inline ? '' : 'overflow-y-auto custom-scrollbar'}`}>
           
           {/* Paper Container */}
           <div 
-            className="max-w-[794px] mx-auto min-h-[1123px] flex flex-col relative bg-white"
+            className={`max-w-[794px] mx-auto min-h-[1123px] flex flex-col relative bg-white ${inline ? 'origin-top scale-[0.80] mb-[-224px]' : ''}`}
             style={{
               boxShadow: '0 0 20px rgba(0,0,0,0.15)'
             }}

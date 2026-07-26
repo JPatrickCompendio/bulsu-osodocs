@@ -49,6 +49,66 @@ const SubmitNewDocument = () => {
   const [adminEmail, setAdminEmail] = useState('');
   const [activeSchoolYearId, setActiveSchoolYearId] = useState(null);
   const [scheduleMode, setScheduleMode] = useState('single'); // 'single', 'multiple', 'range'
+  const [proposalStep, setProposalStep] = useState(1);
+  const [hasDownloadedProposal, setHasDownloadedProposal] = useState(false);
+
+  // Scroll behavior state
+  const [showHeader, setShowHeader] = useState(true);
+  const lastScrollY = useRef(0);
+  const formRef = useRef(null);
+
+  useEffect(() => {
+    // Automatically scroll to top when stepper phase changes
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    
+    if (formRef.current) {
+      const getScrollParent = (node) => {
+        if (node == null || node === document.body || node === document.documentElement) return window;
+        const overflowY = window.getComputedStyle(node).overflowY;
+        const isScrollable = overflowY !== 'visible' && overflowY !== 'hidden';
+        if (isScrollable && node.scrollHeight > node.clientHeight) {
+          return node;
+        }
+        return getScrollParent(node.parentNode);
+      };
+      const scrollParent = getScrollParent(formRef.current);
+      if (scrollParent && scrollParent !== window && typeof scrollParent.scrollTo === 'function') {
+        scrollParent.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }
+  }, [proposalStep, view]);
+
+  useEffect(() => {
+    if (!formRef.current) return;
+
+    // Find the closest scrollable ancestor
+    const getScrollParent = (node) => {
+      if (node == null || node === document.body || node === document.documentElement) return window;
+      const overflowY = window.getComputedStyle(node).overflowY;
+      const isScrollable = overflowY !== 'visible' && overflowY !== 'hidden';
+      if (isScrollable && node.scrollHeight > node.clientHeight) {
+        return node;
+      }
+      return getScrollParent(node.parentNode);
+    };
+
+    const scrollParent = getScrollParent(formRef.current);
+
+    const handleScroll = (e) => {
+      const target = e.target;
+      const currentScrollY = scrollParent === window ? window.scrollY : scrollParent.scrollTop;
+
+      if (currentScrollY > lastScrollY.current && currentScrollY > 90) {
+        setShowHeader(false); // Scroll down: hide header
+      } else if (currentScrollY < lastScrollY.current - 5) {
+        setShowHeader(true); // Scroll up: show header
+      }
+      lastScrollY.current = currentScrollY;
+    };
+
+    scrollParent.addEventListener('scroll', handleScroll, { passive: true });
+    return () => scrollParent.removeEventListener('scroll', handleScroll);
+  }, [view]);
 
   // Print Images State
   const [headerBase64, setHeaderBase64] = useState('');
@@ -130,7 +190,7 @@ const SubmitNewDocument = () => {
     if (!activity_title?.trim()) return false;
     if (!contact_number?.trim()) return false;
     if (!target_venue?.trim()) return false;
-    
+
     if (!schedules || schedules.length === 0) return false;
     for (const sched of schedules) {
       if (!sched.activity_date) return false;
@@ -149,9 +209,6 @@ const SubmitNewDocument = () => {
     if (!objectives || objectives.length === 0) return false;
     if (objectives.includes('Others') && !others_objective?.trim()) return false;
     if (!satisfaction_goal_1?.trim()) return false;
-    if (!satisfaction_goal_2?.trim()) return false;
-    if (!satisfaction_goal_3?.trim()) return false;
-
     return true;
   }, [isProposal, proposalDetails]);
 
@@ -390,7 +447,7 @@ const SubmitNewDocument = () => {
         .select('*')
         .eq('status', 'active')
         .order('sort_order', { ascending: true });
-        
+
       if (subtypesRes.data) {
         const subtypesMap = {};
         subtypesRes.data.forEach(st => {
@@ -488,7 +545,7 @@ const SubmitNewDocument = () => {
       const isProposal = type?.name?.toLowerCase().includes('activity proposal');
       const rawDetails = version?.activity_proposal_details;
       const details = (Array.isArray(rawDetails) ? rawDetails[0] : rawDetails) || {};
-      
+
       const proposalTypeStr = isProposal ? humanizeProposalType(submission?.proposal_type) : '';
       let subtypeId = submission?.subtype_id || null;
       let matchedSubtype = null;
@@ -497,8 +554,8 @@ const SubmitNewDocument = () => {
         // Fallback mapping for existing records without subtype_id
         const stRes = await supabase.from('document_subtypes').select('*').eq('document_type_id', type.id).eq('name', proposalTypeStr).single();
         if (stRes.data) {
-           subtypeId = stRes.data.id;
-           matchedSubtype = stRes.data;
+          subtypeId = stRes.data.id;
+          matchedSubtype = stRes.data;
         }
       } else if (subtypeId) {
         const stRes = await supabase.from('document_subtypes').select('*').eq('id', subtypeId).single();
@@ -519,7 +576,7 @@ const SubmitNewDocument = () => {
 
       if (isProposal) {
         const scheds = details.activity_schedules || [];
-        
+
         let inferredMode = 'single';
         if (scheds.length > 1) {
           inferredMode = 'multiple';
@@ -574,7 +631,7 @@ const SubmitNewDocument = () => {
       const year = date.getFullYear();
       const month = String(date.getMonth() + 1).padStart(2, '0');
       const baseString = `AP-${orgAbbr}-${year}-${month}`;
-      
+
       const { data: existing } = await supabase
         .from('submissions')
         .select('tracking_number')
@@ -583,11 +640,11 @@ const SubmitNewDocument = () => {
       let maxIncrement = 0;
       if (existing && existing.length > 0) {
         existing.forEach(sub => {
-           const parts = (sub.tracking_number || '').split('-');
-           const lastNum = parseInt(parts[parts.length - 1], 10);
-           if (!isNaN(lastNum) && lastNum > maxIncrement) {
-              maxIncrement = lastNum;
-           }
+          const parts = (sub.tracking_number || '').split('-');
+          const lastNum = parseInt(parts[parts.length - 1], 10);
+          if (!isNaN(lastNum) && lastNum > maxIncrement) {
+            maxIncrement = lastNum;
+          }
         });
       }
       return String(maxIncrement + 1);
@@ -603,7 +660,7 @@ const SubmitNewDocument = () => {
       const isProposal = type.name.toLowerCase().includes('activity proposal');
       const subtypeId = subtypeObj ? subtypeObj.id : null;
       const proposalType = isProposal ? subName : null;
-      
+
       let draft = null;
       if (resumeSubmissionId) {
         draft = await subService.getSubmissionById(resumeSubmissionId);
@@ -731,13 +788,13 @@ const SubmitNewDocument = () => {
       if (subtypeObj?.id) {
         params.subtypeId = subtypeObj.id;
       }
-      
+
       const res = await apiClient.get(apiUrl('/api/system/submission-decision'), { params });
-      
+
       if (res.data?.action === 'blocked') {
         let msg = res.data.reason;
         if (res.data.submissionWindow) {
-           msg += ` (Scheduled: ${new Date(res.data.submissionWindow.start).toLocaleDateString()} - ${new Date(res.data.submissionWindow.end).toLocaleDateString()})`;
+          msg += ` (Scheduled: ${new Date(res.data.submissionWindow.start).toLocaleDateString()} - ${new Date(res.data.submissionWindow.end).toLocaleDateString()})`;
         }
         showToast(msg, 'error');
         setLoading(false);
@@ -747,7 +804,7 @@ const SubmitNewDocument = () => {
         setLoading(false);
         return;
       }
-      
+
       const resumeId = null; // res.data?.action === 'resume' ? res.data.submissionId : null;
       await initializeSubmissionForm(type, subtypeObj, subName, resumeId);
     } catch (err) {
@@ -771,7 +828,7 @@ const SubmitNewDocument = () => {
     // Detect if the user has made any meaningful unsaved changes from the last save
     const currentFilesStr = JSON.stringify(Object.keys(localFiles));
     const currentDetailsStr = JSON.stringify(proposalDetails);
-    
+
     if (
       currentFilesStr !== savedStateRef.current.files ||
       currentDetailsStr !== savedStateRef.current.details
@@ -780,7 +837,7 @@ const SubmitNewDocument = () => {
       const isNotEmpty = Object.keys(localFiles).length > 0 ||
         proposalDetails.activity_title.trim() !== '' ||
         proposalDetails.target_venue !== '';
-        
+
       if (isNotEmpty) {
         setHasUnsavedChanges(true);
       }
@@ -812,13 +869,13 @@ const SubmitNewDocument = () => {
           .from('submission_attachments')
           .select('id, requirement_id')
           .eq('submission_version_id', versionId);
-          
+
         if (dbAttachments && dbAttachments.length > 0) {
           const validReqIds = existingAttachments.map(a => a.requirement_id);
           const toDeleteIds = dbAttachments
             .filter(dbAtt => !validReqIds.includes(dbAtt.requirement_id))
             .map(a => a.id);
-            
+
           if (toDeleteIds.length > 0) {
             await supabase.from('submission_attachments').delete().in('id', toDeleteIds);
           }
@@ -839,7 +896,7 @@ const SubmitNewDocument = () => {
         if (newlyUploaded.length > 0) {
           setExistingAttachments(prev => [...prev, ...newlyUploaded]);
         }
-        
+
         // Update saved state ref to prevent infinite autosave loop
         savedStateRef.current = {
           files: '[]', // because localFiles is cleared
@@ -885,7 +942,7 @@ const SubmitNewDocument = () => {
     const isProposal = selectedType.name.toLowerCase().includes('activity proposal');
     if (isProposal) {
       const p = proposalDetails;
-      
+
       const hasInvalidSchedule = p.schedules.length === 0 || p.schedules.some(s => {
         if (!s.activity_date) return true;
         if (scheduleMode === 'range') {
@@ -908,7 +965,7 @@ const SubmitNewDocument = () => {
         !p.target_audience ||
         !p.nature_of_activity ||
         p.objectives.length === 0 ||
-        !p.satisfaction_goal_1
+        !p.satisfaction_goal_1?.trim()
       ) {
         showToast('Please fill in all required form fields.', 'error');
         return;
@@ -1177,11 +1234,11 @@ const SubmitNewDocument = () => {
       {view === 'dashboard' && (
         <div className="animate-in fade-in duration-500">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 border-b border-gray-100 pb-6 gap-6">
-            <PageHeader 
-              title="Submit New Document" 
-              subtitle="Select a category to start your submission" 
-              icon={FilePlus} 
-              iconColor="gold" 
+            <PageHeader
+              title="Submit New Document"
+              subtitle="Select a category to start your submission"
+              icon={FilePlus}
+              iconColor="gold"
             />
             <div className="relative w-full max-w-sm">
               <input
@@ -1291,7 +1348,7 @@ const SubmitNewDocument = () => {
               );
             })()}
           </div>
-          
+
           {selectedTypeForSubtypes && (
             <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
               <div className="bg-white rounded-[2rem] w-full max-w-3xl p-8 flex flex-col shadow-2xl animate-in zoom-in-95 duration-300">
@@ -1304,13 +1361,13 @@ const SubmitNewDocument = () => {
                     <X size={24} className="text-gray-400" />
                   </button>
                 </div>
-                
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {selectedTypeForSubtypes.subtypes.map(st => {
                     const tObj = { ...selectedTypeForSubtypes.typeObj, __subtype: st };
                     const avail = availability[tObj.id] || availability[selectedTypeForSubtypes.typeObj.id];
                     const isLocked = avail && !avail.isAvailable;
-                    
+
                     return (
                       <button
                         key={st.id}
@@ -1339,9 +1396,9 @@ const SubmitNewDocument = () => {
 
       {/* FORM VIEW */}
       {view === 'form' && (
-        <form onSubmit={handleRegisterDocument} className="flex flex-col animate-in fade-in duration-500 relative min-h-screen">
-          {/* Header - Stretches full width */}
-          <div className="fixed top-16 left-64 right-0 z-40 bg-white border-b border-gray-100 px-8 py-5 flex items-center justify-between shadow-sm">
+        <form ref={formRef} onSubmit={handleRegisterDocument} className="flex flex-col animate-in fade-in duration-500 relative min-h-screen">
+          {/* Header - Stretches full width, auto-hides on scroll down */}
+          <div className={`fixed top-20 left-64 right-0 z-40 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between shadow-sm transition-transform duration-300 ${showHeader ? 'translate-y-0' : '-translate-y-full'}`}>
             <div className="flex items-center gap-6">
               <button type="button" onClick={handleBackNavigation} className="p-2 hover:bg-gray-50 rounded-lg transition-all">
                 <ArrowLeft size={24} className="text-gray-500" />
@@ -1371,347 +1428,435 @@ const SubmitNewDocument = () => {
             </div>
           </div>
 
-          <div className="flex-1 p-8 pb-32 pt-28 bg-gray-50/20">
+          <div className="flex-1 p-8 pb-5 pt-15 bg-gray-50/20">
             <div className={`w-full max-w-5xl mx-auto space-y-8`}>
 
               {/* Conditional Proposal Form */}
               {isProposal && (
                 <div className="space-y-8">
-                  <div className="bg-white p-10 rounded-2xl shadow-sm border border-gray-100 space-y-8">
-                    <div className="flex items-center gap-4 pb-6 border-b border-gray-100">
-                      <div className="w-10 h-10 bg-primary-green/10 rounded-xl flex items-center justify-center text-primary-green shrink-0">
-                        <FileText size={20} />
-                      </div>
-                      <div>
-                        <h2 className="text-xl font-black text-gray-800 uppercase tracking-widest">General Information</h2>
-                        <p className="text-xs font-bold text-gray-400 mt-1">Please fill in the required details for your submission</p>
-                      </div>
-                    </div>
+                  {/* Stepper UI - Sticky to stay visible when scrolling */}
+                  <div className="sticky top-[-20px] z-30 bg-white px-6 py-3 rounded-2xl shadow-md border border-gray-100 flex items-center justify-between overflow-hidden">
+                    <div className="absolute top-1/2 left-0 w-full h-1 bg-gray-100 -translate-y-1/2 z-0"></div>
+                    <div className="absolute top-1/2 left-0 h-1 bg-primary-green -translate-y-1/2 z-0 transition-all duration-500 ease-in-out" style={{ width: proposalStep === 1 ? '15%' : proposalStep === 2 ? '50%' : '85%' }}></div>
 
-                    <div className="space-y-6">
-                      {/* Basic Info */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
-                        <div className="space-y-2 md:col-span-2">
-                          <label className="text-xs font-black text-gray-600 uppercase">Name of Student Organization <span className="text-red-500">*</span></label>
-                          <input type="text" required className="w-full px-4 py-3 bg-gray-100 border-b-2 border-gray-200 text-gray-500 font-bold text-sm outline-none cursor-not-allowed" value={proposalDetails.organization_name} readOnly />
+                    {[
+                      { step: 1, label: 'General Info', icon: <FileText size={14} /> },
+                      { step: 2, label: 'Preview & Download', icon: <Download size={14} /> },
+                      { step: 3, label: 'Upload Requirements', icon: <Upload size={14} /> }
+                    ].map((s) => (
+                      <div key={s.step} className={`relative z-10 flex flex-col items-center gap-1 px-4 transition-all duration-300 ${proposalStep >= s.step ? 'opacity-100' : 'opacity-40'}`}>
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black shadow-md border-2 transition-all duration-300 ${proposalStep > s.step ? 'bg-primary-green text-white border-green-200' :
+                          proposalStep === s.step ? 'bg-primary-green text-white border-green-200 ring-2 ring-green-500/20' :
+                            'bg-white text-gray-400 border-gray-100'
+                          }`}>
+                          {proposalStep > s.step ? <Check size={14} strokeWidth={3} /> : s.icon}
                         </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-black text-gray-600 uppercase">Name of Adviser <span className="text-red-500">*</span></label>
-                          <input type="text" required className="w-full px-4 py-3 bg-gray-100 border-b-2 border-gray-200 text-gray-500 font-bold text-sm outline-none cursor-not-allowed" value={proposalDetails.adviser_name} readOnly />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-black text-gray-600 uppercase">Activity Number</label>
-                          <input type="text" className="w-full px-4 py-3 bg-gray-100 text-gray-500 border-b-2 border-gray-200 font-bold text-sm outline-none" value={proposalDetails.activity_number} readOnly />
-                        </div>
-                        <div className="space-y-2 md:col-span-2">
-                          <label className="text-xs font-black text-gray-600 uppercase">Activity Title <span className="text-red-500">*</span></label>
-                          <input type="text" required className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.activity_title} onChange={e => setProposalDetails({ ...proposalDetails, activity_title: e.target.value })} />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-black text-gray-600 uppercase">Name of Person-In-Charge <span className="text-red-500">*</span></label>
-                          <input type="text" required className="w-full px-4 py-3 bg-gray-100 border-b-2 border-gray-200 text-gray-500 font-bold text-sm outline-none cursor-not-allowed" value={proposalDetails.person_in_charge} readOnly />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-black text-gray-600 uppercase">Student ID No. <span className="text-red-500">*</span></label>
-                          <input type="text" required className="w-full px-4 py-3 bg-gray-100 border-b-2 border-gray-200 text-gray-500 font-bold text-sm outline-none cursor-not-allowed" value={proposalDetails.student_id_no} readOnly />
-                        </div>
-                        <div className="space-y-2 md:col-span-2">
-                          <label className="text-xs font-black text-gray-600 uppercase">Contact Number of Person-In-Charge <span className="text-red-500">*</span></label>
-                          <input type="text" required maxLength={11} pattern="^09\d{9}$" className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.contact_number} onChange={e => setProposalDetails({ ...proposalDetails, contact_number: e.target.value.replace(/[^0-9]/g, '') })} />
-                        </div>
-                        <div className="space-y-2 md:col-span-2">
-                          <label className="text-xs font-black text-gray-600 uppercase">Target Venue <span className="text-red-500">*</span></label>
-                          <input type="text" required className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.target_venue} onChange={e => setProposalDetails({ ...proposalDetails, target_venue: e.target.value })} />
-                        </div>
+                        <span className={`text-[9px] font-black uppercase tracking-widest ${proposalStep >= s.step ? 'text-primary-green' : 'text-gray-400'}`}>{s.label}</span>
+                      </div>
+                    ))}
+                  </div>
 
-                        {/* Schedules */}
-                        <div className="space-y-4 md:col-span-2">
-                          <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-gray-100 pb-4 gap-4">
-                            <label className="text-xs font-black text-gray-600 uppercase">Activity Schedules <span className="text-red-500">*</span></label>
-                            
-                            <div className="flex bg-gray-100 p-1 rounded-xl">
-                              {['single', 'range'].map(mode => (
-                                <button
-                                  key={mode}
-                                  type="button"
-                                  onClick={() => {
-                                    setScheduleMode(mode);
-                                    if (mode === 'single') {
-                                      setProposalDetails(prev => ({ ...prev, schedules: [{ activity_date: '', start_time: '', end_time: '', is_indefinite: false, duration_minutes: 0 }] }));
-                                    } else {
-                                      setProposalDetails(prev => ({ ...prev, schedules: [{ activity_date: '', end_date: '', start_time: null, end_time: null, is_indefinite: false, duration_minutes: null }] }));
-                                    }
-                                  }}
-                                  className={`px-4 py-2 text-xs font-bold rounded-lg transition-all capitalize ${scheduleMode === mode ? 'bg-white text-primary-green shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                                >
-                                  {mode === 'single' ? 'Single Date' : 'Date Range'}
-                                </button>
-                              ))}
-                            </div>
+                  {proposalStep === 1 && (
+                    <div className="bg-white p-10 rounded-2xl shadow-sm border border-gray-100 space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
+                      <div className="flex items-center gap-4 pb-6 border-b border-gray-100">
+                        <div className="w-10 h-10 bg-primary-green/10 rounded-xl flex items-center justify-center text-primary-green shrink-0">
+                          <FileText size={20} />
+                        </div>
+                        <div>
+                          <h2 className="text-xl font-black text-gray-800 uppercase tracking-widest">General Information</h2>
+                          <p className="text-xs font-bold text-gray-400 mt-1">Please fill in the required details for your submission</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-6">
+                        {/* Basic Info */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+                          <div className="space-y-2 md:col-span-2">
+                            <label className="text-xs font-black text-gray-600 uppercase">Name of Student Organization <span className="text-red-500">*</span></label>
+                            <input type="text" required className="w-full px-4 py-3 bg-gray-100 border-b-2 border-gray-200 text-gray-500 font-bold text-sm outline-none cursor-not-allowed" value={proposalDetails.organization_name} readOnly />
                           </div>
-                          
-                          {proposalDetails.schedules.length === 0 ? (
-                            <div className="text-center py-6 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                              <p className="text-xs font-bold text-gray-400 uppercase">No schedules added yet.</p>
+                          <div className="space-y-2">
+                            <label className="text-xs font-black text-gray-600 uppercase">Name of Adviser <span className="text-red-500">*</span></label>
+                            <input type="text" required className="w-full px-4 py-3 bg-gray-100 border-b-2 border-gray-200 text-gray-500 font-bold text-sm outline-none cursor-not-allowed" value={proposalDetails.adviser_name} readOnly />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-black text-gray-600 uppercase">Activity Number</label>
+                            <input type="text" className="w-full px-4 py-3 bg-gray-100 text-gray-500 border-b-2 border-gray-200 font-bold text-sm outline-none" value={proposalDetails.activity_number} readOnly />
+                          </div>
+                          <div className="space-y-2 md:col-span-2">
+                            <label className="text-xs font-black text-gray-600 uppercase">Activity Title <span className="text-red-500">*</span></label>
+                            <input type="text" required className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.activity_title} onChange={e => setProposalDetails({ ...proposalDetails, activity_title: e.target.value })} />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-black text-gray-600 uppercase">Name of Person-In-Charge <span className="text-red-500">*</span></label>
+                            <input type="text" required className="w-full px-4 py-3 bg-gray-100 border-b-2 border-gray-200 text-gray-500 font-bold text-sm outline-none cursor-not-allowed" value={proposalDetails.person_in_charge} readOnly />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-black text-gray-600 uppercase">Student ID No. <span className="text-red-500">*</span></label>
+                            <input type="text" required className="w-full px-4 py-3 bg-gray-100 border-b-2 border-gray-200 text-gray-500 font-bold text-sm outline-none cursor-not-allowed" value={proposalDetails.student_id_no} readOnly />
+                          </div>
+                          <div className="space-y-2 md:col-span-2">
+                            <label className="text-xs font-black text-gray-600 uppercase">Contact Number of Person-In-Charge <span className="text-red-500">*</span></label>
+                            <input type="text" required maxLength={11} pattern="^09\d{9}$" className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.contact_number} onChange={e => setProposalDetails({ ...proposalDetails, contact_number: e.target.value.replace(/[^0-9]/g, '') })} />
+                          </div>
+                          <div className="space-y-2 md:col-span-2">
+                            <label className="text-xs font-black text-gray-600 uppercase">Target Venue <span className="text-red-500">*</span></label>
+                            <input type="text" required className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.target_venue} onChange={e => setProposalDetails({ ...proposalDetails, target_venue: e.target.value })} />
+                          </div>
+
+                          {/* Schedules */}
+                          <div className="space-y-4 md:col-span-2">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-gray-100 pb-4 gap-4">
+                              <label className="text-xs font-black text-gray-600 uppercase">Activity Schedules <span className="text-red-500">*</span></label>
+
+                              <div className="flex bg-gray-100 p-1 rounded-xl">
+                                {['single', 'range'].map(mode => (
+                                  <button
+                                    key={mode}
+                                    type="button"
+                                    onClick={() => {
+                                      setScheduleMode(mode);
+                                      if (mode === 'single') {
+                                        setProposalDetails(prev => ({ ...prev, schedules: [{ activity_date: '', start_time: '', end_time: '', is_indefinite: false, duration_minutes: 0 }] }));
+                                      } else {
+                                        setProposalDetails(prev => ({ ...prev, schedules: [{ activity_date: '', end_date: '', start_time: null, end_time: null, is_indefinite: false, duration_minutes: null }] }));
+                                      }
+                                    }}
+                                    className={`px-4 py-2 text-xs font-bold rounded-lg transition-all capitalize ${scheduleMode === mode ? 'bg-white text-primary-green shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                  >
+                                    {mode === 'single' ? 'Single Date' : 'Date Range'}
+                                  </button>
+                                ))}
+                              </div>
                             </div>
-                          ) : (
-                            <div className="space-y-4">
-                              {proposalDetails.schedules.map((sched, idx) => (
-                                <div key={idx} className="bg-white border border-gray-200 rounded-xl p-4 relative group hover:border-primary-green transition-colors">
-                                  {/* multiple delete button removed */}
-                                  
-                                  {scheduleMode === 'range' ? (
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                      <div className="space-y-1">
-                                        <span className="text-[10px] font-bold text-gray-400 uppercase">Start Date</span>
-                                        <input
-                                          type="date"
-                                          required
-                                          min={new Date().toISOString().split('T')[0]}
-                                          className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary-green font-bold text-xs outline-none"
-                                          value={sched.activity_date}
-                                          onChange={e => {
-                                            const newScheds = [...proposalDetails.schedules];
-                                            newScheds[idx].activity_date = e.target.value;
-                                            setProposalDetails(prev => ({ ...prev, schedules: newScheds }));
-                                          }}
-                                        />
-                                      </div>
-                                      <div className="space-y-1">
-                                        <span className="text-[10px] font-bold text-gray-400 uppercase">End Date</span>
-                                        <input
-                                          type="date"
-                                          required
-                                          min={sched.activity_date || new Date().toISOString().split('T')[0]}
-                                          className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary-green font-bold text-xs outline-none"
-                                          value={sched.end_date || ''}
-                                          onChange={e => {
-                                            const newScheds = [...proposalDetails.schedules];
-                                            newScheds[idx].end_date = e.target.value;
-                                            setProposalDetails(prev => ({ ...prev, schedules: newScheds }));
-                                          }}
-                                        />
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                      <div className="space-y-1">
-                                        <span className="text-[10px] font-bold text-gray-400 uppercase">Date</span>
-                                        <input
-                                          type="date"
-                                          required
-                                          min={new Date().toISOString().split('T')[0]}
-                                          className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary-green font-bold text-xs outline-none"
-                                          value={sched.activity_date}
-                                          onChange={e => {
-                                            const val = e.target.value;
-                                            const isBlocked = blockedEvents.some(ev => {
-                                              const evStart = ev.start_date; 
-                                              const evEnd = ev.end_date || ev.start_date;
-                                              return val >= evStart && val <= evEnd;
-                                            });
-                                            if (isBlocked) {
-                                              showToast(`Cannot select ${val}: This date is blocked by the Academic Calendar.`, 'error');
-                                              return;
-                                            }
-                                            const newScheds = [...proposalDetails.schedules];
-                                            newScheds[idx].activity_date = val;
-                                            setProposalDetails(prev => ({ ...prev, schedules: newScheds }));
-                                          }}
-                                        />
-                                      </div>
-                                      <div className="space-y-1">
-                                        <span className="text-[10px] font-bold text-gray-400 uppercase">Start Time</span>
-                                        <input
-                                          type="time"
-                                          required
-                                          className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary-green font-bold text-xs outline-none"
-                                          value={sched.start_time}
-                                          onChange={e => {
-                                            const newScheds = [...proposalDetails.schedules];
-                                            newScheds[idx].start_time = e.target.value;
-                                            if (newScheds[idx].start_time && newScheds[idx].end_time && !newScheds[idx].is_indefinite) {
-                                              const start = new Date(`1970-01-01T${newScheds[idx].start_time}`);
-                                              const end = new Date(`1970-01-01T${newScheds[idx].end_time}`);
-                                              let diff = (end - start) / (1000 * 60);
-                                              if (diff < 0) diff += 24 * 60;
-                                              newScheds[idx].duration_minutes = Math.round(diff);
-                                            }
-                                            setProposalDetails(prev => ({ ...prev, schedules: newScheds }));
-                                          }}
-                                        />
-                                      </div>
-                                      <div className="space-y-1">
-                                        <span className="text-[10px] font-bold text-gray-400 uppercase">End Time</span>
-                                        <input
-                                          type="time"
-                                          required={!sched.is_indefinite}
-                                          disabled={sched.is_indefinite}
-                                          className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary-green font-bold text-xs outline-none disabled:opacity-50"
-                                          value={sched.end_time || ''}
-                                          onChange={e => {
-                                            const newScheds = [...proposalDetails.schedules];
-                                            newScheds[idx].end_time = e.target.value;
-                                            if (newScheds[idx].start_time && newScheds[idx].end_time && !newScheds[idx].is_indefinite) {
-                                              const start = new Date(`1970-01-01T${newScheds[idx].start_time}`);
-                                              const end = new Date(`1970-01-01T${newScheds[idx].end_time}`);
-                                              let diff = (end - start) / (1000 * 60);
-                                              if (diff < 0) diff += 24 * 60;
-                                              newScheds[idx].duration_minutes = Math.round(diff);
-                                            }
-                                            setProposalDetails(prev => ({ ...prev, schedules: newScheds }));
-                                          }}
-                                        />
-                                        <label className="flex items-center gap-2 cursor-pointer mt-1">
+
+                            {proposalDetails.schedules.length === 0 ? (
+                              <div className="text-center py-6 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                                <p className="text-xs font-bold text-gray-400 uppercase">No schedules added yet.</p>
+                              </div>
+                            ) : (
+                              <div className="space-y-4">
+                                {proposalDetails.schedules.map((sched, idx) => (
+                                  <div key={idx} className="bg-white border border-gray-200 rounded-xl p-4 relative group hover:border-primary-green transition-colors">
+                                    {/* multiple delete button removed */}
+
+                                    {scheduleMode === 'range' ? (
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-1">
+                                          <span className="text-[10px] font-bold text-gray-400 uppercase">Start Date</span>
                                           <input
-                                            type="checkbox"
-                                            checked={sched.is_indefinite}
+                                            type="date"
+                                            required
+                                            min={new Date().toISOString().split('T')[0]}
+                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary-green font-bold text-xs outline-none"
+                                            value={sched.activity_date}
                                             onChange={e => {
                                               const newScheds = [...proposalDetails.schedules];
-                                              newScheds[idx].is_indefinite = e.target.checked;
-                                              if (e.target.checked) {
-                                                newScheds[idx].end_time = '';
-                                                newScheds[idx].duration_minutes = 0;
+                                              newScheds[idx].activity_date = e.target.value;
+                                              setProposalDetails(prev => ({ ...prev, schedules: newScheds }));
+                                            }}
+                                          />
+                                        </div>
+                                        <div className="space-y-1">
+                                          <span className="text-[10px] font-bold text-gray-400 uppercase">End Date</span>
+                                          <input
+                                            type="date"
+                                            required
+                                            min={sched.activity_date || new Date().toISOString().split('T')[0]}
+                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary-green font-bold text-xs outline-none"
+                                            value={sched.end_date || ''}
+                                            onChange={e => {
+                                              const newScheds = [...proposalDetails.schedules];
+                                              newScheds[idx].end_date = e.target.value;
+                                              setProposalDetails(prev => ({ ...prev, schedules: newScheds }));
+                                            }}
+                                          />
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                        <div className="space-y-1">
+                                          <span className="text-[10px] font-bold text-gray-400 uppercase">Date</span>
+                                          <input
+                                            type="date"
+                                            required
+                                            min={new Date().toISOString().split('T')[0]}
+                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary-green font-bold text-xs outline-none"
+                                            value={sched.activity_date}
+                                            onChange={e => {
+                                              const val = e.target.value;
+                                              const isBlocked = blockedEvents.some(ev => {
+                                                const evStart = ev.start_date;
+                                                const evEnd = ev.end_date || ev.start_date;
+                                                return val >= evStart && val <= evEnd;
+                                              });
+                                              if (isBlocked) {
+                                                showToast(`Cannot select ${val}: This date is blocked by the Academic Calendar.`, 'error');
+                                                return;
+                                              }
+                                              const newScheds = [...proposalDetails.schedules];
+                                              newScheds[idx].activity_date = val;
+                                              setProposalDetails(prev => ({ ...prev, schedules: newScheds }));
+                                            }}
+                                          />
+                                        </div>
+                                        <div className="space-y-1">
+                                          <span className="text-[10px] font-bold text-gray-400 uppercase">Start Time</span>
+                                          <input
+                                            type="time"
+                                            required
+                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary-green font-bold text-xs outline-none"
+                                            value={sched.start_time}
+                                            onChange={e => {
+                                              const newScheds = [...proposalDetails.schedules];
+                                              newScheds[idx].start_time = e.target.value;
+                                              if (newScheds[idx].start_time && newScheds[idx].end_time && !newScheds[idx].is_indefinite) {
+                                                const start = new Date(`1970-01-01T${newScheds[idx].start_time}`);
+                                                const end = new Date(`1970-01-01T${newScheds[idx].end_time}`);
+                                                let diff = (end - start) / (1000 * 60);
+                                                if (diff < 0) diff += 24 * 60;
+                                                newScheds[idx].duration_minutes = Math.round(diff);
                                               }
                                               setProposalDetails(prev => ({ ...prev, schedules: newScheds }));
                                             }}
-                                            className="rounded text-primary-green focus:ring-primary-green"
                                           />
-                                          <span className="text-[10px] font-bold text-gray-500">Indefinite</span>
-                                        </label>
-                                      </div>
-                                      <div className="space-y-1">
-                                        <span className="text-[10px] font-bold text-gray-400 uppercase">Duration</span>
-                                        <div className="w-full px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg text-gray-500 font-bold text-xs flex items-center justify-between">
-                                          <span>{sched.is_indefinite ? 'N/A' : `${((sched.duration_minutes || 0) / 60).toFixed(1)} hrs`}</span>
+                                        </div>
+                                        <div className="space-y-1">
+                                          <span className="text-[10px] font-bold text-gray-400 uppercase">End Time</span>
+                                          <input
+                                            type="time"
+                                            required={!sched.is_indefinite}
+                                            disabled={sched.is_indefinite}
+                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary-green font-bold text-xs outline-none disabled:opacity-50"
+                                            value={sched.end_time || ''}
+                                            onChange={e => {
+                                              const newScheds = [...proposalDetails.schedules];
+                                              newScheds[idx].end_time = e.target.value;
+                                              if (newScheds[idx].start_time && newScheds[idx].end_time && !newScheds[idx].is_indefinite) {
+                                                const start = new Date(`1970-01-01T${newScheds[idx].start_time}`);
+                                                const end = new Date(`1970-01-01T${newScheds[idx].end_time}`);
+                                                let diff = (end - start) / (1000 * 60);
+                                                if (diff < 0) diff += 24 * 60;
+                                                newScheds[idx].duration_minutes = Math.round(diff);
+                                              }
+                                              setProposalDetails(prev => ({ ...prev, schedules: newScheds }));
+                                            }}
+                                          />
+                                          <label className="flex items-center gap-2 cursor-pointer mt-1">
+                                            <input
+                                              type="checkbox"
+                                              checked={sched.is_indefinite}
+                                              onChange={e => {
+                                                const newScheds = [...proposalDetails.schedules];
+                                                newScheds[idx].is_indefinite = e.target.checked;
+                                                if (e.target.checked) {
+                                                  newScheds[idx].end_time = '';
+                                                  newScheds[idx].duration_minutes = 0;
+                                                }
+                                                setProposalDetails(prev => ({ ...prev, schedules: newScheds }));
+                                              }}
+                                              className="rounded text-primary-green focus:ring-primary-green"
+                                            />
+                                            <span className="text-[10px] font-bold text-gray-500">Indefinite</span>
+                                          </label>
+                                        </div>
+                                        <div className="space-y-1">
+                                          <span className="text-[10px] font-bold text-gray-400 uppercase">Duration</span>
+                                          <div className="w-full px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg text-gray-500 font-bold text-xs flex items-center justify-between">
+                                            <span>{sched.is_indefinite ? 'N/A' : `${((sched.duration_minutes || 0) / 60).toFixed(1)} hrs`}</span>
+                                          </div>
                                         </div>
                                       </div>
-                                    </div>
-                                  )}
-                                </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-black text-gray-600 uppercase">Number of Student Involved <span className="text-red-500">*</span></label>
+                            <input type="text" required className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.number_of_students} onChange={e => setProposalDetails({ ...proposalDetails, number_of_students: e.target.value.replace(/[^0-9]/g, '') })} />
+                          </div>
+                        </div>
+
+                        {/* Checkboxes Section */}
+                        <div className="pt-6 border-t border-gray-100 space-y-6">
+                          <div className="space-y-3">
+                            <label className="text-xs font-black text-gray-800 uppercase">Target Audience/Participants:</label>
+                            <div className="flex flex-wrap gap-8">
+                              {['Members only', 'BulSUans only', 'Open to the public'].map(opt => (
+                                <label key={opt} className="flex items-center gap-3 cursor-pointer group">
+                                  <div className={`w-5 h-5 rounded-full flex items-center justify-center border-2 ${proposalDetails.target_audience === opt ? 'border-primary-green' : 'border-gray-300 group-hover:border-primary-green'}`}>
+                                    {proposalDetails.target_audience === opt && <div className="w-2.5 h-2.5 bg-primary-green rounded-full" />}
+                                  </div>
+                                  <span className="text-sm font-bold text-gray-600">{opt}</span>
+                                  <input type="radio" name="target_audience" className="hidden" checked={proposalDetails.target_audience === opt} onChange={() => setProposalDetails({ ...proposalDetails, target_audience: opt })} />
+                                </label>
                               ))}
                             </div>
-                          )}
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-black text-gray-600 uppercase">Number of Student Involved <span className="text-red-500">*</span></label>
-                          <input type="text" required className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.number_of_students} onChange={e => setProposalDetails({ ...proposalDetails, number_of_students: e.target.value.replace(/[^0-9]/g, '') })} />
-                        </div>
-                      </div>
-
-                      {/* Checkboxes Section */}
-                      <div className="pt-6 border-t border-gray-100 space-y-6">
-                        <div className="space-y-3">
-                          <label className="text-xs font-black text-gray-800 uppercase">Target Audience/Participants:</label>
-                          <div className="flex flex-wrap gap-8">
-                            {['Members only', 'BulSUans only', 'Open to the public'].map(opt => (
-                              <label key={opt} className="flex items-center gap-3 cursor-pointer group">
-                                <div className={`w-5 h-5 rounded-full flex items-center justify-center border-2 ${proposalDetails.target_audience === opt ? 'border-primary-green' : 'border-gray-300 group-hover:border-primary-green'}`}>
-                                  {proposalDetails.target_audience === opt && <div className="w-2.5 h-2.5 bg-primary-green rounded-full" />}
-                                </div>
-                                <span className="text-sm font-bold text-gray-600">{opt}</span>
-                                <input type="radio" name="target_audience" className="hidden" checked={proposalDetails.target_audience === opt} onChange={() => setProposalDetails({ ...proposalDetails, target_audience: opt })} />
-                              </label>
-                            ))}
                           </div>
-                        </div>
 
-                        <div className="space-y-3">
-                          <label className="text-xs font-black text-gray-800 uppercase">Nature of Activity:</label>
-                          <div className="flex flex-wrap gap-8">
-                            {['Co-Curricular', 'Extra-Curricular'].map(opt => (
-                              <label key={opt} className="flex items-center gap-3 cursor-pointer group">
-                                <div className={`w-5 h-5 rounded-full flex items-center justify-center border-2 ${proposalDetails.nature_of_activity === opt ? 'border-primary-green' : 'border-gray-300 group-hover:border-primary-green'}`}>
-                                  {proposalDetails.nature_of_activity === opt && <div className="w-2.5 h-2.5 bg-primary-green rounded-full" />}
-                                </div>
-                                <span className="text-sm font-bold text-gray-600">{opt}</span>
-                                <input type="radio" name="nature" className="hidden" checked={proposalDetails.nature_of_activity === opt} onChange={() => setProposalDetails({ ...proposalDetails, nature_of_activity: opt })} />
-                              </label>
-                            ))}
+                          <div className="space-y-3">
+                            <label className="text-xs font-black text-gray-800 uppercase">Nature of Activity:</label>
+                            <div className="flex flex-wrap gap-8">
+                              {['Co-Curricular', 'Extra-Curricular'].map(opt => (
+                                <label key={opt} className="flex items-center gap-3 cursor-pointer group">
+                                  <div className={`w-5 h-5 rounded-full flex items-center justify-center border-2 ${proposalDetails.nature_of_activity === opt ? 'border-primary-green' : 'border-gray-300 group-hover:border-primary-green'}`}>
+                                    {proposalDetails.nature_of_activity === opt && <div className="w-2.5 h-2.5 bg-primary-green rounded-full" />}
+                                  </div>
+                                  <span className="text-sm font-bold text-gray-600">{opt}</span>
+                                  <input type="radio" name="nature" className="hidden" checked={proposalDetails.nature_of_activity === opt} onChange={() => setProposalDetails({ ...proposalDetails, nature_of_activity: opt })} />
+                                </label>
+                              ))}
+                            </div>
                           </div>
-                        </div>
 
-                        <div className="space-y-4">
-                          <label className="text-xs font-black text-gray-800 uppercase">Objectives of the Activity:</label>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {[
-                              'Leadership Development and Formation',
-                              'Membership Development and Formation',
-                              'Organizational Program Management',
-                              'Values Enrichment',
-                              'Skills Enhancement'
-                            ].map(opt => (
-                              <label key={opt} className="flex items-center gap-3 cursor-pointer group">
-                                <div className={`w-5 h-5 rounded flex items-center justify-center border-2 shrink-0 ${proposalDetails.objectives.includes(opt) ? 'bg-primary-green border-primary-green text-white' : 'border-gray-300 group-hover:border-primary-green'}`}>
-                                  {proposalDetails.objectives.includes(opt) && <Check size={14} strokeWidth={3} />}
-                                </div>
-                                <span className="text-sm font-bold text-gray-600 leading-tight">{opt}</span>
-                                <input type="checkbox" className="hidden" checked={proposalDetails.objectives.includes(opt)} onChange={() => toggleArrayField('objectives', opt)} />
-                              </label>
-                            ))}
-                            <div className="flex items-center gap-3 col-span-1 md:col-span-2">
-                              <label className="flex items-center gap-3 cursor-pointer group shrink-0">
-                                <div className={`w-5 h-5 rounded flex items-center justify-center border-2 ${proposalDetails.objectives.includes('Others') ? 'bg-primary-green border-primary-green text-white' : 'border-gray-300 group-hover:border-primary-green'}`}>
-                                  {proposalDetails.objectives.includes('Others') && <Check size={14} strokeWidth={3} />}
-                                </div>
-                                <span className="text-sm font-bold text-gray-600">Others:</span>
-                                <input type="checkbox" className="hidden" checked={proposalDetails.objectives.includes('Others')} onChange={() => toggleArrayField('objectives', 'Others')} />
-                              </label>
-                              <input type="text" className="flex-1 px-4 py-2 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.others_objective} onChange={e => setProposalDetails({ ...proposalDetails, others_objective: e.target.value })} disabled={!proposalDetails.objectives.includes('Others')} />
+                          <div className="space-y-4">
+                            <label className="text-xs font-black text-gray-800 uppercase">Objectives of the Activity:</label>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {[
+                                'Leadership Development and Formation',
+                                'Membership Development and Formation',
+                                'Organizational Program Management',
+                                'Values Enrichment',
+                                'Skills Enhancement'
+                              ].map(opt => (
+                                <label key={opt} className="flex items-center gap-3 cursor-pointer group">
+                                  <div className={`w-5 h-5 rounded flex items-center justify-center border-2 shrink-0 ${proposalDetails.objectives.includes(opt) ? 'bg-primary-green border-primary-green text-white' : 'border-gray-300 group-hover:border-primary-green'}`}>
+                                    {proposalDetails.objectives.includes(opt) && <Check size={14} strokeWidth={3} />}
+                                  </div>
+                                  <span className="text-sm font-bold text-gray-600 leading-tight">{opt}</span>
+                                  <input type="checkbox" className="hidden" checked={proposalDetails.objectives.includes(opt)} onChange={() => toggleArrayField('objectives', opt)} />
+                                </label>
+                              ))}
+                              <div className="flex items-center gap-3 col-span-1 md:col-span-2">
+                                <label className="flex items-center gap-3 cursor-pointer group shrink-0">
+                                  <div className={`w-5 h-5 rounded flex items-center justify-center border-2 ${proposalDetails.objectives.includes('Others') ? 'bg-primary-green border-primary-green text-white' : 'border-gray-300 group-hover:border-primary-green'}`}>
+                                    {proposalDetails.objectives.includes('Others') && <Check size={14} strokeWidth={3} />}
+                                  </div>
+                                  <span className="text-sm font-bold text-gray-600">Others:</span>
+                                  <input type="checkbox" className="hidden" checked={proposalDetails.objectives.includes('Others')} onChange={() => toggleArrayField('objectives', 'Others')} />
+                                </label>
+                                <input type="text" className="flex-1 px-4 py-2 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.others_objective} onChange={e => setProposalDetails({ ...proposalDetails, others_objective: e.target.value })} disabled={!proposalDetails.objectives.includes('Others')} />
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
 
-                      {/* Needs and Goals */}
-                      <div className="pt-6 border-t border-gray-100 space-y-4">
-                        <label className="text-xs font-bold text-gray-600 italic">
-                          Describe how this activity will satisfy the needs of the organization and how it will help the organization achieve its goals:
-                        </label>
-                        <div className="space-y-3">
-                          <div className="flex items-start gap-4">
-                            <span className="font-bold text-gray-600 mt-2">1.</span>
-                            <input type="text" className="flex-1 px-4 py-2 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.satisfaction_goal_1} onChange={e => {
-                              const val = e.target.value;
-                              setProposalDetails(prev => ({
-                                ...prev,
-                                satisfaction_goal_1: val,
-                                satisfaction_goal_2: val ? prev.satisfaction_goal_2 : '',
-                                satisfaction_goal_3: val ? prev.satisfaction_goal_3 : ''
-                              }));
-                            }} />
-                          </div>
-                          <div className="flex items-start gap-4">
-                            <span className="font-bold text-gray-600 mt-2">2.</span>
-                            <input type="text" className="flex-1 px-4 py-2 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled={!proposalDetails.satisfaction_goal_1} value={proposalDetails.satisfaction_goal_2} onChange={e => {
-                              const val = e.target.value;
-                              setProposalDetails(prev => ({
-                                ...prev,
-                                satisfaction_goal_2: val,
-                                satisfaction_goal_3: val ? prev.satisfaction_goal_3 : ''
-                              }));
-                            }} />
-                          </div>
-                          <div className="flex items-start gap-4">
-                            <span className="font-bold text-gray-600 mt-2">3.</span>
-                            <input type="text" className="flex-1 px-4 py-2 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled={!proposalDetails.satisfaction_goal_2} value={proposalDetails.satisfaction_goal_3} onChange={e => setProposalDetails({ ...proposalDetails, satisfaction_goal_3: e.target.value })} />
+                        {/* Needs and Goals */}
+                        <div className="pt-6 border-t border-gray-100 space-y-4">
+                          <label className="text-xs font-bold text-gray-600 italic">
+                            Describe how this activity will satisfy the needs of the organization and how it will help the organization achieve its goals:
+                          </label>
+                          <div className="space-y-3">
+                            <div className="flex items-start gap-4">
+                              <span className="font-bold text-gray-600 mt-2">1.</span>
+                              <input type="text" className="flex-1 px-4 py-2 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.satisfaction_goal_1} onChange={e => {
+                                const val = e.target.value;
+                                setProposalDetails(prev => ({
+                                  ...prev,
+                                  satisfaction_goal_1: val,
+                                  satisfaction_goal_2: val ? prev.satisfaction_goal_2 : '',
+                                  satisfaction_goal_3: val ? prev.satisfaction_goal_3 : ''
+                                }));
+                              }} />
+                            </div>
+                            <div className="flex items-start gap-4">
+                              <span className="font-bold text-gray-600 mt-2">2.</span>
+                              <input type="text" className="flex-1 px-4 py-2 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled={!proposalDetails.satisfaction_goal_1} value={proposalDetails.satisfaction_goal_2} onChange={e => {
+                                const val = e.target.value;
+                                setProposalDetails(prev => ({
+                                  ...prev,
+                                  satisfaction_goal_2: val,
+                                  satisfaction_goal_3: val ? prev.satisfaction_goal_3 : ''
+                                }));
+                              }} />
+                            </div>
+                            <div className="flex items-start gap-4">
+                              <span className="font-bold text-gray-600 mt-2">3.</span>
+                              <input type="text" className="flex-1 px-4 py-2 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled={!proposalDetails.satisfaction_goal_2} value={proposalDetails.satisfaction_goal_3} onChange={e => setProposalDetails({ ...proposalDetails, satisfaction_goal_3: e.target.value })} />
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      {/* Partners & Sponsors */}
-                      <div className="pt-6 border-t border-gray-100 space-y-4">
-                        <div className="space-y-2">
-                          <label className="text-xs font-black text-gray-600 uppercase">Name of Partners (if any):</label>
-                          <input type="text" className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.partners} onChange={e => setProposalDetails({ ...proposalDetails, partners: e.target.value })} />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-black text-gray-600 uppercase">Name of Sponsors (if any):</label>
-                          <input type="text" className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.sponsors} onChange={e => setProposalDetails({ ...proposalDetails, sponsors: e.target.value })} />
+                        {/* Partners & Sponsors */}
+                        <div className="pt-6 border-t border-gray-100 space-y-4">
+                          <div className="space-y-2">
+                            <label className="text-xs font-black text-gray-600 uppercase">Name of Partners (if any):</label>
+                            <input type="text" className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.partners} onChange={e => setProposalDetails({ ...proposalDetails, partners: e.target.value })} />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-black text-gray-600 uppercase">Name of Sponsors (if any):</label>
+                            <input type="text" className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.sponsors} onChange={e => setProposalDetails({ ...proposalDetails, sponsors: e.target.value })} />
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
+                  )}
+                  {proposalStep === 2 && (
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-right-4 duration-500">
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 bg-primary-green/10 rounded-xl flex items-center justify-center text-primary-green shrink-0">
+                            <Eye size={20} />
+                          </div>
+                          <div>
+                            <h2 className="text-xl font-black text-gray-800 uppercase tracking-widest">Preview & Download Form</h2>
+                            <p className="text-xs font-bold text-gray-400 mt-1">Review your generated proposal and save it as a PDF before proceeding.</p>
+                          </div>
+                        </div>
+                        {hasDownloadedProposal && (
+                          <div className="flex items-center gap-2 text-primary-green bg-green-50 px-4 py-2 rounded-lg shrink-0">
+                            <CheckCircle2 size={16} />
+                            <span className="text-xs font-black uppercase tracking-widest">Document Ready</span>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {!hasDownloadedProposal && (
+                        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex gap-3 items-start animate-in fade-in zoom-in-95">
+                          <AlertCircle className="text-amber-500 shrink-0 mt-0.5" size={18} />
+                          <div>
+                            <p className="text-sm font-bold text-amber-800">Important Action Required</p>
+                            <p className="text-xs font-medium text-amber-700 mt-1">
+                              You must download this generated Activity Proposal Form. You will be required to upload it as one of the requirements in the next phase.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="w-full">
+                        <ActivityProposalPreviewModal
+                          inline={true}
+                          isOpen={true}
+                          proposalDetails={proposalDetails}
+                          user={user}
+                          onDownload={() => setHasDownloadedProposal(true)}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {proposalStep === 3 && (
+                    <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-right-4 duration-500">
+                      <div className="flex items-center gap-4 pb-6 border-b border-gray-100 mb-6">
+                        <div className="w-10 h-10 bg-primary-green/10 rounded-xl flex items-center justify-center text-primary-green shrink-0">
+                          <Upload size={20} />
+                        </div>
+                        <div>
+                          <h2 className="text-xl font-black text-gray-800 uppercase tracking-widest">Upload Requirements</h2>
+                          <p className="text-xs font-bold text-gray-400 mt-1">Please provide all necessary documents below to complete your submission</p>
+                        </div>
+                        <div className="ml-auto">
+                          <span className="text-xs font-black text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg uppercase tracking-widest">
+                            {attachedRequirementIds.size} / {requirements.length} attached
+                          </span>
+                        </div>
+                      </div>
+
+                      {renderRequirementsList(true)}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1726,52 +1871,100 @@ const SubmitNewDocument = () => {
 
               {/* Action Buttons */}
               <div className="flex items-center gap-3">
-                {isProposal && (
+                {isProposal ? (
+                  <>
+                    {proposalStep > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setProposalStep(prev => prev - 1)}
+                        className="px-4 py-2.5 bg-white border border-gray-200 text-gray-500 font-black rounded-lg hover:bg-gray-50 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest mr-auto"
+                      >
+                        <ArrowLeft size={14} /> Back
+                      </button>
+                    )}
+
+                    {(proposalStep === 1 || proposalStep === 3) && (
+                      <button
+                        type="button"
+                        onClick={() => setShowClearModal(true)}
+                        className="px-4 py-2.5 bg-white border border-gray-200 text-gray-500 font-black rounded-lg hover:bg-gray-50 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
+                      >
+                        <Eraser size={14} /> Clear Form
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleSaveDraft}
+                      disabled={isSaving}
+                      className="px-5 py-2.5 bg-amber-50 text-amber-600 border border-amber-200 font-black rounded-lg hover:bg-amber-100 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
+                    >
+                      <Save size={14} /> Save Draft
+                    </button>
+
+                    {proposalStep === 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setProposalStep(2)}
+                        disabled={!isActivityProposalFormComplete}
+                        className="px-8 py-2.5 bg-primary-green text-white font-black rounded-lg hover:bg-green-700 hover:scale-105 active:scale-95 transition-all shadow-md shadow-green-600/20 flex items-center gap-2 text-[11px] uppercase disabled:opacity-50 tracking-widest"
+                        title={!isActivityProposalFormComplete ? "Please fill all required fields to continue" : "Proceed to next step"}
+                      >
+                        Next Step <ChevronRight size={14} />
+                      </button>
+                    )}
+
+                    {proposalStep === 2 && (
+                      <button
+                        type="button"
+                        onClick={() => setProposalStep(3)}
+                        disabled={!hasDownloadedProposal}
+                        className="px-8 py-2.5 bg-primary-green text-white font-black rounded-lg hover:bg-green-700 hover:scale-105 active:scale-95 transition-all shadow-md shadow-green-600/20 flex items-center gap-2 text-[11px] uppercase disabled:opacity-50 tracking-widest"
+                        title={!hasDownloadedProposal ? "Please download the form to continue" : "Proceed to next step"}
+                      >
+                        Next Step <ChevronRight size={14} />
+                      </button>
+                    )}
+
+                    {proposalStep === 3 && (
+                      <button
+                        type="submit"
+                        disabled={isSaving || attachedRequirementIds.size !== requirements.length}
+                        className="px-6 py-2.5 bg-primary-green text-white font-black rounded-lg hover:bg-green-700 hover:scale-105 active:scale-95 transition-all shadow-md shadow-green-600/20 flex items-center gap-2 text-[11px] uppercase disabled:opacity-50 tracking-widest"
+                        title={attachedRequirementIds.size !== requirements.length ? "Please upload all requirements" : "Register Proposal"}
+                      >
+                        {isSaving ? <Loader2 className="animate-spin" size={14} /> : <Send size={14} />}
+                        Register
+                      </button>
+                    )}
+                  </>
+                ) : (
                   <>
                     <button
                       type="button"
-                      onClick={() => setShowUploadModal(true)}
-                      className="px-5 py-2.5 bg-blue-50 text-blue-600 border border-blue-200 font-black rounded-lg hover:bg-blue-100 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
+                      onClick={() => setShowClearModal(true)}
+                      className="px-4 py-2.5 bg-white border border-gray-200 text-gray-500 font-black rounded-lg hover:bg-gray-50 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
                     >
-                      <Upload size={14} /> Upload Requirements ({attachedRequirementIds.size}/{requirements.length})
+                      <Eraser size={14} /> Clear Form
                     </button>
-                    <div className="h-6 w-px bg-gray-200 mx-2"></div>
+                    <button
+                      type="button"
+                      onClick={handleSaveDraft}
+                      disabled={isSaving}
+                      className="px-5 py-2.5 bg-amber-50 text-amber-600 border border-amber-200 font-black rounded-lg hover:bg-amber-100 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
+                    >
+                      <Save size={14} /> Save Draft
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSaving}
+                      className="px-6 py-2.5 bg-primary-green text-white font-black rounded-lg hover:bg-green-700 hover:scale-105 active:scale-95 transition-all shadow-md shadow-green-600/20 flex items-center gap-2 text-[11px] uppercase disabled:opacity-50 tracking-widest"
+                    >
+                      {isSaving ? <Loader2 className="animate-spin" size={14} /> : <Send size={14} />}
+                      Register
+                    </button>
                   </>
                 )}
-                {isProposal && (
-                  <button
-                    type="button"
-                    onClick={() => setIsActivityPreviewOpen(true)}
-                    disabled={!isActivityProposalFormComplete}
-                    className="px-4 py-2.5 bg-blue-50 text-blue-600 border border-blue-200 font-black rounded-lg hover:bg-blue-100 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest disabled:opacity-40 disabled:cursor-not-allowed"
-                    title={!isActivityProposalFormComplete ? "Please fill all required fields to download" : "Download PDF"}
-                  >
-                    <Eye size={14} /> Preview Activity Proposal Form
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setShowClearModal(true)}
-                  className="px-4 py-2.5 bg-white border border-gray-200 text-gray-500 font-black rounded-lg hover:bg-gray-50 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
-                >
-                  <Eraser size={14} /> Clear Form
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveDraft}
-                  disabled={isSaving}
-                  className="px-5 py-2.5 bg-amber-50 text-amber-600 border border-amber-200 font-black rounded-lg hover:bg-amber-100 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
-                >
-                  <Save size={14} /> Save Draft
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="px-6 py-2.5 bg-primary-green text-white font-black rounded-lg hover:bg-green-700 hover:scale-105 active:scale-95 transition-all shadow-md shadow-green-600/20 flex items-center gap-2 text-[11px] uppercase disabled:opacity-50 tracking-widest"
-                >
-                  {isSaving ? <Loader2 className="animate-spin" size={14} /> : <Send size={14} />}
-                  Register
-                </button>
               </div>
             </div>
           </div>

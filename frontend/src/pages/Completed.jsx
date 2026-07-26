@@ -247,7 +247,7 @@ const Completed = () => {
               versions.find((v) => v.id === sub.current_version_id) ||
               versions.sort((a, b) => (b?.version_number || 0) - (a?.version_number || 0))[0];
             const details = Array.isArray(latestVersion?.activity_proposal_details)
-              ? latestVersion.activity_proposal_details[0]
+              ? latestVersion.activity_proposal_details[latestVersion.activity_proposal_details.length - 1]
               : latestVersion?.activity_proposal_details;
             const title = details?.activity_title || sub.documentType?.name || 'Document';
             const completedAt = sub.updated_at || sub.created_at;

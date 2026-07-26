@@ -84,7 +84,7 @@ const AccomplishmentReportPreviewModal = ({
       const cleanSy = sy.replace(/S\.Y\.\s*/ig, '').replace(/S\.Y\s*/ig, '').trim();
 
       const details = Array.isArray(submission?.submission_versions?.[0]?.activity_proposal_details)
-        ? submission?.submission_versions[0].activity_proposal_details[0]
+        ? submission?.submission_versions[0].activity_proposal_details[submission.submission_versions[0].activity_proposal_details.length - 1]
         : submission?.submission_versions?.[0]?.activity_proposal_details || {};
 
       const orgName = details?.organization_name || submission?.users?.org_name || 'Organization Name';

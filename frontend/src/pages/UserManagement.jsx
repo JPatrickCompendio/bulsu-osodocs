@@ -31,6 +31,7 @@ import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../config/api';
 import Avatar from '../components/Avatar';
 import ReportPreviewModal from '../components/ReportPreviewModal';
+import CompletedDocumentDetail from '../components/CompletedDocumentDetail';
 import { useToast } from '../hooks/useToast';
 
 const UserManagement = () => {
@@ -56,6 +57,8 @@ const UserManagement = () => {
   const [selectedUser, setSelectedUser] = useState(null);
   const [detailData, setDetailData] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [docLogFilter, setDocLogFilter] = useState('all');
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState(null);
 
   // Quick suspend state
   const [isSuspendModalOpen, setIsSuspendModalOpen] = useState(false);
@@ -105,7 +108,7 @@ const UserManagement = () => {
   const fetchUserDetail = async (userId) => {
     setDetailLoading(true);
     try {
-      const response = await apiFetch(`/api/users/${userId}/detail`);
+      const response = await apiFetch(`/api/users/${userId}/detail?t=${Date.now()}`, { cache: 'no-store' });
       const result = await response.json();
       if (result.success) {
         setDetailData(result.data);
@@ -120,12 +123,15 @@ const UserManagement = () => {
   const handleProfileClick = (user) => {
     setSelectedUser(user);
     setDetailData(null);
+    setDocLogFilter('all');
+    setSelectedSubmissionId(null);
     fetchUserDetail(user.id);
   };
 
   const handleBackToList = () => {
     setSelectedUser(null);
     setDetailData(null);
+    setSelectedSubmissionId(null);
   };
 
   const formatDetailDate = (dateString) => {
@@ -428,10 +434,29 @@ const UserManagement = () => {
       ? `${profile.full_name || 'President'} • Organization President`
       : getRoleLabel(profile.role);
 
+    let coAdvisersList = [];
+    if (Array.isArray(profile.co_advisers)) {
+      coAdvisersList = profile.co_advisers;
+    } else if (typeof profile.co_advisers === 'string' && profile.co_advisers.trim()) {
+      try {
+        coAdvisersList = JSON.parse(profile.co_advisers);
+      } catch (e) {
+        coAdvisersList = profile.co_advisers.split(',').map((s) => s.trim()).filter(Boolean);
+      }
+    }
+
+    const coAdvisersText = coAdvisersList.length > 0
+      ? `Co-Adviser(s): ${coAdvisersList.join(', ')}`
+      : 'Main Adviser Only';
+
     const infoCards = isOrg
       ? [
           { label: 'President', value: profile.full_name, sub: profile.student_no ? `SN: ${profile.student_no}` : '' },
-          { label: 'Advisers', value: profile.adviser_name || '—', sub: (profile.co_advisers?.length > 0) ? `+ ${profile.co_advisers.length} Co-Adviser(s)` : 'Main Adviser' },
+          {
+            label: 'Advisers & Co-Advisers',
+            value: profile.adviser_name || '—',
+            sub: coAdvisersText,
+          },
           { label: 'Official Email', value: profile.email || '—', sub: '' },
           { label: 'Contact Number', value: profile.contact_no || '—', sub: '' },
           { label: 'Total Members', value: `${profile.no_member || 0} Active Members`, sub: '' },
@@ -454,55 +479,137 @@ const UserManagement = () => {
           },
         ];
 
+    const rawDocLogs = detailData?.documentLogs || [];
+
+    const matchDocStatusFilter = (doc, filter) => {
+      if (!filter || filter === 'all') return true;
+      const status = String(doc?.status || '').toLowerCase();
+
+      if (filter === 'completed') {
+        return status === 'completed' || status === 'approved';
+      }
+      if (filter === 'disapproved') {
+        return status.includes('disapproved') || status.includes('rejected');
+      }
+      if (filter === 'under-process') {
+        return !['completed', 'approved', 'disapproved', 'rejected'].includes(status);
+      }
+      return true;
+    };
+
+    const filteredDocLogs = rawDocLogs.filter((doc) => matchDocStatusFilter(doc, docLogFilter));
+
+    const totalCount = rawDocLogs.length;
+    const underProcessCount = rawDocLogs.filter((d) => matchDocStatusFilter(d, 'under-process')).length;
+    const completedCount = rawDocLogs.filter((d) => matchDocStatusFilter(d, 'completed')).length;
+    const disapprovedCount = rawDocLogs.filter((d) => matchDocStatusFilter(d, 'disapproved')).length;
+
+    const handleGenerateDocLogsReport = () => {
+      const orgName = profile.org_name || profile.full_name || 'Organization';
+      const filterLabels = {
+        all: 'All Statuses',
+        'under-process': 'Under Process Only',
+        completed: 'Completed Only',
+        disapproved: 'Disapproved Only',
+      };
+      const currentFilterLabel = filterLabels[docLogFilter] || 'All Statuses';
+
+      const stats = [
+        { label: 'Total Submissions', value: totalCount },
+        { label: 'Under Process', value: underProcessCount },
+        { label: 'Completed', value: completedCount },
+        { label: 'Disapproved', value: disapprovedCount },
+      ];
+
+      const tableHeaders = ['Ref / Tracking No.', 'Document Name', 'Type', 'Date Submitted', 'Status', 'Venue'];
+      const tableData = filteredDocLogs.map((doc) => [
+        doc.trackingNumber || String(doc.id).substring(0, 8).toUpperCase(),
+        doc.title || 'Untitled',
+        doc.type || 'Unknown',
+        formatDetailDate(doc.dateSubmitted),
+        doc.status || 'Pending',
+        doc.venue || '—',
+      ]);
+
+      const cleanOrgName = orgName.replace(/[^a-zA-Z0-9]/g, '_');
+
+      setReportData({
+        title: `${orgName} — Document Logs Report (${currentFilterLabel})`,
+        stats,
+        headers: tableHeaders,
+        rows: tableData,
+        filename: `${cleanOrgName}_Document_Logs_${docLogFilter}_${new Date().toISOString().split('T')[0]}.pdf`,
+        personInCharge: profile.full_name || '—',
+      });
+      setIsReportOpen(true);
+    };
+
     return (
       <div className="space-y-6">
-        <div className="bg-gradient-to-br from-[#0b5c2a] to-[#1a7a3a] rounded-2xl p-8 text-white shadow-lg">
-          <div className="flex flex-col md:flex-row md:items-start gap-6">
-            <Avatar
-              profileImage={profile.profile_image}
-              name={isOrg ? (profile.org_name || profile.full_name) : profile.full_name}
-              className={`${isOrg ? 'w-20 h-20 rounded-2xl' : 'w-20 h-20 rounded-full'} shadow-lg shrink-0`}
-              fallbackClassName={isOrg ? 'bg-secondary-gold text-primary-green font-black text-2xl' : 'bg-white/20 text-white font-black text-3xl'}
-            />
-            <div className="flex-1">
-              <div className="flex flex-wrap items-center gap-3 mb-4">
-                <h1 className="text-2xl md:text-3xl font-black">{headerTitle}</h1>
-                <button onClick={() => handleEditClick(profile)} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors">
-                  <Pencil size={16} />
-                </button>
-              </div>
-              <p className="text-green-100 text-sm font-medium mb-4">{headerSubtitle}</p>
-              <div className="flex flex-wrap gap-2 items-center">
-                <span className="px-4 py-1.5 bg-white/20 rounded-full text-xs font-bold">Active Since - {activeSinceYear}</span>
-                <span className={`px-4 py-1.5 rounded-full text-xs font-bold ${profile.status?.startsWith('Suspended') ? 'bg-red-500/25 text-red-100' :
-                  profile.status === 'Inactive' ? 'bg-gray-500/25 text-gray-200' :
-                    'bg-white/20 text-white'
-                  }`}>
-                  {profile.status?.startsWith('Suspended') ? 'Suspended' : (profile.status || 'Active')}
-                </span>
-                {profile.role !== 'admin' && (
-                  profile.status?.startsWith('Suspended') ? (
-                    <button onClick={() => handleToggleSuspendClick(profile)} className="px-4 py-1.5 bg-white text-green-600 hover:bg-green-50 rounded-full text-xs font-bold flex items-center gap-1 transition-all shadow-sm">
-                      <Check size={12} /> Reactivate Account
-                    </button>
-                  ) : (
-                    <button onClick={() => handleToggleSuspendClick(profile)} className="px-4 py-1.5 bg-white text-red-600 hover:bg-red-50 rounded-full text-xs font-bold flex items-center gap-1 transition-all shadow-sm">
-                      <Ban size={12} /> Suspend Account
-                    </button>
-                  )
-                )}
+        <div className="relative rounded-2xl p-8 text-white shadow-lg overflow-hidden bg-black">
+          {/* Background Video */}
+          <video
+            autoPlay
+            loop
+            muted
+            playsInline
+            className="absolute inset-0 w-full h-full object-cover pointer-events-none opacity-60 z-0"
+          >
+            <source src="/loginbgvid.mp4" type="video/mp4" />
+          </video>
+
+          {/* Dark Overlay Gradient */}
+          <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/50 to-black/70 pointer-events-none z-0" />
+
+          {/* Content */}
+          <div className="relative z-10">
+            <div className="flex flex-col md:flex-row md:items-start gap-6">
+              <Avatar
+                profileImage={profile.profile_image}
+                name={isOrg ? (profile.org_name || profile.full_name) : profile.full_name}
+                className={`${isOrg ? 'w-20 h-20 rounded-2xl' : 'w-20 h-20 rounded-full'} shadow-lg shrink-0`}
+                fallbackClassName={isOrg ? 'bg-secondary-gold text-primary-green font-black text-2xl' : 'bg-white/20 text-white font-black text-3xl'}
+              />
+              <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-3 mb-4">
+                  <h1 className="text-2xl md:text-3xl font-black">{headerTitle}</h1>
+                  <button onClick={() => handleEditClick(profile)} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors">
+                    <Pencil size={16} />
+                  </button>
+                </div>
+                <p className="text-green-100 text-sm font-medium mb-4">{headerSubtitle}</p>
+                <div className="flex flex-wrap gap-2 items-center">
+                  <span className="px-4 py-1.5 bg-white/20 rounded-full text-xs font-bold">Active Since - {activeSinceYear}</span>
+                  <span className={`px-4 py-1.5 rounded-full text-xs font-bold ${profile.status?.startsWith('Suspended') ? 'bg-red-500/25 text-red-100' :
+                    profile.status === 'Inactive' ? 'bg-gray-500/25 text-gray-200' :
+                      'bg-white/20 text-white'
+                    }`}>
+                    {profile.status?.startsWith('Suspended') ? 'Suspended' : (profile.status || 'Active')}
+                  </span>
+                  {profile.role !== 'admin' && (
+                    profile.status?.startsWith('Suspended') ? (
+                      <button onClick={() => handleToggleSuspendClick(profile)} className="px-4 py-1.5 bg-white text-green-600 hover:bg-green-50 rounded-full text-xs font-bold flex items-center gap-1 transition-all shadow-sm">
+                        <Check size={12} /> Reactivate Account
+                      </button>
+                    ) : (
+                      <button onClick={() => handleToggleSuspendClick(profile)} className="px-4 py-1.5 bg-white text-red-600 hover:bg-red-50 rounded-full text-xs font-bold flex items-center gap-1 transition-all shadow-sm">
+                        <Ban size={12} /> Suspend Account
+                      </button>
+                    )
+                  )}
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-8`}>
-            {infoCards.map(({ label, value, sub }) => (
-              <div key={label} className="bg-white rounded-xl p-4 text-gray-800 shadow-sm">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">{label}</p>
-                <p className="font-bold text-sm text-gray-800 line-clamp-2">{value}</p>
-                {sub && <p className="text-[10px] text-gray-400 font-medium mt-1">{sub}</p>}
-              </div>
-            ))}
+            <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-8`}>
+              {infoCards.map(({ label, value, sub }) => (
+                <div key={label} className="bg-white/10 backdrop-blur-md border border-white/15 rounded-xl p-4 text-white shadow-sm">
+                  <p className="text-[10px] font-bold text-green-300 uppercase tracking-wider mb-1">{label}</p>
+                  <p className="font-bold text-sm text-white line-clamp-2">{value}</p>
+                  {sub && <p className="text-[11px] text-green-100/90 font-medium mt-1 leading-snug">{sub}</p>}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -532,7 +639,7 @@ const UserManagement = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <section className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="p-6 border-b border-gray-50 flex items-center justify-between">
+            <div className="p-6 border-b border-gray-50 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
               <div>
                 <h2 className="text-lg font-black text-gray-800 uppercase">
                   {isOrg ? 'Document Logs' : 'Reviewed Documents'}
@@ -541,7 +648,67 @@ const UserManagement = () => {
                   {isOrg ? 'Current school year submissions' : 'Documents actively under review'}
                 </p>
               </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setDocLogFilter('all')}
+                    className={`px-2.5 py-1.5 rounded-lg transition-all ${
+                      docLogFilter === 'all'
+                        ? 'bg-white text-gray-800 shadow-sm font-black'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    All ({totalCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDocLogFilter('under-process')}
+                    className={`px-2.5 py-1.5 rounded-lg transition-all ${
+                      docLogFilter === 'under-process'
+                        ? 'bg-white text-yellow-700 shadow-sm font-black'
+                        : 'text-gray-500 hover:text-yellow-600'
+                    }`}
+                  >
+                    Under Process ({underProcessCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDocLogFilter('completed')}
+                    className={`px-2.5 py-1.5 rounded-lg transition-all ${
+                      docLogFilter === 'completed'
+                        ? 'bg-white text-green-700 shadow-sm font-black'
+                        : 'text-gray-500 hover:text-green-600'
+                    }`}
+                  >
+                    Completed ({completedCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDocLogFilter('disapproved')}
+                    className={`px-2.5 py-1.5 rounded-lg transition-all ${
+                      docLogFilter === 'disapproved'
+                        ? 'bg-white text-red-700 shadow-sm font-black'
+                        : 'text-gray-500 hover:text-red-600'
+                    }`}
+                  >
+                    Disapproved ({disapprovedCount})
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleGenerateDocLogsReport}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-primary-green text-white text-xs font-bold rounded-xl hover:bg-primary-green/90 transition-all shadow-sm shrink-0"
+                  title="Generate Document Logs Report"
+                >
+                  <FileText size={14} />
+                  <span>Generate Report</span>
+                </button>
+              </div>
             </div>
+
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -553,31 +720,48 @@ const UserManagement = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {(detailData?.documentLogs || []).length === 0 ? (
+                  {filteredDocLogs.length === 0 ? (
                     <tr>
                       <td colSpan="4" className="px-6 py-12 text-center text-gray-400 font-bold text-sm">
-                        {isOrg ? 'No documents found for the current school year.' : 'No documents currently assigned for review.'}
+                        {isOrg
+                          ? `No ${docLogFilter !== 'all' ? docLogFilter.replace('-', ' ') : ''} documents found for the current school year.`
+                          : 'No documents currently assigned for review.'}
                       </td>
                     </tr>
                   ) : (
-                    detailData.documentLogs.map((doc) => (
-                      <tr key={doc.id} className="hover:bg-gray-50/50 transition-colors">
-                        <td className="px-6 py-4 font-semibold text-sm text-gray-800">{doc.title}</td>
-                        <td className="px-6 py-4 text-sm text-gray-600">{doc.type}</td>
-                        <td className="px-6 py-4 text-sm text-gray-500">{formatDetailDate(doc.dateSubmitted)}</td>
-                        <td className="px-6 py-4">
-                          <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black uppercase ${doc.status === 'Approved' ? 'bg-green-100 text-green-700' :
-                            doc.status === 'Pending' ? 'bg-yellow-100 text-yellow-700' :
-                              doc.status === 'Returned' ? 'bg-orange-100 text-orange-700' :
-                                'bg-red-100 text-red-700'
-                            }`}>
-                            {doc.status === 'Approved' && <CheckCircle size={12} />}
-                            {doc.status === 'Pending' && <Clock size={12} />}
-                            {doc.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))
+                    filteredDocLogs.map((doc) => {
+                      const statusLower = String(doc.status || '').toLowerCase();
+                      const isCompleted = statusLower === 'completed' || statusLower === 'approved';
+                      const isDisapproved = statusLower.includes('disapproved') || statusLower.includes('rejected');
+                      const isReturned = statusLower.includes('returned');
+
+                      let badgeStyle = 'bg-yellow-100 text-yellow-700';
+                      if (isCompleted) badgeStyle = 'bg-green-100 text-green-700';
+                      else if (isDisapproved) badgeStyle = 'bg-red-100 text-red-700';
+                      else if (isReturned) badgeStyle = 'bg-orange-100 text-orange-700';
+
+                      return (
+                        <tr
+                          key={doc.id}
+                          onClick={() => setSelectedSubmissionId(doc.id)}
+                          className="hover:bg-green-50/50 hover:border-l-4 hover:border-primary-green transition-all cursor-pointer group"
+                        >
+                          <td className="px-6 py-4 font-semibold text-sm text-gray-800 group-hover:text-primary-green transition-colors">
+                            {doc.title}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-600">{doc.type}</td>
+                          <td className="px-6 py-4 text-sm text-gray-500">{formatDetailDate(doc.dateSubmitted)}</td>
+                          <td className="px-6 py-4">
+                            <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black uppercase ${badgeStyle}`}>
+                              {isCompleted && <CheckCircle size={12} />}
+                              {isDisapproved && <XCircle size={12} />}
+                              {!isCompleted && !isDisapproved && <Clock size={12} />}
+                              {doc.status}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -589,28 +773,61 @@ const UserManagement = () => {
               <h2 className="text-lg font-black text-gray-800 uppercase">Activity History</h2>
               <p className="text-xs font-bold text-gray-400 mt-1">Current school year actions by this user</p>
             </div>
-            <div className="p-6 space-y-4 max-h-[500px] overflow-y-auto">
-              {(detailData?.activityHistory || []).length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-8">No activity recorded for the current school year.</p>
-              ) : (
-                detailData.activityHistory.map((log) => {
-                  const { bg, color, icon: Icon } = getActivityIcon(log.action_type);
-                  return (
-                    <div key={log.id} className="flex gap-3">
-                      <div className={`w-8 h-8 rounded-full ${bg} ${color} flex items-center justify-center shrink-0`}>
-                        <Icon size={14} />
+              <div className="p-6 space-y-3 max-h-[520px] overflow-y-auto">
+                {(detailData?.activityHistory || []).length === 0 ? (
+                  <p className="text-sm text-gray-400 text-center py-8 font-medium">No activity recorded for the current school year.</p>
+                ) : (
+                  detailData.activityHistory.map((log) => {
+                    const { bg, color, icon: Icon } = getActivityIcon(log.action_type);
+                    const docTitle = log.docTitle || log.submissions?.docTitle || null;
+                    const trackingNo = log.trackingNumber || log.submissions?.tracking_number || null;
+                    const isClickable = Boolean(log.submission_id);
+
+                    return (
+                      <div
+                        key={log.id}
+                        onClick={() => log.submission_id && setSelectedSubmissionId(log.submission_id)}
+                        className={`p-3.5 rounded-xl border border-gray-100 bg-gray-50/50 hover:bg-green-50/60 hover:border-primary-green/30 transition-all ${
+                          isClickable ? 'cursor-pointer group' : ''
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={`w-8 h-8 rounded-full ${bg} ${color} flex items-center justify-center shrink-0 mt-0.5 shadow-sm`}>
+                            <Icon size={14} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            {docTitle ? (
+                              <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                                <span className="font-bold text-xs text-gray-900 group-hover:text-primary-green transition-colors break-words line-clamp-2">
+                                  {docTitle}
+                                </span>
+                                {trackingNo && (
+                                  <span className="px-1.5 py-0.5 bg-gray-200/80 text-gray-700 text-[10px] font-mono font-bold rounded shrink-0">
+                                    {trackingNo}
+                                  </span>
+                                )}
+                              </div>
+                            ) : trackingNo ? (
+                              <span className="px-1.5 py-0.5 bg-gray-200/80 text-gray-700 text-[10px] font-mono font-bold rounded mb-1 inline-block">
+                                {trackingNo}
+                              </span>
+                            ) : null}
+
+                            <p className="text-xs text-gray-600 font-medium leading-snug break-words">
+                              {log.description || String(log.action_type || '').replace(/_/g, ' ')}
+                            </p>
+
+                            <p className="text-[10px] text-gray-400 font-bold mt-1.5 flex items-center gap-1">
+                              <Clock size={10} />
+                              {formatDetailDate(log.created_at)}
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-800 line-clamp-2">
-                          {log.description || String(log.action_type || '').replace(/_/g, ' ')}
-                        </p>
-                        <p className="text-[10px] text-gray-400 font-bold mt-1">{formatDetailDate(log.created_at)}</p>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+                    );
+                  })
+                )}
+              </div>
           </section>
         </div>
       </div>
@@ -639,7 +856,12 @@ const UserManagement = () => {
 
   return (
     <div className="animate-in fade-in duration-500">
-      {selectedUser ? (
+      {selectedSubmissionId ? (
+        <CompletedDocumentDetail
+          submissionId={selectedSubmissionId}
+          onBack={() => setSelectedSubmissionId(null)}
+        />
+      ) : selectedUser ? (
         <div>
           <button
             onClick={handleBackToList}
@@ -1506,6 +1728,7 @@ const UserManagement = () => {
         tableHeaders={reportData.headers}
         tableData={reportData.rows}
         pdfFilename={reportData.filename}
+        personInCharge={reportData.personInCharge}
         generatedBy={currentUser?.full_name || 'System Administrator'}
       />
 

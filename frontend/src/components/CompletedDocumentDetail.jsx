@@ -156,7 +156,7 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
         finalPath = finalPath.replace('documents/', '');
       }
       const { data, error } = await supabase.storage.from('documents').createSignedUrl(finalPath, 3600);
-      
+
       if (error || !data?.signedUrl) {
         console.error('Failed to get signed URL for attachment:', error);
         return;
@@ -321,7 +321,7 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
     versions.find((v) => v.id === submission.current_version_id) ||
     versions.sort((a, b) => (b?.version_number || 0) - (a?.version_number || 0))[0];
   const details = Array.isArray(currentVersion?.activity_proposal_details)
-    ? currentVersion.activity_proposal_details[0]
+    ? currentVersion.activity_proposal_details[currentVersion.activity_proposal_details.length - 1]
     : currentVersion?.activity_proposal_details;
   const allAttachments = currentVersion?.submission_attachments || [];
   const docTypeName = submission.documentType?.name || 'Document';
@@ -341,12 +341,15 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
 
   const targetDate = details?.target_date
     ? new Date(details.target_date).toLocaleDateString('en-US', {
-        month: 'long',
-        day: 'numeric',
-        year: 'numeric'
-      })
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric'
+    })
     : null;
   const targetTime = details?.target_time || '';
+
+  const satisfyGoals = [details?.satisfaction_goal_1, details?.satisfaction_goal_2, details?.satisfaction_goal_3].filter(Boolean);
+
   const targetDateTime =
     targetDate && targetTime ? `${targetDate} | ${targetTime}` : targetDate || targetTime || '—';
 
@@ -486,17 +489,32 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
             <div className="mt-6 space-y-4">
               <div>
                 <p className="font-bold text-sm mb-2">Objectives of the Activity:</p>
-                {details?.objectives ? (
-                  <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{details.objectives}</div>
-                ) : (
-                  <ul className="list-disc pl-5 space-y-1 text-sm text-gray-600">
-                    <li>Leadership Development and Formation</li>
-                    <li>Membership Development and Formation</li>
-                    <li>Organizational Program Management</li>
-                    <li>Values Enrichment</li>
-                    <li>Technical Skills Development and Industry Exposure</li>
-                  </ul>
-                )}
+                {(() => {
+                  let objList = details?.objectives;
+                  if (typeof objList === 'string' && objList.startsWith('[')) {
+                    try {
+                      objList = JSON.parse(objList);
+                    } catch (e) { }
+                  }
+                  if (Array.isArray(objList) && objList.length > 0) {
+                    return (
+                      <ul className="list-disc pl-5 space-y-1 text-sm text-gray-700">
+                        {objList.map((obj, i) => <li key={i}>{obj}</li>)}
+                      </ul>
+                    );
+                  }
+                  return details?.objectives ? (
+                    <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{details.objectives}</div>
+                  ) : (
+                    <ul className="list-disc pl-5 space-y-1 text-sm text-gray-600">
+                      <li>Leadership Development and Formation</li>
+                      <li>Membership Development and Formation</li>
+                      <li>Organizational Program Management</li>
+                      <li>Values Enrichment</li>
+                      <li>Technical Skills Development and Industry Exposure</li>
+                    </ul>
+                  );
+                })()}
               </div>
               <div>
                 <p className="font-bold text-sm mb-1">Target Audience / Participants: <span className="font-normal">BulSUans Only</span></p>
@@ -506,17 +524,14 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
                   Describe how this activity will satisfy the needs of the organization and how it will help the
                   organization achieve its goals:
                 </p>
-                {Array.isArray(details?.satisfy_goals) && details.satisfy_goals.length > 0 ? (
+                {satisfyGoals.length > 0 ? (
                   <ol className="list-decimal pl-5 space-y-2 text-sm text-gray-700">
-                    {details.satisfy_goals.map((goal, idx) => (
+                    {satisfyGoals.map((goal, idx) => (
                       <li key={idx}>{goal}</li>
                     ))}
                   </ol>
                 ) : (
-                  <p className="text-sm text-gray-700 leading-relaxed">
-                    {details?.satisfy_needs ||
-                      'The activity aims to connect students with experienced professionals and industry experts.'}
-                  </p>
+                  <span className="text-gray-400 italic text-sm">No goals provided.</span>
                 )}
               </div>
             </div>
@@ -546,10 +561,10 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
                     : '';
                   const timeLabel = file.created_at
                     ? new Date(file.created_at).toLocaleTimeString('en-US', {
-                        hour: 'numeric',
-                        minute: '2-digit',
-                        hour12: true
-                      })
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true
+                    })
                     : '';
                   const meta = [sizeLabel, timeLabel].filter(Boolean).join(' | ');
 
@@ -597,7 +612,7 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
           <div className="rounded-2xl border border-gray-200 bg-gray-50 p-6 shadow-sm">
             <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest mb-2 border-b border-gray-200 pb-3">Accomplishment Report</h3>
             <p className="text-[10px] uppercase tracking-widest text-gray-500 mb-6">Submitted {formatSubmittedLabel(accomplishmentReport.submitted_at || accomplishmentReport.created_at)}</p>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Participants (College/Unit & Year Level)</p>

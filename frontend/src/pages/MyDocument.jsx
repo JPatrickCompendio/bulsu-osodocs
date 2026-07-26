@@ -92,7 +92,7 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy, subtypesMap =
     : submission.submission_versions;
   const details = isActivityProposal
     ? (Array.isArray(version?.activity_proposal_details)
-      ? version.activity_proposal_details[0]
+      ? version.activity_proposal_details[version.activity_proposal_details.length - 1]
       : version?.activity_proposal_details)
     : null;
 
@@ -187,7 +187,7 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy, subtypesMap =
     students: details?.number_of_students || '-',
     nature: details?.nature_of_activity || '-',
     objectives: details?.objectives || null,
-    satisfy_goals: details?.satisfy_goals || [],
+    satisfy_goals: [details?.satisfaction_goal_1, details?.satisfaction_goal_2, details?.satisfaction_goal_3].filter(Boolean),
     sponsors_partners: details?.sponsors_partners || [],
     satisfy_needs: details?.satisfy_needs || null,
     raw: submission,
@@ -1543,7 +1543,7 @@ export const MyDocuments = () => {
       : submission.submission_versions;
     const details = isActivityProposal
       ? (Array.isArray(version?.activity_proposal_details)
-        ? version.activity_proposal_details[0]
+        ? version.activity_proposal_details[version.activity_proposal_details.length - 1]
         : version?.activity_proposal_details)
       : null;
 
@@ -1667,7 +1667,7 @@ export const MyDocuments = () => {
       students: details?.number_of_students || '-',
       nature: details?.nature_of_activity || '-',
       objectives: details?.objectives || null,
-      satisfy_goals: details?.satisfy_goals || [],
+      satisfy_goals: [details?.satisfaction_goal_1, details?.satisfaction_goal_2, details?.satisfaction_goal_3].filter(Boolean),
       sponsors_partners: details?.sponsors_partners || [],
       satisfy_needs: details?.satisfy_needs || null,
       isActivityProposal,
@@ -1887,7 +1887,7 @@ export const MyDocuments = () => {
     if (user?.role === 'org-president') {
       const details = isActivityProposal
         ? (Array.isArray(currentVersion?.activity_proposal_details)
-          ? currentVersion.activity_proposal_details[0]
+          ? currentVersion.activity_proposal_details[currentVersion.activity_proposal_details.length - 1]
           : currentVersion?.activity_proposal_details)
         : null;
 
@@ -2055,22 +2055,31 @@ export const MyDocuments = () => {
               </div>
 
               <div className="mt-6 space-y-4">
-                <div>
-                  <p className="font-bold text-sm mb-2">Objectives of the Activity:</p>
-                  {selectedDoc.objectives ? (
-                    <div className="bg-gray-50 p-6 rounded-2xl text-sm leading-relaxed text-gray-700 border border-gray-100">
-                      {selectedDoc.objectives}
+                {isActivityProposal && (
+                  <div>
+                    <p className="font-bold text-sm mb-2">Objectives of the Activity:</p>
+                    <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100">
+                      {(() => {
+                        let objList = selectedDoc.objectives;
+                        if (typeof objList === 'string' && objList.startsWith('[')) {
+                          try {
+                            objList = JSON.parse(objList);
+                          } catch (e) {
+                            // keep as string
+                          }
+                        }
+                        if (Array.isArray(objList) && objList.length > 0) {
+                          return (
+                            <ul className="list-disc pl-5 space-y-1 text-sm text-gray-700">
+                              {objList.map((obj, i) => <li key={i}>{obj}</li>)}
+                            </ul>
+                          );
+                        }
+                        return <p className="text-gray-700 text-sm leading-relaxed">{objList || '-'}</p>;
+                      })()}
                     </div>
-                  ) : (
-                    <ul className="list-disc pl-5 space-y-1 text-sm text-gray-600">
-                      <li>Leadership Development and Formation</li>
-                      <li>Membership Development and Formation</li>
-                      <li>Organizational Program Management</li>
-                      <li>Values Enrichment</li>
-                      <li>Technical Skills Development and Industry Exposure</li>
-                    </ul>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 <div>
                   <p className="font-bold text-sm mb-1">
@@ -2090,10 +2099,9 @@ export const MyDocuments = () => {
                         ))}
                       </ol>
                     ) : (
-                      <span>
-                        {selectedDoc.satisfy_needs ||
-                          '"The activity aims to connect students with experienced professionals and industry experts who will share their knowledge, career experiences and current trends in the field of information technology."'}
-                      </span>
+                      <div className="text-gray-400 italic">
+                        No goals provided.
+                      </div>
                     )}
                   </div>
                 </div>
@@ -3123,14 +3131,7 @@ export const MyDocuments = () => {
                   </div>
                 </div>
               ) : (
-                <div className="mt-8">
-                  <p className="font-bold mb-4 text-sm leading-relaxed">
-                    Describe how this activity will satisfy the needs of the organization and how it will help the organization achieve its goals:
-                  </p>
-                  <div className="bg-gray-50 p-6 rounded-2xl text-sm leading-relaxed text-gray-600 border border-gray-100 italic">
-                    {selectedDoc.satisfy_needs || '"The ASICS Summit aims to connect students with experienced IT professionals and industry experts who will share their knowledge, career experiences and current trends in the field of information technology..."'}
-                  </div>
-                </div>
+                <span className="text-gray-400 italic">No goals provided.</span>
               )}
 
               {isActivityProposal && (selectedDoc.sponsors_partners && selectedDoc.sponsors_partners.length > 0) && (
