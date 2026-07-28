@@ -156,7 +156,7 @@ const SubmitNewDocument = () => {
     person_in_charge: '', student_id_no: '', contact_number: '', target_venue: '',
     target_date: '', target_time: '', target_end_time: '', duration: '', is_indefinite_end_time: false, number_of_students: '',
     activity_dates: [], // Multi-date selection
-    schedules: [], // New schedules array
+    schedules: [{ activity_date: '', start_time: '', end_time: '', is_indefinite: false, duration_minutes: 0 }], // Single date schedule default
     target_audience: '', nature_of_activity: '', objectives: [], others_objective: '',
     satisfaction_goal_1: '', satisfaction_goal_2: '', satisfaction_goal_3: '', partners: '', sponsors: ''
   };
@@ -898,13 +898,13 @@ const SubmitNewDocument = () => {
         }
       }
 
-      // 2. Upload all local files to bucket
-      const newlyUploaded = [];
-      for (const [reqId, file] of Object.entries(localFiles)) {
-        const path = await subService.uploadSubmissionFile(file, selectedType.name, submissionId, versionNumber, subType);
-        const record = await subService.saveAttachmentRecord(versionId, reqId, file.name, path);
-        newlyUploaded.push(record);
-      }
+      // 2. Upload all local files to bucket in parallel
+      const newlyUploaded = await Promise.all(
+        Object.entries(localFiles).map(async ([reqId, file]) => {
+          const path = await subService.uploadSubmissionFile(file, selectedType.name, submissionId, versionNumber, subType);
+          return await subService.saveAttachmentRecord(versionId, reqId, file.name, path);
+        })
+      );
 
       // Clear local files to avoid re-uploading the same files on next draft save
       if (status !== 'submitted') {
@@ -934,7 +934,7 @@ const SubmitNewDocument = () => {
         }
         showToast('Document Registered Successfully!');
         isSuccessSubmit = true;
-        setTimeout(() => navigate('/my-documents', { state: { highlightedId: submissionId } }), 2000);
+        setTimeout(() => navigate('/my-documents', { state: { highlightedId: submissionId } }), 500);
       } else {
         showToast('Progress Saved as Draft!', 'success');
         setHasUnsavedChanges(false);

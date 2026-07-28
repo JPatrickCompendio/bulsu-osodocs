@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
 import { useNavigate, useLocation } from 'react-router-dom';
 import SubmissionTimeline from '../components/SubmissionTimeline';
+import { parseObjectivesList } from '../utils/submissionLogUtils';
 import PageHeader from '../components/PageHeader';
 import { useToast } from '../hooks/useToast';
 import { 
@@ -691,7 +692,19 @@ export const Inbox = () => {
         data = fallbackRes.data;
       }
 
-      const mapped = (data || []).map((sub) => mapInboxSubmission(sub, user, subtypesMap));
+      const mapped = (data || [])
+        .filter(sub => {
+          if (user?.role === 'admin') {
+            const logs = sub.submission_logs || [];
+            const hasApproved = logs.some(l => 
+              String(l.workflow_phase || '').toLowerCase().includes('sds') && 
+              (String(l.action_type || '').toLowerCase() === 'approved' || String(l.review_action || '').toLowerCase() === 'approved')
+            );
+            if (hasApproved) return false;
+          }
+          return true;
+        })
+        .map((sub) => mapInboxSubmission(sub, user, subtypesMap));
 
       setInboxData(mapped);
     } catch (err) {
@@ -758,7 +771,7 @@ export const Inbox = () => {
       // If admin is approving an SDS coordinator-stage item, don't force status to 'to forward' so
       // the log's workflow_phase ('dean-review') can determine the My Documents category.
       const updatePayload = isSdsCoordinatorStage && user?.role === 'admin'
-        ? { status: 'dean review', remarks: formattedRemarks }
+        ? { status: 'sds coordinator review', remarks: formattedRemarks }
         : { status: 'to forward', remarks: formattedRemarks };
 
       const { error: subErr } = await supabase
@@ -1211,19 +1224,27 @@ export const Inbox = () => {
 
             <div className="mt-8">
               <p className="font-bold mb-3">Objectives of the Activity:</p>
-              {selectedDoc.objectives ? (
-                <div className="bg-gray-50 p-6 rounded-2xl text-sm leading-relaxed text-gray-600 border border-gray-100 italic">
-                  {selectedDoc.objectives}
-                </div>
-              ) : (
-                <ul className="list-disc pl-5 space-y-1 text-sm">
-                  <li>Leadership Development and Formation</li>
-                  <li>Membership Development and Formation</li>
-                  <li>Organizational Program Management</li>
-                  <li>Values Enrichment</li>
-                  <li>Technical Skills Development and Industry Exposure</li>
-                </ul>
-              )}
+              <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100">
+                {(() => {
+                  const objList = parseObjectivesList(selectedDoc.objectives);
+                  if (objList.length > 0) {
+                    return (
+                      <ul className="list-disc pl-5 space-y-1 text-sm text-gray-700 font-medium">
+                        {objList.map((obj, i) => <li key={i}>{obj}</li>)}
+                      </ul>
+                    );
+                  }
+                  return (
+                    <ul className="list-disc pl-5 space-y-1 text-sm text-gray-500 font-medium">
+                      <li>Leadership Development and Formation</li>
+                      <li>Membership Development and Formation</li>
+                      <li>Organizational Program Management</li>
+                      <li>Values Enrichment</li>
+                      <li>Technical Skills Development and Industry Exposure</li>
+                    </ul>
+                  );
+                })()}
+              </div>
             </div>
 
             <div className="mt-6">

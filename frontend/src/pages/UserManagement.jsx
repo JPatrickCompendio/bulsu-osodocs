@@ -483,16 +483,16 @@ const UserManagement = () => {
 
     const matchDocStatusFilter = (doc, filter) => {
       if (!filter || filter === 'all') return true;
-      const status = String(doc?.status || '').toLowerCase();
+      const status = String(doc?.status || '').toLowerCase().trim();
 
       if (filter === 'completed') {
-        return status === 'completed' || status === 'approved';
+        return status === 'completed';
       }
       if (filter === 'disapproved') {
         return status.includes('disapproved') || status.includes('rejected');
       }
       if (filter === 'under-process') {
-        return !['completed', 'approved', 'disapproved', 'rejected'].includes(status);
+        return status !== 'completed' && !status.includes('disapproved') && !status.includes('rejected');
       }
       return true;
     };
@@ -730,8 +730,8 @@ const UserManagement = () => {
                     </tr>
                   ) : (
                     filteredDocLogs.map((doc) => {
-                      const statusLower = String(doc.status || '').toLowerCase();
-                      const isCompleted = statusLower === 'completed' || statusLower === 'approved';
+                      const statusLower = String(doc.status || '').toLowerCase().trim();
+                      const isCompleted = statusLower === 'completed';
                       const isDisapproved = statusLower.includes('disapproved') || statusLower.includes('rejected');
                       const isReturned = statusLower.includes('returned');
 

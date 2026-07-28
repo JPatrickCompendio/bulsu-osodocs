@@ -160,20 +160,27 @@ export const uploadSubmissionFile = async (file, typeName, submissionId, version
   }
 
   // Ensure consistent folder path by fetching an existing attachment for this submission
-  const { data: existingAttachments } = await supabase
-    .from('submission_attachments')
-    .select('file_path')
-    .eq('submission_id', submissionId)
-    .not('file_path', 'is', null)
-    .limit(1);
+  try {
+    const { data: versions } = await supabase
+      .from('submission_versions')
+      .select('submission_attachments (file_url)')
+      .eq('submission_id', submissionId);
 
-  if (existingAttachments && existingAttachments.length > 0) {
-    const existingPath = existingAttachments[0].file_path;
-    // Extract everything before /submissionId/
-    const match = existingPath.match(new RegExp(`^(.*)/${submissionId}/`));
-    if (match) {
-      folderPath = match[1];
+    if (versions) {
+      for (const v of versions) {
+        const atts = Array.isArray(v.submission_attachments) ? v.submission_attachments : [v.submission_attachments];
+        const firstAtt = atts.find(a => a?.file_url);
+        if (firstAtt?.file_url) {
+          const match = firstAtt.file_url.match(new RegExp(`^(.*)/${submissionId}/`));
+          if (match) {
+            folderPath = match[1];
+            break;
+          }
+        }
+      }
     }
+  } catch (_) {
+    // ignore lookup error and fallback to default folderPath
   }
   
   // Organize attachments inside the submission folder by their specific version

@@ -340,3 +340,37 @@ export const getTimelineActorDisplay = (log) => {
     role: log.users?.role || 'System'
   };
 };
+
+export const parseObjectivesList = (objectives) => {
+  if (!objectives) return [];
+
+  let items = objectives;
+  if (typeof items === 'string') {
+    const trimmed = items.trim();
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      try {
+        items = JSON.parse(trimmed);
+      } catch (e) {
+        items = trimmed;
+      }
+    }
+  }
+
+  if (typeof items === 'string') {
+    if (items.includes('\n')) {
+      items = items.split('\n').map((s) => s.trim()).filter(Boolean);
+    } else if (items.includes(',')) {
+      items = items.split(',').map((s) => s.trim()).filter(Boolean);
+    } else {
+      items = [items.trim()];
+    }
+  }
+
+  if (Array.isArray(items)) {
+    return items
+      .map((item) => String(item || '').replace(/^[•\-\*\s]+/, '').trim())
+      .filter(Boolean);
+  }
+
+  return [];
+};

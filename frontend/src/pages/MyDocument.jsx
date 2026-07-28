@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
 import * as subService from '../services/submissionService';
-import { filterTimelineLogsForVersion } from '../utils/submissionLogUtils';
+import { filterTimelineLogsForVersion, parseObjectivesList } from '../utils/submissionLogUtils';
 import SubmissionTimeline from '../components/SubmissionTimeline';
 import { apiFetch } from '../config/api';
 import {
@@ -996,6 +996,77 @@ export const MyDocuments = () => {
     }
   };
 
+  const refreshSelectedDoc = async (submissionId) => {
+    if (!submissionId) return;
+    try {
+      await fetchTimelineLogs(submissionId);
+      await fetchHandledLogs();
+      const { data: sub, error } = await supabase
+        .from('submissions')
+        .select(`
+          *,
+          users (org_name, abbreviation, student_no, full_name, role),
+          documentType (name),
+          document_subtypes (name),
+          submission_logs (created_at, action_type, description, workflow_phase, review_action, users (full_name, role)),
+          submission_versions!submission_id (
+            *,
+            activity_proposal_details (*, activity_schedules (*)),
+            submission_attachments (*)
+          )
+        `)
+        .eq('id', submissionId)
+        .single();
+
+      if (!error && sub) {
+        const logs = (sub.submission_logs || []).filter(l => l.action_type !== 'viewed');
+        const latestLog = logs.length > 0
+          ? logs.reduce((latest, current) => new Date(current.created_at) > new Date(latest.created_at) ? current : latest)
+          : null;
+        const updatedRow = buildMyDocumentRow(sub, latestLog, user, activeSy, subtypesMap);
+        setSelectedDoc(updatedRow);
+      }
+    } catch (err) {
+      console.error('Error refreshing selected document:', err);
+    }
+  };
+
+  React.useEffect(() => {
+    if (!selectedDoc?.id) return;
+
+    const channel = supabase
+      .channel(`doc-updates-${selectedDoc.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'submission_logs',
+          filter: `submission_id=eq.${selectedDoc.id}`
+        },
+        () => {
+          refreshSelectedDoc(selectedDoc.id);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'submissions',
+          filter: `id=eq.${selectedDoc.id}`
+        },
+        () => {
+          refreshSelectedDoc(selectedDoc.id);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedDoc?.id]);
+
   const handleReturnSubmission = async (comments = '') => {
     if (!selectedDoc) return;
     try {
@@ -1300,10 +1371,16 @@ export const MyDocuments = () => {
           ? selectedDoc.raw?.submission_versions[0]?.id
           : selectedDoc.raw?.submission_versions?.id);
 
+      const docStatusLower = getDocStatusLower(selectedDoc);
+      const isSds = docStatusLower === 'sds coordinator review' || docStatusLower.includes('sds') || selectedDoc?.category === 'SDS Review';
+
+      const newStatus = isSds ? 'sds coordinator review' : 'approved';
+      const wpStr = isSds ? 'sds-review' : 'main-campus-review';
+
       const { error: subErr } = await supabase
         .from('submissions')
         .update({
-          status: 'approved',
+          status: newStatus,
           remarks: comments || 'Ready for Retrieval'
         })
         .eq('id', selectedDoc.id);
@@ -1316,7 +1393,7 @@ export const MyDocuments = () => {
           submission_id: selectedDoc.id,
           submission_version_id: activeVersionId,
           user_id: user.id,
-          workflow_phase: 'main-campus-review',
+          workflow_phase: wpStr,
           action_type: 'ready_for_retrieval',
           review_action: 'ready-for-retrieval',
           description: comments || 'Document is ready for retrieval',
@@ -1328,12 +1405,155 @@ export const MyDocuments = () => {
 
       setIsReturnModalOpen(false);
       setReturnComments('');
-      setSelectedDoc(null);
-      await fetchHandledLogs();
+      await refreshSelectedDoc(selectedDoc.id);
       showToast('Document marked ready for retrieval successfully!');
     } catch (err) {
       console.error('Error marking ready for retrieval:', err);
       showToast('Failed to mark document ready for retrieval.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDocumentRetrieved = async (descText = '') => {
+    if (!selectedDoc) return;
+    try {
+      setLoading(true);
+      const activeVersionId = selectedDoc.raw?.current_version_id ||
+        (Array.isArray(selectedDoc.raw?.submission_versions)
+          ? selectedDoc.raw?.submission_versions[0]?.id
+          : selectedDoc.raw?.submission_versions?.id);
+
+      const docStatusLower = getDocStatusLower(selectedDoc);
+      const isSds = docStatusLower === 'sds coordinator review' || docStatusLower.includes('sds') || selectedDoc?.category === 'SDS Review';
+
+      if (isSds) {
+        const { error: subErr } = await supabase
+          .from('submissions')
+          .update({
+            status: 'sds coordinator review',
+            remarks: descText
+          })
+          .eq('id', selectedDoc.id);
+
+        if (subErr) throw subErr;
+
+        await supabase.from('submission_logs').insert([{
+          submission_id: selectedDoc.id,
+          submission_version_id: activeVersionId,
+          user_id: user.id,
+          workflow_phase: 'sds-review',
+          action_type: 'document_retrieved',
+          review_action: 'document-retrieved',
+          description: descText,
+          comment: null,
+          created_at: new Date().toISOString()
+        }]);
+
+        showToast('Document marked as retrieved!');
+        await refreshSelectedDoc(selectedDoc.id);
+      } else {
+        const { error: subErr } = await supabase
+          .from('submissions')
+          .update({
+            status: 'approved',
+            remarks: descText || 'Document retrieved'
+          })
+          .eq('id', selectedDoc.id);
+
+        if (subErr) throw subErr;
+
+        await supabase.from('submission_logs').insert([{
+          submission_id: selectedDoc.id,
+          submission_version_id: activeVersionId,
+          user_id: user.id,
+          workflow_phase: 'main-campus-review',
+          action_type: 'document_retrieved',
+          review_action: 'document-retrieved',
+          description: descText || 'Document retrieved',
+          comment: null,
+          created_at: new Date().toISOString()
+        }]);
+
+        showToast('Document marked as retrieved!');
+        await refreshSelectedDoc(selectedDoc.id);
+      }
+    } catch (err) {
+      console.error('Error marking document retrieved:', err);
+      showToast('Failed to mark as retrieved.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleConfirmRetrieval = async (descText = '') => {
+    if (!selectedDoc) return;
+    try {
+      setLoading(true);
+      const activeVersionId = selectedDoc.raw?.current_version_id ||
+        (Array.isArray(selectedDoc.raw?.submission_versions)
+          ? selectedDoc.raw?.submission_versions[0]?.id
+          : selectedDoc.raw?.submission_versions?.id);
+
+      const docStatusLower = getDocStatusLower(selectedDoc);
+      const isSds = docStatusLower === 'sds coordinator review' || docStatusLower.includes('sds') || selectedDoc?.category === 'SDS Review';
+
+      if (isSds) {
+        const { error: subErr } = await supabase
+          .from('submissions')
+          .update({
+            status: 'dean review',
+            remarks: 'Retrieval confirmed. Forwarded to Dean Review'
+          })
+          .eq('id', selectedDoc.id);
+
+        if (subErr) throw subErr;
+
+        await supabase.from('submission_logs').insert([{
+          submission_id: selectedDoc.id,
+          submission_version_id: activeVersionId,
+          user_id: user.id,
+          workflow_phase: 'sds-review',
+          action_type: 'document_retrieved_confirmed',
+          review_action: 'document-retrieved-confirmed',
+          description: descText,
+          comment: null,
+          created_at: new Date().toISOString()
+        }]);
+
+        showToast('Retrieval confirmed! Forwarded to Dean Review.');
+        setSelectedDoc(null);
+        await fetchHandledLogs();
+      } else {
+        const { error: subErr } = await supabase
+          .from('submissions')
+          .update({
+            status: 'waiting for accomplishment report',
+            remarks: 'Retrieval confirmed. Waiting for Accomplishment Report'
+          })
+          .eq('id', selectedDoc.id);
+
+        if (subErr) throw subErr;
+
+        await supabase.from('submission_logs').insert([{
+          submission_id: selectedDoc.id,
+          submission_version_id: activeVersionId,
+          user_id: user.id,
+          workflow_phase: 'main-campus-review',
+          action_type: 'document_retrieved_confirmed',
+          review_action: 'document-retrieved-confirmed',
+          description: descText,
+          comment: null,
+          created_at: new Date().toISOString()
+        }]);
+
+        showToast('Retrieval confirmed! Waiting for Accomplishment Report.');
+        setSelectedDoc(null);
+        await fetchHandledLogs();
+      }
+    } catch (err) {
+      console.error('Error confirming retrieval:', err);
+      showToast('Failed to confirm retrieval.');
     } finally {
       setLoading(false);
     }
@@ -1359,7 +1579,7 @@ export const MyDocuments = () => {
       let stayOnDocument = false;
 
       if (currentStatus.includes('sds')) {
-        newStatus = user?.role === 'admin' ? 'dean review' : 'to forward';
+        newStatus = user?.role === 'admin' ? 'sds coordinator review' : 'to forward';
         workflowPhaseStr = 'sds-review';
         descriptionStr = comments || 'Approved by SDS Coordinator';
       } else if (currentStatus.includes('dean review')) {
@@ -1819,6 +2039,74 @@ export const MyDocuments = () => {
     const isReadyForOrgPickup = isReadyForOrgRetrieval(selectedDoc);
     const isWaitingForAccomplishment = isWaitingForAccomplishmentReport(selectedDoc);
 
+    const isSdsStage = docStatusLower === 'sds coordinator review' || docStatusLower.includes('sds') || selectedDoc?.category === 'SDS Review';
+
+    const sdsPhaseLogs = (timelineLogs || []).filter(l => {
+      const wp = String(l.workflow_phase || '').toLowerCase().replace(/[_-]/g, ' ').trim();
+      return wp === 'sds review';
+    });
+
+    const isSdsApprovedLog = sdsPhaseLogs.some(l => {
+      const at = String(l.action_type || '').toLowerCase();
+      const ra = String(l.review_action || '').toLowerCase();
+      return at === 'approved' || ra === 'approved';
+    });
+
+    const isSdsReadyForRetrievalLog = sdsPhaseLogs.some(l => {
+      const at = String(l.action_type || '').toLowerCase();
+      const ra = String(l.review_action || '').toLowerCase();
+      const desc = String(l.description || '').toLowerCase();
+      return at === 'ready_for_retrieval' || ra === 'ready-for-retrieval' || desc.includes('ready for retrieval');
+    });
+
+    const sdsRetrievalLog = sdsPhaseLogs.find(l => {
+      const at = String(l.action_type || '').toLowerCase();
+      const ra = String(l.review_action || '').toLowerCase();
+      const desc = String(l.description || '').toLowerCase();
+      return (at === 'document_retrieved' || ra === 'document-retrieved' || desc.includes('retrieved by')) && !at.includes('confirmed') && !desc.includes('confirmed');
+    });
+
+    const sdsRetrievedByAdmin = sdsRetrievalLog && (
+      sdsRetrievalLog.users?.role === 'admin' ||
+      String(sdsRetrievalLog.description || '').toLowerCase().includes('admin')
+    );
+
+    const sdsRetrievedByOrg = sdsRetrievalLog && (
+      sdsRetrievalLog.users?.role === 'org-president' ||
+      String(sdsRetrievalLog.description || '').toLowerCase().includes('organization president') ||
+      String(sdsRetrievalLog.description || '').toLowerCase().includes('org')
+    );
+
+    const mainCampusPhaseLogs = (timelineLogs || []).filter(l => {
+      const wp = String(l.workflow_phase || '').toLowerCase().replace(/[_-]/g, ' ').trim();
+      return wp === 'main campus review' || wp === 'approved';
+    });
+
+    const isMainReadyForRetrievalLog = mainCampusPhaseLogs.some(l => {
+      const at = String(l.action_type || '').toLowerCase();
+      const ra = String(l.review_action || '').toLowerCase();
+      const desc = String(l.description || '').toLowerCase();
+      return at === 'ready_for_retrieval' || ra === 'ready-for-retrieval' || desc.includes('ready for retrieval');
+    });
+
+    const mainRetrievalLog = mainCampusPhaseLogs.find(l => {
+      const at = String(l.action_type || '').toLowerCase();
+      const ra = String(l.review_action || '').toLowerCase();
+      const desc = String(l.description || '').toLowerCase();
+      return (at === 'document_retrieved' || ra === 'document-retrieved' || desc.includes('retrieved by')) && !at.includes('confirmed') && !desc.includes('confirmed');
+    });
+
+    const mainRetrievedByAdmin = mainRetrievalLog && (
+      mainRetrievalLog.users?.role === 'admin' ||
+      String(mainRetrievalLog.description || '').toLowerCase().includes('admin')
+    );
+
+    const mainRetrievedByOrg = mainRetrievalLog && (
+      mainRetrievalLog.users?.role === 'org-president' ||
+      String(mainRetrievalLog.description || '').toLowerCase().includes('organization president') ||
+      String(mainRetrievalLog.description || '').toLowerCase().includes('org')
+    );
+
     const formatDuration = (val) => {
       if (!val || val === '-') return '-';
       const num = Number(val);
@@ -2060,22 +2348,15 @@ export const MyDocuments = () => {
                     <p className="font-bold text-sm mb-2">Objectives of the Activity:</p>
                     <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100">
                       {(() => {
-                        let objList = selectedDoc.objectives;
-                        if (typeof objList === 'string' && objList.startsWith('[')) {
-                          try {
-                            objList = JSON.parse(objList);
-                          } catch (e) {
-                            // keep as string
-                          }
-                        }
-                        if (Array.isArray(objList) && objList.length > 0) {
+                        const objList = parseObjectivesList(selectedDoc.objectives);
+                        if (objList.length > 0) {
                           return (
-                            <ul className="list-disc pl-5 space-y-1 text-sm text-gray-700">
+                            <ul className="list-disc pl-5 space-y-1 text-sm text-gray-700 font-medium">
                               {objList.map((obj, i) => <li key={i}>{obj}</li>)}
                             </ul>
                           );
                         }
-                        return <p className="text-gray-700 text-sm leading-relaxed">{objList || '-'}</p>;
+                        return <p className="text-gray-700 text-sm leading-relaxed">{selectedDoc.objectives || '-'}</p>;
                       })()}
                     </div>
                   </div>
@@ -2394,62 +2675,78 @@ export const MyDocuments = () => {
                 </button>
               )}
 
-              {isReadyForOrgPickup && (
-                <button
-                  onClick={async () => {
-                    setLoading(true);
-                    try {
-                      const activeVersionId = selectedDoc.raw?.current_version_id ||
-                        (Array.isArray(selectedDoc.raw?.submission_versions)
-                          ? selectedDoc.raw?.submission_versions[0]?.id
-                          : selectedDoc.raw?.submission_versions?.id);
+              {/* Org President SDS Stage Retrieval Buttons */}
+              {user?.role === 'org-president' && isSdsStage && isSdsApprovedLog && isSdsReadyForRetrievalLog && (
+                <>
+                  {!sdsRetrievalLog && (
+                    <button
+                      onClick={() => handleDocumentRetrieved('Document retrieved by Organization President')}
+                      disabled={loading}
+                      className="w-full px-5 py-3.5 bg-green-700 text-white rounded-xl text-sm font-semibold hover:bg-green-800 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      <CheckCircle size={16} />
+                      <span>Document Retrieved</span>
+                    </button>
+                  )}
 
-                      const { error: subErr } = await supabase
-                        .from('submissions')
-                        .update({
-                          status: 'waiting for accomplishment report',
-                          remarks: 'Document retrieved by Org President'
-                        })
-                        .eq('id', selectedDoc.id);
+                  {sdsRetrievalLog && sdsRetrievedByOrg && (
+                    <button
+                      disabled
+                      className="w-full px-5 py-3.5 bg-purple-600/50 text-white rounded-xl text-sm font-semibold cursor-not-allowed shadow-sm mt-2 flex items-center justify-center gap-2"
+                    >
+                      <CheckCircle size={16} />
+                      <span>Waiting for Admin Confirmation</span>
+                    </button>
+                  )}
 
-                      if (subErr) throw subErr;
+                  {sdsRetrievalLog && sdsRetrievedByAdmin && (
+                    <button
+                      onClick={() => handleConfirmRetrieval('Retrieval confirmed by Organization President')}
+                      disabled={loading}
+                      className="w-full px-5 py-3.5 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      <CheckCircle size={16} />
+                      <span>Confirm Retrieval</span>
+                    </button>
+                  )}
+                </>
+              )}
 
-                      await supabase.from('submission_logs').insert([{
-                        submission_id: selectedDoc.id,
-                        submission_version_id: activeVersionId,
-                        user_id: user.id,
-                        workflow_phase: 'approved',
-                        action_type: 'document_retrieved',
-                        review_action: 'document-retrieved',
-                        description: 'Document retrieved by Organization President',
-                        comment: null,
-                        created_at: new Date().toISOString()
-                      }]);
+              {/* Final Approval Retrieval (Approved / Main Campus Approved) */}
+              {user?.role === 'org-president' && (isReadyForOrgPickup || isApprovedDoc) && !isSdsStage && isMainReadyForRetrievalLog && (
+                <>
+                  {!mainRetrievalLog && (
+                    <button
+                      onClick={() => handleDocumentRetrieved('Document retrieved by Organization President')}
+                      disabled={loading}
+                      className="w-full px-5 py-3.5 bg-green-700 text-white rounded-xl text-sm font-semibold hover:bg-green-800 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      <CheckCircle size={16} />
+                      <span>Document Retrieved</span>
+                    </button>
+                  )}
 
-                      setSelectedDoc(prev => prev ? {
-                        ...prev,
-                        status: 'WAITING FOR ACCOMPLISHMENT REPORT',
-                        category: 'Approved',
-                        raw: {
-                          ...prev.raw,
-                          status: 'waiting for accomplishment report',
-                          remarks: 'Document retrieved by Org President'
-                        }
-                      } : prev);
-                      await fetchHandledLogs();
-                      showToast('Document marked as retrieved!');
-                    } catch (err) {
-                      console.error('Error marking document retrieved:', err);
-                      showToast('Failed to mark as retrieved.');
-                    } finally {
-                      setLoading(false);
-                    }
-                  }}
-                  disabled={loading}
-                  className="w-full px-5 py-3.5 bg-green-700 text-white rounded-xl text-sm font-semibold hover:bg-green-800 transition-all shadow-sm mt-2 disabled:opacity-50"
-                >
-                  Document Retrieved
-                </button>
+                  {mainRetrievalLog && mainRetrievedByOrg && (
+                    <button
+                      disabled
+                      className="w-full px-5 py-3.5 bg-purple-600/50 text-white rounded-xl text-sm font-semibold cursor-not-allowed shadow-sm mt-2 flex items-center justify-center gap-2"
+                    >
+                      <CheckCircle size={16} />
+                      <span>Waiting for Admin Confirmation</span>
+                    </button>
+                  )}
+
+                  {mainRetrievalLog && mainRetrievedByAdmin && (
+                    <button
+                      onClick={() => handleConfirmRetrieval('Retrieval confirmed by Organization President')}
+                      disabled={loading}
+                      className="w-full px-5 py-3.5 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      <CheckCircle size={16} />
+                      <span>Confirm Retrieval</span>
+                    </button>
+                  )}
+                </>
               )}
 
               {isWaitingForAccomplishment && (
@@ -3098,19 +3395,27 @@ export const MyDocuments = () => {
 
               <div className="mt-8">
                 <p className="font-bold mb-3">Objectives of the Activity:</p>
-                {selectedDoc.objectives ? (
-                  <div className="bg-gray-50 p-6 rounded-2xl text-sm leading-relaxed text-gray-600 border border-gray-100 italic">
-                    {selectedDoc.objectives}
-                  </div>
-                ) : (
-                  <ul className="list-disc pl-5 space-y-1 text-sm text-gray-500">
-                    <li>Leadership Development and Formation</li>
-                    <li>Membership Development and Formation</li>
-                    <li>Organizational Program Management</li>
-                    <li>Values Enrichment</li>
-                    <li>Technical Skills Development and Industry Exposure</li>
-                  </ul>
-                )}
+                <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100">
+                  {(() => {
+                    const objList = parseObjectivesList(selectedDoc.objectives);
+                    if (objList.length > 0) {
+                      return (
+                        <ul className="list-disc pl-5 space-y-1 text-sm text-gray-700 font-medium">
+                          {objList.map((obj, i) => <li key={i}>{obj}</li>)}
+                        </ul>
+                      );
+                    }
+                    return (
+                      <ul className="list-disc pl-5 space-y-1 text-sm text-gray-500 font-medium">
+                        <li>Leadership Development and Formation</li>
+                        <li>Membership Development and Formation</li>
+                        <li>Organizational Program Management</li>
+                        <li>Values Enrichment</li>
+                        <li>Technical Skills Development and Industry Exposure</li>
+                      </ul>
+                    );
+                  })()}
+                </div>
               </div>
 
               <div className="mt-6">
@@ -3343,11 +3648,61 @@ export const MyDocuments = () => {
           isApprovedDoc ||
           selectedDoc?.category === 'Dean Review' ||
           selectedDoc?.category === 'SDS Review' ||
-          selectedDoc?.category === 'Main Campus Review'
+          selectedDoc?.category === 'Main Campus Review' ||
+          isSdsStage
         ) && (
           <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50">
             <div className="bg-white/80 backdrop-blur-2xl px-8 py-4 rounded-[2rem] border border-white/50 shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex items-center gap-4 animate-in slide-in-from-bottom-12 duration-1000">
-              {isDeanApprovedDoc ? (
+              {isSdsStage && isSdsApprovedLog ? (
+                <>
+                  {!isSdsReadyForRetrievalLog && (
+                    <button
+                      onClick={() => {
+                        setDecisionType('ready_for_retrieval');
+                        setReturnComments('');
+                        setExternalProofFile(null);
+                        setIsReturnModalOpen(true);
+                      }}
+                      className="flex items-center justify-center gap-3 px-8 py-3.5 bg-purple-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-widest"
+                    >
+                      <CheckCircle size={16} />
+                      <span>Ready for retrieval</span>
+                    </button>
+                  )}
+
+                  {isSdsReadyForRetrievalLog && !sdsRetrievalLog && (
+                    <button
+                      onClick={() => handleDocumentRetrieved('Document retrieved by Admin')}
+                      disabled={loading}
+                      className="flex items-center justify-center gap-3 px-8 py-3.5 bg-green-700 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-widest disabled:opacity-50"
+                    >
+                      <CheckCircle size={16} />
+                      <span>Document Retrieved</span>
+                    </button>
+                  )}
+
+                  {sdsRetrievalLog && sdsRetrievedByAdmin && (
+                    <button
+                      disabled
+                      className="flex items-center justify-center gap-3 px-8 py-3.5 bg-purple-600/50 text-white text-xs font-bold rounded-2xl cursor-not-allowed shadow-lg shadow-purple-600/10 uppercase tracking-widest"
+                    >
+                      <CheckCircle size={16} />
+                      <span>Waiting for Org Pres to confirm</span>
+                    </button>
+                  )}
+
+                  {sdsRetrievalLog && sdsRetrievedByOrg && (
+                    <button
+                      onClick={() => handleConfirmRetrieval('Retrieval confirmed by Admin')}
+                      disabled={loading}
+                      className="flex items-center justify-center gap-3 px-8 py-3.5 bg-purple-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-widest disabled:opacity-50"
+                    >
+                      <CheckCircle size={16} />
+                      <span>Confirm Retrieval</span>
+                    </button>
+                  )}
+                </>
+              ) : isDeanApprovedDoc ? (
                 <button
                   onClick={() => {
                     setDecisionType('send_to_external');
@@ -3360,27 +3715,55 @@ export const MyDocuments = () => {
                   <ArrowUpRight size={16} />
                   <span>Sent to main campus</span>
                 </button>
-              ) : isReadyForOrgPickup ? (
-                <button
-                  disabled
-                  className="flex items-center justify-center gap-3 px-8 py-3.5 bg-purple-600 text-white text-xs font-bold rounded-2xl opacity-40 cursor-not-allowed transition-all shadow-lg shadow-purple-600/20 uppercase tracking-widest"
-                >
-                  <CheckCircle size={16} />
-                  <span>Waiting for Org Pres to retrieve file</span>
-                </button>
               ) : isApprovedDoc ? (
-                <button
-                  onClick={() => {
-                    setDecisionType('ready_for_retrieval');
-                    setReturnComments('');
-                    setExternalProofFile(null);
-                    setIsReturnModalOpen(true);
-                  }}
-                  className="flex items-center justify-center gap-3 px-8 py-3.5 bg-purple-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-widest"
-                >
-                  <CheckCircle size={16} />
-                  <span>Ready for retrieval</span>
-                </button>
+                <>
+                  {!isMainReadyForRetrievalLog && (
+                    <button
+                      onClick={() => {
+                        setDecisionType('ready_for_retrieval');
+                        setReturnComments('');
+                        setExternalProofFile(null);
+                        setIsReturnModalOpen(true);
+                      }}
+                      className="flex items-center justify-center gap-3 px-8 py-3.5 bg-purple-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-widest"
+                    >
+                      <CheckCircle size={16} />
+                      <span>Ready for retrieval</span>
+                    </button>
+                  )}
+
+                  {isMainReadyForRetrievalLog && !mainRetrievalLog && (
+                    <button
+                      onClick={() => handleDocumentRetrieved('Document retrieved by Admin')}
+                      disabled={loading}
+                      className="flex items-center justify-center gap-3 px-8 py-3.5 bg-green-700 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-widest disabled:opacity-50"
+                    >
+                      <CheckCircle size={16} />
+                      <span>Document Retrieved</span>
+                    </button>
+                  )}
+
+                  {mainRetrievalLog && mainRetrievedByAdmin && (
+                    <button
+                      disabled
+                      className="flex items-center justify-center gap-3 px-8 py-3.5 bg-purple-600/50 text-white text-xs font-bold rounded-2xl cursor-not-allowed shadow-lg shadow-purple-600/10 uppercase tracking-widest"
+                    >
+                      <CheckCircle size={16} />
+                      <span>Waiting for Org Pres to confirm</span>
+                    </button>
+                  )}
+
+                  {mainRetrievalLog && mainRetrievedByOrg && (
+                    <button
+                      onClick={() => handleConfirmRetrieval('Retrieval confirmed by Admin')}
+                      disabled={loading}
+                      className="flex items-center justify-center gap-3 px-8 py-3.5 bg-purple-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-widest disabled:opacity-50"
+                    >
+                      <CheckCircle size={16} />
+                      <span>Confirm Retrieval</span>
+                    </button>
+                  )}
+                </>
               ) : (selectedDoc?.category === 'Dean Review' || selectedDoc?.category === 'SDS Review' || selectedDoc?.category === 'Main Campus Review') && (
                 <>
                   <button

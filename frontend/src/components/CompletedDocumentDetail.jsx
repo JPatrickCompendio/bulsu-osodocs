@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import SubmissionTimeline from './SubmissionTimeline';
+import { parseObjectivesList } from '../utils/submissionLogUtils';
 import AccomplishmentReportPreviewModal from './AccomplishmentReportPreviewModal';
 
 const getStoragePublicUrl = (fileUrl) => {
@@ -46,10 +47,40 @@ const normalizeStatus = (status) =>
 
 const getStatusDisplayMeta = (status) => {
   const s = normalizeStatus(status);
-  if (s.includes('disapproved') || s === 'rejected') {
+  if (s.includes('disapproved') || s.includes('rejected')) {
     return { label: 'Disapproved', badgeClass: 'bg-red-600' };
   }
-  return { label: 'Completed', badgeClass: 'bg-emerald-500' };
+  if (s === 'completed') {
+    return { label: 'Completed', badgeClass: 'bg-emerald-600' };
+  }
+  if (s === 'returned') {
+    return { label: 'Returned', badgeClass: 'bg-amber-600' };
+  }
+  if (s.includes('sds')) {
+    return { label: 'SDS Review', badgeClass: 'bg-indigo-600' };
+  }
+  if (s.includes('dean review')) {
+    return { label: 'Dean Review', badgeClass: 'bg-blue-800' };
+  }
+  if (s.includes('dean approved')) {
+    return { label: 'Dean Approved', badgeClass: 'bg-blue-700' };
+  }
+  if (s.includes('main campus review')) {
+    return { label: 'Main Campus Review', badgeClass: 'bg-cyan-700' };
+  }
+  if (s.includes('waiting for accomplishment')) {
+    return { label: 'Waiting for Accomplishment Report', badgeClass: 'bg-purple-600' };
+  }
+  if (s === 'approved') {
+    return { label: 'Approved', badgeClass: 'bg-purple-600' };
+  }
+  if (s === 'to forward') {
+    return { label: 'To Forward', badgeClass: 'bg-pink-600' };
+  }
+  if (s === 'submitted' || s.includes('oso staff') || s === 'pending') {
+    return { label: 'OSO Staff Review', badgeClass: 'bg-yellow-600' };
+  }
+  return { label: String(status || 'Pending').toUpperCase(), badgeClass: 'bg-yellow-600' };
 };
 
 const formatSubmittedLabel = (dateStr) => {
@@ -494,32 +525,27 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
             <div className="mt-6 space-y-4">
               <div>
                 <p className="font-bold text-sm mb-2">Objectives of the Activity:</p>
-                {(() => {
-                  let objList = details?.objectives;
-                  if (typeof objList === 'string' && objList.startsWith('[')) {
-                    try {
-                      objList = JSON.parse(objList);
-                    } catch (e) { }
-                  }
-                  if (Array.isArray(objList) && objList.length > 0) {
+                <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100">
+                  {(() => {
+                    const objList = parseObjectivesList(details?.objectives);
+                    if (objList.length > 0) {
+                      return (
+                        <ul className="list-disc pl-5 space-y-1 text-sm text-gray-700 font-medium">
+                          {objList.map((obj, i) => <li key={i}>{obj}</li>)}
+                        </ul>
+                      );
+                    }
                     return (
-                      <ul className="list-disc pl-5 space-y-1 text-sm text-gray-700">
-                        {objList.map((obj, i) => <li key={i}>{obj}</li>)}
+                      <ul className="list-disc pl-5 space-y-1 text-sm text-gray-500 font-medium">
+                        <li>Leadership Development and Formation</li>
+                        <li>Membership Development and Formation</li>
+                        <li>Organizational Program Management</li>
+                        <li>Values Enrichment</li>
+                        <li>Technical Skills Development and Industry Exposure</li>
                       </ul>
                     );
-                  }
-                  return details?.objectives ? (
-                    <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{details.objectives}</div>
-                  ) : (
-                    <ul className="list-disc pl-5 space-y-1 text-sm text-gray-600">
-                      <li>Leadership Development and Formation</li>
-                      <li>Membership Development and Formation</li>
-                      <li>Organizational Program Management</li>
-                      <li>Values Enrichment</li>
-                      <li>Technical Skills Development and Industry Exposure</li>
-                    </ul>
-                  );
-                })()}
+                  })()}
+                </div>
               </div>
               <div>
                 <p className="font-bold text-sm mb-1">Target Audience / Participants: <span className="font-normal">BulSUans Only</span></p>
