@@ -55,15 +55,15 @@ const formatSubmissionTitle = (doc, activeSy) => {
         docTitle = `${docTypeName} #${String(doc.id).substring(0, 6).toUpperCase()}`;
       }
     } else {
-      const orgName = details?.organization_name || doc.users?.org_name || '-';
-      docTitle = `${orgName} ${docTypeName} ${activeSy ? activeSy.name : ''}`.toUpperCase().trim();
+      const orgAbbr = doc.users?.abbreviation || details?.organization_name || doc.users?.org_name || '-';
+      docTitle = `${orgAbbr} ${docTypeName} ${activeSy ? activeSy.name : ''}`.toUpperCase().trim();
     }
   } else {
     if (isActivityProposal) {
       docTitle = `${docTypeName} #${String(doc.id).substring(0, 6).toUpperCase()}`;
     } else {
-      const orgName = doc.users?.org_name || '-';
-      docTitle = `${orgName} ${docTypeName} ${activeSy ? activeSy.name : ''}`.toUpperCase().trim();
+      const orgAbbr = doc.users?.abbreviation || doc.users?.org_name || '-';
+      docTitle = `${orgAbbr} ${docTypeName} ${activeSy ? activeSy.name : ''}`.toUpperCase().trim();
     }
   }
   return docTitle;
@@ -82,7 +82,7 @@ const fetchChairmanDashboardFallback = async (user, role) => {
     .from('submissions')
     .select(`
       id, status, created_at,
-      users (full_name, org_name),
+      users (full_name, org_name, abbreviation),
       documentType (name),
       submission_versions!submission_id (version_number, activity_proposal_details (*, activity_schedules (*), activity_title))
     `)

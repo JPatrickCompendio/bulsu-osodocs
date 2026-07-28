@@ -73,7 +73,7 @@ const getStatusColor = (status) => {
 
 const MY_DOCS_SUBMISSION_SELECT = `
   *,
-  users (org_name, student_no, full_name, role),
+  users (org_name, abbreviation, student_no, full_name, role),
   documentType (name),
   document_subtypes (name),
   submission_versions!submission_id (
@@ -96,7 +96,9 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy, subtypesMap =
       : version?.activity_proposal_details)
     : null;
 
-  const orgName = details?.organization_name || submission.users?.org_name || user?.org_name || '-';
+  const orgName = (submission.users?.abbreviation && submission.users.abbreviation.trim())
+    ? submission.users.abbreviation.trim()
+    : (details?.organization_name || submission.users?.org_name || user?.abbreviation || user?.org_name || '-');
   const rawTargetDate = details?.target_date || '-';
   let targetDate = rawTargetDate;
   if (rawTargetDate && rawTargetDate !== '-') {
@@ -154,16 +156,19 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy, subtypesMap =
     day: 'numeric',
     year: 'numeric',
   });
-  const lastActionDate = new Date(latestLog?.created_at || submission.updated_at || submission.created_at).toLocaleDateString('en-US', {
+  const lastActionDate = new Date(latestLog?.created_at || submission.updated_at || submission.created_at).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
   });
 
   return {
     id: submission.id,
     isActivityProposal,
-    title: proposalTitle && proposalTitle !== '-' ? proposalTitle : docTypeName,
+    title: (isActivityProposal && proposalTitle && proposalTitle !== '-') ? proposalTitle : `${submission.users?.abbreviation || orgName} ${docTypeName}`.trim().toUpperCase(),
     ref: submission.tracking_number || (docTypeName.toLowerCase().includes('proposal') ? 'PENDING NO.' : 'DRAFT'),
     sender: orgName,
     type: docTypeName,
@@ -896,7 +901,7 @@ export const MyDocuments = () => {
           .from('submissions')
           .select(`
             *,
-            users (org_name, student_no, full_name, role),
+            users (org_name, abbreviation, student_no, full_name, role),
             documentType (name),
             document_subtypes (name),
             submission_logs (created_at, action_type),
@@ -938,7 +943,7 @@ export const MyDocuments = () => {
           *,
           submissions (
             *,
-            users (org_name, student_no),
+            users (org_name, abbreviation, student_no),
             documentType (name),
             document_subtypes (name),
             submission_versions!submission_id (
@@ -959,7 +964,7 @@ export const MyDocuments = () => {
             *,
             submissions (
               *,
-              users (org_name, student_no),
+              users (org_name, abbreviation, student_no),
               documentType (name),
               document_subtypes (name),
               submission_versions!submission_id (
@@ -1298,7 +1303,7 @@ export const MyDocuments = () => {
       const { error: subErr } = await supabase
         .from('submissions')
         .update({
-          status: 'ready for retrieval',
+          status: 'approved',
           remarks: comments || 'Ready for Retrieval'
         })
         .eq('id', selectedDoc.id);
@@ -1323,16 +1328,7 @@ export const MyDocuments = () => {
 
       setIsReturnModalOpen(false);
       setReturnComments('');
-      setSelectedDoc(prev => prev ? {
-        ...prev,
-        category: 'Approved',
-        status: 'READY FOR RETRIEVAL',
-        raw: {
-          ...prev.raw,
-          status: 'ready for retrieval',
-          remarks: comments || 'Ready for Retrieval'
-        }
-      } : prev);
+      setSelectedDoc(null);
       await fetchHandledLogs();
       showToast('Document marked ready for retrieval successfully!');
     } catch (err) {
@@ -1532,11 +1528,10 @@ export const MyDocuments = () => {
   });
 
   const uniqueSubmissionsList = Object.values(uniqueSubmissionsMap);
-
   // Map submissions to visual format
   const mappedDocs = uniqueSubmissionsList.map(({ latestLog, submission }) => {
     const docTypeName = submission.documentType?.name || 'Document';
-    const isActivityProposal = docTypeName.toLowerCase() === 'activity proposal' || docTypeName.toLowerCase().includes('proposal');
+    const isActivityProposal = docTypeName.toLowerCase() === 'activity proposal' || docTypeName.toLowerCase() === 'activity-proposal';
 
     const version = Array.isArray(submission.submission_versions)
       ? (submission.submission_versions.find(v => v.id === submission.current_version_id) || submission.submission_versions[0])
@@ -1547,7 +1542,9 @@ export const MyDocuments = () => {
         : version?.activity_proposal_details)
       : null;
 
-    const orgName = details?.organization_name || submission.users?.org_name || user?.org_name || '-';
+    const senderAbbr = (submission.users?.abbreviation && submission.users.abbreviation.trim())
+      ? submission.users.abbreviation.trim()
+      : (details?.organization_name || submission.users?.org_name || user?.abbreviation || user?.org_name || '-');
 
     // Format target dates
     const rawTargetDate = details?.target_date || '-';
@@ -1617,7 +1614,7 @@ export const MyDocuments = () => {
     } else {
       // Fallback to logs only when status is missing/unknown
       if (wpNorm === 'sds review') category = 'SDS Review';
-      else if (wpNorm === 'dean review') category = 'Dean Review';
+      else if (wpNorm === 'dean review' || wpNorm === 'external approved') category = 'Dean Review';
       else if (wpNorm === 'main campus review' || wpNorm === 'external review') category = 'Main Campus Review';
       else if (wpNorm === 'chairman review') category = 'Chairman Review';
       else if (ra === 'ready-for-hardcopy') category = user?.role === 'org-president' ? 'OSO Staff review' : 'To Forward';
@@ -1632,19 +1629,22 @@ export const MyDocuments = () => {
       year: 'numeric'
     });
 
-    const lastActionDate = new Date(latestLog.created_at).toLocaleDateString('en-US', {
+    const lastActionDate = new Date(latestLog?.created_at || submission.updated_at || submission.created_at).toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
-      year: 'numeric'
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
     });
 
     return {
       id: submission.id,
       isActivityProposal,
 
-      title: proposalTitle && proposalTitle !== '-' ? proposalTitle : docTypeName,
+      title: (isActivityProposal && proposalTitle && proposalTitle !== '-') ? proposalTitle : `${senderAbbr} ${docTypeName}`.trim().toUpperCase(),
       ref: submission.tracking_number || (isActivityProposal ? 'PENDING NO.' : 'DRAFT'),
-      sender: orgName,
+      sender: senderAbbr,
       type: docTypeName,
       submittedDate,
       status: submission.status === 'submitted'
@@ -1655,7 +1655,7 @@ export const MyDocuments = () => {
       lastAction: lastActionDate,
       category,
 
-      // Extended fields copied from Inbox details mappings
+      fullOrgName: submission.users?.org_name || details?.organization_name || user?.org_name || '-',
       proposal_title: proposalTitle,
       proposal_type: proposalTypeStr !== '-' ? proposalTypeStr : null,
       pic: details?.person_in_charge || '-',
@@ -3005,10 +3005,10 @@ export const MyDocuments = () => {
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10 text-gray-800">
           {[
-            { label: 'ORGANIZATION', value: selectedDoc.sender || '-', icon: <User size={18} /> },
+            { label: 'ORGANIZATION', value: selectedDoc.fullOrgName || selectedDoc.raw?.users?.org_name || selectedDoc.sender || '-', icon: <User size={18} /> },
             { label: 'TYPE', value: `${selectedDoc.type}`, icon: <FileText size={18} />, color: 'text-blue-500' },
             { label: 'STATUS', value: selectedDoc.status?.toLowerCase() === 'waiting for accomplishment report' ? 'APPROVED' : selectedDoc.status, icon: <Clock size={18} />, badge: true },
-            { label: 'SUBMITTED', value: selectedDoc.submittedDate, icon: <Calendar size={18} /> }
+            { label: 'LAST ACTION', value: selectedDoc.lastAction || selectedDoc.submittedDate, icon: <Calendar size={18} /> }
           ].map((card, idx) => (
             <div key={idx} className="bg-gray-100 p-6 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
               <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">
@@ -3293,7 +3293,7 @@ export const MyDocuments = () => {
         )}
 
         {/* Action buttons (Chairman / Vice Chairman - Bottom of the page) */}
-        {isChairmanLikeReviewer(user?.role) && !disableVersionActions && (
+        {isChairmanLikeReviewer(user?.role) && !disableVersionActions && (selectedDoc?.category === 'To Forward' || selectedDoc?.category === 'Returned') && (
           <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100]">
             <div className="bg-white/80 backdrop-blur-2xl px-10 py-5 rounded-[2rem] border border-white/50 shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex items-center gap-6 animate-in slide-in-from-bottom-12 duration-1000">
               <button
@@ -3338,6 +3338,13 @@ export const MyDocuments = () => {
 
         {/* Admin workflow actions in My Documents */}
         {(user?.role || '').toLowerCase() === 'admin' && (
+          isDeanApprovedDoc ||
+          isReadyForOrgPickup ||
+          isApprovedDoc ||
+          selectedDoc?.category === 'Dean Review' ||
+          selectedDoc?.category === 'SDS Review' ||
+          selectedDoc?.category === 'Main Campus Review'
+        ) && (
           <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50">
             <div className="bg-white/80 backdrop-blur-2xl px-8 py-4 rounded-[2rem] border border-white/50 shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex items-center gap-4 animate-in slide-in-from-bottom-12 duration-1000">
               {isDeanApprovedDoc ? (
@@ -3674,7 +3681,7 @@ export const MyDocuments = () => {
             modalDescription = (
               <>
                 Confirm this document has been sent to the main campus.
-                Upload proof (PDF or image) and optional comments. Status will move to <strong className="text-blue-600">Main Campus Review</strong>.
+                Upload image proof and optional comments. Status will move to <strong className="text-blue-600">Main Campus Review</strong>.
               </>
             );
             placeholderText = 'Enter optional comments...';
@@ -3684,7 +3691,7 @@ export const MyDocuments = () => {
             disableConfirm = !externalProofFile;
             onConfirm = async () => {
               if (!externalProofFile) {
-                showToast('Please upload proof that the document was sent to the main campus.');
+                showToast('Please upload image proof that the document was sent to the main campus.');
                 return;
               }
               handleSendToExternal(returnComments);
@@ -3729,14 +3736,23 @@ export const MyDocuments = () => {
 
                 {decisionType === 'send_to_external' && (
                   <div className="space-y-2 mb-6">
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Upload Proof <span className="text-red-500">*</span></label>
-                    <p className="text-xs text-gray-400">Attach a screenshot, PDF, or document proof that this submission was sent to the main campus.</p>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Upload Proof (Image Only) <span className="text-red-500">*</span></label>
+                    <p className="text-xs text-gray-400">Attach a screenshot or image proof (JPEG, PNG, WEBP) that this submission was sent to the main campus.</p>
                     <div className="mt-3 w-full border-2 border-dashed border-gray-300 rounded-xl p-6 flex flex-col items-center justify-center hover:border-indigo-400 transition-all bg-gray-50">
                       <input
                         id="externalProof"
                         type="file"
-                        accept="image/*,.pdf,.doc,.docx"
-                        onChange={(e) => setExternalProofFile(e.target.files?.[0] || null)}
+                        accept="image/*,.jpg,.jpeg,.png,.webp"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          if (file && !file.type.startsWith('image/')) {
+                            showToast('Only image files (PNG, JPG, WEBP, etc.) are allowed as proof.');
+                            e.target.value = '';
+                            setExternalProofFile(null);
+                            return;
+                          }
+                          setExternalProofFile(file);
+                        }}
                         className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700 file:mr-4 file:rounded-full file:border-0 file:bg-blue-50 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-blue-700 hover:bg-gray-100"
                       />
                     </div>

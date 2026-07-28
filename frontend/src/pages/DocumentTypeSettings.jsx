@@ -583,7 +583,7 @@ const DocumentTypeSettings = () => {
                 subType === null ? 'bg-primary-green text-white' : 'text-gray-500 hover:bg-gray-200'
               }`}
             >
-              Global Requirements
+              General Requirements
             </button>
             {subtypes.map((st) => (
               <button

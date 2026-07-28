@@ -216,7 +216,7 @@ const Completed = () => {
             subtype_id,
             current_version_id,
             document_subtypes ( name ),
-            users ( org_name ),
+            users ( org_name, abbreviation ),
             documentType ( name ),
             submission_versions!submission_id (
               id,
@@ -249,7 +249,17 @@ const Completed = () => {
             const details = Array.isArray(latestVersion?.activity_proposal_details)
               ? latestVersion.activity_proposal_details[latestVersion.activity_proposal_details.length - 1]
               : latestVersion?.activity_proposal_details;
-            const title = details?.activity_title || sub.documentType?.name || 'Document';
+            
+            const docTypeName = sub.documentType?.name || 'Document';
+            const isActivityProposal = docTypeName.toLowerCase() === 'activity proposal' || docTypeName.toLowerCase() === 'activity-proposal';
+
+            const senderAbbr = (sub.users?.abbreviation && sub.users.abbreviation.trim())
+              ? sub.users.abbreviation.trim()
+              : (sub.users?.org_name || '-');
+            const title = (isActivityProposal && details?.activity_title) 
+              ? details.activity_title 
+              : `${senderAbbr} ${docTypeName}`.trim().toUpperCase();
+
             const completedAt = sub.updated_at || sub.created_at;
             const completedDate = new Date(completedAt).toLocaleDateString('en-US', {
               month: 'short',
@@ -259,8 +269,6 @@ const Completed = () => {
             const semester = getSemesterFromDate(details?.target_date || completedAt);
 
             let proposalType = '-';
-            const docTypeName = sub.documentType?.name || 'Document';
-            const isActivityProposal = docTypeName.toLowerCase() === 'activity proposal' || docTypeName.toLowerCase().includes('proposal');
 
             if (isActivityProposal) {
               if (sub.document_subtypes?.name) {
@@ -277,7 +285,7 @@ const Completed = () => {
               id: sub.id,
               title,
               ref: sub.tracking_number || (isActivityProposal ? 'PENDING NO.' : 'DRAFT'),
-              sender: sub.users?.org_name || '-',
+              sender: senderAbbr,
               type: sub.documentType?.name || 'Document',
               proposal_type: proposalType,
               completedDate,

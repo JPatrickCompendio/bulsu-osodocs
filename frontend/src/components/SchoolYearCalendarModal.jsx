@@ -9,6 +9,8 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
   const [view, setView] = useState('calendar'); // 'calendar' or 'list'
   const [currentDate, setCurrentDate] = useState(new Date());
   const [activities, setActivities] = useState([]);
+  const [semesters, setSemesters] = useState([]);
+  const [selectedSemesterId, setSelectedSemesterId] = useState('all');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -18,10 +20,42 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
   const fetchActivities = async () => {
     setLoading(true);
     try {
+      let currentSy = activeSy;
+      if (!currentSy || !currentSy.id || typeof currentSy.id !== 'string' || currentSy.id === 'undefined') {
+        const { data: activeSyDb } = await supabase
+          .from('school_years')
+          .select('*')
+          .eq('is_active', true)
+          .maybeSingle();
+        currentSy = activeSyDb;
+      }
+
+      if (!currentSy || !currentSy.id) {
+        setActivities([]);
+        setLoading(false);
+        return;
+      }
+
+      let semsList = [];
+      const { data: sems } = await supabase
+        .from('semesters')
+        .select('*')
+        .eq('school_year_id', currentSy.id)
+        .neq('status', 'archived')
+        .order('start_date', { ascending: true });
+
+      semsList = sems || [];
+      setSemesters(semsList);
+
+      const activeSem = semsList.find(s => s.is_active);
+      if (activeSem) {
+        setSelectedSemesterId(activeSem.id);
+      }
+
       const { data: adminEvents, error: adminErr } = await supabase
         .from('academic_calendar_events')
         .select('*, documentType:document_type_id(name)')
-        .eq('school_year_id', activeSy?.id);
+        .eq('school_year_id', currentSy.id);
 
       if (adminErr) throw adminErr;
 
@@ -30,6 +64,7 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
       if (adminEvents) {
         adminEvents.forEach(ev => {
           if (ev.start_date) {
+            const semMatch = semsList.find(s => s.id === ev.semester_id);
             events.push({
               id: ev.id,
               title: ev.title,
@@ -39,6 +74,10 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
               duration: 0,
               isBlocked: ev.event_type === 'blocked_activity',
               eventType: ev.event_type,
+              semesterId: ev.semester_id,
+              semesterName: semMatch?.name || null,
+              semesterStart: semMatch?.start_date ? new Date(semMatch.start_date) : null,
+              semesterEnd: semMatch?.end_date ? new Date(semMatch.end_date) : null,
               docTypeName: ev.documentType ? ev.documentType.name : null
             });
           }
@@ -48,11 +87,10 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
       events.sort((a, b) => a.date - b.date);
       setActivities(events);
 
-      // If activeSy exists, maybe set initial date to its start date if current date is outside it
-      if (activeSy) {
+      if (currentSy?.start_date && currentSy?.end_date) {
         const now = new Date();
-        const syStart = new Date(activeSy.start_date);
-        const syEnd = new Date(activeSy.end_date);
+        const syStart = new Date(currentSy.start_date);
+        const syEnd = new Date(currentSy.end_date);
         if (now < syStart || now > syEnd) {
           setCurrentDate(syStart);
         }
@@ -132,6 +170,7 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
       
       const dayEvents = activities.filter(act => {
         if (act.eventType === 'submission_window') return false;
+        if (selectedSemesterId !== 'all' && act.semesterId && act.semesterId !== selectedSemesterId) return false;
         const startMs = new Date(act.date.getFullYear(), act.date.getMonth(), act.date.getDate()).getTime();
         const endMs = act.endDate 
           ? new Date(act.endDate.getFullYear(), act.endDate.getMonth(), act.endDate.getDate()).getTime()
@@ -198,11 +237,20 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
               const winEnd = sw.endDate ? sw.endDate.toDateString() : winStart;
               const isEntireSy = (syStart === winStart) && (syEnd === winEnd);
 
+              const matchingSem = semesters.find(sem => {
+                const sStart = sem.start_date ? new Date(sem.start_date).toDateString() : null;
+                const sEnd = sem.end_date ? new Date(sem.end_date).toDateString() : null;
+                return sStart === winStart && sEnd === winEnd;
+              });
+
               const now = new Date();
               const startStr = sw.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: sw.date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
               const endStr = sw.endDate ? sw.endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: sw.endDate.getFullYear() !== sw.date.getFullYear() ? 'numeric' : undefined }) : '';
               
-              const dateDisplay = isEntireSy ? 'Entire School Year' : (endStr ? `${startStr} – ${endStr}` : startStr);
+              let dateDisplay = endStr ? `${startStr} – ${endStr}` : startStr;
+              if (isEntireSy) dateDisplay = 'Entire School Year';
+              else if (matchingSem) dateDisplay = `Entire ${matchingSem.name}`;
+              else if (sw.semesterName) dateDisplay += ` (${sw.semesterName})`;
 
               return (
                 <div key={idx} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-full shadow-sm shrink-0">
@@ -229,19 +277,21 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
   };
 
   const renderList = () => {
-    if (activities.length === 0) {
+    const filteredList = activities.filter(act => selectedSemesterId === 'all' || !act.semesterId || act.semesterId === selectedSemesterId);
+
+    if (filteredList.length === 0) {
       return (
         <div className="flex flex-col items-center justify-center p-12 bg-white rounded-xl border border-gray-200 border-dashed">
           <CalendarIcon size={48} className="text-gray-300 mb-4" />
           <h3 className="text-lg font-bold text-gray-700">No activities found</h3>
-          <p className="text-sm text-gray-500 mt-1">There are no approved activities for this school year.</p>
+          <p className="text-sm text-gray-500 mt-1">There are no activities for this selection.</p>
         </div>
       );
     }
 
     return (
       <div className="space-y-4">
-        {activities.map((ev, idx) => (
+        {filteredList.map((ev, idx) => (
           <div key={idx} className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-primary-green/30 transition-all group flex gap-5">
             <div className="flex flex-col items-center justify-center min-w-[70px] px-4 py-2 bg-green-50 rounded-lg border border-green-100 shrink-0">
               <span className="text-sm font-bold text-primary-green uppercase tracking-wider">{ev.date.toLocaleString('en-US', { month: 'short' })}</span>
@@ -293,7 +343,15 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
               <div>
                 <h2 className="text-xl font-bold text-gray-900">School Year Calendar</h2>
                 <p className="text-sm font-medium text-gray-500">
-                  {activeSy ? `${activeSy.name} (Academic Dates)` : 'Loading...'}
+                  {activeSy ? (
+                    <>
+                      {activeSy.name} (
+                      {new Date(activeSy.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      {' - '}
+                      {new Date(activeSy.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      )
+                    </>
+                  ) : 'Loading...'}
                 </p>
               </div>
             </div>
@@ -319,19 +377,45 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
 
         {/* Controls */}
         <div className="px-6 py-4 bg-white border-b border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0 shadow-sm z-0 relative">
-          <div className="flex bg-gray-100 p-1 rounded-xl w-full sm:w-auto">
-            <button
-              onClick={() => setView('calendar')}
-              className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2 rounded-lg text-sm font-bold transition-all ${view === 'calendar' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-            >
-              <CalendarIcon size={16} /> Calendar
-            </button>
-            <button
-              onClick={() => setView('list')}
-              className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2 rounded-lg text-sm font-bold transition-all ${view === 'list' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-            >
-              <List size={16} /> List
-            </button>
+          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+            <div className="flex bg-gray-100 p-1 rounded-xl w-full sm:w-auto">
+              <button
+                onClick={() => setView('calendar')}
+                className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2 rounded-lg text-sm font-bold transition-all ${view === 'calendar' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                <CalendarIcon size={16} /> Calendar
+              </button>
+              <button
+                onClick={() => setView('list')}
+                className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2 rounded-lg text-sm font-bold transition-all ${view === 'list' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                <List size={16} /> List
+              </button>
+            </div>
+
+            {semesters.length > 0 && (
+              <select
+                value={selectedSemesterId}
+                onChange={e => {
+                  const val = e.target.value;
+                  setSelectedSemesterId(val);
+                  if (val !== 'all') {
+                    const matchedSem = semesters.find(s => s.id === val);
+                    if (matchedSem?.start_date) {
+                      setCurrentDate(new Date(matchedSem.start_date));
+                    }
+                  }
+                }}
+                className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-700 outline-none focus:border-primary-green transition-all"
+              >
+                <option value="all">All Semesters</option>
+                {semesters.map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} {s.is_active ? '(Active)' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           {view === 'calendar' && (

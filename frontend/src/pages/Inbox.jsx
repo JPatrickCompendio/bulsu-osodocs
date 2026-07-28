@@ -86,19 +86,20 @@ const getStoragePath = (filePath) => {
 
 const SUBMISSION_SELECT = `
   *,
-  users (org_name, student_no, full_name, role),
+  users (org_name, abbreviation, student_no, full_name, role),
   documentType (name),
   document_subtypes (name),
   submission_versions!submission_id (
     *,
     activity_proposal_details (*, activity_schedules (*)),
     submission_attachments (*)
-  )
+  ),
+  submission_logs (created_at)
 `;
 
 const mapInboxSubmission = (sub, viewer, subtypesMap = {}) => {
   const docTypeName = sub.documentType?.name || 'Document';
-  const isActivityProposal = docTypeName.toLowerCase() === 'activity proposal' || docTypeName.toLowerCase().includes('proposal');
+  const isActivityProposal = docTypeName.toLowerCase() === 'activity proposal' || docTypeName.toLowerCase() === 'activity-proposal';
 
   let proposalType = '-';
   let customDetails = {};
@@ -172,17 +173,27 @@ const mapInboxSubmission = (sub, viewer, subtypesMap = {}) => {
   if (customDetails.satisfaction_goal_2) satisfyGoals.push(customDetails.satisfaction_goal_2);
   if (customDetails.satisfaction_goal_3) satisfyGoals.push(customDetails.satisfaction_goal_3);
 
+  const latestLogTime = Array.isArray(sub.submission_logs) && sub.submission_logs.length > 0
+    ? sub.submission_logs.reduce((max, log) => new Date(log.created_at) > new Date(max) ? log.created_at : max, sub.created_at)
+    : (sub.updated_at || sub.created_at);
+
+  const senderAbbr = (sub.users?.abbreviation && sub.users.abbreviation.trim())
+    ? sub.users.abbreviation.trim()
+    : (sub.users?.org_name || '-');
+
   return {
     id: sub.id,
     isActivityProposal,
-    org: customDetails.organization_name || sub.users?.org_name || '-',
+    org: senderAbbr,
     submitter_name: sub.users?.full_name || 'Unknown',
-    title: (isActivityProposal && customDetails.activity_title) ? customDetails.activity_title.toUpperCase() : docTypeName.toUpperCase(),
+    title: (isActivityProposal && customDetails.activity_title)
+      ? customDetails.activity_title.toUpperCase()
+      : `${senderAbbr} ${docTypeName}`.trim().toUpperCase(),
     ref: sub.tracking_number || (docTypeName.toLowerCase().includes('proposal') ? 'PENDING NO.' : 'DRAFT'),
     type: docTypeName,
     proposal_type: proposalType,
     status: statusLabel,
-    time: new Date(sub.created_at).toLocaleString('en-US', {
+    time: new Date(latestLogTime).toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -190,7 +201,7 @@ const mapInboxSubmission = (sub, viewer, subtypesMap = {}) => {
       minute: '2-digit',
       hour12: true,
     }),
-    timestamp: new Date(sub.created_at).getTime(),
+    timestamp: new Date(latestLogTime).getTime(),
     isNew: rawStatus === 'submitted' || rawStatus === 'pending',
     pic: customDetails.person_in_charge || sub.users?.full_name || 'N/A',
     studentId: customDetails.student_id_no || 'N/A',
@@ -250,6 +261,19 @@ export const Inbox = () => {
   const [locallyApproved, setLocallyApproved] = React.useState([]);
   const [locallyReturned, setLocallyReturned] = React.useState({});
   const [attachmentReturnLogs, setAttachmentReturnLogs] = React.useState([]);
+  const [isPreviewLoaded, setIsPreviewLoaded] = React.useState(true);
+
+  React.useEffect(() => {
+    if (previewFile) {
+      setIsPreviewLoaded(false);
+      const timer = setTimeout(() => {
+        setIsPreviewLoaded(true);
+      }, 2500);
+      return () => clearTimeout(timer);
+    } else {
+      setIsPreviewLoaded(true);
+    }
+  }, [previewFile]);
   const RETURN_REASONS = ['missing-requirements', 'incorrect-format', 'incomplete-information'];
 
   const normalizeRole = (role) => String(role || '').toLowerCase().replace('-', ' ').trim();
@@ -636,7 +660,7 @@ export const Inbox = () => {
         ? ['SDS coordinator review', 'oso approved']
         : ['submitted'];
 
-      // Try with precise relation name first
+      // Try with submission_logs join
       let { data, error } = await supabase
         .from('submissions')
         .select(SUBMISSION_SELECT)
@@ -646,9 +670,20 @@ export const Inbox = () => {
       // Fallback in case of foreign key name mismatch or PostgREST join resolution ambiguity
       if (error) {
         console.warn("Attempting fallback query due to join error:", error.message);
+        const FALLBACK_SELECT = `
+          *,
+          users (org_name, abbreviation, student_no, full_name, role),
+          documentType (name),
+          document_subtypes (name),
+          submission_versions!submission_id (
+            *,
+            activity_proposal_details (*, activity_schedules (*)),
+            submission_attachments (*)
+          )
+        `;
         const fallbackRes = await supabase
           .from('submissions')
-          .select(SUBMISSION_SELECT)
+          .select(FALLBACK_SELECT)
           .in('status', statusFilter)
           .order('created_at', { ascending: false });
 
@@ -1027,7 +1062,7 @@ export const Inbox = () => {
     const activeVersion = allVersions.find(v => v.id === currentVersionIdToUse) || allVersions[0];
 
     const documentTypeName = selectedDoc?.raw?.documentType?.name || selectedDoc?.type || "";
-    const isActivityProposal = documentTypeName.toLowerCase() === "activity proposal" || documentTypeName.toLowerCase().includes("proposal") || !!activeVersion?.activity_proposal_details;
+    const isActivityProposal = documentTypeName.toLowerCase() === "activity proposal" || documentTypeName.toLowerCase() === "activity-proposal";
     const details = isActivityProposal
       ? (Array.isArray(activeVersion?.activity_proposal_details)
         ? activeVersion.activity_proposal_details[activeVersion.activity_proposal_details.length - 1]
@@ -1083,7 +1118,7 @@ export const Inbox = () => {
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10 text-gray-800">
           {[
-            { label: 'ORGANIZATION', value: details?.organization_name || selectedDoc.org || '-', icon: <User size={18} /> },
+            { label: 'ORGANIZATION', value: selectedDoc.raw?.users?.org_name || details?.organization_name || selectedDoc.org || '-', icon: <User size={18} /> },
             { label: 'TYPE', value: `${selectedDoc.type} ${selectedDoc.proposal_type && selectedDoc.proposal_type !== '-' ? `(${selectedDoc.proposal_type})` : ''}`, icon: <FileText size={18} />, color: 'text-blue-500' },
             { label: 'STATUS', value: selectedDoc.status, icon: <Clock size={18} />, badge: true },
             { label: 'SUBMITTED', value: selectedDoc.time, icon: <Calendar size={18} /> }
@@ -1414,7 +1449,7 @@ export const Inbox = () => {
           const disabledByReview = requireAllReviewed && !allFilesReviewed;
           const disabledByVersion = !isLatestVersion;
           const disableActions = disabledByReview || disabledByVersion;
-          const disableApprove = disableActions || hasLocallyReturnedAttachments;
+          const disableApprove = disableActions || hasLocallyReturnedAttachments || !isPreviewLoaded;
 
           if (!isLatestVersion) return null;
 
@@ -1430,9 +1465,7 @@ export const Inbox = () => {
                   disabled={disableApprove}
                   className={`flex items-center gap-3 px-8 py-3.5 bg-primary-green text-white rounded-2xl font-bold transition-all shadow-lg shadow-primary-green/20 group ${
                     disableApprove
-                      ? (disabledByReview || hasLocallyReturnedAttachments
-                          ? 'opacity-40 cursor-not-allowed'
-                          : 'cursor-not-allowed')
+                      ? 'opacity-40 cursor-not-allowed'
                       : 'hover:scale-105 active:scale-95'
                   }`}
                 >
@@ -1534,12 +1567,14 @@ export const Inbox = () => {
                           src={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=Fit` : null}
                           className="w-full h-full border-0 rounded-2xl"
                           title="PDF Preview"
+                          onLoad={() => setIsPreviewLoaded(true)}
                         />
                       ) : previewFile.file_name?.toLowerCase().includes('.docx') || previewFile.file_url?.toLowerCase().includes('.docx') ? (
                         <iframe
                           src={filePreviewUrl ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(filePreviewUrl)}` : null}
                           className="w-full h-full border-0 rounded-2xl"
                           title="Word Preview"
+                          onLoad={() => setIsPreviewLoaded(true)}
                         />
                       ) : (
                         <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
@@ -1628,7 +1663,7 @@ export const Inbox = () => {
                       {requiresReview && (
                         <button 
                           onClick={handleApproveAttachment}
-                          disabled={attachmentSaving}
+                          disabled={attachmentSaving || !isPreviewLoaded}
                           className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-all shadow-lg shadow-green-600/10 uppercase text-xs tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           <CheckCircle size={16} />

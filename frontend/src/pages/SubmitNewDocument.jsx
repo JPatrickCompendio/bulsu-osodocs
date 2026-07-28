@@ -457,6 +457,15 @@ const SubmitNewDocument = () => {
         setDocSubtypes(subtypesMap);
       }
 
+      // Always fetch blocked calendar events directly
+      const { data: bEvents } = await supabase
+        .from('academic_calendar_events')
+        .select('*')
+        .or('event_type.eq.blocked_activity,description.eq.BLOCKS_ACTIVITY');
+      if (bEvents) {
+        setBlockedEvents(bEvents);
+      }
+
       // Fetch document availability
       if (user?.id) {
         const availRes = await apiClient.get(apiUrl('/api/system/document-availability'), {
@@ -464,7 +473,9 @@ const SubmitNewDocument = () => {
         });
         if (availRes.data?.success) {
           let frontendAvailability = availRes.data.availability || {};
-          setBlockedEvents(availRes.data.blockedEvents || []);
+          if (availRes.data.blockedEvents && availRes.data.blockedEvents.length > 0) {
+            setBlockedEvents(availRes.data.blockedEvents);
+          }
           const sy = availRes.data.activeSchoolYear;
 
           if (!sy || availRes.data.message === 'The current date is outside the active School Year.') {
@@ -805,7 +816,7 @@ const SubmitNewDocument = () => {
         return;
       }
 
-      const resumeId = null; // res.data?.action === 'resume' ? res.data.submissionId : null;
+      const resumeId = res.data?.action === 'resume' ? res.data.submissionId : null;
       await initializeSubmissionForm(type, subtypeObj, subName, resumeId);
     } catch (err) {
       console.error(err);
@@ -856,10 +867,15 @@ const SubmitNewDocument = () => {
 
       // 1. Create submission and version records first if not existing
       if (!submissionId || !versionId) {
-        const { submission, version } = await subService.startNewSubmission(user.id, selectedType.id, selectedType.name, activeSchoolYearId, selectedSubtypeObj?.id || null);
-        submissionId = submission.id;
-        versionId = version.id;
-        versionNumber = version.version_number;
+        const draftRes = await subService.startNewSubmission(user.id, selectedType.id, selectedType.name, activeSchoolYearId, selectedSubtypeObj?.id || null, subType);
+        if (draftRes.action === 'blocked') {
+          showToast(draftRes.reason || 'Submission creation blocked', 'error');
+          setIsSaving(false);
+          isSavingRef.current = false;
+          return;
+        }
+        submissionId = draftRes.submissionId;
+        versionId = draftRes.versionId;
         setActiveDraft({ submissionId, versionId });
       }
 
@@ -1040,27 +1056,18 @@ const SubmitNewDocument = () => {
   const handleAddDate = (dateStr) => {
     if (!dateStr) return;
 
-    // Check if blocked
-    const dateObj = new Date(dateStr);
-    // To properly compare dates without time zone offsets messing it up
-    dateObj.setHours(0, 0, 0, 0);
+    const checkStr = dateStr.split('T')[0];
 
     const blockedEvent = blockedEvents.find(e => {
       if (e.document_type_id && e.document_type_id !== selectedType?.id) return false;
-      const start = e.start_date ? new Date(e.start_date) : null;
-      const end = e.end_date ? new Date(e.end_date) : null;
-
-      if (start) start.setHours(0, 0, 0, 0);
-      if (end) end.setHours(0, 0, 0, 0);
-
-      if (start && end) return dateObj >= start && dateObj <= end;
-      if (start) return dateObj >= start;
-      if (end) return dateObj <= end;
-      return false;
+      const evStart = e.start_date ? e.start_date.split('T')[0] : '';
+      const evEnd = e.end_date ? e.end_date.split('T')[0] : evStart;
+      if (!evStart) return false;
+      return checkStr >= evStart && checkStr <= evEnd;
     });
 
     if (blockedEvent) {
-      showToast(`Cannot select ${dateStr}: Blocked by "${blockedEvent.title}"`, 'error');
+      showToast(`Cannot select ${dateStr}: Blocked by "${blockedEvent.title || 'Academic Calendar'}"`, 'error');
       return;
     }
 
@@ -1538,8 +1545,7 @@ const SubmitNewDocument = () => {
                               <div className="space-y-4">
                                 {proposalDetails.schedules.map((sched, idx) => (
                                   <div key={idx} className="bg-white border border-gray-200 rounded-xl p-4 relative group hover:border-primary-green transition-colors">
-                                    {/* multiple delete button removed */}
-
+                                    
                                     {scheduleMode === 'range' ? (
                                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div className="space-y-1">
@@ -1551,8 +1557,21 @@ const SubmitNewDocument = () => {
                                             className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary-green font-bold text-xs outline-none"
                                             value={sched.activity_date}
                                             onChange={e => {
+                                              const val = e.target.value;
+                                              const checkVal = val ? val.split('T')[0] : '';
+                                              const isBlocked = blockedEvents.some(ev => {
+                                                if (ev.document_type_id && ev.document_type_id !== selectedType?.id) return false;
+                                                const evStart = ev.start_date ? ev.start_date.split('T')[0] : '';
+                                                const evEnd = ev.end_date ? ev.end_date.split('T')[0] : evStart;
+                                                if (!evStart) return false;
+                                                return checkVal >= evStart && checkVal <= evEnd;
+                                              });
+                                              if (isBlocked) {
+                                                showToast(`Cannot select ${val}: This date is blocked by the Academic Calendar.`, 'error');
+                                                return;
+                                              }
                                               const newScheds = [...proposalDetails.schedules];
-                                              newScheds[idx].activity_date = e.target.value;
+                                              newScheds[idx].activity_date = val;
                                               setProposalDetails(prev => ({ ...prev, schedules: newScheds }));
                                             }}
                                           />
@@ -1566,8 +1585,21 @@ const SubmitNewDocument = () => {
                                             className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary-green font-bold text-xs outline-none"
                                             value={sched.end_date || ''}
                                             onChange={e => {
+                                              const val = e.target.value;
+                                              const checkVal = val ? val.split('T')[0] : '';
+                                              const isBlocked = blockedEvents.some(ev => {
+                                                if (ev.document_type_id && ev.document_type_id !== selectedType?.id) return false;
+                                                const evStart = ev.start_date ? ev.start_date.split('T')[0] : '';
+                                                const evEnd = ev.end_date ? ev.end_date.split('T')[0] : evStart;
+                                                if (!evStart) return false;
+                                                return checkVal >= evStart && checkVal <= evEnd;
+                                              });
+                                              if (isBlocked) {
+                                                showToast(`Cannot select ${val}: This date is blocked by the Academic Calendar.`, 'error');
+                                                return;
+                                              }
                                               const newScheds = [...proposalDetails.schedules];
-                                              newScheds[idx].end_date = e.target.value;
+                                              newScheds[idx].end_date = val;
                                               setProposalDetails(prev => ({ ...prev, schedules: newScheds }));
                                             }}
                                           />
@@ -1585,10 +1617,13 @@ const SubmitNewDocument = () => {
                                             value={sched.activity_date}
                                             onChange={e => {
                                               const val = e.target.value;
+                                              const checkVal = val ? val.split('T')[0] : '';
                                               const isBlocked = blockedEvents.some(ev => {
-                                                const evStart = ev.start_date;
-                                                const evEnd = ev.end_date || ev.start_date;
-                                                return val >= evStart && val <= evEnd;
+                                                if (ev.document_type_id && ev.document_type_id !== selectedType?.id) return false;
+                                                const evStart = ev.start_date ? ev.start_date.split('T')[0] : '';
+                                                const evEnd = ev.end_date ? ev.end_date.split('T')[0] : evStart;
+                                                if (!evStart) return false;
+                                                return checkVal >= evStart && checkVal <= evEnd;
                                               });
                                               if (isBlocked) {
                                                 showToast(`Cannot select ${val}: This date is blocked by the Academic Calendar.`, 'error');

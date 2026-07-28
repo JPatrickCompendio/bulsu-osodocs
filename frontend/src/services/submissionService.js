@@ -1,4 +1,5 @@
 import { supabase } from '../supabaseClient';
+import { apiFetch } from '../config/api';
 
 /**
  * LOGGING SERVICE
@@ -29,54 +30,23 @@ export const createLog = async (submissionId, userId, description, versionId = n
  * SUBMISSION MANAGEMENT
  */
 
-// Create initial submission and v1 draft
-export const startNewSubmission = async (userId, typeId, typeName = 'Document', schoolYearId = null, subtypeId = null) => {
-  const payload = {
-    user_id: userId,
-    document_type_id: typeId,
-    status: 'draft',
-    remarks: 'Initial draft created'
-  };
-  
-  if (schoolYearId) {
-    payload.school_year_id = schoolYearId;
+// Create initial submission and v1 draft via backend API
+export const startNewSubmission = async (userId, typeId, typeName = 'Document', schoolYearId = null, subtypeId = null, proposalType = null) => {
+  const response = await apiFetch('/submissions/draft', {
+    method: 'POST',
+    body: JSON.stringify({
+      userId,
+      documentTypeId: typeId,
+      subtypeId,
+      proposalType
+    }),
+  });
+
+  const resData = await response.json();
+  if (!response.ok && !resData.action) {
+    throw new Error(resData.reason || resData.error || 'Failed to create submission draft');
   }
-  if (subtypeId) {
-    payload.subtype_id = subtypeId;
-  }
-
-  const { data: sub, error: subErr } = await supabase
-    .from('submissions')
-    .insert([payload])
-    .select()
-    .single();
-
-  if (subErr) throw subErr;
-
-  const { data: version, error: verErr } = await supabase
-    .from('submission_versions')
-    .insert([{
-      submission_id: sub.id,
-      version_number: 1,
-      status: 'draft',
-      submitted_by: userId
-    }])
-    .select()
-    .single();
-
-  if (verErr) throw verErr;
-
-  // Link the version back to the submission
-  const { error: updateErr } = await supabase
-    .from('submissions')
-    .update({ current_version_id: version.id })
-    .eq('id', sub.id);
-
-  if (updateErr) throw updateErr;
-
-  await createLog(sub.id, userId, `Created a draft`, version.id, 'submission', 'draft');
-
-  return { submission: sub, version };
+  return resData;
 };
 
 const getCurrentVersion = (submission) => {
@@ -165,14 +135,8 @@ export const getRequirementsForType = async (typeId, subtypeId = null, proposalT
   
   if (subtypeId) {
     query = query.or(`subtype_id.eq.${subtypeId},subtype_id.is.null`);
-  } else if (proposalType) {
-    // Fetch requirements that match the type OR are general (NULL)
-    const formattedType = proposalType.toLowerCase().replace(' ', '-');
-    query = query.or(`proposal_type.eq.${formattedType},proposal_type.is.null`);
   } else {
-    // Otherwise, ensure it's NULL (standard requirements)
-    // To support migration where requirements might still rely on proposal_type null
-    query = query.is('subtype_id', null).is('proposal_type', null);
+    query = query.is('subtype_id', null);
   }
 
   const { data, error } = await query.order('created_at', { ascending: true });

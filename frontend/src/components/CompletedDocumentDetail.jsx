@@ -186,7 +186,7 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
           .from('submissions')
           .select(`
             *,
-            users ( org_name, student_no, full_name ),
+            users ( org_name, abbreviation, student_no, full_name ),
             documentType ( name ),
             document_subtypes ( name ),
             school_years ( name ),
@@ -325,10 +325,15 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
     : currentVersion?.activity_proposal_details;
   const allAttachments = currentVersion?.submission_attachments || [];
   const docTypeName = submission.documentType?.name || 'Document';
-  const isActivityProposal = docTypeName.toLowerCase().includes('activity proposal');
-  const docTitle = details?.activity_title || docTypeName;
-  const ref = submission.tracking_number || (docTypeName.toLowerCase().includes('proposal') ? 'PENDING NO.' : 'DRAFT');
-  const orgName = details?.organization_name || submission.users?.org_name || '—';
+  const isActivityProposal = docTypeName.toLowerCase() === 'activity proposal' || docTypeName.toLowerCase() === 'activity-proposal';
+  const senderAbbr = (submission.users?.abbreviation && submission.users.abbreviation.trim())
+    ? submission.users.abbreviation.trim()
+    : (details?.organization_name || submission.users?.org_name || '—');
+  const docTitle = (isActivityProposal && details?.activity_title)
+    ? details.activity_title
+    : `${senderAbbr} ${docTypeName}`.trim().toUpperCase();
+  const ref = submission.tracking_number || (isActivityProposal ? 'PENDING NO.' : 'DRAFT');
+  const orgName = senderAbbr;
 
   const proofFromRemarks = parseProofUrls(submission.remarks);
   const proofFromAttachments = allAttachments.filter(isImageProof);
