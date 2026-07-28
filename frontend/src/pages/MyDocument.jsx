@@ -79,7 +79,7 @@ const MY_DOCS_SUBMISSION_SELECT = `
   submission_versions!submission_id (
     *,
     activity_proposal_details (*, activity_schedules (*)),
-    submission_attachments (*)
+    submission_attachments (*, requirements(*))
   )
 `;
 
@@ -908,7 +908,7 @@ export const MyDocuments = () => {
             submission_versions!submission_id (
               *,
               activity_proposal_details (*, activity_schedules (*)),
-              submission_attachments (*)
+              submission_attachments (*, requirements(*))
             )
           `)
           .eq('user_id', user.id)
@@ -949,7 +949,7 @@ export const MyDocuments = () => {
             submission_versions!submission_id (
               *,
               activity_proposal_details (*, activity_schedules (*)),
-              submission_attachments (*)
+              submission_attachments (*, requirements(*))
             )
           )
         `)
@@ -970,7 +970,7 @@ export const MyDocuments = () => {
               submission_versions!submission_id (
                 *,
                 activity_proposal_details (*, activity_schedules (*)),
-                submission_attachments (*)
+                submission_attachments (*, requirements(*))
               )
             )
           `)
@@ -1012,7 +1012,7 @@ export const MyDocuments = () => {
           submission_versions!submission_id (
             *,
             activity_proposal_details (*, activity_schedules (*)),
-            submission_attachments (*)
+            submission_attachments (*, requirements(*))
           )
         `)
         .eq('id', submissionId)
@@ -1318,6 +1318,31 @@ export const MyDocuments = () => {
         if (uploadErr) throw uploadErr;
       }
 
+      // Automatically update forwarded_to_main_campus in submission_attachments based on scope & gather forwarded list
+      const allVer = Array.isArray(selectedDoc?.raw?.submission_versions)
+        ? selectedDoc.raw.submission_versions
+        : [selectedDoc?.raw?.submission_versions].filter(Boolean);
+      const activeVer = allVer.find(v => v.id === activeVersionId) || allVer[0];
+      const verAttachments = activeVer?.submission_attachments || [];
+
+      const forwardedFileNames = [];
+      for (const att of verAttachments) {
+        const req = att.requirements || att.requirement;
+        const scope = req?.requirement_scope || 'OSAS';
+        const shouldForward = scope === 'OSAS';
+        if (shouldForward) {
+          forwardedFileNames.push(att.file_name || att.title || 'Attachment');
+        }
+        try {
+          await supabase
+            .from('submission_attachments')
+            .update({ forwarded_to_main_campus: shouldForward })
+            .eq('id', att.id);
+        } catch (_) {
+          /* non-blocking fallback if column is not yet present */
+        }
+      }
+
       const adminComment = comments?.trim() || '';
       const finalRemarks = adminComment || null;
 
@@ -1331,6 +1356,14 @@ export const MyDocuments = () => {
 
       if (subErr) throw subErr;
 
+      const forwardedListText = forwardedFileNames.length > 0
+        ? `Forwarded Documents: ${forwardedFileNames.join(', ')}`
+        : 'No OSAS documents forwarded';
+
+      const logDescription = adminComment
+        ? `${adminComment} [${forwardedListText}]`
+        : `Sent to Main Campus for Review. [${forwardedListText}]`;
+
       const { error: logErr } = await supabase
         .from('submission_logs')
         .insert([{
@@ -1340,8 +1373,8 @@ export const MyDocuments = () => {
           workflow_phase: 'main-campus-review',
           action_type: 'forwarded',
           review_action: 'forwarded',
-          description: adminComment || 'Documents Sent to Main Campus for Review',
-          comment: adminComment || null,
+          description: logDescription,
+          comment: adminComment ? `${adminComment}\n(${forwardedListText})` : forwardedListText,
           created_at: new Date().toISOString()
         }]);
 
@@ -2437,21 +2470,32 @@ export const MyDocuments = () => {
                         const hasRevision = isChairmanStage && returnedForDisplay && !locallyApproved.includes(file.id);
                         const isApproved = locallyApproved.includes(file.id) || (historicalChairmanVersion ? !returnedForDisplay : !hasRevision);
 
+                        const reqObj = file.requirements || file.requirement;
+                        const scope = reqObj?.requirement_scope || 'OSAS';
+                        const isOsas = scope === 'OSAS';
+                        const isForwardedPhase = docStatus.includes('main campus review') || docStatus === 'completed' || docStatus === 'waiting for accomplishment report' || docStatus === 'approved' || docStatus === 'ready for retrieval';
+                        const isForwardedItem = isForwardedPhase && isOsas;
+
                         let containerBg = 'bg-[#525252]';
                         let textColor = 'text-white';
                         let subtitleColor = 'text-gray-400';
                         let iconStyle = 'bg-white/10 text-white/80';
 
-                        if (isApproved) {
-                          containerBg = 'bg-green-600';
-                          textColor = 'text-white';
-                          subtitleColor = 'text-green-100';
-                          iconStyle = 'bg-white/20 text-white';
-                        } else if (hasRevision) {
+                        if (hasRevision) {
                           containerBg = 'bg-[#f59e0b]';
                           textColor = 'text-[#451a03]';
                           subtitleColor = 'text-[#78350f]';
                           iconStyle = 'bg-[#78350f]/10 text-[#78350f]';
+                        } else if (isOsas) {
+                          containerBg = 'bg-green-600 shadow-md';
+                          textColor = 'text-white';
+                          subtitleColor = 'text-green-100';
+                          iconStyle = 'bg-white/20 text-white';
+                        } else {
+                          containerBg = 'bg-emerald-50/90 border border-emerald-200 shadow-sm';
+                          textColor = 'text-emerald-950';
+                          subtitleColor = 'text-emerald-700';
+                          iconStyle = 'bg-emerald-100 text-emerald-800';
                         }
 
                         return (
@@ -2469,8 +2513,19 @@ export const MyDocuments = () => {
                                 <Paperclip size={20} />
                               </div>
                               <div>
-                                <p className={`${textColor} font-semibold text-sm`}>{fileName}</p>
-                                <p className={`${subtitleColor} text-[10px] uppercase`}>Attached Document</p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className={`${textColor} font-semibold text-sm`}>{fileName}</p>
+                                  <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                                    isOsas
+                                      ? 'bg-white/20 text-white border border-white/30 font-black'
+                                      : 'bg-slate-100/90 text-slate-600 border border-slate-200'
+                                  }`}>
+                                    {isOsas ? 'OSAS Requirement' : 'OSOA Requirement'}
+                                  </span>
+                                </div>
+                                <p className={`${subtitleColor} text-[10px] uppercase font-bold mt-0.5`}>
+                                  {isForwardedItem ? '✓ Forwarded to Main Campus' : 'Attached Document'}
+                                </p>
                                 {returnedForDisplay && fileLog?.comment && (
                                   <p className="mt-1 text-xs italic font-medium opacity-90 max-w-lg">
                                     {(fileLog?.users?.full_name || fileLog?.users?.role || 'Reviewer')}'s Comment: "{fileLog.comment}"
@@ -3498,22 +3553,34 @@ export const MyDocuments = () => {
                     user
                   );
 
+                  const reqObj = file.requirements || file.requirement;
+                  const scope = reqObj?.requirement_scope || 'OSAS';
+                  const isOsas = scope === 'OSAS';
+                  const docStatus = String(selectedDoc?.status || currentVersion?.status || '').toLowerCase();
+                  const isForwardedPhase = docStatus.includes('main campus review') || docStatus === 'completed' || docStatus === 'waiting for accomplishment report' || docStatus === 'approved' || docStatus === 'ready for retrieval';
+                  const isForwardedItem = isForwardedPhase && isOsas;
+
                   // Dynamic styles based on review status
                   let containerBg = 'bg-[#525252]';
                   let textColor = 'text-white';
                   let subtitleColor = 'text-gray-400';
                   let iconStyle = 'bg-white/10 text-white/80';
 
-                  if (isApproved) {
-                    containerBg = 'bg-green-600';
-                    textColor = 'text-white';
-                    subtitleColor = 'text-green-100';
-                    iconStyle = 'bg-white/20 text-white';
-                  } else if (returnedForDisplay) {
+                  if (returnedForDisplay) {
                     containerBg = 'bg-[#f59e0b]';
                     textColor = 'text-[#451a03]';
                     subtitleColor = 'text-[#78350f]';
                     iconStyle = 'bg-[#78350f]/10 text-[#78350f]';
+                  } else if (isOsas) {
+                    containerBg = 'bg-green-600 shadow-md';
+                    textColor = 'text-white';
+                    subtitleColor = 'text-green-100';
+                    iconStyle = 'bg-white/20 text-white';
+                  } else {
+                    containerBg = 'bg-emerald-50/90 border border-emerald-200 shadow-sm';
+                    textColor = 'text-emerald-950';
+                    subtitleColor = 'text-emerald-700';
+                    iconStyle = 'bg-emerald-100 text-emerald-800';
                   }
 
                   return (
@@ -3531,8 +3598,19 @@ export const MyDocuments = () => {
                           <Paperclip size={20} />
                         </div>
                         <div>
-                          <p className={`${textColor} font-semibold text-sm`}>{fileName}</p>
-                          <p className={`${subtitleColor} text-[10px] uppercase`}>Attached Document</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className={`${textColor} font-semibold text-sm`}>{fileName}</p>
+                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                              isOsas
+                                ? 'bg-white/20 text-white border border-white/30 font-black'
+                                : 'bg-slate-100/90 text-slate-600 border border-slate-200'
+                            }`}>
+                              {isOsas ? 'OSAS Requirement' : 'OSOA Requirement'}
+                            </span>
+                          </div>
+                          <p className={`${subtitleColor} text-[10px] uppercase font-bold mt-0.5`}>
+                            {isForwardedItem ? '✓ Forwarded to Main Campus' : 'Attached Document'}
+                          </p>
                           {returnedForDisplay && (locallyReturned[file.id]?.comment || fileLog?.comment) && (
                             <p className="mt-1 text-xs italic font-medium opacity-90 max-w-lg">
                               {(fileLog?.users?.full_name || fileLog?.users?.role || user?.role || 'Reviewer')}'s Comment: "{locallyReturned[file.id]?.comment || fileLog?.comment}"
@@ -4096,67 +4174,188 @@ export const MyDocuments = () => {
           }
 
           return (
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
-              <div className="bg-white rounded-3xl w-full max-w-md p-8 flex flex-col shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300">
-                <div className={`w-12 h-12 ${modalIconBg} rounded-2xl flex items-center justify-center mb-6`}>
-                  {modalIcon}
-                </div>
-                <h3 className="font-bold text-gray-800 text-lg mb-2">{modalTitle}</h3>
-                <p className="text-gray-500 text-sm mb-6 leading-relaxed">
-                  {modalDescription}
-                </p>
-
-                <div className="space-y-2 mb-6">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest block font-bold text-gray-500">Add comments</label>
-                  <textarea
-                    value={returnComments}
-                    onChange={(e) => setReturnComments(e.target.value)}
-                    placeholder={placeholderText}
-                    rows={4}
-                    className={`w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm text-gray-700 focus:outline-none focus:ring-2 ${ringClass} transition-all resize-none text-gray-800 font-medium`}
-                  />
-                </div>
-
-                {decisionType === 'send_to_external' && (
-                  <div className="space-y-2 mb-6">
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Upload Proof (Image Only) <span className="text-red-500">*</span></label>
-                    <p className="text-xs text-gray-400">Attach a screenshot or image proof (JPEG, PNG, WEBP) that this submission was sent to the main campus.</p>
-                    <div className="mt-3 w-full border-2 border-dashed border-gray-300 rounded-xl p-6 flex flex-col items-center justify-center hover:border-indigo-400 transition-all bg-gray-50">
-                      <input
-                        id="externalProof"
-                        type="file"
-                        accept="image/*,.jpg,.jpeg,.png,.webp"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0] || null;
-                          if (file && !file.type.startsWith('image/')) {
-                            showToast('Only image files (PNG, JPG, WEBP, etc.) are allowed as proof.');
-                            e.target.value = '';
-                            setExternalProofFile(null);
-                            return;
-                          }
-                          setExternalProofFile(file);
-                        }}
-                        className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700 file:mr-4 file:rounded-full file:border-0 file:bg-blue-50 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-blue-700 hover:bg-gray-100"
-                      />
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-300 overflow-y-auto">
+              <div className={`bg-white rounded-3xl w-full ${
+                decisionType === 'send_to_external' ? 'max-w-4xl' : 'max-w-md'
+              } max-h-[90vh] flex flex-col shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300 overflow-hidden my-auto`}>
+                
+                {/* Header (Sticky / Fixed) */}
+                <div className="p-6 border-b border-gray-100 flex items-start justify-between gap-4 shrink-0 bg-white">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-12 h-12 ${modalIconBg} rounded-2xl flex items-center justify-center shrink-0`}>
+                      {modalIcon}
                     </div>
-                    {externalProofFile && <p className="text-xs text-gray-500">Selected proof file: {externalProofFile.name}</p>}
+                    <div>
+                      <h3 className="font-bold text-gray-800 text-lg leading-tight">{modalTitle}</h3>
+                      <p className="text-gray-500 text-xs mt-1 leading-normal">
+                        {modalDescription}
+                      </p>
+                    </div>
                   </div>
-                )}
-
-                <div className="flex items-center gap-3">
                   <button
                     onClick={() => {
                       setIsReturnModalOpen(false);
                       setExternalProofFile(null);
                     }}
-                    className="flex-1 px-5 py-3 border border-gray-200 text-gray-500 hover:bg-gray-50 rounded-xl font-bold transition-all text-xs uppercase tracking-wider"
+                    className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-all shrink-0"
+                    title="Close"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+
+                {/* Modal Body (Scrollable) */}
+                <div className="p-6 overflow-y-auto flex-1 space-y-6">
+                  {decisionType === 'send_to_external' ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                      {/* LEFT COLUMN: Attachment List of Documents to be Forwarded */}
+                      <div className="flex flex-col space-y-3 bg-gray-50/60 p-4 rounded-2xl border border-gray-100 h-full">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-gray-700 uppercase tracking-widest block">
+                            Documents to be Forwarded
+                          </label>
+                          <span className="text-[10px] font-black px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full border border-emerald-200">
+                            OSAS Only
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-gray-400 leading-normal">
+                          Only attachments classified as OSAS requirements will be automatically forwarded to Main Campus.
+                        </p>
+
+                        <div className="space-y-2.5 overflow-y-auto max-h-[340px] pr-1">
+                          {(() => {
+                            const allVer = Array.isArray(selectedDoc?.raw?.submission_versions)
+                              ? selectedDoc.raw.submission_versions
+                              : [selectedDoc?.raw?.submission_versions].filter(Boolean);
+                            const activeVer = allVer.find(v => v.id === (selectedVersionId || selectedDoc?.raw?.current_version_id)) || allVer[0];
+                            const rawAtts = activeVer?.submission_attachments || selectedDoc?.attachments || [];
+                            
+                            // Filter to ONLY show documents that will be forwarded to Main Campus (OSAS requirements, default to OSAS if unconfigured)
+                            const forwardedAtts = rawAtts.filter(att => {
+                              const req = att.requirements || att.requirement;
+                              const scope = (req?.requirement_scope || 'OSAS').toString().trim().toUpperCase();
+                              return scope !== 'OSOA'; // OSAS or unconfigured defaults to OSAS
+                            });
+
+                            if (forwardedAtts.length === 0) {
+                              return <p className="text-xs text-gray-400 italic py-6 text-center">No OSAS documents found for Main Campus forwarding.</p>;
+                            }
+
+                            return forwardedAtts.map((att, idx) => {
+                              const req = att.requirements || att.requirement;
+
+                              return (
+                                <div key={att.id || idx} className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/80 flex items-center justify-between gap-3 shadow-xs">
+                                  <div className="flex items-center gap-3 overflow-hidden">
+                                    <FileText size={18} className="text-emerald-600 shrink-0" />
+                                    <div className="truncate">
+                                      <p className="text-xs font-bold text-gray-800 truncate">{att.file_name || att.title || 'Attachment'}</p>
+                                      <p className="text-[10px] text-gray-500 font-medium">{req?.title || req?.name || 'Requirement'}</p>
+                                    </div>
+                                  </div>
+                                  <div className="shrink-0 flex flex-col items-end">
+                                    <span className="px-2 py-0.5 text-[9px] font-black uppercase rounded-full tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                      OSAS Requirement
+                                    </span>
+                                    <span className="text-[10px] font-bold mt-0.5 text-emerald-700">
+                                      ✓ Will be forwarded
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            });
+                          })()}
+                        </div>
+                      </div>
+
+                      {/* RIGHT COLUMN: Upload Proof, Live Preview & Comments */}
+                      <div className="flex flex-col space-y-5">
+                        {/* Upload Proof */}
+                        <div className="space-y-2">
+                          <label className="block text-xs font-bold text-gray-700 uppercase tracking-widest">
+                            Upload Proof (Image Only) <span className="text-red-500">*</span>
+                          </label>
+                          <p className="text-[11px] text-gray-400">Attach a screenshot or image proof (JPEG, PNG, WEBP) that this submission was sent to main campus.</p>
+                          <div className="border-2 border-dashed border-gray-300 rounded-2xl p-3.5 text-center bg-gray-50 hover:border-indigo-400 transition-all">
+                            <input
+                              id="externalProof"
+                              type="file"
+                              accept="image/*,.jpg,.jpeg,.png,.webp"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0] || null;
+                                if (file && !file.type.startsWith('image/')) {
+                                  showToast('Only image files (PNG, JPG, WEBP, etc.) are allowed as proof.');
+                                  e.target.value = '';
+                                  setExternalProofFile(null);
+                                  return;
+                                }
+                                setExternalProofFile(file);
+                              }}
+                              className="w-full text-xs text-gray-700 file:mr-3 file:rounded-xl file:border-0 file:bg-blue-50 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-blue-700 cursor-pointer"
+                            />
+                          </div>
+
+                          {/* Live Image Preview */}
+                          {externalProofFile && (
+                            <div className="mt-2 p-3 bg-gray-50 rounded-2xl border border-gray-200 space-y-2">
+                              <p className="text-xs font-bold text-gray-600 flex items-center gap-2">
+                                <Eye size={14} className="text-blue-600" /> Proof Image Preview:
+                              </p>
+                              <div className="relative rounded-xl overflow-hidden border border-gray-200 max-h-36 flex justify-center bg-black/5 p-1">
+                                <img
+                                  src={URL.createObjectURL(externalProofFile)}
+                                  alt="Main Campus Proof Preview"
+                                  className="object-contain max-h-32 w-full rounded-lg"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Comments / Remarks */}
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-gray-700 uppercase tracking-widest block">
+                            Add comments / remarks
+                          </label>
+                          <textarea
+                            value={returnComments}
+                            onChange={(e) => setReturnComments(e.target.value)}
+                            placeholder={placeholderText}
+                            rows={3}
+                            className={`w-full bg-gray-50 border border-gray-200 rounded-2xl p-3.5 text-sm text-gray-700 focus:outline-none focus:ring-2 ${ringClass} transition-all resize-none font-medium`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block">Add comments</label>
+                      <textarea
+                        value={returnComments}
+                        onChange={(e) => setReturnComments(e.target.value)}
+                        placeholder={placeholderText}
+                        rows={4}
+                        className={`w-full bg-gray-50 border border-gray-200 rounded-2xl p-4 text-sm text-gray-700 focus:outline-none focus:ring-2 ${ringClass} transition-all resize-none text-gray-800 font-medium`}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer (Sticky / Fixed) */}
+                <div className="p-6 border-t border-gray-100 bg-gray-50/50 flex items-center justify-end gap-3 shrink-0">
+                  <button
+                    onClick={() => {
+                      setIsReturnModalOpen(false);
+                      setExternalProofFile(null);
+                    }}
+                    className="px-6 py-3 border border-gray-200 text-gray-600 hover:bg-gray-100 rounded-xl font-bold transition-all text-xs uppercase tracking-wider"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={onConfirm}
                     disabled={loading || externalProofUploading || disableConfirm}
-                    className={`flex-1 px-5 py-3 ${confirmBtnBg} text-white rounded-xl font-bold transition-all text-xs uppercase tracking-wider shadow-md disabled:opacity-50`}
+                    className={`px-6 py-3 ${confirmBtnBg} text-white rounded-xl font-bold transition-all text-xs uppercase tracking-wider shadow-md disabled:opacity-50`}
                   >
                     {externalProofUploading ? 'Uploading...' : confirmBtnText}
                   </button>

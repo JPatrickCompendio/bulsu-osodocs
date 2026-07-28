@@ -224,7 +224,7 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
             submission_versions!submission_id (
               *,
               activity_proposal_details (*, activity_schedules (*)),
-              submission_attachments (*)
+              submission_attachments (*, requirements(*))
             )
           `)
           .eq('id', submissionId)
@@ -599,16 +599,49 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
                     : '';
                   const meta = [sizeLabel, timeLabel].filter(Boolean).join(' | ');
 
+                  const reqObj = file.requirements || file.requirement;
+                  const scope = reqObj?.requirement_scope || 'OSAS';
+                  const isOsas = scope === 'OSAS';
+                  const isForwardedPhase = ['main campus review', 'completed', 'waiting for accomplishment report', 'approved', 'ready for retrieval'].includes(String(submission.status || '').toLowerCase());
+                  const isForwardedItem = isForwardedPhase && isOsas;
+
+                  const cardBg = isDisapproved
+                    ? 'bg-red-600'
+                    : isOsas
+                    ? 'bg-green-600 shadow-md'
+                    : 'bg-emerald-50/90 border border-emerald-200 shadow-sm';
+
+                  const titleColor = isDisapproved || isOsas
+                    ? 'text-white font-bold'
+                    : 'text-emerald-950 font-bold';
+
+                  const metaColor = isDisapproved || isOsas
+                    ? 'text-green-100'
+                    : 'text-emerald-700';
+
+                  const iconColor = isDisapproved || isOsas
+                    ? 'text-white shrink-0'
+                    : 'text-emerald-600 shrink-0';
+
                   return (
                     <div
                       key={file.id || idx}
-                      className={`rounded-xl px-4 py-3 flex items-center justify-between gap-3 ${isDisapproved ? 'bg-red-600' : 'bg-green-600'}`}
+                      className={`rounded-xl px-4 py-3 flex items-center justify-between gap-3 ${cardBg}`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <CheckCircle size={18} className="text-white shrink-0" />
+                        <CheckCircle size={18} className={iconColor} />
                         <div className="min-w-0">
-                          <p className="text-white font-semibold text-sm truncate">{fileName}</p>
-                          {meta && <p className={`text-[10px] uppercase ${isDisapproved ? 'text-red-100' : 'text-green-100'}`}>{meta}</p>}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className={`${titleColor} font-semibold text-sm truncate`}>{fileName}</p>
+                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                              isOsas
+                                ? 'bg-white/20 text-white border border-white/30 font-black'
+                                : 'bg-slate-100/90 text-slate-600 border border-slate-200'
+                            }`}>
+                              {isOsas ? 'OSAS Requirement' : 'OSOA Requirement'}
+                            </span>
+                          </div>
+                          {meta && <p className={`text-[10px] uppercase font-semibold ${metaColor}`}>{meta}</p>}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">

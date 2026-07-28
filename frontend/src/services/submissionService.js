@@ -88,7 +88,7 @@ export const getDraftSubmission = async (userId, typeId, subtypeId = null, propo
   // Fetch versions separately to avoid ambiguous embedding
   const { data: versions, error: verErr } = await supabase
     .from('submission_versions')
-    .select('*, activity_proposal_details (*, activity_schedules (*)), submission_attachments (*)')
+    .select('*, activity_proposal_details (*, activity_schedules (*)), submission_attachments (*, requirements(*))')
     .eq('submission_id', submission.id)
     .order('created_at', { ascending: false });
 
@@ -115,7 +115,7 @@ export const getSubmissionById = async (submissionId) => {
 
   const { data: versions, error: verErr } = await supabase
     .from('submission_versions')
-    .select('*, activity_proposal_details (*, activity_schedules (*)), submission_attachments (*)')
+    .select('*, activity_proposal_details (*, activity_schedules (*)), submission_attachments (*, requirements(*))')
     .eq('submission_id', submission.id)
     .order('created_at', { ascending: false });
 

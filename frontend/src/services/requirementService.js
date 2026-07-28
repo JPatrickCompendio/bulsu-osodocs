@@ -142,9 +142,13 @@ export const deleteStorageFile = async (filePath) => {
  * Create a new requirement record
  */
 export const createRequirement = async (payload) => {
+  const reqPayload = {
+    ...payload,
+    requirement_scope: payload.requirement_scope || 'OSAS'
+  };
   const { data, error } = await supabase
     .from('requirements')
-    .insert([payload])
+    .insert([reqPayload])
     .select();
   
   if (error) throw error;

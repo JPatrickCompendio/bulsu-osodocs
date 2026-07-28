@@ -93,7 +93,7 @@ const SUBMISSION_SELECT = `
   submission_versions!submission_id (
     *,
     activity_proposal_details (*, activity_schedules (*)),
-    submission_attachments (*)
+    submission_attachments (*, requirements(*))
   ),
   submission_logs (created_at)
 `;
@@ -679,7 +679,7 @@ export const Inbox = () => {
           submission_versions!submission_id (
             *,
             activity_proposal_details (*, activity_schedules (*)),
-            submission_attachments (*)
+            submission_attachments (*, requirements(*))
           )
         `;
         const fallbackRes = await supabase
@@ -1328,23 +1328,35 @@ export const Inbox = () => {
                     user
                   );
 
+                  const reqObj = file.requirements || file.requirement;
+                  const scope = reqObj?.requirement_scope || 'OSAS';
+                  const isOsas = scope === 'OSAS';
+                  const docStatus = String(selectedDoc?.status || activeVersion?.status || '').toLowerCase();
+                  const isForwardedPhase = docStatus.includes('main campus review') || docStatus === 'completed' || docStatus === 'waiting for accomplishment report' || docStatus === 'approved' || docStatus === 'ready for retrieval';
+                  const isForwardedItem = isForwardedPhase && isOsas;
+
                   // Dynamic styles based on review status
                   let containerBg = 'bg-[#525252]';
                   let textColor = 'text-white';
                   let subtitleColor = 'text-gray-400';
                   let iconStyle = 'bg-white/10 text-white/80';
 
-                  if (isApproved) {
-                    containerBg = 'bg-green-600';
-                    textColor = 'text-white';
-                    subtitleColor = 'text-green-100';
-                    iconStyle = 'bg-white/20 text-white';
-                  } else if (returnedForDisplay) {
+                  if (returnedForDisplay) {
                     // Explicit chairman return reasons should stay orange
                     containerBg = 'bg-[#f59e0b]';
                     textColor = 'text-[#451a03]';
                     subtitleColor = 'text-[#78350f]';
                     iconStyle = 'bg-[#78350f]/10 text-[#78350f]';
+                  } else if (isOsas) {
+                    containerBg = 'bg-green-600 shadow-md';
+                    textColor = 'text-white';
+                    subtitleColor = 'text-green-100';
+                    iconStyle = 'bg-white/20 text-white';
+                  } else {
+                    containerBg = 'bg-emerald-50/90 border border-emerald-200 shadow-sm';
+                    textColor = 'text-emerald-950';
+                    subtitleColor = 'text-emerald-700';
+                    iconStyle = 'bg-emerald-100 text-emerald-800';
                   }
 
                   return (
@@ -1362,8 +1374,19 @@ export const Inbox = () => {
                           <Paperclip size={20} />
                         </div>
                         <div>
-                          <p className={`${textColor} font-semibold text-sm`}>{fileName}</p>
-                          <p className={`${subtitleColor} text-[10px] uppercase`}>Attached Document</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className={`${textColor} font-semibold text-sm`}>{fileName}</p>
+                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                              isOsas
+                                ? 'bg-white/20 text-white border border-white/30 font-black'
+                                : 'bg-slate-100/90 text-slate-600 border border-slate-200'
+                            }`}>
+                              {isOsas ? 'OSAS Requirement' : 'OSOA Requirement'}
+                            </span>
+                          </div>
+                          <p className={`${subtitleColor} text-[10px] uppercase font-bold mt-0.5`}>
+                            {isForwardedItem ? '✓ Forwarded to Main Campus' : 'Attached Document'}
+                          </p>
                           {returnedForDisplay && (locallyReturned[file.id]?.comment || fileLog?.comment) && (
                             <p className="mt-1 text-xs italic font-medium opacity-90 max-w-lg">
                               {(fileLog?.users?.full_name || fileLog?.users?.role || user?.role || 'Reviewer')}'s Comment: "{locallyReturned[file.id]?.comment || fileLog?.comment}"

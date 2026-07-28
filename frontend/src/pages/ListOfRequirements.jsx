@@ -490,6 +490,13 @@ const ListOfRequirements = () => {
                         <td className="px-6 py-4">
                           <div className="font-semibold text-base text-gray-800 flex flex-wrap items-center gap-2">
                             {req.title}
+                            <span className={`px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full ${
+                              (req.requirement_scope || 'OSAS') === 'OSAS'
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                : 'bg-slate-100/90 text-slate-500 border border-slate-200'
+                            }`}>
+                              {(req.requirement_scope || 'OSAS') === 'OSAS' ? 'OSAS Requirement' : 'OSOA Requirement'}
+                            </span>
                             {(req.is_optional === true || String(req.is_optional) === 'true') && (
                               <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 text-[10px] font-black uppercase rounded shadow-sm">
                                 Optional

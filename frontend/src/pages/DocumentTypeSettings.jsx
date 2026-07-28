@@ -63,6 +63,8 @@ const DocumentTypeSettings = () => {
     description: '',
     file: null,
     file_url: '',
+    is_optional: false,
+    requirement_scope: 'OSAS',
   });
   const reqFileRef = useRef(null);
 
@@ -131,7 +133,7 @@ const DocumentTypeSettings = () => {
   };
 
   const resetReqForm = () => {
-    setReqForm({ title: '', referenceCode: '', description: '', file: null, file_url: '', is_optional: false });
+    setReqForm({ title: '', referenceCode: '', description: '', file: null, file_url: '', is_optional: false, requirement_scope: 'OSAS' });
     setEditingReqId(null);
     setShowAddForm(false);
   };
@@ -146,6 +148,7 @@ const DocumentTypeSettings = () => {
       file: null,
       file_url: req.file_url || '',
       is_optional: req.is_optional || false,
+      requirement_scope: req.requirement_scope || 'OSAS',
     });
   };
 
@@ -206,6 +209,7 @@ const DocumentTypeSettings = () => {
         subtype_id: subType, // New field instead of proposal_type
         updatedAt: new Date().toISOString(),
         is_optional: reqForm.is_optional || false,
+        requirement_scope: reqForm.requirement_scope || 'OSAS',
       };
 
       if (editingReqId) {
@@ -378,6 +382,53 @@ const DocumentTypeSettings = () => {
         >
           <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${reqForm.is_optional === true || String(reqForm.is_optional) === 'true' ? 'translate-x-5' : 'translate-x-0'}`} />
         </button>
+      </div>
+      <div className="bg-white border border-gray-200 p-5 rounded-xl space-y-3">
+        <div>
+          <h4 className="text-sm font-bold text-gray-800">Requirement Scope</h4>
+          <p className="text-[10px] font-medium text-gray-400 mt-0.5">
+            Select the scope to determine automatic forwarding for Main Campus Review
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+          <label className={`flex items-center gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
+            reqForm.requirement_scope === 'OSOA' 
+              ? 'border-blue-600 bg-blue-50/50 text-blue-900 font-bold' 
+              : 'border-gray-100 hover:border-gray-200 text-gray-600 font-semibold'
+          }`}>
+            <input
+              type="radio"
+              name="requirement_scope"
+              value="OSOA"
+              checked={reqForm.requirement_scope === 'OSOA'}
+              onChange={(e) => setReqForm({ ...reqForm, requirement_scope: e.target.value })}
+              className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+            />
+            <div>
+              <div className="text-xs font-black">OSOA Requirement</div>
+              <div className="text-[10px] text-gray-500 font-normal">Retained at Bustos Campus</div>
+            </div>
+          </label>
+
+          <label className={`flex items-center gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
+            reqForm.requirement_scope === 'OSAS' || !reqForm.requirement_scope 
+              ? 'border-emerald-600 bg-emerald-50/50 text-emerald-900 font-bold' 
+              : 'border-gray-100 hover:border-gray-200 text-gray-600 font-semibold'
+          }`}>
+            <input
+              type="radio"
+              name="requirement_scope"
+              value="OSAS"
+              checked={reqForm.requirement_scope === 'OSAS' || !reqForm.requirement_scope}
+              onChange={(e) => setReqForm({ ...reqForm, requirement_scope: e.target.value })}
+              className="w-4 h-4 text-emerald-600 focus:ring-emerald-500"
+            />
+            <div>
+              <div className="text-xs font-black">OSAS Requirement</div>
+              <div className="text-[10px] text-gray-500 font-normal">Forwarded to Main Campus</div>
+            </div>
+          </label>
+        </div>
       </div>
       <button
         type="submit"
@@ -625,8 +676,15 @@ const DocumentTypeSettings = () => {
                           <FileText size={20} />
                         </div>
                         <div>
-                          <p className="font-black text-gray-800 flex items-center gap-2">
+                          <p className="font-black text-gray-800 flex flex-wrap items-center gap-2">
                             {req.title}
+                            <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                              (req.requirement_scope || 'OSAS') === 'OSAS'
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                : 'bg-slate-100/90 text-slate-500 border border-slate-200'
+                            }`}>
+                              {(req.requirement_scope || 'OSAS') === 'OSAS' ? 'OSAS Requirement' : 'OSOA Requirement'}
+                            </span>
                             {(req.is_optional === true || String(req.is_optional) === 'true') && (
                               <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
                                 Optional
