@@ -149,11 +149,12 @@ export const getRequirementsForType = async (typeId, subtypeId = null, proposalT
  * FILE UPLOAD & ATTACHMENTS
  */
 
-export const uploadSubmissionFile = async (file, typeName, submissionId, versionNumber, subtypeSlug = null) => {
+export const uploadSubmissionFile = async (file, typeName, submissionId, versionNumber, subtypeSlug = null, requirementId = null) => {
   const safeTypeName = typeName.replace(/[^a-z0-9]/gi, '-').toLowerCase();
   const timestamp = Date.now();
+  const uniqueId = requirementId || Math.random().toString(36).substring(2, 8);
   const safeFileName = file.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
-  
+
   let folderPath = `submitted-documents/${safeTypeName}`;
   if (subtypeSlug) {
     folderPath += `/${subtypeSlug.toLowerCase().replace(' ', '-')}`;
@@ -182,15 +183,15 @@ export const uploadSubmissionFile = async (file, typeName, submissionId, version
   } catch (_) {
     // ignore lookup error and fallback to default folderPath
   }
-  
+
   // Organize attachments inside the submission folder by their specific version
-  const filePath = `${folderPath}/${submissionId}/version-${versionNumber}/${timestamp}-${safeFileName}`;
+  const filePath = `${folderPath}/${submissionId}/version-${versionNumber}/${timestamp}-${uniqueId}-${safeFileName}`;
 
   const { data, error } = await supabase.storage
     .from('documents')
     .upload(filePath, file, {
       cacheControl: '3600',
-      upsert: false
+      upsert: true
     });
 
   if (error) throw error;

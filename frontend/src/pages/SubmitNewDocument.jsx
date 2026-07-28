@@ -901,7 +901,7 @@ const SubmitNewDocument = () => {
       // 2. Upload all local files to bucket in parallel
       const newlyUploaded = await Promise.all(
         Object.entries(localFiles).map(async ([reqId, file]) => {
-          const path = await subService.uploadSubmissionFile(file, selectedType.name, submissionId, versionNumber, subType);
+          const path = await subService.uploadSubmissionFile(file, selectedType.name, submissionId, versionNumber, subType, reqId);
           return await subService.saveAttachmentRecord(versionId, reqId, file.name, path);
         })
       );
