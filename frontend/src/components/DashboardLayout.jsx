@@ -212,49 +212,61 @@ const Header = () => {
           <div className="h-8 w-[1px] bg-gray-100"></div>
 
           <div className="flex items-center gap-3 relative">
-            <button
-              onClick={() => setShowUserDropdown(!showUserDropdown)}
-              className="flex items-center gap-3 hover:bg-gray-50 p-2 rounded-xl transition-colors text-left"
-            >
-              <div className="text-right hidden sm:block">
-                <p className="text-sm font-bold text-gray-800">{user?.full_name || user?.username}</p>
-                <p className="text-[10px] text-gray-400 uppercase tracking-wider">{user?.role}</p>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-primary-green flex items-center justify-center text-white font-bold border-2 border-white shadow-sm overflow-hidden">
-                {user?.avatarUrl ? (
-                  <img src={user.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
-                ) : (
-                  (user?.full_name || user?.username)?.charAt(0).toUpperCase() || '?'
-                )}
-              </div>
-            </button>
+            {(() => {
+              const isOrgPres = user?.role === 'org-president';
+              const navTitle = isOrgPres && user?.org_name ? user.org_name : (user?.full_name || user?.username || 'User');
+              const navSubtitle = isOrgPres ? (user?.full_name || 'Organization President') : (user?.role ? String(user.role).replace('-', ' ').toUpperCase() : '');
+              const avatarInitial = (navTitle || '?').charAt(0).toUpperCase();
 
-            {showUserDropdown && (
-              <>
-                <div
-                  className="fixed inset-0 z-40"
-                  onClick={() => setShowUserDropdown(false)}
-                />
-                <div className="absolute top-full right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-gray-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
-                  <div className="p-4 border-b border-gray-100">
-                    <p className="text-sm font-bold text-gray-800 truncate">{user?.full_name || user?.username}</p>
-                    <p className="text-xs text-gray-500 truncate">{user?.email}</p>
-                  </div>
-                  <div className="p-2">
-                    <button
-                      onClick={() => {
-                        setShowUserDropdown(false);
-                        navigate('/profile');
-                      }}
-                      className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 hover:text-primary-green rounded-lg transition-colors font-medium"
-                    >
-                      <UserIcon size={16} />
-                      My Profile
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
+              return (
+                <>
+                  <button
+                    onClick={() => setShowUserDropdown(!showUserDropdown)}
+                    className="flex items-center gap-3 hover:bg-gray-50 p-2 rounded-xl transition-colors text-left"
+                  >
+                    <div className="text-right hidden sm:block">
+                      <p className="text-sm font-bold text-gray-800 truncate max-w-[200px]">{navTitle}</p>
+                      <p className="text-[10px] text-gray-400 font-semibold truncate max-w-[200px]">{navSubtitle}</p>
+                    </div>
+                    <div className="w-10 h-10 rounded-full bg-primary-green flex items-center justify-center text-white font-bold border-2 border-white shadow-sm overflow-hidden shrink-0">
+                      {user?.avatarUrl ? (
+                        <img src={user.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+                      ) : (
+                        avatarInitial
+                      )}
+                    </div>
+                  </button>
+
+                  {showUserDropdown && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setShowUserDropdown(false)}
+                      />
+                      <div className="absolute top-full right-0 mt-2 w-60 bg-white rounded-xl shadow-lg border border-gray-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
+                        <div className="p-4 border-b border-gray-100">
+                          <p className="text-sm font-bold text-gray-800 truncate">{navTitle}</p>
+                          <p className="text-xs text-gray-500 font-medium truncate">{navSubtitle}</p>
+                          {user?.email && <p className="text-[11px] text-gray-400 truncate mt-0.5">{user.email}</p>}
+                        </div>
+                        <div className="p-2">
+                          <button
+                            onClick={() => {
+                              setShowUserDropdown(false);
+                              navigate('/profile');
+                            }}
+                            className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 hover:text-primary-green rounded-lg transition-colors font-medium"
+                          >
+                            <UserIcon size={16} />
+                            My Profile
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
       </header>

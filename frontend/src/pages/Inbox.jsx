@@ -249,6 +249,7 @@ export const Inbox = () => {
   }, []);
   const [selectedVersionId, setSelectedVersionId] = React.useState(null);
   const [isFilesOpen, setIsFilesOpen] = React.useState(true);
+  const [docDetailTabFilter, setDocDetailTabFilter] = React.useState('all');
   const [previewFile, setPreviewFile] = React.useState(null);
   const [filePreviewUrl, setFilePreviewUrl] = React.useState('');
   const [reviewAction, setReviewAction] = React.useState('');
@@ -1307,8 +1308,54 @@ export const Inbox = () => {
           
           {isFilesOpen && (
             <div className="p-6 space-y-3 animate-in slide-in-from-top-4 duration-500">
+              {selectedDoc.attachments && selectedDoc.attachments.length > 0 && (
+                <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setDocDetailTabFilter('all')}
+                    className={`px-3 py-1.5 rounded-lg transition-all ${
+                      docDetailTabFilter === 'all'
+                        ? 'bg-emerald-600 text-white shadow-xs font-black'
+                        : 'text-gray-600 hover:text-gray-800'
+                    }`}
+                  >
+                    All ({selectedDoc.attachments.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDocDetailTabFilter('osas')}
+                    className={`px-3 py-1.5 rounded-lg transition-all ${
+                      docDetailTabFilter === 'osas'
+                        ? 'bg-emerald-600 text-white shadow-xs font-black'
+                        : 'text-gray-600 hover:text-gray-800'
+                    }`}
+                  >
+                    OSAS Requirements ({selectedDoc.attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') === 'OSAS').length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDocDetailTabFilter('local')}
+                    className={`px-3 py-1.5 rounded-lg transition-all ${
+                      docDetailTabFilter === 'local'
+                        ? 'bg-emerald-600 text-white shadow-xs font-black'
+                        : 'text-gray-600 hover:text-gray-800'
+                    }`}
+                  >
+                    LOCAL Requirements ({selectedDoc.attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') !== 'OSAS').length})
+                  </button>
+                </div>
+              )}
+
               {selectedDoc.attachments && selectedDoc.attachments.length > 0 ? (
-                selectedDoc.attachments.map((file, idx) => {
+                selectedDoc.attachments
+                  .filter(file => {
+                    const reqObj = file.requirements || file.requirement;
+                    const scope = reqObj?.requirement_scope || 'OSAS';
+                    if (docDetailTabFilter === 'osas') return scope === 'OSAS';
+                    if (docDetailTabFilter === 'local') return scope !== 'OSAS';
+                    return true;
+                  })
+                  .map((file, idx) => {
                   const fileName = file.file_name || 'Attached File';
                   let finalPath = file.file_url || '';
                   if (finalPath.startsWith('documents/')) {
@@ -1335,28 +1382,38 @@ export const Inbox = () => {
                   const isForwardedPhase = docStatus.includes('main campus review') || docStatus === 'completed' || docStatus === 'waiting for accomplishment report' || docStatus === 'approved' || docStatus === 'ready for retrieval';
                   const isForwardedItem = isForwardedPhase && isOsas;
 
+                  // Chairman stage check: if status is submitted, oso staff review, pending, or returned
+                  const isChairmanStage = docStatus === 'submitted' || docStatus === 'oso staff review' || docStatus === 'pending' || docStatus === 'returned';
+                  const isChairmanApproved = (locallyApproved && locallyApproved.includes(file.id)) || (fileLog && fileLog.review_action === 'approved') || (!isChairmanStage && !returnedForDisplay);
+
                   // Dynamic styles based on review status
                   let containerBg = 'bg-[#525252]';
                   let textColor = 'text-white';
-                  let subtitleColor = 'text-gray-400';
+                  let subtitleColor = 'text-gray-300';
                   let iconStyle = 'bg-white/10 text-white/80';
+                  let badgeStyle = 'bg-white/10 text-white/90 border border-white/20';
 
                   if (returnedForDisplay) {
-                    // Explicit chairman return reasons should stay orange
+                    // Explicit chairman return reasons stay orange
                     containerBg = 'bg-[#f59e0b]';
                     textColor = 'text-[#451a03]';
                     subtitleColor = 'text-[#78350f]';
                     iconStyle = 'bg-[#78350f]/10 text-[#78350f]';
-                  } else if (isOsas) {
+                    badgeStyle = 'bg-amber-100 text-amber-800 border border-amber-200';
+                  } else if (isForwardedPhase || isChairmanApproved) {
+                    // Approved or forwarded attachment: Solid Green
                     containerBg = 'bg-green-600 shadow-md';
                     textColor = 'text-white';
                     subtitleColor = 'text-green-100';
                     iconStyle = 'bg-white/20 text-white';
+                    badgeStyle = 'bg-white/20 text-white border border-white/30 font-black';
                   } else {
-                    containerBg = 'bg-emerald-50/90 border border-emerald-200 shadow-sm';
-                    textColor = 'text-emerald-950';
-                    subtitleColor = 'text-emerald-700';
-                    iconStyle = 'bg-emerald-100 text-emerald-800';
+                    // Initial submission (before Chairman approval): Neutral Dark Gray
+                    containerBg = 'bg-[#525252]';
+                    textColor = 'text-white';
+                    subtitleColor = 'text-gray-300';
+                    iconStyle = 'bg-white/10 text-white/80';
+                    badgeStyle = 'bg-white/10 text-white/90 border border-white/20';
                   }
 
                   return (
@@ -1376,16 +1433,12 @@ export const Inbox = () => {
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
                             <p className={`${textColor} font-semibold text-sm`}>{fileName}</p>
-                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
-                              isOsas
-                                ? 'bg-white/20 text-white border border-white/30 font-black'
-                                : 'bg-slate-100/90 text-slate-600 border border-slate-200'
-                            }`}>
-                              {isOsas ? 'OSAS Requirement' : 'OSOA Requirement'}
+                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${badgeStyle}`}>
+                              {isOsas ? 'OSAS Requirement' : 'LOCAL Requirement'}
                             </span>
                           </div>
                           <p className={`${subtitleColor} text-[10px] uppercase font-bold mt-0.5`}>
-                            {isForwardedItem ? '✓ Forwarded to Main Campus' : 'Attached Document'}
+                            {isForwardedPhase ? (isOsas ? '✓ Forwarded to Main Campus' : '✓ Retained Locally') : 'Attached Document'}
                           </p>
                           {returnedForDisplay && (locallyReturned[file.id]?.comment || fileLog?.comment) && (
                             <p className="mt-1 text-xs italic font-medium opacity-90 max-w-lg">

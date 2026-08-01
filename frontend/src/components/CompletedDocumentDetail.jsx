@@ -133,6 +133,7 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
   const [externalProofs, setExternalProofs] = React.useState([]);
   const [isFilesOpen, setIsFilesOpen] = React.useState(true);
   const [previewUrl, setPreviewUrl] = React.useState(null);
+  const [scopeTab, setScopeTab] = React.useState('all');
 
   const [isAccomplishmentReportOpen, setIsAccomplishmentReportOpen] = React.useState(false);
 
@@ -582,9 +583,55 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
             <ChevronDown size={18} className={`transition-transform ${isFilesOpen ? 'rotate-180' : ''}`} />
           </button>
           {isFilesOpen && (
-            <div className="p-4 space-y-2 bg-white">
+            <div className="p-4 space-y-3 bg-white">
+              {fileAttachments.length > 0 && (
+                <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => setScopeTab('all')}
+                    className={`px-3 py-1.5 rounded-lg transition-all ${
+                      scopeTab === 'all'
+                        ? 'bg-emerald-600 text-white shadow-xs font-black'
+                        : 'text-gray-600 hover:text-gray-800'
+                    }`}
+                  >
+                    All ({fileAttachments.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setScopeTab('osas')}
+                    className={`px-3 py-1.5 rounded-lg transition-all ${
+                      scopeTab === 'osas'
+                        ? 'bg-emerald-600 text-white shadow-xs font-black'
+                        : 'text-gray-600 hover:text-gray-800'
+                    }`}
+                  >
+                    OSAS Requirements ({fileAttachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') === 'OSAS').length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setScopeTab('local')}
+                    className={`px-3 py-1.5 rounded-lg transition-all ${
+                      scopeTab === 'local'
+                        ? 'bg-emerald-600 text-white shadow-xs font-black'
+                        : 'text-gray-600 hover:text-gray-800'
+                    }`}
+                  >
+                    LOCAL Requirements ({fileAttachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') !== 'OSAS').length})
+                  </button>
+                </div>
+              )}
+
               {fileAttachments.length > 0 ? (
-                fileAttachments.map((file, idx) => {
+                fileAttachments
+                  .filter(file => {
+                    const reqObj = file.requirements || file.requirement;
+                    const scope = reqObj?.requirement_scope || 'OSAS';
+                    if (scopeTab === 'osas') return scope === 'OSAS';
+                    if (scopeTab === 'local') return scope !== 'OSAS';
+                    return true;
+                  })
+                  .map((file, idx) => {
                   const fileUrl = getStoragePublicUrl(file.file_url);
                   const fileName = file.file_name || 'Attached File';
                   const sizeLabel = file.file_size
@@ -607,21 +654,11 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
 
                   const cardBg = isDisapproved
                     ? 'bg-red-600'
-                    : isOsas
-                    ? 'bg-green-600 shadow-md'
-                    : 'bg-emerald-50/90 border border-emerald-200 shadow-sm';
+                    : 'bg-green-600 shadow-md';
 
-                  const titleColor = isDisapproved || isOsas
-                    ? 'text-white font-bold'
-                    : 'text-emerald-950 font-bold';
-
-                  const metaColor = isDisapproved || isOsas
-                    ? 'text-green-100'
-                    : 'text-emerald-700';
-
-                  const iconColor = isDisapproved || isOsas
-                    ? 'text-white shrink-0'
-                    : 'text-emerald-600 shrink-0';
+                  const titleColor = 'text-white font-bold';
+                  const metaColor = 'text-green-100';
+                  const iconColor = 'text-white shrink-0';
 
                   return (
                     <div
@@ -633,12 +670,8 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <p className={`${titleColor} font-semibold text-sm truncate`}>{fileName}</p>
-                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
-                              isOsas
-                                ? 'bg-white/20 text-white border border-white/30 font-black'
-                                : 'bg-slate-100/90 text-slate-600 border border-slate-200'
-                            }`}>
-                              {isOsas ? 'OSAS Requirement' : 'OSOA Requirement'}
+                            <span className="text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-white/20 text-white border border-white/30 font-black">
+                              {isOsas ? 'OSAS Requirement' : 'LOCAL Requirement'}
                             </span>
                           </div>
                           {meta && <p className={`text-[10px] uppercase font-semibold ${metaColor}`}>{meta}</p>}

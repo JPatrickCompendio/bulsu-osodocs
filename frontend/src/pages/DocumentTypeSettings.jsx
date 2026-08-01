@@ -405,7 +405,7 @@ const DocumentTypeSettings = () => {
               className="w-4 h-4 text-blue-600 focus:ring-blue-500"
             />
             <div>
-              <div className="text-xs font-black">OSOA Requirement</div>
+              <div className="text-xs font-black">LOCAL Requirement</div>
               <div className="text-[10px] text-gray-500 font-normal">Retained at Bustos Campus</div>
             </div>
           </label>
@@ -683,7 +683,7 @@ const DocumentTypeSettings = () => {
                                 ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                                 : 'bg-slate-100/90 text-slate-500 border border-slate-200'
                             }`}>
-                              {(req.requirement_scope || 'OSAS') === 'OSAS' ? 'OSAS Requirement' : 'OSOA Requirement'}
+                              {(req.requirement_scope || 'OSAS') === 'OSAS' ? 'OSAS Requirement' : 'LOCAL Requirement'}
                             </span>
                             {(req.is_optional === true || String(req.is_optional) === 'true') && (
                               <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">

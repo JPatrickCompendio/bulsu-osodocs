@@ -246,6 +246,8 @@ export const MyDocuments = () => {
 
   const [activeTab, setActiveTab] = React.useState('All');
   const [searchQuery, setSearchQuery] = React.useState('');
+  const [mainCampusModalTab, setMainCampusModalTab] = React.useState('osas');
+  const [docDetailTabFilter, setDocDetailTabFilter] = React.useState('all');
   const [loading, setLoading] = React.useState(true);
   const [logsData, setLogsData] = React.useState([]);
   const [highlightedDocId, setHighlightedDocId] = React.useState(null);
@@ -2438,8 +2440,54 @@ export const MyDocuments = () => {
 
                 {isFilesOpen && (
                   <div className="p-6 space-y-3 animate-in slide-in-from-top-4 duration-500">
+                    {attachments && attachments.length > 0 && (
+                      <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 mb-3">
+                        <button
+                          type="button"
+                          onClick={() => setDocDetailTabFilter('all')}
+                          className={`px-3 py-1.5 rounded-lg transition-all ${
+                            docDetailTabFilter === 'all'
+                              ? 'bg-emerald-600 text-white shadow-xs font-black'
+                              : 'text-gray-600 hover:text-gray-800'
+                          }`}
+                        >
+                          All ({attachments.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDocDetailTabFilter('osas')}
+                          className={`px-3 py-1.5 rounded-lg transition-all ${
+                            docDetailTabFilter === 'osas'
+                              ? 'bg-emerald-600 text-white shadow-xs font-black'
+                              : 'text-gray-600 hover:text-gray-800'
+                          }`}
+                        >
+                          OSAS Requirements ({attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') === 'OSAS').length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDocDetailTabFilter('local')}
+                          className={`px-3 py-1.5 rounded-lg transition-all ${
+                            docDetailTabFilter === 'local'
+                              ? 'bg-emerald-600 text-white shadow-xs font-black'
+                              : 'text-gray-600 hover:text-gray-800'
+                          }`}
+                        >
+                          LOCAL Requirements ({attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') !== 'OSAS').length})
+                        </button>
+                      </div>
+                    )}
+
                     {attachments && attachments.length > 0 ? (
-                      attachments.map((file, idx) => {
+                      attachments
+                        .filter(file => {
+                          const reqObj = file.requirements || file.requirement;
+                          const scope = reqObj?.requirement_scope || 'OSAS';
+                          if (docDetailTabFilter === 'osas') return scope === 'OSAS';
+                          if (docDetailTabFilter === 'local') return scope !== 'OSAS';
+                          return true;
+                        })
+                        .map((file, idx) => {
                         const fileName = file.file_name || 'Attached File';
                         let finalPath = file.file_url || '';
                         if (finalPath.startsWith('documents/')) {
@@ -2476,26 +2524,34 @@ export const MyDocuments = () => {
                         const isForwardedPhase = docStatus.includes('main campus review') || docStatus === 'completed' || docStatus === 'waiting for accomplishment report' || docStatus === 'approved' || docStatus === 'ready for retrieval';
                         const isForwardedItem = isForwardedPhase && isOsas;
 
+                        const isChairmanApproved = (locallyApproved && locallyApproved.includes(file.id)) || (fileLog && fileLog.review_action === 'approved') || (!isChairmanStage && !returnedForDisplay);
+
                         let containerBg = 'bg-[#525252]';
                         let textColor = 'text-white';
-                        let subtitleColor = 'text-gray-400';
+                        let subtitleColor = 'text-gray-300';
                         let iconStyle = 'bg-white/10 text-white/80';
+                        let badgeStyle = 'bg-white/10 text-white/90 border border-white/20';
 
                         if (hasRevision) {
                           containerBg = 'bg-[#f59e0b]';
                           textColor = 'text-[#451a03]';
                           subtitleColor = 'text-[#78350f]';
                           iconStyle = 'bg-[#78350f]/10 text-[#78350f]';
-                        } else if (isOsas) {
+                          badgeStyle = 'bg-amber-100 text-amber-800 border border-amber-200';
+                        } else if (isForwardedPhase || isChairmanApproved) {
+                          // Approved or forwarded attachment: Solid Green
                           containerBg = 'bg-green-600 shadow-md';
                           textColor = 'text-white';
                           subtitleColor = 'text-green-100';
                           iconStyle = 'bg-white/20 text-white';
+                          badgeStyle = 'bg-white/20 text-white border border-white/30 font-black';
                         } else {
-                          containerBg = 'bg-emerald-50/90 border border-emerald-200 shadow-sm';
-                          textColor = 'text-emerald-950';
-                          subtitleColor = 'text-emerald-700';
-                          iconStyle = 'bg-emerald-100 text-emerald-800';
+                          // Initial submission (before Chairman approval): Neutral Dark Gray
+                          containerBg = 'bg-[#525252]';
+                          textColor = 'text-white';
+                          subtitleColor = 'text-gray-300';
+                          iconStyle = 'bg-white/10 text-white/80';
+                          badgeStyle = 'bg-white/10 text-white/90 border border-white/20';
                         }
 
                         return (
@@ -2515,16 +2571,12 @@ export const MyDocuments = () => {
                               <div>
                                 <div className="flex flex-wrap items-center gap-2">
                                   <p className={`${textColor} font-semibold text-sm`}>{fileName}</p>
-                                  <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
-                                    isOsas
-                                      ? 'bg-white/20 text-white border border-white/30 font-black'
-                                      : 'bg-slate-100/90 text-slate-600 border border-slate-200'
-                                  }`}>
-                                    {isOsas ? 'OSAS Requirement' : 'OSOA Requirement'}
+                                  <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${badgeStyle}`}>
+                                    {isOsas ? 'OSAS Requirement' : 'LOCAL Requirement'}
                                   </span>
                                 </div>
                                 <p className={`${subtitleColor} text-[10px] uppercase font-bold mt-0.5`}>
-                                  {isForwardedItem ? '✓ Forwarded to Main Campus' : 'Attached Document'}
+                                  {isForwardedPhase ? (isOsas ? '✓ Forwarded to Main Campus' : '✓ Retained Locally') : 'Attached Document'}
                                 </p>
                                 {returnedForDisplay && fileLog?.comment && (
                                   <p className="mt-1 text-xs italic font-medium opacity-90 max-w-lg">
@@ -2612,9 +2664,9 @@ export const MyDocuments = () => {
               />
             </div>
 
-            <div className="space-y-4 self-start">
+            <div className="space-y-4 self-start sticky top-0 z-20">
               {/* Viewed By + Controls (match screenshot format) */}
-              <div className="bg-gradient-to-r from-[#e9ad00] to-[#d89b00] rounded-2xl p-4 text-white shadow-sm">
+              <div className="bg-gradient-to-r from-[#e9ad00] to-[#d89b00] rounded-2xl p-4 text-white shadow-md">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3">
                     <div className="mt-0.5 w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
@@ -3532,8 +3584,54 @@ export const MyDocuments = () => {
 
           {isFilesOpen && (
             <div className="p-6 space-y-3 animate-in slide-in-from-top-4 duration-500">
+              {attachments && attachments.length > 0 && (
+                <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setDocDetailTabFilter('all')}
+                    className={`px-3 py-1.5 rounded-lg transition-all ${
+                      docDetailTabFilter === 'all'
+                        ? 'bg-emerald-600 text-white shadow-xs font-black'
+                        : 'text-gray-600 hover:text-gray-800'
+                    }`}
+                  >
+                    All ({attachments.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDocDetailTabFilter('osas')}
+                    className={`px-3 py-1.5 rounded-lg transition-all ${
+                      docDetailTabFilter === 'osas'
+                        ? 'bg-emerald-600 text-white shadow-xs font-black'
+                        : 'text-gray-600 hover:text-gray-800'
+                    }`}
+                  >
+                    OSAS Requirements ({attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') === 'OSAS').length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDocDetailTabFilter('local')}
+                    className={`px-3 py-1.5 rounded-lg transition-all ${
+                      docDetailTabFilter === 'local'
+                        ? 'bg-emerald-600 text-white shadow-xs font-black'
+                        : 'text-gray-600 hover:text-gray-800'
+                    }`}
+                  >
+                    LOCAL Requirements ({attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') !== 'OSAS').length})
+                  </button>
+                </div>
+              )}
+
               {attachments && attachments.length > 0 ? (
-                attachments.map((file, idx) => {
+                attachments
+                  .filter(file => {
+                    const reqObj = file.requirements || file.requirement;
+                    const scope = reqObj?.requirement_scope || 'OSAS';
+                    if (docDetailTabFilter === 'osas') return scope === 'OSAS';
+                    if (docDetailTabFilter === 'local') return scope !== 'OSAS';
+                    return true;
+                  })
+                  .map((file, idx) => {
                   const fileName = file.file_name || 'Attached File';
                   let finalPath = file.file_url || '';
                   if (finalPath.startsWith('documents/')) {
@@ -3560,27 +3658,36 @@ export const MyDocuments = () => {
                   const isForwardedPhase = docStatus.includes('main campus review') || docStatus === 'completed' || docStatus === 'waiting for accomplishment report' || docStatus === 'approved' || docStatus === 'ready for retrieval';
                   const isForwardedItem = isForwardedPhase && isOsas;
 
+                  const isChairmanStage = docStatus === 'submitted' || docStatus === 'oso staff review' || docStatus === 'pending' || docStatus === 'returned';
+                  const isChairmanApproved = (locallyApproved && locallyApproved.includes(file.id)) || isApproved || (!isChairmanStage && !returnedForDisplay);
+
                   // Dynamic styles based on review status
                   let containerBg = 'bg-[#525252]';
                   let textColor = 'text-white';
-                  let subtitleColor = 'text-gray-400';
+                  let subtitleColor = 'text-gray-300';
                   let iconStyle = 'bg-white/10 text-white/80';
+                  let badgeStyle = 'bg-white/10 text-white/90 border border-white/20';
 
                   if (returnedForDisplay) {
                     containerBg = 'bg-[#f59e0b]';
                     textColor = 'text-[#451a03]';
                     subtitleColor = 'text-[#78350f]';
                     iconStyle = 'bg-[#78350f]/10 text-[#78350f]';
-                  } else if (isOsas) {
+                    badgeStyle = 'bg-amber-100 text-amber-800 border border-amber-200';
+                  } else if (isForwardedPhase || isChairmanApproved) {
+                    // Approved or forwarded attachment: Solid Green
                     containerBg = 'bg-green-600 shadow-md';
                     textColor = 'text-white';
                     subtitleColor = 'text-green-100';
                     iconStyle = 'bg-white/20 text-white';
+                    badgeStyle = 'bg-white/20 text-white border border-white/30 font-black';
                   } else {
-                    containerBg = 'bg-emerald-50/90 border border-emerald-200 shadow-sm';
-                    textColor = 'text-emerald-950';
-                    subtitleColor = 'text-emerald-700';
-                    iconStyle = 'bg-emerald-100 text-emerald-800';
+                    // Initial submission (before Chairman approval): Neutral Dark Gray
+                    containerBg = 'bg-[#525252]';
+                    textColor = 'text-white';
+                    subtitleColor = 'text-gray-300';
+                    iconStyle = 'bg-white/10 text-white/80';
+                    badgeStyle = 'bg-white/10 text-white/90 border border-white/20';
                   }
 
                   return (
@@ -3600,12 +3707,8 @@ export const MyDocuments = () => {
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
                             <p className={`${textColor} font-semibold text-sm`}>{fileName}</p>
-                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
-                              isOsas
-                                ? 'bg-white/20 text-white border border-white/30 font-black'
-                                : 'bg-slate-100/90 text-slate-600 border border-slate-200'
-                            }`}>
-                              {isOsas ? 'OSAS Requirement' : 'OSOA Requirement'}
+                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${badgeStyle}`}>
+                              {isOsas ? 'OSAS Requirement' : 'LOCAL Requirement'}
                             </span>
                           </div>
                           <p className={`${subtitleColor} text-[10px] uppercase font-bold mt-0.5`}>
@@ -4218,11 +4321,13 @@ export const MyDocuments = () => {
                             OSAS Only
                           </span>
                         </div>
-                        <p className="text-[11px] text-gray-400 leading-normal">
-                          Only attachments classified as OSAS requirements will be automatically forwarded to Main Campus.
-                        </p>
 
-                        <div className="space-y-2.5 overflow-y-auto max-h-[340px] pr-1">
+                        {/* General Description Notice applying to all forwarded attachments */}
+                        <div className="p-3 bg-emerald-50/90 border border-emerald-200 rounded-xl text-emerald-900 text-xs leading-relaxed font-medium">
+                          The attachments listed below are classified as <strong>OSAS Requirements</strong> and will be automatically forwarded to Main Campus Review.
+                        </div>
+
+                        <div className="space-y-2.5 overflow-y-auto max-h-[300px] pr-1">
                           {(() => {
                             const allVer = Array.isArray(selectedDoc?.raw?.submission_versions)
                               ? selectedDoc.raw.submission_versions
@@ -4230,36 +4335,31 @@ export const MyDocuments = () => {
                             const activeVer = allVer.find(v => v.id === (selectedVersionId || selectedDoc?.raw?.current_version_id)) || allVer[0];
                             const rawAtts = activeVer?.submission_attachments || selectedDoc?.attachments || [];
                             
-                            // Filter to ONLY show documents that will be forwarded to Main Campus (OSAS requirements, default to OSAS if unconfigured)
                             const forwardedAtts = rawAtts.filter(att => {
                               const req = att.requirements || att.requirement;
                               const scope = (req?.requirement_scope || 'OSAS').toString().trim().toUpperCase();
-                              return scope !== 'OSOA'; // OSAS or unconfigured defaults to OSAS
+                              return scope === 'OSAS';
                             });
 
                             if (forwardedAtts.length === 0) {
-                              return <p className="text-xs text-gray-400 italic py-6 text-center">No OSAS documents found for Main Campus forwarding.</p>;
+                              return (
+                                <p className="text-xs text-gray-400 italic py-6 text-center">
+                                  No OSAS documents found for Main Campus forwarding.
+                                </p>
+                              );
                             }
 
                             return forwardedAtts.map((att, idx) => {
                               const req = att.requirements || att.requirement;
 
                               return (
-                                <div key={att.id || idx} className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/80 flex items-center justify-between gap-3 shadow-xs">
-                                  <div className="flex items-center gap-3 overflow-hidden">
-                                    <FileText size={18} className="text-emerald-600 shrink-0" />
-                                    <div className="truncate">
-                                      <p className="text-xs font-bold text-gray-800 truncate">{att.file_name || att.title || 'Attachment'}</p>
-                                      <p className="text-[10px] text-gray-500 font-medium">{req?.title || req?.name || 'Requirement'}</p>
-                                    </div>
+                                <div key={att.id || idx} className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/70 flex items-center gap-3.5 shadow-xs">
+                                  <div className="w-9 h-9 bg-emerald-100 rounded-lg flex items-center justify-center shrink-0">
+                                    <FileText size={18} className="text-emerald-700" />
                                   </div>
-                                  <div className="shrink-0 flex flex-col items-end">
-                                    <span className="px-2 py-0.5 text-[9px] font-black uppercase rounded-full tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                      OSAS Requirement
-                                    </span>
-                                    <span className="text-[10px] font-bold mt-0.5 text-emerald-700">
-                                      ✓ Will be forwarded
-                                    </span>
+                                  <div className="truncate flex-1">
+                                    <p className="text-xs font-bold text-gray-800 truncate">{att.file_name || att.title || 'Attachment'}</p>
+                                    <p className="text-[11px] text-emerald-800 font-semibold truncate mt-0.5">{req?.title || req?.name || 'Requirement'}</p>
                                   </div>
                                 </div>
                               );
