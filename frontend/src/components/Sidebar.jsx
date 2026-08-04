@@ -30,16 +30,19 @@ const Sidebar = () => {
     
     const fetchInboxCount = async () => {
       try {
-        let statusFilter = '';
-        if (user.role === 'admin') statusFilter = 'SDS coordinator review';
-        else if (user.role === 'chairman' || user.role === 'vice-chairman') statusFilter = 'submitted';
+        let statusFilters = [];
+        if (user.role === 'admin') {
+          statusFilters = ['sds coordinator review', 'SDS coordinator review', 'SDS Coordinator Review', 'oso approved', 'OSO Approved'];
+        } else if (user.role === 'chairman' || user.role === 'vice-chairman') {
+          statusFilters = ['submitted', 'pending', 'oso staff review', 'OSO Staff Review'];
+        }
         
-        if (!statusFilter) return;
+        if (statusFilters.length === 0) return;
 
         const { count, error } = await supabase
           .from('submissions')
           .select('id', { count: 'exact', head: true })
-          .eq('status', statusFilter);
+          .in('status', statusFilters);
           
         if (!error && isMounted) {
           setInboxCount(count || 0);
@@ -192,7 +195,13 @@ const Sidebar = () => {
           <NavLink
             key={item.path}
             to={item.path}
-            onClick={() => window.dispatchEvent(new CustomEvent('sidebar-nav-click'))}
+            onClick={(e) => {
+              window.dispatchEvent(new CustomEvent('sidebar-nav-click', { detail: { path: item.path } }));
+              if (window.__hasUnsavedChanges) {
+                e.preventDefault();
+                e.stopPropagation();
+              }
+            }}
             className={({ isActive }) =>
               `flex items-center justify-between px-4 py-3 rounded-lg transition-all duration-200 ${
                 isActive 

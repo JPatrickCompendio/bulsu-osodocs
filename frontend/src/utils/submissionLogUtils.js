@@ -113,15 +113,29 @@ const phaseMatchers = {
   chairman_review: (log) => {
     const type = norm(log?.action_type);
     const wp = norm(log?.workflow_phase);
-    if (type === 'ready for hardcopy') return true;
     if (type === 'approved' && (wp.includes('chairman') || wp.includes('oso'))) return true;
     return false;
   },
   resubmitted: (log) => norm(log?.action_type) === 'resubmitted',
   forwarded_sds: (log) =>
     norm(log?.action_type) === 'forwarded' && logText(log).includes('sds coordinator'),
-  approved_sds: (log) =>
-    norm(log?.action_type) === 'approved' && logText(log).includes('sds coordinator'),
+  approved_sds: (log) => {
+    const type = norm(log?.action_type);
+    const wp = norm(log?.workflow_phase);
+    const role = norm(log?.users?.role);
+    if (role === 'chairman' || role === 'vice-chairman' || wp.includes('chairman')) {
+      return false;
+    }
+    return (
+      type === 'approved' &&
+      (role === 'admin' || wp.includes('sds') || logText(log).includes('approved by sds'))
+    );
+  },
+  hardcopy_verification: (log) => {
+    const type = norm(log?.action_type);
+    const text = logText(log);
+    return type === 'ready for hardcopy' || type === 'ready_for_hardcopy' || text.includes('ready for hardcopy');
+  },
   approved_dean: (log) =>
     norm(log?.action_type) === 'approved' &&
     (logText(log).includes('dean') || norm(log?.workflow_phase).includes('dean')),
@@ -166,8 +180,8 @@ const STATUS_TO_NEXT_PHASE = {
   pending: 'chairman_review',
   'oso staff review': 'chairman_review',
   returned: 'resubmitted',
-  'to forward': 'forwarded_sds',
   'sds coordinator review': 'approved_sds',
+  'to forward': 'hardcopy_verification',
   'dean review': 'approved_dean',
   'dean approved': 'forwarded_external',
   'main campus review': 'approved_external',
@@ -206,16 +220,24 @@ const PENDING_PHASE_TEMPLATES = {
     action_type: 'approved',
     workflow_phase: 'sds-review',
     description: 'Approved by SDS Coordinator',
-    users: { full_name: 'Pending', role: 'admin' },
-    displayName: 'SDS Coordinator',
+    users: { full_name: 'Teresita delacruz', role: 'admin' },
+    displayName: 'Teresita delacruz',
+    displayRole: 'admin'
+  },
+  hardcopy_verification: {
+    action_type: 'ready_for_hardcopy',
+    workflow_phase: 'sds-review',
+    description: 'Awaiting physical hardcopy verification and approval by SDS Coordinator / Admin.',
+    users: { full_name: 'Pending Hardcopy Verification', role: 'admin' },
+    displayName: 'SDS Coordinator (Admin)',
     displayRole: 'ADMIN'
   },
   approved_dean: {
     action_type: 'approved',
     workflow_phase: 'dean-review',
     description: 'Approved by Dean',
-    users: { full_name: 'Dean Approval', role: 'dean' },
-    displayName: 'Dean Approval',
+    users: { full_name: 'Final In-Campus review', role: 'dean' },
+    displayName: 'Final In-Campus review',
     displayRole: 'DEAN'
   },
   forwarded_external: {
@@ -325,6 +347,12 @@ export const buildTimelineDisplayLogs = (
 
 export const getTimelineActorDisplay = (log) => {
   if (log?.isPending) {
+    if (log.pendingPhaseId === 'approved_sds') {
+      return {
+        name: 'Teresita delacruz',
+        role: 'admin'
+      };
+    }
     return {
       name: log.displayName || log.users?.full_name || 'Pending',
       role: log.displayRole || log.users?.role || 'Pending'
@@ -332,7 +360,7 @@ export const getTimelineActorDisplay = (log) => {
   }
 
   if (norm(log?.workflow_phase).includes('dean')) {
-    return { name: 'Dean Approval', role: 'Dean' };
+    return { name: 'Final In-Campus review', role: 'Dean' };
   }
 
   return {

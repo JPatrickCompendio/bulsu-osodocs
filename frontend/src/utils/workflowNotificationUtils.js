@@ -1,9 +1,9 @@
 const COMPLETED_STATUSES = new Set(['completed', 'disapproved', 'rejected']);
 
 const INBOX_STATUSES_BY_ROLE = {
-  admin: ['sds coordinator review', 'oso approved'],
-  chairman: ['submitted', 'pending'],
-  'vice-chairman': ['submitted', 'pending'],
+  admin: ['sds coordinator review', 'sds coordinator review', 'sds coordinator review', 'oso approved', 'oso approved'],
+  chairman: ['submitted', 'pending', 'oso staff review'],
+  'vice-chairman': ['submitted', 'pending', 'oso staff review'],
 };
 
 export const normalizeWorkflowStatus = (value) =>

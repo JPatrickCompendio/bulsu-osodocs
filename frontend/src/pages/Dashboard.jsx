@@ -121,7 +121,7 @@ const fetchChairmanDashboardFallback = async (user, role) => {
 
 const getStatusColor = (status) => {
   const s = (status || '').toLowerCase().trim();
-  if (s.includes('to forward') || s.includes('hardcopy submission')) {
+  if (s.includes('pending hard copy') || s.includes('pending hardcopy') || s.includes('to forward') || s.includes('hardcopy submission') || s.includes('hardcopy')) {
     return '#db2777';
   }
   if (s.includes('chairman') || s.includes('vice chairman') || s.includes('oso staff review') || s.includes('oso staff') || s.includes('pending')) {
@@ -130,7 +130,7 @@ const getStatusColor = (status) => {
   if (s.includes('sds coordinator review') || s.includes('sds review') || s.includes('sds') || s === 'oso approved') {
     return '#6366f1';
   }
-  if (s.includes('dean review')) {
+  if (s.includes('dean review') || s.includes('final in-campus review') || s.includes('final in-campus')) {
     return '#1e3a8a';
   }
   if (s.includes('dean approved')) {
@@ -175,14 +175,14 @@ const formatStatus = (s, viewerRole = 'org-president') => {
   if (s === 'oso approved') return 'SDS coordinator review';
   if (s === 'sds approved' || s === 'chairman approved') return 'Chairman and vice chairman review';
   if (s === 'vice chairman approved' || s === 'external review' || s === 'main campus review') return 'Main Campus review';
-  if (s === 'external approved') return 'Dean review';
+  if (s === 'external approved' || s === 'dean review') return 'Final In-Campus review';
   if (s === 'dean approved' || s === 'waiting for accomplishment report') return 'Approved';
-  if (s === 'to forward') return 'To Forward';
+  if (s === 'to forward') return 'Pending Hard Copy';
   return s.charAt(0).toUpperCase() + s.slice(1);
 };
 
 const formatBreakdownLabel = (status) => {
-  if (status === 'to forward') return 'To Forward';
+  if (status === 'to forward') return 'Pending Hard Copy';
   if (status === 'submitted' || status === 'oso staff review') return 'OSO Staff Review';
   if (status === 'main campus review' || status === 'external review') return 'Main Campus Review';
   return status;

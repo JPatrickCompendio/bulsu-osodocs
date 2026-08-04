@@ -36,7 +36,7 @@ import {
 
 const getStatusColor = (status) => {
   const s = (status || '').toLowerCase().trim();
-  if (s.includes('to forward') || s.includes('hardcopy submission')) {
+  if (s.includes('pending hard copy') || s.includes('pending hardcopy') || s.includes('to forward') || s.includes('hardcopy submission') || s.includes('hardcopy')) {
     return '#db2777';
   }
   if (s.includes('chairman') || s.includes('vice chairman') || s.includes('oso staff review') || s.includes('oso staff') || s.includes('pending')) {
@@ -45,7 +45,7 @@ const getStatusColor = (status) => {
   if (s.includes('sds coordinator review') || s.includes('sds review') || s.includes('sds')) {
     return '#6366f1';
   }
-  if (s.includes('dean review')) {
+  if (s.includes('dean review') || s.includes('final in-campus review') || s.includes('final in-campus')) {
     return '#1e3a8a';
   }
   if (s.includes('main campus review')) {
@@ -143,11 +143,11 @@ const mapInboxSubmission = (sub, viewer, subtypesMap = {}) => {
   } else if (rawStatus === 'submitted' || rawStatus === 'pending') {
     statusLabel = 'OSO Staff Review';
   } else if (rawStatus === 'to forward') {
-    statusLabel = viewer?.role === 'org-president' ? 'Hardcopy Submission' : 'To Forward';
+    statusLabel = viewer?.role === 'org-president' ? 'Hardcopy Submission' : 'Pending Hard Copy';
   } else if (rawStatus === 'sds coordinator review' || rawStatus === 'oso approved') {
     statusLabel = 'SDS coordinator review';
   } else if (rawStatus === 'dean review' || rawStatus === 'external approved') {
-    statusLabel = 'Dean Review';
+    statusLabel = 'Final In-Campus review';
   } else if (rawStatus === 'main campus review' || rawStatus === 'vice chairman approved') {
     statusLabel = 'Main Campus Review';
   } else if (rawStatus === 'sds approved' || rawStatus === 'chairman approved') {
@@ -659,8 +659,8 @@ export const Inbox = () => {
       setLoading(true);
       
       const statusFilter = user?.role === 'admin'
-        ? ['SDS coordinator review', 'oso approved']
-        : ['submitted'];
+        ? ['sds coordinator review', 'SDS coordinator review', 'SDS Coordinator Review', 'oso approved', 'OSO Approved', 'OSO approved']
+        : ['submitted', 'pending', 'oso staff review', 'OSO Staff Review'];
 
       // Try with submission_logs join
       let { data, error } = await supabase
@@ -769,11 +769,13 @@ export const Inbox = () => {
       const formattedRemarks = comments || `Approved by ${formatReviewerRoleLabel(user?.role)}`;
       const isSdsCoordinatorStage = (selectedDoc.raw?.status || '').toLowerCase() === 'sds coordinator review' || (selectedDoc.status || '').toLowerCase().includes('sds');
 
-      // If admin is approving an SDS coordinator-stage item, don't force status to 'to forward' so
-      // the log's workflow_phase ('dean-review') can determine the My Documents category.
-      const updatePayload = isSdsCoordinatorStage && user?.role === 'admin'
-        ? { status: 'sds coordinator review', remarks: formattedRemarks }
-        : { status: 'to forward', remarks: formattedRemarks };
+      // NEW WORKFLOW:
+      // Chairman approved -> sds coordinator review (forwarded to SDS Coordinator in Inbox)
+      // Admin / SDS Coordinator approved -> to forward (Ready for hardcopy submission)
+      const isAdminOrSdsStage = user?.role === 'admin' || isSdsCoordinatorStage;
+      const updatePayload = isAdminOrSdsStage
+        ? { status: 'to forward', remarks: formattedRemarks }
+        : { status: 'sds coordinator review', remarks: formattedRemarks };
 
       const { error: subErr } = await supabase
         .from('submissions')
@@ -785,8 +787,7 @@ export const Inbox = () => {
       await persistLocalAttachmentReviews(activeVersionId);
 
       // 2. Insert workflow action log(s)
-      // Special case: admin approving right after SDS Coordinator review
-      if (user?.role === 'admin' && isSdsCoordinatorStage) {
+      if (isAdminOrSdsStage) {
         const now = new Date();
         const { error: sdsLogErr } = await supabase
           .from('submission_logs')
@@ -801,6 +802,17 @@ export const Inbox = () => {
               description: comments || 'Approved by SDS Coordinator',
               comment: comments || null,
               created_at: now.toISOString()
+            },
+            {
+              submission_id: selectedDoc.id,
+              submission_version_id: activeVersionId,
+              user_id: user.id,
+              workflow_phase: 'sds-review',
+              action_type: 'ready_for_hardcopy',
+              review_action: null,
+              description: 'Ready for hardcopy submission',
+              comment: null,
+              created_at: new Date(now.getTime() + 1000).toISOString()
             }
           ]);
 
@@ -815,29 +827,12 @@ export const Inbox = () => {
             workflow_phase: 'Chairman Review',
             action_type: 'approved',
             review_action: null,
-            description: comments || `Approved by ${formatReviewerRoleLabel(user?.role)}`,
+            description: comments || `Approved by ${formatReviewerRoleLabel(user?.role)} & Forwarded to SDS Coordinator`,
             comment: comments || null,
             created_at: new Date().toISOString()
           }]);
 
         if (logErr1) throw logErr1;
-
-        // 3. Insert workflow action log 2 (Ready for hardcopy) into submission_logs
-        const { error: logErr2 } = await supabase
-          .from('submission_logs')
-          .insert([{
-            submission_id: selectedDoc.id,
-            submission_version_id: activeVersionId,
-            user_id: user.id,
-            workflow_phase: 'Chairman Review',
-            action_type: 'ready_for_hardcopy',
-            review_action: null,
-            description: 'Ready for hardcopy submission',
-            comment: null,
-            created_at: new Date(Date.now() + 1000).toISOString()
-          }]);
-
-        if (logErr2) throw logErr2;
       }
 
       // Close modal inputs, triggers and refresh list
@@ -1135,7 +1130,7 @@ export const Inbox = () => {
             { label: 'ORGANIZATION', value: selectedDoc.raw?.users?.org_name || details?.organization_name || selectedDoc.org || '-', icon: <User size={18} /> },
             { label: 'TYPE', value: `${selectedDoc.type} ${selectedDoc.proposal_type && selectedDoc.proposal_type !== '-' ? `(${selectedDoc.proposal_type})` : ''}`, icon: <FileText size={18} />, color: 'text-blue-500' },
             { label: 'STATUS', value: selectedDoc.status, icon: <Clock size={18} />, badge: true },
-            { label: 'SUBMITTED', value: selectedDoc.time, icon: <Calendar size={18} /> }
+            { label: 'RECEIVED AT', value: selectedDoc.time, icon: <Calendar size={18} /> }
           ].map((card, idx) => (
             <div key={idx} className="bg-gray-100 p-6 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
               <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">
@@ -2075,7 +2070,7 @@ export const Inbox = () => {
                   <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Document Details</th>
                   <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Sender</th>
                   <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider text-center">Type</th>
-                  <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Submitted</th>
+                  <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Received At</th>
                   <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider text-center">Status</th>
                 </tr>
               </thead>

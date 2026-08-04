@@ -16,7 +16,21 @@ import {
 import PageHeader from '../components/PageHeader';
 import DEFAULT_HEADER_IMG from '../assets/HEADER.png';
 import DEFAULT_FOOTER_IMG from '../assets/FOOTER.png';
+import HEADER_LOGO_IMG from '../assets/headerLOGO.png';
 import ActivityProposalPreviewModal from '../components/ActivityProposalPreviewModal';
+const extractIncrementNumber = (val) => {
+  if (!val) return '';
+  const str = String(val).trim();
+  if (str.includes('-')) {
+    const parts = str.split('-');
+    const lastPart = parts[parts.length - 1];
+    if (!isNaN(parseInt(lastPart, 10))) {
+      return lastPart;
+    }
+  }
+  return str;
+};
+
 const SubmitNewDocument = () => {
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
@@ -166,7 +180,27 @@ const SubmitNewDocument = () => {
   const [activeDraft, setActiveDraft] = useState({ submissionId: null, versionId: null });
   const [draftNotice, setDraftNotice] = useState('');
   const [isNewDraftThisSession, setIsNewDraftThisSession] = useState(false);
+  const [pendingNavPath, setPendingNavPath] = useState(null);
   const location = useLocation();
+
+  useEffect(() => {
+    window.__hasUnsavedChanges = hasUnsavedChanges;
+    return () => {
+      window.__hasUnsavedChanges = false;
+    };
+  }, [hasUnsavedChanges]);
+
+  useEffect(() => {
+    const handleSidebarNav = (e) => {
+      const targetPath = e.detail?.path;
+      if (targetPath) {
+        setPendingNavPath(targetPath);
+        setShowUnsavedModal(true);
+      }
+    };
+    window.addEventListener('sidebar-nav-click', handleSidebarNav);
+    return () => window.removeEventListener('sidebar-nav-click', handleSidebarNav);
+  }, []);
 
   useEffect(() => {
     loadDocumentTypes();
@@ -245,14 +279,16 @@ const SubmitNewDocument = () => {
     };
 
     const formatDuration = (mins) => {
-      if (!mins) return '—';
+      if (!mins) return '';
       const h = Math.floor(mins / 60);
       const m = mins % 60;
       let res = [];
       if (h > 0) res.push(`${h} hour${h > 1 ? 's' : ''}`);
       if (m > 0) res.push(`${m} minute${m > 1 ? 's' : ''}`);
-      return res.join(' and ') || '—';
+      return res.join(' and ') || '';
     };
+
+    const orgName = proposalDetails.organization_name || user?.organization_name || user?.organization || 'Student Organization';
 
     doc.open();
     doc.write(`
@@ -261,154 +297,157 @@ const SubmitNewDocument = () => {
           <title>Activity Proposal Form</title>
           <style>
             @media print {
-              body { margin: 0; padding: 0; background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-              @page { margin: 0; size: auto; }
-              thead { display: table-header-group; }
-              tfoot { display: table-footer-group; }
-              table { width: 100%; border-collapse: collapse; border: none; }
-              img { max-width: 100% !important; }
-              .fixed-header { position: fixed; top: 0; left: 0; width: 100%; z-index: 1000; }
-              .fixed-footer { position: fixed; bottom: 0; left: 0; width: 100%; z-index: 1000; }
+              html, body { height: 100%; margin: 0; padding: 0; background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              @page { margin: 4mm 6mm; size: A4 portrait; }
+              .print-wrapper { display: flex; flex-direction: column; min-height: 280mm; box-sizing: border-box; position: relative; }
+              .official-document-footer {
+                position: fixed !important;
+                bottom: 2mm !important;
+                left: 6mm !important;
+                right: 6mm !important;
+                width: auto !important;
+                background: white !important;
+              }
             }
-            body { font-family: Arial, Helvetica, sans-serif; color: black; background: white; margin: 0; font-size: 13px; }
-            .form-row { display: flex; align-items: flex-end; margin-bottom: 18px; }
-            .form-label { font-weight: bold; font-size: 13px; margin-right: 5px; white-space: nowrap; }
-            .form-line { flex-grow: 1; border-bottom: 2px solid black; min-height: 16px; font-size: 13px; font-weight: bold; padding-bottom: 2px; text-align: center; }
-            .section-title { font-weight: bold; font-size: 13px; margin-top: 20px; margin-bottom: 12px; }
+            body { font-family: Arial, Helvetica, sans-serif; color: black; background: white; margin: 0; font-size: 11.5px; }
+            .form-row { display: flex; align-items: flex-end; margin-bottom: 7px; }
+            .form-label { font-weight: bold; font-size: 11.5px; margin-right: 5px; white-space: nowrap; }
+            .form-line { flex-grow: 1; border-bottom: 1.5px solid black; min-height: 14px; font-size: 11.5px; font-weight: normal; padding-bottom: 1px; text-align: left; padding-left: 8px; }
+            .section-title { font-weight: bold; font-size: 11.5px; margin-top: 8px; margin-bottom: 4px; }
           </style>
         </head>
         <body>
-          <div class="fixed-header">
-            <img src="${headerBase64}" style="width: 100%; display: block; max-height: 160px; object-fit: fill;" alt="Header" />
+          <div class="print-wrapper" style="padding: 0px 5px; display: flex; flex-direction: column; min-height: 280mm; box-sizing: border-box;">
+            <div style="text-align: center; margin-bottom: 6px;">
+              <img src="${HEADER_LOGO_IMG}" style="height: 70px; width: auto; object-fit: contain; margin: 0 auto; display: block;" alt="BulSU Logo" />
+            </div>
+
+            <div style="text-align: center; font-size: 15px; font-weight: bold; margin-bottom: 28px;">Activity Proposal Form</div>
+            
+            <div class="form-row">
+              <div class="form-label">Name of Student Organization:</div>
+              <div class="form-line">${proposalDetails.organization_name || ''}</div>
+            </div>
+            <div class="form-row">
+              <div class="form-label">Name of Adviser:</div>
+              <div class="form-line">${proposalDetails.adviser_name || ''}</div>
+            </div>
+            <div class="form-row">
+              <div class="form-label">Activity Number:</div>
+              <div class="form-line">${proposalDetails.activity_number || ''}</div>
+            </div>
+            <div class="form-row">
+              <div class="form-label">Activity Title:</div>
+              <div class="form-line">${proposalDetails.activity_title || ''}</div>
+            </div>
+            <div class="form-row">
+              <div class="form-label">Name of Person-in-Charge:</div>
+              <div class="form-line" style="flex-grow: 0.6; margin-right: 15px;">${proposalDetails.person_in_charge || ''}</div>
+              <div class="form-label">Student ID No.:</div>
+              <div class="form-line">${proposalDetails.student_id_no || ''}</div>
+            </div>
+            <div class="form-row">
+              <div class="form-label">Contact Number of Person-in-Charge:</div>
+              <div class="form-line">${proposalDetails.contact_number || ''}</div>
+            </div>
+            <div class="form-row">
+              <div class="form-label">Target Venue:</div>
+              <div class="form-line">${proposalDetails.target_venue || ''}</div>
+            </div>
+            <div class="form-row">
+              <div class="form-label">Target Date and Time:</div>
+              <div class="form-line">
+                ${proposalDetails.activity_dates.map(d => new Date(d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })).join(', ')} 
+                | ${formatTime(proposalDetails.target_time)} - ${proposalDetails.is_indefinite_end_time ? 'INDEFINITE' : formatTime(proposalDetails.target_end_time)}
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-label">Duration:</div>
+              <div class="form-line">${proposalDetails.is_indefinite_end_time ? 'INDEFINITE' : formatDuration(Math.round(parseFloat(proposalDetails.duration || 0) * 60))}</div>
+            </div>
+            <div class="form-row">
+              <div class="form-label">Number of Student Involved:</div>
+              <div class="form-line">${proposalDetails.number_of_students || ''}</div>
+            </div>
+
+            <div class="section-title">Target Audience/Participants:</div>
+            <div style="margin-left: 20px; margin-bottom: 6px; display: flex;">
+              ${renderCheckbox('Members only', proposalDetails.target_audience === 'Members only')}
+              ${renderCheckbox('BulSUans only', proposalDetails.target_audience === 'BulSUans only')}
+              ${renderCheckbox('Open to the public', proposalDetails.target_audience === 'Open to the public')}
+            </div>
+
+            <div class="section-title">Nature of Activity:</div>
+            <div style="margin-left: 20px; margin-bottom: 6px; display: flex;">
+              ${renderCheckbox('Co-Curricular', proposalDetails.nature_of_activity === 'Co-Curricular')}
+              ${renderCheckbox('Extra-Curricular', proposalDetails.nature_of_activity === 'Extra-Curricular')}
+            </div>
+
+            <div class="section-title">Objectives of the Activity:</div>
+            <div style="margin-left: 20px; margin-bottom: 8px; display: flex; flex-direction: column;">
+              ${renderCheckbox('Leadership Development and Formation', getObjectiveChecked('Leadership Development and Formation'))}
+              ${renderCheckbox('Membership Development and Formation', getObjectiveChecked('Membership Development and Formation'))}
+              ${renderCheckbox('Organizational Program Management', getObjectiveChecked('Organizational Program Management'))}
+              ${renderCheckbox('Values Enrichment', getObjectiveChecked('Values Enrichment'))}
+              ${renderCheckbox('Skills Enhancement', getObjectiveChecked('Skills Enhancement'))}
+              <div class="form-row" style="margin-top: 2px; margin-bottom: 0;">
+                ${renderCheckbox('Others:', getObjectiveChecked('Others'))}
+                <div class="form-line" style="margin-left: -20px; text-align: left;">${proposalDetails.others_objective || ''}</div>
+              </div>
+            </div>
+
+            <div style="font-size: 11px; margin-left: 30px; margin-top: 8px; margin-bottom: 6px;">
+              Describe how this activity will satisfy the needs of the organization and how it will help the<br/>organization achieve its goals:
+            </div>
+            <div class="form-row" style="margin-left: 30px;"><div class="form-label">1.</div><div class="form-line" style="text-align: left;">${proposalDetails.satisfaction_goal_1 || ''}</div></div>
+            <div class="form-row" style="margin-left: 30px;"><div class="form-label">2.</div><div class="form-line" style="text-align: left;">${proposalDetails.satisfaction_goal_2 || ''}</div></div>
+            <div class="form-row" style="margin-left: 30px;"><div class="form-label">3.</div><div class="form-line" style="text-align: left;">${proposalDetails.satisfaction_goal_3 || ''}</div></div>
+
+            <div style="margin-top: 10px;">
+              <div class="form-row">
+                <div class="form-label">Name of Partners (if any):</div>
+                <div class="form-line" style="text-align: left;">${proposalDetails.partners || ''}</div>
+              </div>
+              <div class="form-row">
+                <div class="form-label">Name of Sponsors (if any):</div>
+                <div class="form-line" style="text-align: left;">${proposalDetails.sponsors || ''}</div>
+              </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; margin-top: 18px; margin-bottom: 10px;">
+              <div style="width: 40%; text-align: center;">
+                <div style="border-bottom: 1.5px solid black; height: 16px; font-size: 11px; font-weight: bold; margin-bottom: 2px; text-transform: uppercase;">
+                  ${proposalDetails.person_in_charge || user?.full_name || ''}
+                </div>
+                <div style="font-size: 9px; font-style: italic;">(Signature over printed name)</div>
+                <div style="font-size: 10px; margin-top: 2px;">President, ${orgName}</div>
+              </div>
+              <div style="width: 40%; text-align: center;">
+                <div style="border-bottom: 1.5px solid black; height: 16px; font-size: 11px; font-weight: bold; margin-bottom: 2px; text-transform: uppercase;">
+                  ${proposalDetails.adviser_name || ''}
+                </div>
+                <div style="font-size: 9px; font-style: italic;">(Signature over printed name)</div>
+                <div style="font-size: 10px; margin-top: 2px;">Adviser, ${orgName}</div>
+              </div>
+            </div>
+
+            <!-- Official Document Footer pinned to bottom -->
+            <div class="official-document-footer" style="margin-top: auto; padding-top: 4px; font-family: Arial, Helvetica, sans-serif;">
+              <div style="border-top: 1px solid #000; width: 100%; margin-bottom: 4px;"></div>
+              <div style="text-align: center; font-size: 8.5px; font-weight: bold; color: #000; margin-bottom: 4px; line-height: 1.2;">
+                Office of the Student Organizations- Ground Floor, Roxas Hall, Bulacan State University, City of Malolos, Bulacan Tel No. (044)919-7800 loc.1077
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; font-size: 8.5px; font-weight: bold; color: #000;">
+                <div>
+                  <div>BulSU-OP-OSO-02F1</div>
+                  <div>Revision: 1</div>
+                </div>
+                <div style="text-align: right;">
+                  Page 1 of 1
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="fixed-footer">
-            <img src="${footerBase64}" style="width: 100%; display: block; max-height: 120px; object-fit: fill;" alt="Footer" />
-          </div>
-          <table style="width: 100%; border-collapse: collapse; border: none; background: transparent;">
-            <thead>
-              <tr><td style="border: none; padding: 0;">
-                <div style="height: 160px;"></div>
-              </td></tr>
-            </thead>
-            <tbody>
-              <tr><td style="border: none; padding: 30px 50px;">
-                <div style="text-align: center; font-size: 16px; font-weight: bold; margin-bottom: 35px;">Activity Proposal Form</div>
-                
-                <div class="form-row">
-                  <div class="form-label">Name of Student Organization:</div>
-                  <div class="form-line">${proposalDetails.organization_name || ''}</div>
-                </div>
-                <div class="form-row">
-                  <div class="form-label">Name of Adviser:</div>
-                  <div class="form-line">${proposalDetails.adviser_name || ''}</div>
-                </div>
-                <div class="form-row">
-                  <div class="form-label">Activity Number:</div>
-                  <div class="form-line">${proposalDetails.activity_number || ''}</div>
-                </div>
-                <div class="form-row">
-                  <div class="form-label">Activity Title:</div>
-                  <div class="form-line">${proposalDetails.activity_title || ''}</div>
-                </div>
-                <div class="form-row">
-                  <div class="form-label">Name of Person-in-Charge:</div>
-                  <div class="form-line" style="flex-grow: 0.6; margin-right: 15px;">${proposalDetails.person_in_charge || ''}</div>
-                  <div class="form-label">Student ID No.:</div>
-                  <div class="form-line">${proposalDetails.student_id_no || ''}</div>
-                </div>
-                <div class="form-row">
-                  <div class="form-label">Contact Number of Person-in-Charge:</div>
-                  <div class="form-line">${proposalDetails.contact_number || ''}</div>
-                </div>
-                <div class="form-row">
-                  <div class="form-label">Target Venue:</div>
-                  <div class="form-line">${proposalDetails.target_venue || ''}</div>
-                </div>
-                <div class="form-row">
-                  <div class="form-label">Target Date and Time:</div>
-                  <div class="form-line">
-                    ${proposalDetails.activity_dates.map(d => new Date(d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })).join(', ')} 
-                    | ${formatTime(proposalDetails.target_time)} - ${proposalDetails.is_indefinite_end_time ? 'INDEFINITE' : formatTime(proposalDetails.target_end_time)}
-                  </div>
-                </div>
-                <div class="form-row">
-                  <div class="form-label">Duration:</div>
-                  <div class="form-line">${proposalDetails.is_indefinite_end_time ? 'INDEFINITE' : formatDuration(Math.round(parseFloat(proposalDetails.duration || 0) * 60))}</div>
-                </div>
-                <div class="form-row">
-                  <div class="form-label">Number of Student Involved:</div>
-                  <div class="form-line">${proposalDetails.number_of_students || ''}</div>
-                </div>
-
-                <div class="section-title">Target Audience/Participants:</div>
-                <div style="margin-left: 20px; margin-bottom: 20px; display: flex;">
-                  ${renderCheckbox('Members only', proposalDetails.target_audience === 'Members only')}
-                  ${renderCheckbox('BulSUans only', proposalDetails.target_audience === 'BulSUans only')}
-                  ${renderCheckbox('Open to the public', proposalDetails.target_audience === 'Open to the public')}
-                </div>
-
-                <div class="section-title">Nature of Activity:</div>
-                <div style="margin-left: 20px; margin-bottom: 20px; display: flex;">
-                  ${renderCheckbox('Co-Curricular', proposalDetails.nature_of_activity === 'Co-Curricular')}
-                  ${renderCheckbox('Extra-Curricular', proposalDetails.nature_of_activity === 'Extra-Curricular')}
-                </div>
-
-                <div class="section-title">Objectives of the Activity:</div>
-                <div style="margin-left: 20px; margin-bottom: 25px; display: flex; flex-direction: column;">
-                  ${renderCheckbox('Leadership Development and Formation', getObjectiveChecked('Leadership Development and Formation'))}
-                  ${renderCheckbox('Membership Development and Formation', getObjectiveChecked('Membership Development and Formation'))}
-                  ${renderCheckbox('Organizational Program Management', getObjectiveChecked('Organizational Program Management'))}
-                  ${renderCheckbox('Values Enrichment', getObjectiveChecked('Values Enrichment'))}
-                  ${renderCheckbox('Skills Enhancement', getObjectiveChecked('Skills Enhancement'))}
-                  <div class="form-row" style="margin-top: 5px; margin-bottom: 0;">
-                    ${renderCheckbox('Others:', getObjectiveChecked('Others'))}
-                    <div class="form-line" style="margin-left: -20px; text-align: left;">${proposalDetails.others_objective || ''}</div>
-                  </div>
-                </div>
-
-                <div style="font-size: 12px; margin-left: 40px; margin-top: 35px; margin-bottom: 25px;">
-                  Describe how this activity will satisfy the needs of the organization and how it will help the<br/>organization achieve its goals:
-                </div>
-                <div class="form-row" style="margin-left: 40px;"><div class="form-label">1.</div><div class="form-line" style="text-align: left;">${proposalDetails.satisfaction_goal_1 || ''}</div></div>
-                <div class="form-row" style="margin-left: 40px;"><div class="form-label">2.</div><div class="form-line" style="text-align: left;">${proposalDetails.satisfaction_goal_2 || ''}</div></div>
-                <div class="form-row" style="margin-left: 40px;"><div class="form-label">3.</div><div class="form-line" style="text-align: left;">${proposalDetails.satisfaction_goal_3 || ''}</div></div>
-
-                <div style="margin-top: 50px; border-top: 1px solid #ccc; padding-top: 30px;">
-                  <div class="form-row">
-                    <div class="form-label">Name of Partners (if any):</div>
-                    <div class="form-line" style="text-align: left;">${proposalDetails.partners || ''}</div>
-                  </div>
-                  <div class="form-row">
-                    <div class="form-label">Name of Sponsors (if any):</div>
-                    <div class="form-line" style="text-align: left;">${proposalDetails.sponsors || ''}</div>
-                  </div>
-                </div>
-
-                <div style="display: flex; justify-content: space-between; margin-top: 60px;">
-                  <div style="width: 40%; text-align: center;">
-                    <div style="border-bottom: 1.5px solid black; height: 20px; font-size: 13px; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;">
-                      ${user?.full_name || ''}
-                    </div>
-                    <div style="font-size: 10px; font-style: italic;">(Signature over printed name)</div>
-                    <div style="font-size: 12px; margin-top: 5px;">President, Student Organization</div>
-                  </div>
-                  <div style="width: 40%; text-align: center;">
-                    <div style="border-bottom: 1.5px solid black; height: 20px; font-size: 13px; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;">
-                      ${proposalDetails.adviser_name || ''}
-                    </div>
-                    <div style="font-size: 10px; font-style: italic;">(Signature over printed name)</div>
-                    <div style="font-size: 12px; margin-top: 5px;">Adviser, Student Organization</div>
-                  </div>
-                </div>
-
-              </td></tr>
-            </tbody>
-            <tfoot>
-              <tr><td style="border: none; padding: 0;">
-                <div style="height: 120px;"></div>
-              </td></tr>
-            </tfoot>
-          </table>
         </body>
       </html>
     `);
@@ -607,6 +646,7 @@ const SubmitNewDocument = () => {
             duration_minutes: details.duration ? Math.round(parseFloat(details.duration) * 60) : 0
           })).filter(s => s.activity_date) : []),
           activity_dates: details.target_date ? details.target_date.split(',').map(d => d.trim()).filter(Boolean) : [],
+          activity_number: extractIncrementNumber(details.activity_number) || await fetchNextActivityNumber(),
           organization_name: details.organization_name || user?.org_name || '',
           adviser_name: details.adviser_name || user?.adviser_name || '',
           person_in_charge: details.person_in_charge || user?.full_name || '',
@@ -638,23 +678,24 @@ const SubmitNewDocument = () => {
     try {
       const { data: userData } = await supabase.from('users').select('abbreviation').eq('id', user.id).single();
       const orgAbbr = userData?.abbreviation || 'ORG';
-      const date = new Date();
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const baseString = `AP-${orgAbbr}-${year}-${month}`;
+      const docType = selectedType?.name || 'Activity Proposal';
+      const prefix = docType.split(' ').map(w => w[0].toUpperCase()).join('');
+      const searchPattern = `${prefix}-${orgAbbr}-%`;
 
       const { data: existing } = await supabase
         .from('submissions')
         .select('tracking_number')
-        .ilike('tracking_number', `${baseString}-%`);
+        .ilike('tracking_number', searchPattern);
 
       let maxIncrement = 0;
       if (existing && existing.length > 0) {
         existing.forEach(sub => {
-          const parts = (sub.tracking_number || '').split('-');
-          const lastNum = parseInt(parts[parts.length - 1], 10);
-          if (!isNaN(lastNum) && lastNum > maxIncrement) {
-            maxIncrement = lastNum;
+          if (sub.tracking_number) {
+            const parts = sub.tracking_number.split('-');
+            const lastNum = parseInt(parts[parts.length - 1], 10);
+            if (!isNaN(lastNum) && lastNum > maxIncrement) {
+              maxIncrement = lastNum;
+            }
           }
         });
       }
@@ -717,7 +758,7 @@ const SubmitNewDocument = () => {
               duration_minutes: details.duration ? Math.round(parseFloat(details.duration) * 60) : 0
             })).filter(s => s.activity_date) : []),
             activity_dates: details.target_date ? details.target_date.split(',').map(d => d.trim()).filter(Boolean) : [],
-            activity_number: details.activity_number || await fetchNextActivityNumber(),
+            activity_number: extractIncrementNumber(details.activity_number) || await fetchNextActivityNumber(),
             organization_name: details.organization_name || user?.org_name || '',
             adviser_name: details.adviser_name || user?.adviser_name || '',
             person_in_charge: details.person_in_charge || user?.full_name || '',
@@ -938,6 +979,10 @@ const SubmitNewDocument = () => {
       } else {
         showToast('Progress Saved as Draft!', 'success');
         setHasUnsavedChanges(false);
+        window.__hasUnsavedChanges = false;
+        const dest = pendingNavPath || '/my-documents';
+        setPendingNavPath(null);
+        setTimeout(() => navigate(dest), 500);
       }
     } catch (err) {
       console.error('Registration error:', err);
@@ -1013,23 +1058,18 @@ const SubmitNewDocument = () => {
   };
 
   const deleteDraftIfNew = async () => {
-    if (isNewDraftThisSession && activeDraft.submissionId) {
+    if (activeDraft.submissionId) {
       try {
         await supabase.from('submissions').delete().eq('id', activeDraft.submissionId);
       } catch (e) {
-        console.error('Error deleting new draft', e);
+        console.error('Error deleting draft:', e);
       }
     }
   };
 
   const handleBackNavigation = async () => {
-    if (hasUnsavedChanges) {
-      setShowUnsavedModal(true);
-    } else {
-      await deleteDraftIfNew();
-      clearFormOptions('both', true);
-      setView('dashboard');
-    }
+    setPendingNavPath('/my-documents');
+    setShowUnsavedModal(true);
   };
 
   const clearFormOptions = (type, silent = false) => {
@@ -1937,7 +1977,10 @@ const SubmitNewDocument = () => {
 
                     <button
                       type="button"
-                      onClick={handleSaveDraft}
+                      onClick={() => {
+                        setPendingNavPath('/my-documents');
+                        setShowUnsavedModal(true);
+                      }}
                       disabled={isSaving}
                       className="px-5 py-2.5 bg-amber-50 text-amber-600 border border-amber-200 font-black rounded-lg hover:bg-amber-100 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
                     >
@@ -1991,7 +2034,10 @@ const SubmitNewDocument = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={handleSaveDraft}
+                      onClick={() => {
+                        setPendingNavPath('/my-documents');
+                        setShowUnsavedModal(true);
+                      }}
                       disabled={isSaving}
                       className="px-5 py-2.5 bg-amber-50 text-amber-600 border border-amber-200 font-black rounded-lg hover:bg-amber-100 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
                     >
@@ -2091,7 +2137,11 @@ const SubmitNewDocument = () => {
                   setShowUnsavedModal(false);
                   await deleteDraftIfNew();
                   clearFormOptions('both', true);
-                  setView('dashboard');
+                  setHasUnsavedChanges(false);
+                  window.__hasUnsavedChanges = false;
+                  const dest = pendingNavPath || '/my-documents';
+                  setPendingNavPath(null);
+                  navigate(dest);
                 }}
                 className="w-full py-3.5 bg-red-50 text-red-600 hover:bg-red-100 font-black rounded-xl transition-all uppercase tracking-widest text-sm"
               >
@@ -2099,7 +2149,10 @@ const SubmitNewDocument = () => {
               </button>
               <button
                 type="button"
-                onClick={() => setShowUnsavedModal(false)}
+                onClick={() => {
+                  setShowUnsavedModal(false);
+                  setPendingNavPath(null);
+                }}
                 className="w-full py-3 text-gray-400 font-bold text-sm hover:text-gray-600 transition-all mt-2 uppercase tracking-widest"
               >
                 Cancel

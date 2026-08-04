@@ -69,6 +69,34 @@ const getStorageReference = (reference) => {
   };
 };
 
+const formatTimelineComment = (commentText) => {
+  if (!commentText) return '';
+  const str = String(commentText).trim();
+  if (!str) return '';
+
+  const match = str.match(/Forwarded Documents:\s*([^\]\n]+)/i);
+  if (!match) return str;
+
+  const fileListStr = match[1].trim();
+  const fileNames = fileListStr
+    .split(',')
+    .map((f) => f.trim())
+    .filter(Boolean);
+
+  if (fileNames.length === 0) return str;
+
+  const mainComment = str
+    .replace(/\[?Forwarded Documents:\s*[^\]\n]+\]?/gi, '')
+    .trim();
+
+  const bulletList = fileNames.map((name) => `• ${name}`).join('\n');
+
+  if (mainComment) {
+    return `${mainComment}\n\nForwarded Documents:\n${bulletList}`;
+  }
+  return `Forwarded Documents:\n${bulletList}`;
+};
+
 const SubmissionTimeline = ({
   timelineLogs,
   submissionStatus,
@@ -289,13 +317,13 @@ const SubmissionTimeline = ({
 
                   {visibleComment ? (
                     <div
-                      className={`rounded-xl p-4 text-xs font-medium border italic leading-relaxed ${
+                      className={`rounded-xl p-4 text-xs font-medium border italic leading-relaxed whitespace-pre-line ${
                         isPending
                           ? 'bg-white/60 text-slate-500 border-slate-200'
                           : 'bg-gray-50 text-gray-600 border-gray-100'
                       }`}
                     >
-                      &ldquo;{visibleComment}&rdquo;
+                      &ldquo;{formatTimelineComment(visibleComment)}&rdquo;
                     </div>
                   ) : null}
                 </div>

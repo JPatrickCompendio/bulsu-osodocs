@@ -32,7 +32,7 @@ import { useToast } from '../hooks/useToast';
 
 const getStatusColor = (status) => {
   const s = (status || '').toLowerCase().trim();
-  if (s.includes('to forward') || s.includes('hardcopy submission')) {
+  if (s.includes('pending hard copy') || s.includes('pending hardcopy') || s.includes('to forward') || s.includes('hardcopy submission') || s.includes('hardcopy')) {
     return '#db2777';
   }
   if (s.includes('chairman') || s.includes('vice chairman') || s.includes('oso staff review') || s.includes('oso staff') || s.includes('pending')) {
@@ -41,7 +41,7 @@ const getStatusColor = (status) => {
   if (s.includes('sds coordinator review') || s.includes('sds review') || s.includes('sds')) {
     return '#6366f1';
   }
-  if (s.includes('dean review')) {
+  if (s.includes('dean review') || s.includes('final in-campus review') || s.includes('final in-campus')) {
     return '#1e3a8a';
   }
   if (s.includes('dean approved')) {
@@ -68,7 +68,46 @@ const getStatusColor = (status) => {
   if (s === 'completed') {
     return '#22b814';
   }
-  return '#6366f1'; // Default
+  return '#6b7280';
+};
+
+const fetchPreviewTrackingNumber = async (userId, docTypeName = 'Activity Proposal') => {
+  try {
+    const { data: userData } = await supabase.from('users').select('abbreviation').eq('id', userId).single();
+    const orgAbbr = userData?.abbreviation || 'ORG';
+    const prefix = (docTypeName || 'Activity Proposal')
+      .split(' ')
+      .map(w => w[0].toUpperCase())
+      .join('');
+
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const baseString = `${prefix}-${orgAbbr}-${year}-${month}`;
+
+    const { data: existing } = await supabase
+      .from('submissions')
+      .select('tracking_number')
+      .ilike('tracking_number', `${baseString}-%`);
+
+    let maxIncrement = 0;
+    if (existing && existing.length > 0) {
+      existing.forEach(sub => {
+        if (sub.tracking_number) {
+          const parts = sub.tracking_number.split('-');
+          const lastNum = parseInt(parts[parts.length - 1], 10);
+          if (!isNaN(lastNum) && lastNum > maxIncrement) {
+            maxIncrement = lastNum;
+          }
+        }
+      });
+    }
+    const nextIncrement = maxIncrement + 1;
+    return `${baseString}-${nextIncrement}`;
+  } catch (e) {
+    console.error('Failed to fetch preview tracking number for draft:', e);
+    return null;
+  }
 };
 
 const MY_DOCS_SUBMISSION_SELECT = `
@@ -131,10 +170,10 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy, subtypesMap =
 
   let category = 'All';
   if (subStatus === 'returned') category = 'Returned';
-  else if (subStatus === 'to forward') category = user?.role === 'org-president' ? 'OSO Staff review' : 'To Forward';
+  else if (subStatus === 'to forward') category = user?.role === 'org-president' ? 'OSO Staff review' : 'Pending Hard Copy';
   else if (subStatus === 'submitted' || subStatus === 'pending') category = 'OSO Staff review';
   else if (subStatus.includes('sds')) category = 'SDS Review';
-  else if (subStatus.includes('dean approved') || subStatus.includes('dean review') || subStatus.includes('external approved')) category = 'Dean Review';
+  else if (subStatus.includes('dean approved') || subStatus.includes('dean review') || subStatus.includes('external approved')) category = 'Final In-Campus review';
   else if (subStatus.includes('main campus review') || subStatus.includes('external review') || subStatus.includes('vice chairman approved')) category = 'Main Campus Review';
   else if (subStatus.includes('ready for retrieval')) category = 'Approved';
   else if (subStatus.includes('waiting for accomplishment report')) category = 'Approved';
@@ -143,10 +182,10 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy, subtypesMap =
   else if (subStatus.includes('disapproved') || subStatus.includes('rejected')) category = 'Disapproved';
   else {
     if (wpNorm === 'sds review') category = 'SDS Review';
-    else if (wpNorm === 'dean review' || wpNorm === 'external approved') category = 'Dean Review';
+    else if (wpNorm === 'dean review' || wpNorm === 'external approved') category = 'Final In-Campus review';
     else if (wpNorm === 'main campus review' || wpNorm === 'external review') category = 'Main Campus Review';
     else if (wpNorm === 'chairman review') category = 'Chairman Review';
-    else if (ra === 'ready-for-hardcopy') category = user?.role === 'org-president' ? 'OSO Staff review' : 'To Forward';
+    else if (ra === 'ready-for-hardcopy') category = user?.role === 'org-president' ? 'OSO Staff review' : 'Pending Hard Copy';
     else if (ra === 'approved') category = 'Approved';
     else if (ra === 'returned') category = 'Returned';
   }
@@ -176,8 +215,10 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy, subtypesMap =
     status: submission.status === 'submitted'
       ? 'OSO STAFF REVIEW'
       : (submission.status === 'to forward'
-        ? (user?.role === 'org-president' ? 'HARDCOPY SUBMISSION' : 'TO FORWARD')
-        : (submission.status ? submission.status.toUpperCase() : 'PENDING')),
+        ? (user?.role === 'org-president' ? 'HARDCOPY SUBMISSION' : 'PENDING HARD COPY')
+        : (submission.status === 'dean review'
+          ? 'FINAL IN-CAMPUS REVIEW'
+          : (submission.status ? submission.status.toUpperCase() : 'PENDING'))),
     lastAction: lastActionDate,
     category,
     proposal_title: proposalTitle,
@@ -252,6 +293,7 @@ export const MyDocuments = () => {
   const [logsData, setLogsData] = React.useState([]);
   const [highlightedDocId, setHighlightedDocId] = React.useState(null);
   const [subtypesMap, setSubtypesMap] = React.useState({});
+  const [draftPreviewMap, setDraftPreviewMap] = React.useState({});
 
   React.useEffect(() => {
     const fetchSubtypes = async () => {
@@ -920,6 +962,16 @@ export const MyDocuments = () => {
 
         const activeSubs = (subs || []).filter((sub) => String(sub.status || '').toLowerCase() !== 'completed');
 
+        const draftSubs = activeSubs.filter(sub => String(sub.status || '').toLowerCase() === 'draft' && !sub.tracking_number);
+        if (draftSubs.length > 0) {
+          const previewNum = await fetchPreviewTrackingNumber(user.id, 'Activity Proposal');
+          if (previewNum) {
+            const newMap = {};
+            draftSubs.forEach(s => { newMap[s.id] = previewNum; });
+            setDraftPreviewMap(newMap);
+          }
+        }
+
         // Normalize into the same shape expected by the existing mapper (logsData items with `.submissions`)
         data = activeSubs.map((sub) => {
           const logs = (sub.submission_logs || []).filter(l => l.action_type !== 'viewed');
@@ -1259,8 +1311,8 @@ export const MyDocuments = () => {
       const { error: subErr } = await supabase
         .from('submissions')
         .update({
-          status: 'SDS coordinator review',
-          remarks: 'Forwarded to SDS Coordinator (Admin) by Chairman'
+          status: 'sds coordinator review',
+          remarks: "Verified the chairman's signature and approved the document."
         })
         .eq('id', selectedDoc.id);
 
@@ -1275,10 +1327,10 @@ export const MyDocuments = () => {
           submission_version_id: activeVersionId,
           user_id: user.id,
           workflow_phase: 'sds-review',
-          action_type: 'forwarded',
-          review_action: null,
-          description: 'Forwarded to SDS Coordinator (Admin) by Chairman',
-          comment: 'Forwarded to SDS Coordinator (Admin) by Chairman',
+          action_type: 'approved',
+          review_action: 'approved',
+          description: "Verified the chairman's signature and approved the document.",
+          comment: "Verified the chairman's signature and approved the document.",
           created_at: new Date().toISOString()
         }]);
 
@@ -1359,12 +1411,12 @@ export const MyDocuments = () => {
       if (subErr) throw subErr;
 
       const forwardedListText = forwardedFileNames.length > 0
-        ? `Forwarded Documents: ${forwardedFileNames.join(', ')}`
+        ? `Forwarded Documents:\n${forwardedFileNames.map(f => `• ${f}`).join('\n')}`
         : 'No OSAS documents forwarded';
 
       const logDescription = adminComment
-        ? `${adminComment} [${forwardedListText}]`
-        : `Sent to Main Campus for Review. [${forwardedListText}]`;
+        ? `${adminComment}\n\n${forwardedListText}`
+        : `Sent to Main Campus for Review.\n\n${forwardedListText}`;
 
       const { error: logErr } = await supabase
         .from('submission_logs')
@@ -1613,10 +1665,16 @@ export const MyDocuments = () => {
       let insertHardcopyLog = false;
       let stayOnDocument = false;
 
-      if (currentStatus.includes('sds')) {
-        newStatus = user?.role === 'admin' ? 'sds coordinator review' : 'to forward';
+      if (currentStatus.includes('to forward') || currentStatus.includes('hardcopy')) {
+        newStatus = 'sds coordinator review';
+        workflowPhaseStr = 'sds-review';
+        descriptionStr = comments || "Verified the chairman's signature and approved the document.";
+        insertHardcopyLog = false;
+      } else if (currentStatus.includes('sds')) {
+        newStatus = 'to forward';
         workflowPhaseStr = 'sds-review';
         descriptionStr = comments || 'Approved by SDS Coordinator';
+        insertHardcopyLog = true;
       } else if (currentStatus.includes('dean review')) {
         newStatus = 'dean approved';
         workflowPhaseStr = 'dean-review';
@@ -1627,9 +1685,10 @@ export const MyDocuments = () => {
         workflowPhaseStr = 'main-campus-review';
         descriptionStr = comments || 'Approved by Main Campus';
       } else {
-        newStatus = 'to forward';
-        insertHardcopyLog = true;
-        descriptionStr = comments || `Approved by ${reviewerLabel}`;
+        newStatus = 'sds coordinator review';
+        workflowPhaseStr = 'Chairman Review';
+        descriptionStr = comments || `Approved by ${reviewerLabel} & Forwarded to SDS Coordinator`;
+        insertHardcopyLog = false;
       }
 
       const { error: subErr } = await supabase
@@ -1664,7 +1723,7 @@ export const MyDocuments = () => {
             submission_id: selectedDoc.id,
             submission_version_id: activeVersionId,
             user_id: user.id,
-            workflow_phase: 'Chairman Review',
+            workflow_phase: workflowPhaseStr || 'sds-review',
             action_type: 'ready_for_hardcopy',
             review_action: 'ready-for-hardcopy',
             description: 'Ready for hardcopy submission',
@@ -1845,15 +1904,15 @@ export const MyDocuments = () => {
     if (subStatus === 'returned') {
       category = 'Returned';
     } else if (subStatus === 'to forward') {
-      category = user?.role === 'org-president' ? 'OSO Staff review' : 'To Forward';
+      category = user?.role === 'org-president' ? 'OSO Staff review' : 'Pending Hard Copy';
     } else if (subStatus === 'submitted' || subStatus === 'pending') {
       category = 'OSO Staff review';
     } else if (subStatus.includes('sds')) {
       category = 'SDS Review';
     } else if (subStatus.includes('dean approved')) {
-      category = 'Dean Review';
+      category = 'Final In-Campus review';
     } else if (subStatus.includes('dean review')) {
-      category = 'Dean Review';
+      category = 'Final In-Campus review';
     } else if (subStatus.includes('main campus review') || subStatus.includes('external review') || subStatus.includes('vice chairman approved')) {
       category = 'Main Campus Review';
     } else if (subStatus.includes('ready for retrieval')) {
@@ -1869,10 +1928,10 @@ export const MyDocuments = () => {
     } else {
       // Fallback to logs only when status is missing/unknown
       if (wpNorm === 'sds review') category = 'SDS Review';
-      else if (wpNorm === 'dean review' || wpNorm === 'external approved') category = 'Dean Review';
+      else if (wpNorm === 'dean review' || wpNorm === 'external approved') category = 'Final In-Campus review';
       else if (wpNorm === 'main campus review' || wpNorm === 'external review') category = 'Main Campus Review';
       else if (wpNorm === 'chairman review') category = 'Chairman Review';
-      else if (ra === 'ready-for-hardcopy') category = user?.role === 'org-president' ? 'OSO Staff review' : 'To Forward';
+      else if (ra === 'ready-for-hardcopy') category = user?.role === 'org-president' ? 'OSO Staff review' : 'Pending Hard Copy';
       else if (ra === 'approved') category = 'Approved';
       else if (ra === 'returned') category = 'Returned';
     }
@@ -1905,8 +1964,10 @@ export const MyDocuments = () => {
       status: submission.status === 'submitted'
         ? 'OSO STAFF REVIEW'
         : (submission.status === 'to forward'
-          ? (user?.role === 'org-president' ? 'HARDCOPY SUBMISSION' : 'TO FORWARD')
-          : (submission.status ? submission.status.toUpperCase() : 'PENDING')),
+          ? (user?.role === 'org-president' ? 'HARDCOPY SUBMISSION' : 'PENDING HARD COPY')
+          : (submission.status === 'dean review'
+            ? 'FINAL IN-CAMPUS REVIEW'
+            : (submission.status ? submission.status.toUpperCase() : 'PENDING'))),
       lastAction: lastActionDate,
       category,
 
@@ -1966,11 +2027,11 @@ export const MyDocuments = () => {
     { name: 'All', count: visibleDocs.length },
     ...(user?.role === 'org-president' ? [{ name: 'OSO Staff review', count: countByTab('OSO Staff review') }] : []),
     ...(user?.role !== 'admin' ? [{ name: 'SDS Review', count: countByTab('SDS Review') }] : []),
-    { name: 'Dean Review', count: countByTab('Dean Review') },
+    { name: 'Final In-Campus review', count: countByTab('Final In-Campus review') },
     { name: 'Main Campus Review', count: countByTab('Main Campus Review') },
     { name: 'Approved', count: countByTab('Approved') },
     ...(user?.role !== 'org-president' && user?.role !== 'admin' && user?.role !== 'chairman' ? [{ name: 'Completed', count: countByTab('Completed') }] : []),
-    ...(user?.role === 'chairman' ? [{ name: 'To Forward', count: countByTab('To Forward') }] : []),
+    ...(user?.role === 'admin' ? [{ name: 'Pending Hard Copy', count: countByTab('Pending Hard Copy') }] : []),
     { name: 'Returned', count: countByTab('Returned') }
   ];
 
@@ -3779,44 +3840,20 @@ export const MyDocuments = () => {
         )}
 
         {/* Action buttons (Chairman / Vice Chairman - Bottom of the page) */}
-        {isChairmanLikeReviewer(user?.role) && !disableVersionActions && (selectedDoc?.category === 'To Forward' || selectedDoc?.category === 'Returned') && (
+        {isChairmanLikeReviewer(user?.role) && !disableVersionActions && selectedDoc?.category === 'Returned' && (
           <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100]">
             <div className="bg-white/80 backdrop-blur-2xl px-10 py-5 rounded-[2rem] border border-white/50 shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex items-center gap-6 animate-in slide-in-from-bottom-12 duration-1000">
-              <button
-                onClick={() => {
-                  setDecisionType('return');
-                  setReturnComments('');
-                  setIsReturnModalOpen(true);
-                }}
-                disabled={disableVersionActions || selectedDoc.category !== 'To Forward'}
-                className="flex items-center justify-center gap-3 px-8 py-3.5 bg-amber-500 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-lg shadow-amber-500/20 uppercase tracking-widest animate-in"
-              >
-                <RotateCcw size={16} />
-                <span>Return</span>
-              </button>
-
               <button
                 onClick={() => {
                   setDecisionType('disapprove');
                   setReturnComments('');
                   setIsReturnModalOpen(true);
                 }}
-                disabled={disableVersionActions || (selectedDoc.category !== 'To Forward' && selectedDoc.category !== 'Returned')}
+                disabled={disableVersionActions}
                 className="flex items-center justify-center gap-3 px-8 py-3.5 bg-red-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-lg shadow-red-600/20 uppercase tracking-widest animate-in"
               >
                 <X size={16} />
                 <span>Disapprove</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setIsForwardModalOpen(true);
-                }}
-                disabled={disableVersionActions || selectedDoc.category !== 'To Forward' || hasBlockingReturnedAttachments}
-                className="flex items-center justify-center gap-3 px-8 py-3.5 bg-green-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-lg shadow-green-600/20 uppercase tracking-widest animate-in"
-              >
-                <CheckCircle size={16} />
-                <span>Forward</span>
               </button>
             </div>
           </div>
@@ -3827,9 +3864,12 @@ export const MyDocuments = () => {
           isDeanApprovedDoc ||
           isReadyForOrgPickup ||
           isApprovedDoc ||
+          selectedDoc?.category === 'Final In-Campus review' ||
           selectedDoc?.category === 'Dean Review' ||
           selectedDoc?.category === 'SDS Review' ||
           selectedDoc?.category === 'Main Campus Review' ||
+          selectedDoc?.category === 'Pending Hard Copy' ||
+          selectedDoc?.category === 'To Forward' ||
           isSdsStage
         ) && (
           <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50">
@@ -3945,7 +3985,44 @@ export const MyDocuments = () => {
                     </button>
                   )}
                 </>
-              ) : (selectedDoc?.category === 'Dean Review' || selectedDoc?.category === 'SDS Review' || selectedDoc?.category === 'Main Campus Review') && (
+              ) : (selectedDoc?.category === 'Pending Hard Copy' || selectedDoc?.category === 'To Forward' || (selectedDoc?.raw?.status || selectedDoc?.status || '').toLowerCase().includes('forward')) ? (
+                <>
+                  <button
+                    onClick={() => {
+                      setDecisionType('approve');
+                      setReturnComments('');
+                      setIsReturnModalOpen(true);
+                    }}
+                    disabled={hasBlockingReturnedAttachments || hasLocallyReturnedAttachments}
+                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-green-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-lg shadow-green-600/20 uppercase tracking-widest"
+                  >
+                    <CheckCircle size={16} />
+                    <span>Verify & Approve</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setDecisionType('return');
+                      setReturnComments('');
+                      setIsReturnModalOpen(true);
+                    }}
+                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-amber-500 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-amber-500/20 uppercase tracking-widest"
+                  >
+                    <RotateCcw size={16} />
+                    <span>Return</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setDecisionType('disapprove');
+                      setReturnComments('');
+                      setIsReturnModalOpen(true);
+                    }}
+                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-red-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-red-600/20 uppercase tracking-widest"
+                  >
+                    <X size={16} />
+                    <span>Disapprove</span>
+                  </button>
+                </>
+              ) : (selectedDoc?.category === 'Final In-Campus review' || selectedDoc?.category === 'Dean Review' || selectedDoc?.category === 'SDS Review' || selectedDoc?.category === 'Main Campus Review') && (
                 <>
                   <button
                     onClick={() => {

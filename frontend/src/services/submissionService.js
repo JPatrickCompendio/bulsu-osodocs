@@ -290,7 +290,7 @@ export const saveProposalDetails = async (versionId, details, subtypeId = null, 
 
   // Clean up empty strings to null to avoid Postgres type errors for date/time/numeric columns
   Object.keys(safeDetails).forEach(key => {
-    if (safeDetails[key] === '') {
+    if (safeDetails[key] === '' || (typeof safeDetails[key] === 'string' && safeDetails[key].trim() === '')) {
       safeDetails[key] = null;
     }
   });
@@ -311,26 +311,35 @@ export const saveProposalDetails = async (versionId, details, subtypeId = null, 
     // Delete existing schedules for this proposal detail (in case of update)
     await supabase.from('activity_schedules').delete().eq('proposal_detail_id', data.id);
 
-    const formattedSchedules = schedulesToSave.map(sched => {
-      const isDateRange = !!sched.end_date;
-      return {
-        proposal_detail_id: data.id,
-        activity_date: sched.activity_date,
-        end_date: isDateRange ? sched.end_date : null,
-        start_time: isDateRange ? null : (sched.start_time || null),
-        end_time: isDateRange ? null : (sched.end_time || null),
-        is_indefinite: isDateRange ? false : (sched.is_indefinite || false),
-        duration_minutes: isDateRange ? null : (sched.duration_minutes || null)
-      };
-    });
+    const formattedSchedules = schedulesToSave
+      .map(sched => {
+        const actDate = sched.activity_date ? String(sched.activity_date).trim() : null;
+        const endDate = sched.end_date ? String(sched.end_date).trim() : null;
+        const startTime = sched.start_time ? String(sched.start_time).trim() : null;
+        const endTime = sched.end_time ? String(sched.end_time).trim() : null;
+        const isDateRange = !!endDate;
 
-    const { error: schedError } = await supabase
-      .from('activity_schedules')
-      .insert(formattedSchedules);
+        return {
+          proposal_detail_id: data.id,
+          activity_date: actDate || null,
+          end_date: isDateRange ? (endDate || null) : null,
+          start_time: isDateRange ? null : (startTime || null),
+          end_time: isDateRange ? null : (endTime || null),
+          is_indefinite: isDateRange ? false : (sched.is_indefinite || false),
+          duration_minutes: isDateRange ? null : (sched.duration_minutes || null)
+        };
+      })
+      .filter(sched => sched.activity_date || sched.end_date);
 
-    if (schedError) {
-      console.error('Activity Schedules Error:', schedError);
-      throw schedError;
+    if (formattedSchedules.length > 0) {
+      const { error: schedError } = await supabase
+        .from('activity_schedules')
+        .insert(formattedSchedules);
+
+      if (schedError) {
+        console.error('Activity Schedules Error:', schedError);
+        throw schedError;
+      }
     }
   }
 
@@ -360,29 +369,31 @@ export const submitForReview = async (submissionId, versionId, userId) => {
     const typeName = (subData?.documentType?.name) || 'Document';
     const prefix = typeName.split(' ').map(w => w[0].toUpperCase()).join('');
     
-    const date = new Date();
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    
-    const baseString = `${prefix}-${orgAbbr}-${year}-${month}`;
+    const searchPattern = `${prefix}-${orgAbbr}-%`;
     
     const { data: existing } = await supabase
       .from('submissions')
       .select('tracking_number')
-      .ilike('tracking_number', `${baseString}-%`)
-      .order('tracking_number', { ascending: false })
-      .limit(1);
+      .ilike('tracking_number', searchPattern);
       
-    let increment = 1;
-    if (existing && existing.length > 0 && existing[0].tracking_number) {
-      const lastNumStr = existing[0].tracking_number.split('-').pop();
-      const lastNum = parseInt(lastNumStr, 10);
-      if (!isNaN(lastNum)) {
-        increment = lastNum + 1;
-      }
+    let maxIncrement = 0;
+    if (existing && existing.length > 0) {
+      existing.forEach(sub => {
+        if (sub.tracking_number) {
+          const parts = sub.tracking_number.split('-');
+          const lastNum = parseInt(parts[parts.length - 1], 10);
+          if (!isNaN(lastNum) && lastNum > maxIncrement) {
+            maxIncrement = lastNum;
+          }
+        }
+      });
     }
     
-    finalTrackingNumber = `${baseString}-${String(increment)}`;
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    
+    finalTrackingNumber = `${prefix}-${orgAbbr}-${year}-${month}-${maxIncrement + 1}`;
   }
 
   const { error: subErr } = await supabase

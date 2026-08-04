@@ -1,8 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { X, Printer, Edit3, Image as ImageIcon } from 'lucide-react';
+import { X, Printer, Edit3 } from 'lucide-react';
 import JoditEditor from 'jodit-react';
-import DEFAULT_HEADER_IMG from '../assets/HEADER.png';
-import DEFAULT_FOOTER_IMG from '../assets/FOOTER.png';
+import HEADER_LOGO_IMG from '../assets/headerLOGO.png';
 
 const ActivityProposalPreviewModal = ({
   isOpen,
@@ -14,12 +13,9 @@ const ActivityProposalPreviewModal = ({
 }) => {
   const [content, setContent] = useState('');
   const [isInitialized, setIsInitialized] = useState(false);
-  const [headerBase64, setHeaderBase64] = useState('');
-  const [footerBase64, setFooterBase64] = useState('');
+  const [headerLogoBase64, setHeaderLogoBase64] = useState('');
   
   const editorRef = useRef(null);
-  const headerInputRef = useRef(null);
-  const footerInputRef = useRef(null);
 
   const config = useMemo(() => ({
     readonly: false,
@@ -47,16 +43,15 @@ const ActivityProposalPreviewModal = ({
       ctx.drawImage(img, 0, 0);
       resolve(canvas.toDataURL('image/png'));
     };
-    img.onerror = () => resolve(null);
+    img.onerror = () => resolve(src);
   });
 
   useEffect(() => {
     const loadDefaultImages = async () => {
-      if (!headerBase64) setHeaderBase64(await getBase64(DEFAULT_HEADER_IMG));
-      if (!footerBase64) setFooterBase64(await getBase64(DEFAULT_FOOTER_IMG));
+      if (!headerLogoBase64) setHeaderLogoBase64(await getBase64(HEADER_LOGO_IMG));
     };
-    if (isOpen) loadDefaultImages();
-  }, [isOpen]);
+    if (isOpen || inline) loadDefaultImages();
+  }, [isOpen, inline]);
 
   useEffect(() => {
     if (!isOpen && !inline) {
@@ -68,8 +63,8 @@ const ActivityProposalPreviewModal = ({
 
     const buildInitialHtml = async () => {
       const renderCheckbox = (label, isChecked) => `
-        <div style="display: flex; align-items: center; margin-right: 30px; font-size: 13px; font-weight: bold; margin-bottom: 8px;">
-          <div style="display: flex; justify-content: center; align-items: center; width: 14px; height: 14px; border: 1.5px solid black; margin-right: 8px; font-size: 14px; flex-shrink: 0;">
+        <div style="display: flex; align-items: center; margin-right: 25px; font-size: 12px; font-weight: bold; margin-bottom: 4px;">
+          <div style="display: flex; justify-content: center; align-items: center; width: 13px; height: 13px; border: 1.5px solid black; margin-right: 6px; font-size: 12px; flex-shrink: 0;">
             ${isChecked ? '✓' : ''}
           </div>
           ${label}
@@ -90,24 +85,31 @@ const ActivityProposalPreviewModal = ({
       };
 
       const formatDuration = (mins) => {
-        if (!mins) return '—';
+        if (!mins) return '';
         const h = Math.floor(mins / 60);
         const m = mins % 60;
         let res = [];
         if (h > 0) res.push(`${h} hour${h > 1 ? 's' : ''}`);
         if (m > 0) res.push(`${m} minute${m > 1 ? 's' : ''}`);
-        return res.join(' and ') || '—';
+        return res.join(' and ') || '';
       };
+
+      const orgName = proposalDetails.organization_name || user?.organization_name || user?.organization || 'Student Organization';
 
       const initialHtml = `
         <style>
-          .form-row { display: flex; align-items: flex-end; margin-bottom: 18px; }
-          .form-label { font-weight: bold; font-size: 13px; margin-right: 5px; white-space: nowrap; }
-          .form-line { flex-grow: 1; border-bottom: 2px solid black; min-height: 16px; font-size: 13px; font-weight: bold; padding-bottom: 2px; text-align: center; }
-          .section-title { font-weight: bold; font-size: 13px; margin-top: 20px; margin-bottom: 12px; }
+          .form-row { display: flex; align-items: flex-end; margin-bottom: 7px; }
+          .form-label { font-weight: bold; font-size: 12px; margin-right: 5px; white-space: nowrap; }
+          .form-line { flex-grow: 1; border-bottom: 1.5px solid black; min-height: 15px; font-size: 12px; font-weight: normal; padding-bottom: 1px; text-align: left; padding-left: 8px; }
+          .section-title { font-weight: bold; font-size: 12px; margin-top: 8px; margin-bottom: 4px; }
         </style>
-        <div style="padding: 30px 50px; font-family: Arial, Helvetica, sans-serif; color: black; background: white; font-size: 13px;">
-          <div style="text-align: center; font-size: 16px; font-weight: bold; margin-bottom: 35px;">Activity Proposal Form</div>
+        <div style="padding: 10px 15px; font-family: Arial, Helvetica, sans-serif; color: black; background: white; font-size: 12px; display: flex; flex-direction: column; min-height: 1040px; box-sizing: border-box;">
+          
+          <div style="text-align: center; margin-bottom: 6px;">
+            <img src="${headerLogoBase64 || HEADER_LOGO_IMG}" style="height: 70px; width: auto; object-fit: contain; margin: 0 auto; display: block;" alt="BulSU Logo" />
+          </div>
+
+          <div style="text-align: center; font-size: 15px; font-weight: bold; margin-bottom: 28px;">Activity Proposal Form</div>
           
           <div class="form-row">
             <div class="form-label">Name of Student Organization:</div>
@@ -149,8 +151,13 @@ const ActivityProposalPreviewModal = ({
                   return `${startStr} – ${endStr}`;
                 }
                 return `${startStr} — ${formatTime(sched.start_time)} – ${sched.is_indefinite ? 'INDEFINITE' : formatTime(sched.end_time)}`;
-              }).join(' | ') : '—'}
+              }).join(' | ') : (proposalDetails.activity_dates && proposalDetails.activity_dates.length > 0 ? proposalDetails.activity_dates.map(d => new Date(d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })).join(', ') : '—')}
             </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-label">Duration:</div>
+            <div class="form-line">${proposalDetails.is_indefinite_end_time ? 'INDEFINITE' : formatDuration(Math.round(parseFloat(proposalDetails.duration || 0) * 60))}</div>
           </div>
 
           <div class="form-row">
@@ -159,39 +166,39 @@ const ActivityProposalPreviewModal = ({
           </div>
 
           <div class="section-title">Target Audience/Participants:</div>
-          <div style="margin-left: 20px; margin-bottom: 20px; display: flex;">
+          <div style="margin-left: 20px; margin-bottom: 6px; display: flex;">
             ${renderCheckbox('Members only', proposalDetails.target_audience === 'Members only')}
             ${renderCheckbox('BulSUans only', proposalDetails.target_audience === 'BulSUans only')}
             ${renderCheckbox('Open to the public', proposalDetails.target_audience === 'Open to the public')}
           </div>
 
           <div class="section-title">Nature of Activity:</div>
-          <div style="margin-left: 20px; margin-bottom: 20px; display: flex;">
+          <div style="margin-left: 20px; margin-bottom: 6px; display: flex;">
             ${renderCheckbox('Co-Curricular', proposalDetails.nature_of_activity === 'Co-Curricular')}
             ${renderCheckbox('Extra-Curricular', proposalDetails.nature_of_activity === 'Extra-Curricular')}
           </div>
 
           <div class="section-title">Objectives of the Activity:</div>
-          <div style="margin-left: 20px; margin-bottom: 25px; display: flex; flex-direction: column;">
+          <div style="margin-left: 20px; margin-bottom: 8px; display: flex; flex-direction: column;">
             ${renderCheckbox('Leadership Development and Formation', getObjectiveChecked('Leadership Development and Formation'))}
             ${renderCheckbox('Membership Development and Formation', getObjectiveChecked('Membership Development and Formation'))}
             ${renderCheckbox('Organizational Program Management', getObjectiveChecked('Organizational Program Management'))}
             ${renderCheckbox('Values Enrichment', getObjectiveChecked('Values Enrichment'))}
             ${renderCheckbox('Skills Enhancement', getObjectiveChecked('Skills Enhancement'))}
-            <div class="form-row" style="margin-top: 5px; margin-bottom: 0;">
+            <div class="form-row" style="margin-top: 2px; margin-bottom: 0;">
               ${renderCheckbox('Others:', getObjectiveChecked('Others'))}
               <div class="form-line" style="margin-left: -20px; text-align: left;">${proposalDetails.others_objective || ''}</div>
             </div>
           </div>
 
-          <div style="font-size: 12px; margin-left: 40px; margin-top: 35px; margin-bottom: 25px;">
+          <div style="font-size: 11px; margin-left: 30px; margin-top: 8px; margin-bottom: 6px;">
             Describe how this activity will satisfy the needs of the organization and how it will help the<br/>organization achieve its goals:
           </div>
-          <div class="form-row" style="margin-left: 40px;"><div class="form-label">1.</div><div class="form-line" style="text-align: left;">${proposalDetails.satisfaction_goal_1 || ''}</div></div>
-          <div class="form-row" style="margin-left: 40px;"><div class="form-label">2.</div><div class="form-line" style="text-align: left;">${proposalDetails.satisfaction_goal_2 || ''}</div></div>
-          <div class="form-row" style="margin-left: 40px;"><div class="form-label">3.</div><div class="form-line" style="text-align: left;">${proposalDetails.satisfaction_goal_3 || ''}</div></div>
+          <div class="form-row" style="margin-left: 30px;"><div class="form-label">1.</div><div class="form-line" style="text-align: left;">${proposalDetails.satisfaction_goal_1 || ''}</div></div>
+          <div class="form-row" style="margin-left: 30px;"><div class="form-label">2.</div><div class="form-line" style="text-align: left;">${proposalDetails.satisfaction_goal_2 || ''}</div></div>
+          <div class="form-row" style="margin-left: 30px;"><div class="form-label">3.</div><div class="form-line" style="text-align: left;">${proposalDetails.satisfaction_goal_3 || ''}</div></div>
 
-          <div style="margin-top: 50px; border-top: 1px solid #ccc; padding-top: 30px;">
+          <div style="margin-top: 10px;">
             <div class="form-row">
               <div class="form-label">Name of Partners (if any):</div>
               <div class="form-line" style="text-align: left;">${proposalDetails.partners || ''}</div>
@@ -202,20 +209,37 @@ const ActivityProposalPreviewModal = ({
             </div>
           </div>
 
-          <div style="display: flex; justify-content: space-between; margin-top: 60px;">
+          <div style="display: flex; justify-content: space-between; margin-top: 18px; margin-bottom: 10px;">
             <div style="width: 40%; text-align: center;">
-              <div style="border-bottom: 1.5px solid black; height: 20px; font-size: 13px; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;">
+              <div style="border-bottom: 1.5px solid black; height: 16px; font-size: 11px; font-weight: bold; margin-bottom: 2px; text-transform: uppercase;">
                 ${proposalDetails.person_in_charge || user?.full_name || ''}
               </div>
-              <div style="font-size: 10px; font-style: italic;">(Signature over printed name)</div>
-              <div style="font-size: 12px; margin-top: 5px;">President, ${proposalDetails.organization_name || 'Student Organization'}</div>
+              <div style="font-size: 9px; font-style: italic;">(Signature over printed name)</div>
+              <div style="font-size: 10px; margin-top: 2px;">President, ${orgName}</div>
             </div>
             <div style="width: 40%; text-align: center;">
-              <div style="border-bottom: 1.5px solid black; height: 20px; font-size: 13px; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;">
+              <div style="border-bottom: 1.5px solid black; height: 16px; font-size: 11px; font-weight: bold; margin-bottom: 2px; text-transform: uppercase;">
                 ${proposalDetails.adviser_name || ''}
               </div>
-              <div style="font-size: 10px; font-style: italic;">(Signature over printed name)</div>
-              <div style="font-size: 12px; margin-top: 5px;">Adviser, ${proposalDetails.organization_name || 'Student Organization'}</div>
+              <div style="font-size: 9px; font-style: italic;">(Signature over printed name)</div>
+              <div style="font-size: 10px; margin-top: 2px;">Adviser, ${orgName}</div>
+            </div>
+          </div>
+
+          <!-- Official Document Footer pinned to bottom -->
+          <div class="official-document-footer" style="margin-top: auto; padding-top: 4px; font-family: Arial, Helvetica, sans-serif;">
+            <div style="border-top: 1px solid #000; width: 100%; margin-bottom: 4px;"></div>
+            <div style="text-align: center; font-size: 8.5px; font-weight: bold; color: #000; margin-bottom: 4px; line-height: 1.2;">
+              Office of the Student Organizations- Ground Floor, Roxas Hall, Bulacan State University, City of Malolos, Bulacan Tel No. (044)919-7800 loc.1077
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; font-size: 8.5px; font-weight: bold; color: #000;">
+              <div>
+                <div>BulSU-OP-OSO-02F1</div>
+                <div>Revision: 1</div>
+              </div>
+              <div style="text-align: right;">
+                Page 1 of 1
+              </div>
             </div>
           </div>
 
@@ -229,19 +253,7 @@ const ActivityProposalPreviewModal = ({
     buildInitialHtml();
   }, [isOpen, isInitialized, proposalDetails, user]);
 
-  if (!isOpen) return null;
-
-  const handleImageUpload = (e, type) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (type === 'header') setHeaderBase64(reader.result);
-        if (type === 'footer') setFooterBase64(reader.result);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
+  if (!isOpen && !inline) return null;
 
   const handlePrint = () => {
     const printIframe = document.createElement('iframe');
@@ -259,46 +271,29 @@ const ActivityProposalPreviewModal = ({
           <title>Activity Proposal Form</title>
           <style>
             @media print {
-              body { margin: 0; padding: 0; background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-              @page { margin: 0; size: auto; }
-              thead { display: table-header-group; }
-              tfoot { display: table-footer-group; }
-              table { width: 100%; border-collapse: collapse; border: none; }
-              img { max-width: 100% !important; }
-              .fixed-header { position: fixed; top: 0; left: 0; width: 100%; z-index: 1000; }
-              .fixed-footer { position: fixed; bottom: 0; left: 0; width: 100%; z-index: 1000; }
+              html, body { height: 100%; margin: 0; padding: 0; background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              @page { margin: 4mm 6mm; size: A4 portrait; }
+              .print-wrapper { display: flex; flex-direction: column; min-height: 280mm; box-sizing: border-box; position: relative; }
+              .official-document-footer {
+                position: fixed !important;
+                bottom: 2mm !important;
+                left: 6mm !important;
+                right: 6mm !important;
+                width: auto !important;
+                background: white !important;
+              }
             }
-            body { font-family: Arial, Helvetica, sans-serif; color: black; background: white; margin: 0; font-size: 13px; }
-            .form-row { display: flex; align-items: flex-end; margin-bottom: 18px; }
-            .form-label { font-weight: bold; font-size: 13px; margin-right: 5px; white-space: nowrap; }
-            .form-line { flex-grow: 1; border-bottom: 2px solid black; min-height: 16px; font-size: 13px; font-weight: bold; padding-bottom: 2px; text-align: center; }
-            .section-title { font-weight: bold; font-size: 13px; margin-top: 20px; margin-bottom: 12px; }
+            body { font-family: Arial, Helvetica, sans-serif; color: black; background: white; margin: 0; font-size: 11.5px; }
+            .form-row { display: flex; align-items: flex-end; margin-bottom: 7px; }
+            .form-label { font-weight: bold; font-size: 11.5px; margin-right: 5px; white-space: nowrap; }
+            .form-line { flex-grow: 1; border-bottom: 1.5px solid black; min-height: 14px; font-size: 11.5px; font-weight: normal; padding-bottom: 1px; text-align: left; padding-left: 8px; }
+            .section-title { font-weight: bold; font-size: 11.5px; margin-top: 8px; margin-bottom: 4px; }
           </style>
         </head>
         <body>
-          <div class="fixed-header">
-            <img src="${headerBase64}" style="width: 100%; display: block; max-height: 160px; object-fit: fill;" alt="Header" />
+          <div class="print-wrapper" style="padding: 0px 5px; display: flex; flex-direction: column; min-height: 280mm; box-sizing: border-box;">
+            ${content}
           </div>
-          <div class="fixed-footer">
-            <img src="${footerBase64}" style="width: 100%; display: block; max-height: 120px; object-fit: fill;" alt="Footer" />
-          </div>
-          <table style="width: 100%; border-collapse: collapse; border: none; background: transparent;">
-            <thead>
-              <tr><td style="border: none; padding: 0;">
-                <div style="height: 160px;"></div>
-              </td></tr>
-            </thead>
-            <tbody>
-              <tr><td style="border: none; padding: 0;">
-                ${content}
-              </td></tr>
-            </tbody>
-            <tfoot>
-              <tr><td style="border: none; padding: 0;">
-                <div style="height: 120px;"></div>
-              </td></tr>
-            </tfoot>
-          </table>
         </body>
       </html>
     `);
@@ -318,8 +313,6 @@ const ActivityProposalPreviewModal = ({
       }, 2000);
     }, 500);
   };
-
-  if (!isOpen && !inline) return null;
 
   return (
     <div className={inline ? "w-full animate-in fade-in duration-300" : "fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 md:p-6 animate-in fade-in duration-300"}>
@@ -348,22 +341,6 @@ const ActivityProposalPreviewModal = ({
 
         {/* Toolbar */}
         <div className="px-6 py-3 border-b border-gray-100 bg-gray-50/50 flex flex-wrap items-center gap-4 shrink-0 relative z-10">
-          <div className="hidden">
-            <input 
-              type="file" 
-              ref={headerInputRef} 
-              className="hidden" 
-              accept="image/*"
-              onChange={(e) => handleImageUpload(e, 'header')}
-            />
-            <input 
-              type="file" 
-              ref={footerInputRef} 
-              className="hidden" 
-              accept="image/*"
-              onChange={(e) => handleImageUpload(e, 'footer')}
-            />
-          </div>
           <div className="flex-1"></div>
           
           <button 
@@ -386,21 +363,6 @@ const ActivityProposalPreviewModal = ({
               boxShadow: '0 0 20px rgba(0,0,0,0.15)'
             }}
           >
-            
-            {/* Visual Header */}
-            {headerBase64 && (
-              <div 
-                className="relative w-full cursor-pointer group"
-                onClick={() => headerInputRef.current?.click()}
-              >
-                <img src={headerBase64} alt="Header" className="w-full max-h-[160px] object-fill block" />
-                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity text-white">
-                  <ImageIcon size={24} className="mb-2" />
-                  <span className="font-bold text-sm tracking-wider uppercase">Change Header</span>
-                </div>
-              </div>
-            )}
-
             {/* Jodit Content (Body) */}
             <div className="flex-1 jodit-seamless-wrapper relative">
               {!isInitialized ? (
@@ -437,20 +399,6 @@ const ActivityProposalPreviewModal = ({
                 </>
               )}
             </div>
-
-            {/* Visual Footer */}
-            {footerBase64 && (
-              <div 
-                className="relative w-full cursor-pointer group mt-auto"
-                onClick={() => footerInputRef.current?.click()}
-              >
-                <img src={footerBase64} alt="Footer" className="w-full max-h-[120px] object-fill block" />
-                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity text-white">
-                  <ImageIcon size={24} className="mb-2" />
-                  <span className="font-bold text-sm tracking-wider uppercase">Change Footer</span>
-                </div>
-              </div>
-            )}
 
           </div>
         </div>

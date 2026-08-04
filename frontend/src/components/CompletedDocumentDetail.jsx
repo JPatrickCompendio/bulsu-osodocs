@@ -60,7 +60,7 @@ const getStatusDisplayMeta = (status) => {
     return { label: 'SDS Review', badgeClass: 'bg-indigo-600' };
   }
   if (s.includes('dean review')) {
-    return { label: 'Dean Review', badgeClass: 'bg-blue-800' };
+    return { label: 'Final In-Campus review', badgeClass: 'bg-blue-800' };
   }
   if (s.includes('dean approved')) {
     return { label: 'Dean Approved', badgeClass: 'bg-blue-700' };
@@ -74,8 +74,8 @@ const getStatusDisplayMeta = (status) => {
   if (s === 'approved') {
     return { label: 'Approved', badgeClass: 'bg-purple-600' };
   }
-  if (s === 'to forward') {
-    return { label: 'To Forward', badgeClass: 'bg-pink-600' };
+  if (s === 'to forward' || s.includes('pending hard copy') || s.includes('pending hardcopy')) {
+    return { label: 'Pending Hard Copy', badgeClass: 'bg-pink-600' };
   }
   if (s === 'submitted' || s.includes('oso staff') || s === 'pending') {
     return { label: 'OSO Staff Review', badgeClass: 'bg-yellow-600' };
