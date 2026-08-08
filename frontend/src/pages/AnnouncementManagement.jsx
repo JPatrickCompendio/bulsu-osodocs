@@ -277,12 +277,12 @@ const AnnouncementManagement = () => {
         ) : (
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-100 text-gray-600 font-medium text-sm">
-                <th className="p-4">Title</th>
-                <th className="p-4">Audience</th>
-                <th className="p-4">Status</th>
-                <th className="p-4">Date Created</th>
-                <th className="p-4 text-right">Actions</th>
+              <tr className="bg-[#073c2d] border-b border-[#073c2d] text-white font-medium text-sm">
+                <th className="p-4 text-white">Title</th>
+                <th className="p-4 text-white">Audience</th>
+                <th className="p-4 text-white">Status</th>
+                <th className="p-4 text-white">Date Created</th>
+                <th className="p-4 text-right text-white">Actions</th>
               </tr>
             </thead>
             <tbody>

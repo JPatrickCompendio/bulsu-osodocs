@@ -5,9 +5,11 @@ export const useToast = () => {
   const [toast, setToast] = useState(null);
 
   const showToast = useCallback((message, type = 'success') => {
-    // If the message contains words like "failed", "error", "please", it's likely an error/warning in our context
     const lowerMsg = message.toLowerCase();
-    const inferredType = type === 'success' && (lowerMsg.includes('fail') || lowerMsg.includes('error') || lowerMsg.includes('please') || lowerMsg.includes('cannot')) ? 'error' : type;
+    const isErrorKeyword = lowerMsg.includes('fail') || lowerMsg.includes('error') || lowerMsg.includes('cannot') || lowerMsg.includes('invalid');
+    const isSuccessKeyword = lowerMsg.includes('sent') || lowerMsg.includes('success') || lowerMsg.includes('updated') || lowerMsg.includes('created');
+    
+    const inferredType = (type === 'success' && isErrorKeyword && !isSuccessKeyword) ? 'error' : type;
     
     setToast({ message, type: inferredType });
     setTimeout(() => setToast(null), 4000);

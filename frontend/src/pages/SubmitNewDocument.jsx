@@ -31,6 +31,86 @@ const extractIncrementNumber = (val) => {
   return str;
 };
 
+const renderSignatureBlocksHtml = (proposalDetails, user, orgName) => {
+  const allPeople = [];
+
+  // 1. President
+  const presidentName = (proposalDetails?.person_in_charge || user?.full_name || '').trim();
+  allPeople.push({ name: presidentName, role: 'President' });
+
+  // 2. Primary Adviser
+  const primaryAdviser = (proposalDetails?.adviser_name || user?.adviser_name || '').trim();
+  if (primaryAdviser) {
+    allPeople.push({ name: primaryAdviser, role: 'Adviser' });
+  }
+
+  // 3. Co-Advisers
+  const rawCoAdvisers = proposalDetails?.co_advisers || user?.co_advisers;
+  if (rawCoAdvisers) {
+    if (Array.isArray(rawCoAdvisers)) {
+      rawCoAdvisers.forEach(item => {
+        if (typeof item === 'string' && item.trim()) {
+          const trimmed = item.trim();
+          if (!allPeople.some(p => p.name === trimmed)) {
+            allPeople.push({ name: trimmed, role: 'Adviser' });
+          }
+        }
+      });
+    } else if (typeof rawCoAdvisers === 'string') {
+      try {
+        const parsed = JSON.parse(rawCoAdvisers);
+        if (Array.isArray(parsed)) {
+          parsed.forEach(item => {
+            if (typeof item === 'string' && item.trim()) {
+              const trimmed = item.trim();
+              if (!allPeople.some(p => p.name === trimmed)) {
+                allPeople.push({ name: trimmed, role: 'Adviser' });
+              }
+            }
+          });
+        } else if (rawCoAdvisers.trim() && !allPeople.some(p => p.name === rawCoAdvisers.trim())) {
+          allPeople.push({ name: rawCoAdvisers.trim(), role: 'Adviser' });
+        }
+      } catch {
+        rawCoAdvisers.split(',').forEach(item => {
+          const trimmed = item.trim();
+          if (trimmed && !allPeople.some(p => p.name === trimmed)) {
+            allPeople.push({ name: trimmed, role: 'Adviser' });
+          }
+        });
+      }
+    }
+  }
+
+  // If no advisers found, ensure at least 1 empty Adviser block
+  if (allPeople.length === 1) {
+    allPeople.push({ name: '', role: 'Adviser' });
+  }
+
+  // Chunk into rows of max 3 items
+  const rows = [];
+  for (let i = 0; i < allPeople.length; i += 3) {
+    rows.push(allPeople.slice(i, i + 3));
+  }
+
+  return rows.map((rowItems, rowIndex) => `
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; margin-top: ${rowIndex === 0 ? '18px' : '16px'}; margin-bottom: 10px;">
+      ${rowItems.map(person => `
+        <div style="flex: 1 1 30%; max-width: 32%; text-align: center;">
+          <div style="border-bottom: 1.5px solid black; min-height: 16px; font-size: 10px; font-weight: bold; padding-bottom: 2px; margin-bottom: 2px; text-transform: uppercase; line-height: 1.2; word-break: break-word;">
+            ${person.name}
+          </div>
+          <div style="font-size: 9px; font-style: italic;">(Signature over printed name)</div>
+          <div style="font-size: 10px; margin-top: 2px; line-height: 1.2;">${person.role}, ${orgName}</div>
+        </div>
+      `).join('')}
+      ${Array.from({ length: 3 - rowItems.length }).map(() => `
+        <div style="flex: 1 1 30%; max-width: 32%; visibility: hidden;"></div>
+      `).join('')}
+    </div>
+  `).join('');
+};
+
 const SubmitNewDocument = () => {
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
@@ -179,9 +259,53 @@ const SubmitNewDocument = () => {
   const [existingAttachments, setExistingAttachments] = useState([]);
   const [activeDraft, setActiveDraft] = useState({ submissionId: null, versionId: null });
   const [draftNotice, setDraftNotice] = useState('');
+  const [draftLoadedFields, setDraftLoadedFields] = useState(new Set());
   const [isNewDraftThisSession, setIsNewDraftThisSession] = useState(false);
   const [pendingNavPath, setPendingNavPath] = useState(null);
   const location = useLocation();
+
+  const clearDraftField = (fieldName) => {
+    setDraftLoadedFields(prev => {
+      if (!prev.has(fieldName)) return prev;
+      const next = new Set(prev);
+      next.delete(fieldName);
+      return next;
+    });
+  };
+
+  const populateDraftFields = (details) => {
+    if (!details) return;
+    const loadedSet = new Set();
+    const keysToCheck = [
+      'activity_title',
+      'contact_number',
+      'target_venue',
+      'number_of_students',
+      'target_audience',
+      'nature_of_activity',
+      'objectives',
+      'others_objective',
+      'satisfaction_goal_1',
+      'satisfaction_goal_2',
+      'satisfaction_goal_3',
+      'partners',
+      'sponsors'
+    ];
+
+    keysToCheck.forEach(key => {
+      const val = details[key];
+      if (val !== undefined && val !== null && val !== '') {
+        if (Array.isArray(val) && val.length === 0) return;
+        loadedSet.add(key);
+      }
+    });
+
+    if ((details.activity_schedules && details.activity_schedules.length > 0) || details.target_date) {
+      loadedSet.add('schedules');
+    }
+
+    setDraftLoadedFields(loadedSet);
+  };
 
   useEffect(() => {
     window.__hasUnsavedChanges = hasUnsavedChanges;
@@ -414,22 +538,7 @@ const SubmitNewDocument = () => {
               </div>
             </div>
 
-            <div style="display: flex; justify-content: space-between; margin-top: 18px; margin-bottom: 10px;">
-              <div style="width: 40%; text-align: center;">
-                <div style="border-bottom: 1.5px solid black; height: 16px; font-size: 11px; font-weight: bold; margin-bottom: 2px; text-transform: uppercase;">
-                  ${proposalDetails.person_in_charge || user?.full_name || ''}
-                </div>
-                <div style="font-size: 9px; font-style: italic;">(Signature over printed name)</div>
-                <div style="font-size: 10px; margin-top: 2px;">President, ${orgName}</div>
-              </div>
-              <div style="width: 40%; text-align: center;">
-                <div style="border-bottom: 1.5px solid black; height: 16px; font-size: 11px; font-weight: bold; margin-bottom: 2px; text-transform: uppercase;">
-                  ${proposalDetails.adviser_name || ''}
-                </div>
-                <div style="font-size: 9px; font-style: italic;">(Signature over printed name)</div>
-                <div style="font-size: 10px; margin-top: 2px;">Adviser, ${orgName}</div>
-              </div>
-            </div>
+          ${renderSignatureBlocksHtml(proposalDetails, user, orgName)}
 
             <!-- Official Document Footer pinned to bottom -->
             <div class="official-document-footer" style="margin-top: auto; padding-top: 4px; font-family: Arial, Helvetica, sans-serif;">
@@ -622,7 +731,8 @@ const SubmitNewDocument = () => {
       setSelectedSubtypeObj(matchedSubtype);
       setExistingAttachments(version?.submission_attachments || []);
       setActiveDraft({ submissionId: submission.id, versionId: version?.id });
-      setDraftNotice('Loaded draft from your previous session.');
+      setDraftNotice('');
+      populateDraftFields(details);
 
       if (isProposal) {
         const scheds = details.activity_schedules || [];
@@ -728,14 +838,16 @@ const SubmitNewDocument = () => {
       setExistingAttachments([]);
       setActiveDraft({ submissionId: null, versionId: null });
       setDraftNotice('');
+      setDraftLoadedFields(new Set());
 
       if (draft?.submission && draft?.version) {
         const rawDetails = draft.version.activity_proposal_details;
         const details = (Array.isArray(rawDetails) ? rawDetails[0] : rawDetails) || {};
         setExistingAttachments(draft.version.submission_attachments || []);
         setActiveDraft({ submissionId: draft.submission.id, versionId: draft.version.id });
-        setDraftNotice('Continuing an existing draft for this category.');
+        setDraftNotice('');
         setIsNewDraftThisSession(false);
+        populateDraftFields(details);
 
         if (isProposal) {
           const scheds = details.activity_schedules || [];
@@ -1464,11 +1576,6 @@ const SubmitNewDocument = () => {
                 <div>
                   <h1 className="text-xl font-black text-gray-800 uppercase">{selectedType.name}</h1>
                   <p className="text-gray-400 font-bold text-[10px] uppercase tracking-widest">{subType}</p>
-                  {draftNotice && (
-                    <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 text-amber-600 border border-amber-200/50 rounded-md">
-                      <span className="text-[10px] font-black uppercase tracking-wider">{draftNotice}</span>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
@@ -1539,7 +1646,20 @@ const SubmitNewDocument = () => {
                           </div>
                           <div className="space-y-2 md:col-span-2">
                             <label className="text-xs font-black text-gray-600 uppercase">Activity Title <span className="text-red-500">*</span></label>
-                            <input type="text" required className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.activity_title} onChange={e => setProposalDetails({ ...proposalDetails, activity_title: e.target.value })} />
+                            <input 
+                              type="text" 
+                              required 
+                              className={`w-full px-4 py-3 border-b-2 font-bold text-sm outline-none transition-all ${
+                                draftLoadedFields.has('activity_title')
+                                  ? 'bg-amber-50/70 border-amber-200 text-gray-800'
+                                  : 'bg-gray-50 border-gray-200 focus:border-primary-green text-gray-800'
+                              }`} 
+                              value={proposalDetails.activity_title} 
+                              onChange={e => {
+                                setProposalDetails({ ...proposalDetails, activity_title: e.target.value });
+                                clearDraftField('activity_title');
+                              }} 
+                            />
                           </div>
                           <div className="space-y-2">
                             <label className="text-xs font-black text-gray-600 uppercase">Name of Person-In-Charge <span className="text-red-500">*</span></label>
@@ -1551,11 +1671,39 @@ const SubmitNewDocument = () => {
                           </div>
                           <div className="space-y-2 md:col-span-2">
                             <label className="text-xs font-black text-gray-600 uppercase">Contact Number of Person-In-Charge <span className="text-red-500">*</span></label>
-                            <input type="text" required maxLength={11} pattern="^09\d{9}$" className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.contact_number} onChange={e => setProposalDetails({ ...proposalDetails, contact_number: e.target.value.replace(/[^0-9]/g, '') })} />
+                            <input 
+                              type="text" 
+                              required 
+                              maxLength={11} 
+                              pattern="^09\d{9}$" 
+                              className={`w-full px-4 py-3 border-b-2 font-bold text-sm outline-none transition-all ${
+                                draftLoadedFields.has('contact_number')
+                                  ? 'bg-amber-50/70 border-amber-200 text-gray-800'
+                                  : 'bg-gray-50 border-gray-200 focus:border-primary-green text-gray-800'
+                              }`} 
+                              value={proposalDetails.contact_number} 
+                              onChange={e => {
+                                setProposalDetails({ ...proposalDetails, contact_number: e.target.value.replace(/[^0-9]/g, '') });
+                                clearDraftField('contact_number');
+                              }} 
+                            />
                           </div>
                           <div className="space-y-2 md:col-span-2">
                             <label className="text-xs font-black text-gray-600 uppercase">Target Venue <span className="text-red-500">*</span></label>
-                            <input type="text" required className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.target_venue} onChange={e => setProposalDetails({ ...proposalDetails, target_venue: e.target.value })} />
+                            <input 
+                              type="text" 
+                              required 
+                              className={`w-full px-4 py-3 border-b-2 font-bold text-sm outline-none transition-all ${
+                                draftLoadedFields.has('target_venue')
+                                  ? 'bg-amber-50/70 border-amber-200 text-gray-800'
+                                  : 'bg-gray-50 border-gray-200 focus:border-primary-green text-gray-800'
+                              }`} 
+                              value={proposalDetails.target_venue} 
+                              onChange={e => {
+                                setProposalDetails({ ...proposalDetails, target_venue: e.target.value });
+                                clearDraftField('target_venue');
+                              }} 
+                            />
                           </div>
 
                           {/* Schedules */}
@@ -1757,7 +1905,20 @@ const SubmitNewDocument = () => {
                           </div>
                           <div className="space-y-2">
                             <label className="text-xs font-black text-gray-600 uppercase">Number of Student Involved <span className="text-red-500">*</span></label>
-                            <input type="text" required className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.number_of_students} onChange={e => setProposalDetails({ ...proposalDetails, number_of_students: e.target.value.replace(/[^0-9]/g, '') })} />
+                            <input 
+                              type="text" 
+                              required 
+                              className={`w-full px-4 py-3 border-b-2 font-bold text-sm outline-none transition-all ${
+                                draftLoadedFields.has('number_of_students')
+                                  ? 'bg-amber-50/70 border-amber-200 text-gray-800'
+                                  : 'bg-gray-50 border-gray-200 focus:border-primary-green text-gray-800'
+                              }`} 
+                              value={proposalDetails.number_of_students} 
+                              onChange={e => {
+                                setProposalDetails({ ...proposalDetails, number_of_students: e.target.value.replace(/[^0-9]/g, '') });
+                                clearDraftField('number_of_students');
+                              }} 
+                            />
                           </div>
                         </div>
 
@@ -1765,14 +1926,25 @@ const SubmitNewDocument = () => {
                         <div className="pt-6 border-t border-gray-100 space-y-6">
                           <div className="space-y-3">
                             <label className="text-xs font-black text-gray-800 uppercase">Target Audience/Participants:</label>
-                            <div className="flex flex-wrap gap-8">
+                            <div className={`flex flex-wrap gap-8 p-3 rounded-xl transition-all ${
+                              draftLoadedFields.has('target_audience') ? 'bg-amber-50/60 border border-amber-200/60' : ''
+                            }`}>
                               {['Members only', 'BulSUans only', 'Open to the public'].map(opt => (
                                 <label key={opt} className="flex items-center gap-3 cursor-pointer group">
                                   <div className={`w-5 h-5 rounded-full flex items-center justify-center border-2 ${proposalDetails.target_audience === opt ? 'border-primary-green' : 'border-gray-300 group-hover:border-primary-green'}`}>
                                     {proposalDetails.target_audience === opt && <div className="w-2.5 h-2.5 bg-primary-green rounded-full" />}
                                   </div>
                                   <span className="text-sm font-bold text-gray-600">{opt}</span>
-                                  <input type="radio" name="target_audience" className="hidden" checked={proposalDetails.target_audience === opt} onChange={() => setProposalDetails({ ...proposalDetails, target_audience: opt })} />
+                                  <input 
+                                    type="radio" 
+                                    name="target_audience" 
+                                    className="hidden" 
+                                    checked={proposalDetails.target_audience === opt} 
+                                    onChange={() => {
+                                      setProposalDetails({ ...proposalDetails, target_audience: opt });
+                                      clearDraftField('target_audience');
+                                    }} 
+                                  />
                                 </label>
                               ))}
                             </div>
@@ -1780,14 +1952,25 @@ const SubmitNewDocument = () => {
 
                           <div className="space-y-3">
                             <label className="text-xs font-black text-gray-800 uppercase">Nature of Activity:</label>
-                            <div className="flex flex-wrap gap-8">
+                            <div className={`flex flex-wrap gap-8 p-3 rounded-xl transition-all ${
+                              draftLoadedFields.has('nature_of_activity') ? 'bg-amber-50/60 border border-amber-200/60' : ''
+                            }`}>
                               {['Co-Curricular', 'Extra-Curricular'].map(opt => (
                                 <label key={opt} className="flex items-center gap-3 cursor-pointer group">
                                   <div className={`w-5 h-5 rounded-full flex items-center justify-center border-2 ${proposalDetails.nature_of_activity === opt ? 'border-primary-green' : 'border-gray-300 group-hover:border-primary-green'}`}>
                                     {proposalDetails.nature_of_activity === opt && <div className="w-2.5 h-2.5 bg-primary-green rounded-full" />}
                                   </div>
                                   <span className="text-sm font-bold text-gray-600">{opt}</span>
-                                  <input type="radio" name="nature" className="hidden" checked={proposalDetails.nature_of_activity === opt} onChange={() => setProposalDetails({ ...proposalDetails, nature_of_activity: opt })} />
+                                  <input 
+                                    type="radio" 
+                                    name="nature" 
+                                    className="hidden" 
+                                    checked={proposalDetails.nature_of_activity === opt} 
+                                    onChange={() => {
+                                      setProposalDetails({ ...proposalDetails, nature_of_activity: opt });
+                                      clearDraftField('nature_of_activity');
+                                    }} 
+                                  />
                                 </label>
                               ))}
                             </div>
@@ -1795,7 +1978,9 @@ const SubmitNewDocument = () => {
 
                           <div className="space-y-4">
                             <label className="text-xs font-black text-gray-800 uppercase">Objectives of the Activity:</label>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 p-3 rounded-xl transition-all ${
+                              draftLoadedFields.has('objectives') ? 'bg-amber-50/60 border border-amber-200/60' : ''
+                            }`}>
                               {[
                                 'Leadership Development and Formation',
                                 'Membership Development and Formation',
@@ -1808,7 +1993,15 @@ const SubmitNewDocument = () => {
                                     {proposalDetails.objectives.includes(opt) && <Check size={14} strokeWidth={3} />}
                                   </div>
                                   <span className="text-sm font-bold text-gray-600 leading-tight">{opt}</span>
-                                  <input type="checkbox" className="hidden" checked={proposalDetails.objectives.includes(opt)} onChange={() => toggleArrayField('objectives', opt)} />
+                                  <input 
+                                    type="checkbox" 
+                                    className="hidden" 
+                                    checked={proposalDetails.objectives.includes(opt)} 
+                                    onChange={() => {
+                                      toggleArrayField('objectives', opt);
+                                      clearDraftField('objectives');
+                                    }} 
+                                  />
                                 </label>
                               ))}
                               <div className="flex items-center gap-3 col-span-1 md:col-span-2">
@@ -1817,9 +2010,30 @@ const SubmitNewDocument = () => {
                                     {proposalDetails.objectives.includes('Others') && <Check size={14} strokeWidth={3} />}
                                   </div>
                                   <span className="text-sm font-bold text-gray-600">Others:</span>
-                                  <input type="checkbox" className="hidden" checked={proposalDetails.objectives.includes('Others')} onChange={() => toggleArrayField('objectives', 'Others')} />
+                                  <input 
+                                    type="checkbox" 
+                                    className="hidden" 
+                                    checked={proposalDetails.objectives.includes('Others')} 
+                                    onChange={() => {
+                                      toggleArrayField('objectives', 'Others');
+                                      clearDraftField('objectives');
+                                    }} 
+                                  />
                                 </label>
-                                <input type="text" className="flex-1 px-4 py-2 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.others_objective} onChange={e => setProposalDetails({ ...proposalDetails, others_objective: e.target.value })} disabled={!proposalDetails.objectives.includes('Others')} />
+                                <input 
+                                  type="text" 
+                                  className={`flex-1 px-4 py-2 border-b-2 font-bold text-sm outline-none transition-all ${
+                                    draftLoadedFields.has('others_objective')
+                                      ? 'bg-amber-50/70 border-amber-200 text-gray-800'
+                                      : 'bg-gray-50 border-gray-200 focus:border-primary-green'
+                                  }`} 
+                                  value={proposalDetails.others_objective} 
+                                  onChange={e => {
+                                    setProposalDetails({ ...proposalDetails, others_objective: e.target.value });
+                                    clearDraftField('others_objective');
+                                  }} 
+                                  disabled={!proposalDetails.objectives.includes('Others')} 
+                                />
                               </div>
                             </div>
                           </div>
@@ -1833,30 +2047,64 @@ const SubmitNewDocument = () => {
                           <div className="space-y-3">
                             <div className="flex items-start gap-4">
                               <span className="font-bold text-gray-600 mt-2">1.</span>
-                              <input type="text" className="flex-1 px-4 py-2 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.satisfaction_goal_1} onChange={e => {
-                                const val = e.target.value;
-                                setProposalDetails(prev => ({
-                                  ...prev,
-                                  satisfaction_goal_1: val,
-                                  satisfaction_goal_2: val ? prev.satisfaction_goal_2 : '',
-                                  satisfaction_goal_3: val ? prev.satisfaction_goal_3 : ''
-                                }));
-                              }} />
+                              <input 
+                                type="text" 
+                                className={`flex-1 px-4 py-2 border-b-2 font-bold text-sm outline-none transition-all ${
+                                  draftLoadedFields.has('satisfaction_goal_1')
+                                    ? 'bg-amber-50/70 border-amber-200 text-gray-800'
+                                    : 'bg-gray-50 border-gray-200 focus:border-primary-green'
+                                }`} 
+                                value={proposalDetails.satisfaction_goal_1} 
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setProposalDetails(prev => ({
+                                    ...prev,
+                                    satisfaction_goal_1: val,
+                                    satisfaction_goal_2: val ? prev.satisfaction_goal_2 : '',
+                                    satisfaction_goal_3: val ? prev.satisfaction_goal_3 : ''
+                                  }));
+                                  clearDraftField('satisfaction_goal_1');
+                                }} 
+                              />
                             </div>
                             <div className="flex items-start gap-4">
                               <span className="font-bold text-gray-600 mt-2">2.</span>
-                              <input type="text" className="flex-1 px-4 py-2 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled={!proposalDetails.satisfaction_goal_1} value={proposalDetails.satisfaction_goal_2} onChange={e => {
-                                const val = e.target.value;
-                                setProposalDetails(prev => ({
-                                  ...prev,
-                                  satisfaction_goal_2: val,
-                                  satisfaction_goal_3: val ? prev.satisfaction_goal_3 : ''
-                                }));
-                              }} />
+                              <input 
+                                type="text" 
+                                className={`flex-1 px-4 py-2 border-b-2 font-bold text-sm outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                                  draftLoadedFields.has('satisfaction_goal_2')
+                                    ? 'bg-amber-50/70 border-amber-200 text-gray-800'
+                                    : 'bg-gray-50 border-gray-200 focus:border-primary-green'
+                                }`} 
+                                disabled={!proposalDetails.satisfaction_goal_1} 
+                                value={proposalDetails.satisfaction_goal_2} 
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setProposalDetails(prev => ({
+                                    ...prev,
+                                    satisfaction_goal_2: val,
+                                    satisfaction_goal_3: val ? prev.satisfaction_goal_3 : ''
+                                  }));
+                                  clearDraftField('satisfaction_goal_2');
+                                }} 
+                              />
                             </div>
                             <div className="flex items-start gap-4">
                               <span className="font-bold text-gray-600 mt-2">3.</span>
-                              <input type="text" className="flex-1 px-4 py-2 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled={!proposalDetails.satisfaction_goal_2} value={proposalDetails.satisfaction_goal_3} onChange={e => setProposalDetails({ ...proposalDetails, satisfaction_goal_3: e.target.value })} />
+                              <input 
+                                type="text" 
+                                className={`flex-1 px-4 py-2 border-b-2 font-bold text-sm outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                                  draftLoadedFields.has('satisfaction_goal_3')
+                                    ? 'bg-amber-50/70 border-amber-200 text-gray-800'
+                                    : 'bg-gray-50 border-gray-200 focus:border-primary-green'
+                                }`} 
+                                disabled={!proposalDetails.satisfaction_goal_2} 
+                                value={proposalDetails.satisfaction_goal_3} 
+                                onChange={e => {
+                                  setProposalDetails({ ...proposalDetails, satisfaction_goal_3: e.target.value });
+                                  clearDraftField('satisfaction_goal_3');
+                                }} 
+                              />
                             </div>
                           </div>
                         </div>
@@ -1865,11 +2113,35 @@ const SubmitNewDocument = () => {
                         <div className="pt-6 border-t border-gray-100 space-y-4">
                           <div className="space-y-2">
                             <label className="text-xs font-black text-gray-600 uppercase">Name of Partners (if any):</label>
-                            <input type="text" className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.partners} onChange={e => setProposalDetails({ ...proposalDetails, partners: e.target.value })} />
+                            <input 
+                              type="text" 
+                              className={`w-full px-4 py-3 border-b-2 font-bold text-sm outline-none transition-all ${
+                                draftLoadedFields.has('partners')
+                                  ? 'bg-amber-50/70 border-amber-200 text-gray-800'
+                                  : 'bg-gray-50 border-gray-200 focus:border-primary-green'
+                              }`} 
+                              value={proposalDetails.partners} 
+                              onChange={e => {
+                                setProposalDetails({ ...proposalDetails, partners: e.target.value });
+                                clearDraftField('partners');
+                              }} 
+                            />
                           </div>
                           <div className="space-y-2">
                             <label className="text-xs font-black text-gray-600 uppercase">Name of Sponsors (if any):</label>
-                            <input type="text" className="w-full px-4 py-3 bg-gray-50 border-b-2 border-gray-200 focus:border-primary-green font-bold text-sm outline-none transition-all" value={proposalDetails.sponsors} onChange={e => setProposalDetails({ ...proposalDetails, sponsors: e.target.value })} />
+                            <input 
+                              type="text" 
+                              className={`w-full px-4 py-3 border-b-2 font-bold text-sm outline-none transition-all ${
+                                draftLoadedFields.has('sponsors')
+                                  ? 'bg-amber-50/70 border-amber-200 text-gray-800'
+                                  : 'bg-gray-50 border-gray-200 focus:border-primary-green'
+                              }`} 
+                              value={proposalDetails.sponsors} 
+                              onChange={e => {
+                                setProposalDetails({ ...proposalDetails, sponsors: e.target.value });
+                                clearDraftField('sponsors');
+                              }} 
+                            />
                           </div>
                         </div>
                       </div>

@@ -474,7 +474,7 @@ const Completed = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[800px]">
               <thead>
-                <tr className="bg-primary-green text-white">
+                <tr className="bg-[#073c2d] text-white">
                   <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Document</th>
                   <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Sender</th>
                   <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider text-center">Type</th>

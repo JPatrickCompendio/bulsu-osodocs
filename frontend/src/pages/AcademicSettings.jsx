@@ -383,13 +383,13 @@ const AcademicSettings = () => {
 
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-gray-50 text-gray-600 font-bold border-b border-gray-100 uppercase tracking-wider text-xs">
+                  <thead className="bg-[#073c2d] text-white font-bold border-b border-[#073c2d] uppercase tracking-wider text-xs">
                     <tr>
-                      <th className="p-4">Semester Name</th>
-                      <th className="p-4">School Year</th>
-                      <th className="p-4">Duration</th>
-                      <th className="p-4">Status</th>
-                      <th className="p-4 text-right">Actions</th>
+                      <th className="p-4 text-white">Semester Name</th>
+                      <th className="p-4 text-white">School Year</th>
+                      <th className="p-4 text-white">Duration</th>
+                      <th className="p-4 text-white">Status</th>
+                      <th className="p-4 text-right text-white">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -455,12 +455,12 @@ const AcademicSettings = () => {
 
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-gray-50 text-gray-600 font-bold border-b border-gray-100 uppercase tracking-wider text-xs">
+                  <thead className="bg-[#073c2d] text-white font-bold border-b border-[#073c2d] uppercase tracking-wider text-xs">
                     <tr>
-                      <th className="p-4">Name</th>
-                      <th className="p-4">Duration</th>
-                      <th className="p-4">Status</th>
-                      <th className="p-4 text-right">Actions</th>
+                      <th className="p-4 text-white">Name</th>
+                      <th className="p-4 text-white">Duration</th>
+                      <th className="p-4 text-white">Status</th>
+                      <th className="p-4 text-right text-white">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -514,13 +514,13 @@ const AcademicSettings = () => {
 
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-gray-50 text-gray-600 font-bold border-b border-gray-100 uppercase tracking-wider text-xs">
+                  <thead className="bg-[#073c2d] text-white font-bold border-b border-[#073c2d] uppercase tracking-wider text-xs">
                     <tr>
-                      <th className="p-4">Event Title</th>
-                      <th className="p-4">Event Type</th>
-                      <th className="p-4">School Year</th>
-                      <th className="p-4">Duration</th>
-                      <th className="p-4 text-right">Actions</th>
+                      <th className="p-4 text-white">Event Title</th>
+                      <th className="p-4 text-white">Event Type</th>
+                      <th className="p-4 text-white">School Year</th>
+                      <th className="p-4 text-white">Duration</th>
+                      <th className="p-4 text-right text-white">Actions</th>
                     </tr>
                   </thead>
                   <tbody>

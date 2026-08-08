@@ -14,7 +14,13 @@ import {
   AlertCircle,
   Loader2,
   Eye,
-  EyeOff
+  EyeOff,
+  Building2,
+  Users,
+  UserCheck,
+  Award,
+  Hash,
+  Phone
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 
@@ -200,7 +206,23 @@ const MyProfile = () => {
     }
   };
 
+  const getCoAdvisersList = () => {
+    if (!user?.co_advisers) return [];
+    if (Array.isArray(user.co_advisers)) return user.co_advisers.filter(Boolean);
+    if (typeof user.co_advisers === 'string') {
+      try {
+        const parsed = JSON.parse(user.co_advisers);
+        if (Array.isArray(parsed)) return parsed.filter(Boolean);
+      } catch {
+        return user.co_advisers.split(',').map(s => s.trim()).filter(Boolean);
+      }
+    }
+    return [];
+  };
+
   if (!user) return null;
+
+  const coAdvisersList = getCoAdvisersList();
 
   return (
     <div className="animate-in fade-in duration-500 pb-16">
@@ -216,7 +238,7 @@ const MyProfile = () => {
       <div className="mb-10">
         <PageHeader 
           title="My Profile" 
-          subtitle="Manage your personal information and account security" 
+          subtitle="Manage your personal information, organization details, and account security" 
           icon={UserIcon} 
           iconColor="slate" 
         />
@@ -224,7 +246,7 @@ const MyProfile = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* Left Column: Avatar & Read-Only Info */}
+        {/* Left Column: Avatar & Account Summary */}
         <div className="space-y-8 lg:col-span-1">
           {/* Avatar Card */}
           <div className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm text-center relative overflow-hidden group">
@@ -261,7 +283,9 @@ const MyProfile = () => {
             </div>
             
             <h2 className="text-xl font-black text-gray-800">{user.full_name || user.username}</h2>
-            <p className="text-primary-green font-bold text-sm uppercase tracking-wider mt-1 mb-4">{user.role}</p>
+            <p className="text-primary-green font-bold text-xs uppercase tracking-wider mt-1 mb-4">
+              {user.role === 'org-president' ? 'Organization President' : user.role}
+            </p>
             
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-50 text-green-600 text-xs font-bold uppercase tracking-wider border border-green-100">
               <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
@@ -279,8 +303,8 @@ const MyProfile = () => {
               <div>
                 <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Email Address</label>
                 <div className="flex items-center gap-3 text-gray-700 font-medium bg-gray-50 p-3 rounded-xl border border-gray-100">
-                  <Mail size={16} className="text-gray-400" />
-                  <span className="truncate">{user.email}</span>
+                  <Mail size={16} className="text-gray-400 shrink-0" />
+                  <span className="truncate text-sm">{user.email}</span>
                 </div>
               </div>
               
@@ -288,15 +312,15 @@ const MyProfile = () => {
                 <>
                   <div>
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Student Number</label>
-                    <div className="flex items-center gap-3 text-gray-500 font-medium bg-gray-50 p-3 rounded-xl border border-gray-100 text-xs">
-                      <Lock size={16} className="text-gray-400" />
+                    <div className="flex items-center gap-3 text-gray-700 font-medium bg-gray-50 p-3 rounded-xl border border-gray-100 text-sm">
+                      <Hash size={16} className="text-gray-400 shrink-0" />
                       <span className="truncate">{user.student_no || 'N/A'}</span>
                     </div>
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Contact Number</label>
-                    <div className="flex items-center gap-3 text-gray-500 font-medium bg-gray-50 p-3 rounded-xl border border-gray-100 text-xs">
-                      <Lock size={16} className="text-gray-400" />
+                    <div className="flex items-center gap-3 text-gray-700 font-medium bg-gray-50 p-3 rounded-xl border border-gray-100 text-sm">
+                      <Phone size={16} className="text-gray-400 shrink-0" />
                       <span className="truncate">{user.contact_no || 'N/A'}</span>
                     </div>
                   </div>
@@ -304,8 +328,8 @@ const MyProfile = () => {
               ) : (
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Contact Number</label>
-                  <div className="flex items-center gap-3 text-gray-500 font-medium bg-gray-50 p-3 rounded-xl border border-gray-100 text-xs">
-                    <Lock size={16} className="text-gray-400" />
+                  <div className="flex items-center gap-3 text-gray-700 font-medium bg-gray-50 p-3 rounded-xl border border-gray-100 text-sm">
+                    <Phone size={16} className="text-gray-400 shrink-0" />
                     <span className="truncate">{user.contact_no || 'N/A'}</span>
                   </div>
                 </div>
@@ -313,8 +337,8 @@ const MyProfile = () => {
 
               <div>
                 <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Active Since</label>
-                <div className="flex items-center gap-3 text-gray-700 font-medium bg-gray-50 p-3 rounded-xl border border-gray-100">
-                  <Calendar size={16} className="text-gray-400" />
+                <div className="flex items-center gap-3 text-gray-700 font-medium bg-gray-50 p-3 rounded-xl border border-gray-100 text-sm">
+                  <Calendar size={16} className="text-gray-400 shrink-0" />
                   <span>{new Date(user.joined_date || user.created_at || Date.now()).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</span>
                 </div>
               </div>
@@ -322,11 +346,86 @@ const MyProfile = () => {
           </div>
         </div>
 
-        {/* Right Column: Editable Forms */}
+        {/* Right Column: Information & Settings */}
         <div className="space-y-8 lg:col-span-2">
+          
+          {/* Organization & Adviser Details Card (for Org President) */}
+          {user.role === 'org-president' && (
+            <div className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-1.5 h-full bg-primary-green"></div>
+              
+              <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
+                <h3 className="text-xl font-black text-gray-800 flex items-center gap-3">
+                  <Building2 className="text-primary-green" size={24} />
+                  Organization & Adviser Details
+                </h3>
+                <span className="text-[11px] font-bold px-3 py-1 bg-primary-green/10 text-primary-green rounded-full uppercase tracking-wider">
+                  Official Information
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Organization Name */}
+                <div className="bg-gray-50/90 p-4 rounded-2xl border border-gray-100">
+                  <label className="text-xs font-medium text-gray-500 mb-1 block flex items-center gap-1.5">
+                    <Building2 size={13} className="text-primary-green" /> Organization Name
+                  </label>
+                  <p className="font-medium text-gray-800 text-sm">{user.org_name || 'N/A'}</p>
+                </div>
+
+                {/* Abbreviation & Member Count */}
+                <div className="bg-gray-50/90 p-4 rounded-2xl border border-gray-100">
+                  <label className="text-xs font-medium text-gray-500 mb-1 block flex items-center gap-1.5">
+                    <Users size={13} className="text-primary-green" /> Active Members & Abbreviation
+                  </label>
+                  <p className="font-medium text-gray-800 text-sm flex items-center gap-2">
+                    <span>{user.no_member ? `${user.no_member} Members` : 'N/A'}</span>
+                    {user.abbreviation && (
+                      <span className="text-xs font-medium px-2 py-0.5 bg-gray-200 text-gray-700 rounded-md">
+                        {user.abbreviation}
+                      </span>
+                    )}
+                  </p>
+                </div>
+
+                {/* Primary Adviser */}
+                <div className="bg-gray-50/90 p-4.5 rounded-2xl border border-gray-100 md:col-span-2">
+                  <label className="text-xs font-medium text-gray-500 mb-1.5 block flex items-center gap-1.5">
+                    <UserCheck size={14} className="text-primary-green" /> Primary Adviser
+                  </label>
+                  <p className="font-medium text-gray-800 text-sm">
+                    {user.adviser_name || 'None listed'}
+                  </p>
+                </div>
+
+                {/* Co-Advisers */}
+                <div className="bg-gray-50/90 p-4.5 rounded-2xl border border-gray-100 md:col-span-2">
+                  <label className="text-xs font-medium text-gray-500 mb-2 block flex items-center gap-1.5">
+                    <Users size={14} className="text-primary-green" /> Co-Advisers
+                  </label>
+                  {coAdvisersList.length > 0 ? (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {coAdvisersList.map((adviser, idx) => (
+                        <span 
+                          key={idx} 
+                          className="px-3.5 py-1.5 bg-white border border-gray-200 rounded-xl text-xs font-medium text-gray-700 shadow-sm flex items-center gap-2"
+                        >
+                          <div className="w-1.5 h-1.5 rounded-full bg-primary-green"></div>
+                          {adviser}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-400 font-medium italic">No co-advisers registered</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Edit Profile Information */}
           <form onSubmit={handleUpdateProfile} className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-1 h-full bg-primary-green"></div>
+            <div className="absolute top-0 left-0 w-1.5 h-full bg-primary-green"></div>
             <h3 className="text-xl font-black text-gray-800 mb-6 flex items-center gap-3">
               Personal Information
             </h3>
@@ -343,7 +442,7 @@ const MyProfile = () => {
                   placeholder="Enter your full name"
                 />
                 <p className="text-[10px] text-gray-400 font-medium mt-2 flex items-center gap-1">
-                  <AlertCircle size={12} /> This is how your name will appear on documents and logs.
+                  <AlertCircle size={12} /> This is how your name will appear on official documents and approval logs.
                 </p>
               </div>
               
@@ -368,7 +467,7 @@ const MyProfile = () => {
                 <button 
                   type="submit" 
                   disabled={isSavingProfile || (fullName === (user.full_name || user.username) && abbreviation === (user.abbreviation || ''))}
-                  className="flex items-center gap-2 px-6 py-3 bg-primary-green text-white font-bold rounded-xl hover:bg-green-700 hover:shadow-lg hover:shadow-green-700/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center gap-2 px-6 py-3 bg-primary-green text-white font-bold rounded-xl hover:bg-green-700 hover:shadow-lg hover:shadow-green-700/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                 >
                   {isSavingProfile ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
                   Save Changes
@@ -379,7 +478,7 @@ const MyProfile = () => {
 
           {/* Change Password */}
           <form onSubmit={handleChangePassword} className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-1 h-full bg-secondary-gold"></div>
+            <div className="absolute top-0 left-0 w-1.5 h-full bg-secondary-gold"></div>
             <h3 className="text-xl font-black text-gray-800 mb-6 flex items-center gap-3">
               Change Password
             </h3>
@@ -392,7 +491,7 @@ const MyProfile = () => {
                   required
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-secondary-gold focus:bg-white outline-none transition-all font-medium"
+                  className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-secondary-gold focus:bg-white outline-none transition-all font-medium text-sm"
                   placeholder="Enter current password"
                 />
               </div>
@@ -405,7 +504,7 @@ const MyProfile = () => {
                   minLength={6}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-secondary-gold focus:bg-white outline-none transition-all font-medium"
+                  className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-secondary-gold focus:bg-white outline-none transition-all font-medium text-sm"
                   placeholder="Enter new password (min. 6 characters)"
                 />
               </div>
@@ -418,7 +517,7 @@ const MyProfile = () => {
                   minLength={6}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-secondary-gold focus:bg-white outline-none transition-all font-medium"
+                  className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-secondary-gold focus:bg-white outline-none transition-all font-medium text-sm"
                   placeholder="Confirm new password"
                 />
               </div>
@@ -427,7 +526,7 @@ const MyProfile = () => {
                 <button 
                   type="submit" 
                   disabled={isSavingPassword || !currentPassword || !newPassword || !confirmPassword}
-                  className="flex items-center gap-2 px-6 py-3 bg-gray-800 text-white font-bold rounded-xl hover:bg-gray-900 hover:shadow-lg hover:shadow-gray-900/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center gap-2 px-6 py-3 bg-gray-800 text-white font-bold rounded-xl hover:bg-gray-900 hover:shadow-lg hover:shadow-gray-900/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                 >
                   {isSavingPassword ? <Loader2 className="animate-spin" size={18} /> : <Lock size={18} />}
                   Update Password

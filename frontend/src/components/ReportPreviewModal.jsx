@@ -428,9 +428,9 @@ const ReportPreviewModal = ({
             <div className="mb-8">
               <table className={`w-full text-left border-collapse text-xs border border-gray-200 ${tableHeaders.length === 2 ? 'table-fixed' : ''}`}>
                 <thead>
-                  <tr className="bg-primary-green text-white font-bold">
+                  <tr className="bg-[#073c2d] text-white font-bold">
                     {tableHeaders.map((head, idx) => (
-                      <th key={idx} className="px-4 py-2.5 uppercase tracking-wider text-[9px] first:rounded-tl-lg last:rounded-tr-lg border-b border-primary-green font-semibold">
+                      <th key={idx} className="px-4 py-2.5 uppercase tracking-wider text-[9px] first:rounded-tl-lg last:rounded-tr-lg border-b border-[#073c2d] font-semibold text-white">
                         {head}
                       </th>
                     ))}
@@ -470,9 +470,9 @@ const ReportPreviewModal = ({
                 </h3>
                 <table className={`w-full text-left border-collapse text-xs border border-gray-200 ${secondTableHeaders.length === 2 ? 'table-fixed' : ''}`}>
                   <thead>
-                    <tr className="bg-gray-600 text-white font-semibold">
+                    <tr className="bg-[#073c2d] text-white font-semibold">
                       {secondTableHeaders.map((head, idx) => (
-                        <th key={idx} className="px-4 py-2.5 uppercase tracking-wider text-[9px] border-b border-gray-600 font-semibold">
+                        <th key={idx} className="px-4 py-2.5 uppercase tracking-wider text-[9px] border-b border-[#073c2d] font-semibold text-white">
                           {head}
                         </th>
                       ))}

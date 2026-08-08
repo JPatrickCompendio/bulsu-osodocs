@@ -471,12 +471,12 @@ const ListOfRequirements = () => {
             <div className="overflow-x-auto pb-48">
               <table className="w-full text-left">
                 <thead>
-                  <tr className="bg-gray-50/30 text-gray-400 border-b-2 border-gray-50">
-                    <th className="px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] w-1/4">Title of Requirement</th>
-                    <th className="px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em]">Code</th>
-                    <th className="px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] w-1/3">Description</th>
-                    <th className="px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em]">Attachment</th>
-                    <th className="px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] text-right">Action</th>
+                  <tr className="bg-[#073c2d] text-white border-b-2 border-[#073c2d]">
+                    <th className="px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] w-1/4 text-white">Title of Requirement</th>
+                    <th className="px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] text-white">Code</th>
+                    <th className="px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] w-1/3 text-white">Description</th>
+                    <th className="px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] text-white">Attachment</th>
+                    <th className="px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] text-right text-white">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y-2 divide-gray-50">

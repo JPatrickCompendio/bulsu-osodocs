@@ -723,14 +723,17 @@ async function handleDeleteUsers(id: string, body: Record<string, unknown>) {
   const supabase = getAdminClient();
   const { adminEmail, adminPassword } = body as { adminEmail?: string; adminPassword?: string };
 
-  if (adminEmail && adminPassword) {
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email: adminEmail,
-      password: adminPassword,
-    });
-    if (authError) {
-      return jsonResponse({ error: 'Invalid admin credentials' }, 401);
-    }
+  if (!adminEmail || !adminPassword) {
+    return jsonResponse({ error: 'Admin password is required to delete a user' }, 400);
+  }
+
+  const { error: authError } = await supabase.auth.signInWithPassword({
+    email: adminEmail,
+    password: adminPassword,
+  });
+
+  if (authError) {
+    return jsonResponse({ error: 'Incorrect admin password' }, 401);
   }
 
   const { error: deleteAuthError } = await supabase.auth.admin.deleteUser(id);
@@ -2444,7 +2447,7 @@ async function routeRequest(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const path = normalizePath(url.pathname);
   const method = req.method.toUpperCase();
-  const body = method === 'GET' || method === 'DELETE' ? {} : await readBody(req);
+  const body = method === 'GET' ? {} : await readBody(req);
 
   if (method === 'GET' && path === '/users') return handleGetUsers();
   if (method === 'GET' && path === '/users/check-email') return handleCheckEmail(url);

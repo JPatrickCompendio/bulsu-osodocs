@@ -4752,7 +4752,7 @@ export const MyDocuments = () => {
           ) : filteredDocs.length > 0 ? (
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-primary-green text-white">
+                <tr className="bg-[#073c2d] text-white">
                   <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Document Details</th>
                   <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Sender</th>
                   <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider text-center">Category</th>

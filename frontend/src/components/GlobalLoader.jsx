@@ -2,7 +2,7 @@ import React from 'react';
 
 const GlobalLoader = ({ isExiting = false }) => {
   return (
-    <div className={`absolute inset-0 z-[100] flex flex-col items-center justify-center overflow-hidden bg-black transition-all duration-[600ms] ease-in-out ${isExiting ? 'opacity-0 pointer-events-none' : 'opacity-100 animate-in fade-in duration-200'}`}>
+    <div className={`absolute inset-0 w-full h-full z-[100] flex flex-col items-center justify-center overflow-hidden overscroll-none touch-none select-none bg-black transition-all duration-[600ms] ease-in-out ${isExiting ? 'opacity-0 pointer-events-none' : 'opacity-100 animate-in fade-in duration-200'}`}>
       {/* Background Video */}
       <video 
         autoPlay 

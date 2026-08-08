@@ -1,36 +1,41 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Lock, Eye, EyeOff, User } from 'lucide-react';
+import { Lock, Eye, EyeOff, User, Mail, X, Loader2 } from 'lucide-react';
 import { apiFetch } from '../config/api';
+import { supabase } from '../supabaseClient';
+import { useToast } from '../hooks/useToast';
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const [emailError, setEmailError] = useState(false);
+  const [emailValidationError, setEmailValidationError] = useState('');
   const [passwordError, setPasswordError] = useState(false);
   const [loading, setLoading] = useState(false);
+  
+  // Forgot Password modal state
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+
   const { login } = useAuth();
   const navigate = useNavigate();
+  const { showToast, ToastComponent } = useToast();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setEmailError(false);
+    setEmailValidationError('');
     setPasswordError(false);
     setLoading(true);
 
     const result = await login(email, password);
 
     if (result.success) {
-      if (rememberMe) {
-        localStorage.setItem('rememberedEmail', email);
-      } else {
-        localStorage.removeItem('rememberedEmail');
-      }
       setLoading(false);
       navigate('/');
     } else {
@@ -52,16 +57,67 @@ const Login = () => {
     setLoading(false);
   };
 
-  React.useEffect(() => {
-    const saved = localStorage.getItem('rememberedEmail');
-    if (saved) {
-      setEmail(saved);
-      setRememberMe(true);
+  const handleForgotClick = () => {
+    setError('');
+    setEmailError(false);
+    setEmailValidationError('');
+
+    const trimmedEmail = email.trim();
+
+    if (!trimmedEmail) {
+      setEmailValidationError('Please enter your email address first.');
+      return;
     }
-  }, []);
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      setEmailValidationError('Please enter a valid email address.');
+      return;
+    }
+
+    setForgotEmail(trimmedEmail);
+    setShowForgotModal(true);
+  };
+
+  const handleSendResetLink = async () => {
+    setResetLoading(true);
+    let isSuccess = false;
+    try {
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      
+      if (resetErr) {
+        console.warn('Supabase resetPasswordForEmail warning/error:', resetErr.message);
+        // If it's a network or system error, treat as failure
+        if (resetErr.message.toLowerCase().includes('network') || resetErr.message.toLowerCase().includes('fetch')) {
+          isSuccess = false;
+        } else {
+          isSuccess = true;
+        }
+      } else {
+        isSuccess = true;
+      }
+    } catch (err) {
+      console.error('Error sending reset link:', err);
+      isSuccess = false;
+    } finally {
+      setResetLoading(false);
+      setShowForgotModal(false);
+      if (isSuccess) {
+        showToast('Password reset email sent. Please check your inbox and spam folder.', 'success');
+      } else {
+        showToast('Failed to send password reset email. Please try again.', 'error');
+      }
+    }
+  };
+
+
 
   return (
     <div className="relative h-screen w-full flex items-center justify-center p-4 sm:p-6 overflow-hidden">
+      <ToastComponent />
+
       <style>{`
         @keyframes letter-shine {
           0%, 100% {
@@ -78,6 +134,7 @@ const Login = () => {
           will-change: color, text-shadow;
         }
       `}</style>
+
       {/* Full-screen background image */}
       <img
         src="/loginbg.png"
@@ -106,13 +163,17 @@ const Login = () => {
 
               <div className="space-y-4">
                 <div>
-                  <div className="flex justify-between items-center mb-1.5 h-[20px]">
+                  <div className="flex justify-between items-center mb-1.5 min-h-[20px]">
                     <label className="text-sm font-semibold text-gray-700 block">Email</label>
-                    {emailError && (
+                    {emailValidationError ? (
+                      <span className="text-[11px] font-semibold text-red-500 animate-in fade-in duration-200">
+                        {emailValidationError}
+                      </span>
+                    ) : emailError ? (
                       <span className="text-[11px] font-semibold text-red-500 animate-in fade-in duration-200">
                         Email is not registered
                       </span>
-                    )}
+                    ) : null}
                   </div>
                   <div className="relative group">
                     <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-gray-400 group-focus-within:text-primary-green transition-colors">
@@ -125,9 +186,10 @@ const Login = () => {
                       onChange={(e) => {
                         setEmail(e.target.value);
                         setEmailError(false);
+                        setEmailValidationError('');
                       }}
                       className={`block w-full pl-10 pr-4 py-3 bg-white border rounded-xl shadow-sm focus:ring-2 transition-all outline-none text-gray-800 placeholder:text-gray-400 ${
-                        emailError
+                        emailError || emailValidationError
                           ? 'border-red-500 focus:ring-red-500/25 focus:border-red-500'
                           : 'border-gray-200 focus:ring-primary-green/25 focus:border-primary-green'
                       }`}
@@ -176,18 +238,10 @@ const Login = () => {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between gap-3 pt-0.5">
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    className="w-4 h-4 rounded border-gray-300 text-primary-green focus:ring-primary-green"
-                  />
-                  <span className="text-sm font-medium text-gray-600">Remember Me</span>
-                </label>
+              <div className="flex justify-end pt-0.5">
                 <button
                   type="button"
+                  onClick={handleForgotClick}
                   className="text-sm font-semibold text-primary-green hover:text-[#0a3a16] transition-colors"
                 >
                   Forgot Password?
@@ -253,6 +307,62 @@ const Login = () => {
           </div>
         </div>
       </div>
+
+      {/* Confirmation Modal for Forgot Password */}
+      {showForgotModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 sm:p-7 shadow-2xl border border-gray-100 space-y-5 animate-in zoom-in-95 duration-200 relative">
+            <button
+              type="button"
+              onClick={() => !resetLoading && setShowForgotModal(false)}
+              disabled={resetLoading}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1 rounded-lg transition-colors disabled:opacity-50"
+            >
+              <X size={20} />
+            </button>
+
+            <div className="text-center space-y-2">
+              <div className="w-12 h-12 rounded-full bg-primary-green/10 text-primary-green flex items-center justify-center mx-auto mb-3">
+                <Mail size={24} />
+              </div>
+              <h3 className="text-xl font-bold text-gray-800">Reset Password</h3>
+              <p className="text-sm text-gray-600 leading-relaxed">
+                Send a password reset link to{' '}
+                <span className="font-semibold text-gray-900 break-all">{forgotEmail}</span>?
+              </p>
+              <p className="text-xs text-gray-400 leading-relaxed pt-1">
+                If an account with this email exists, you will receive instructions to reset your password. Please check your inbox and spam folder.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowForgotModal(false)}
+                disabled={resetLoading}
+                className="flex-1 py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl transition-all text-sm disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSendResetLink}
+                disabled={resetLoading}
+                className="flex-1 py-3 px-4 bg-[#063c2d] hover:bg-[#0a3a16] text-white font-semibold rounded-xl shadow-md transition-all text-sm disabled:opacity-70 flex items-center justify-center gap-2 active:scale-[0.99]"
+              >
+                {resetLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Sending...</span>
+                  </>
+                ) : (
+                  'Send Reset Link'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

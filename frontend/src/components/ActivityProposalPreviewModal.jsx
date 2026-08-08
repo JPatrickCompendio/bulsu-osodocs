@@ -3,6 +3,86 @@ import { X, Printer, Edit3 } from 'lucide-react';
 import JoditEditor from 'jodit-react';
 import HEADER_LOGO_IMG from '../assets/headerLOGO.png';
 
+const renderSignatureBlocksHtml = (proposalDetails, user, orgName) => {
+  const allPeople = [];
+
+  // 1. President
+  const presidentName = (proposalDetails?.person_in_charge || user?.full_name || '').trim();
+  allPeople.push({ name: presidentName, role: 'President' });
+
+  // 2. Primary Adviser
+  const primaryAdviser = (proposalDetails?.adviser_name || user?.adviser_name || '').trim();
+  if (primaryAdviser) {
+    allPeople.push({ name: primaryAdviser, role: 'Adviser' });
+  }
+
+  // 3. Co-Advisers
+  const rawCoAdvisers = proposalDetails?.co_advisers || user?.co_advisers;
+  if (rawCoAdvisers) {
+    if (Array.isArray(rawCoAdvisers)) {
+      rawCoAdvisers.forEach(item => {
+        if (typeof item === 'string' && item.trim()) {
+          const trimmed = item.trim();
+          if (!allPeople.some(p => p.name === trimmed)) {
+            allPeople.push({ name: trimmed, role: 'Adviser' });
+          }
+        }
+      });
+    } else if (typeof rawCoAdvisers === 'string') {
+      try {
+        const parsed = JSON.parse(rawCoAdvisers);
+        if (Array.isArray(parsed)) {
+          parsed.forEach(item => {
+            if (typeof item === 'string' && item.trim()) {
+              const trimmed = item.trim();
+              if (!allPeople.some(p => p.name === trimmed)) {
+                allPeople.push({ name: trimmed, role: 'Adviser' });
+              }
+            }
+          });
+        } else if (rawCoAdvisers.trim() && !allPeople.some(p => p.name === rawCoAdvisers.trim())) {
+          allPeople.push({ name: rawCoAdvisers.trim(), role: 'Adviser' });
+        }
+      } catch {
+        rawCoAdvisers.split(',').forEach(item => {
+          const trimmed = item.trim();
+          if (trimmed && !allPeople.some(p => p.name === trimmed)) {
+            allPeople.push({ name: trimmed, role: 'Adviser' });
+          }
+        });
+      }
+    }
+  }
+
+  // If no advisers found, ensure at least 1 empty Adviser block
+  if (allPeople.length === 1) {
+    allPeople.push({ name: '', role: 'Adviser' });
+  }
+
+  // Chunk into rows of max 3 items
+  const rows = [];
+  for (let i = 0; i < allPeople.length; i += 3) {
+    rows.push(allPeople.slice(i, i + 3));
+  }
+
+  return rows.map((rowItems, rowIndex) => `
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; margin-top: ${rowIndex === 0 ? '18px' : '16px'}; margin-bottom: 10px;">
+      ${rowItems.map(person => `
+        <div style="flex: 1 1 30%; max-width: 32%; text-align: center;">
+          <div style="border-bottom: 1.5px solid black; min-height: 16px; font-size: 10px; font-weight: bold; padding-bottom: 2px; margin-bottom: 2px; text-transform: uppercase; line-height: 1.2; word-break: break-word;">
+            ${person.name}
+          </div>
+          <div style="font-size: 9px; font-style: italic;">(Signature over printed name)</div>
+          <div style="font-size: 10px; margin-top: 2px; line-height: 1.2;">${person.role}, ${orgName}</div>
+        </div>
+      `).join('')}
+      ${Array.from({ length: 3 - rowItems.length }).map(() => `
+        <div style="flex: 1 1 30%; max-width: 32%; visibility: hidden;"></div>
+      `).join('')}
+    </div>
+  `).join('');
+};
+
 const ActivityProposalPreviewModal = ({
   isOpen,
   onClose,
@@ -209,22 +289,7 @@ const ActivityProposalPreviewModal = ({
             </div>
           </div>
 
-          <div style="display: flex; justify-content: space-between; margin-top: 18px; margin-bottom: 10px;">
-            <div style="width: 40%; text-align: center;">
-              <div style="border-bottom: 1.5px solid black; height: 16px; font-size: 11px; font-weight: bold; margin-bottom: 2px; text-transform: uppercase;">
-                ${proposalDetails.person_in_charge || user?.full_name || ''}
-              </div>
-              <div style="font-size: 9px; font-style: italic;">(Signature over printed name)</div>
-              <div style="font-size: 10px; margin-top: 2px;">President, ${orgName}</div>
-            </div>
-            <div style="width: 40%; text-align: center;">
-              <div style="border-bottom: 1.5px solid black; height: 16px; font-size: 11px; font-weight: bold; margin-bottom: 2px; text-transform: uppercase;">
-                ${proposalDetails.adviser_name || ''}
-              </div>
-              <div style="font-size: 9px; font-style: italic;">(Signature over printed name)</div>
-              <div style="font-size: 10px; margin-top: 2px;">Adviser, ${orgName}</div>
-            </div>
-          </div>
+          ${renderSignatureBlocksHtml(proposalDetails, user, orgName)}
 
           <!-- Official Document Footer pinned to bottom -->
           <div class="official-document-footer" style="margin-top: auto; padding-top: 4px; font-family: Arial, Helvetica, sans-serif;">

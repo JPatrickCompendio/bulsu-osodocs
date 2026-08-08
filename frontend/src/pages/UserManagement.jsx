@@ -33,6 +33,7 @@ import Avatar from '../components/Avatar';
 import ReportPreviewModal from '../components/ReportPreviewModal';
 import CompletedDocumentDetail from '../components/CompletedDocumentDetail';
 import { useToast } from '../hooks/useToast';
+import { supabase } from '../supabaseClient';
 
 const UserManagement = () => {
   const [users, setUsers] = useState([]);
@@ -51,6 +52,7 @@ const UserManagement = () => {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState(null);
   const [adminPassword, setAdminPassword] = useState('');
+  const [deleteError, setDeleteError] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
@@ -289,6 +291,7 @@ const UserManagement = () => {
   const handleDeleteClick = (user) => {
     setUserToDelete(user);
     setAdminPassword('');
+    setDeleteError('');
     setIsDeleteModalOpen(true);
   };
 
@@ -297,27 +300,50 @@ const UserManagement = () => {
     if (!adminPassword) return;
 
     setIsDeleting(true);
+    setDeleteError('');
+
     try {
+      // 1. Verify admin password directly via Supabase Auth client first
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: currentUser?.email || '',
+        password: adminPassword,
+      });
+
+      if (authError) {
+        console.warn('Admin password verification failed:', authError.message);
+        setDeleteError('Incorrect admin password. User was not deleted.');
+        showToast('Error: Incorrect admin password', 'error');
+        setIsDeleting(false);
+        return; // STOP EXECUTION! DO NOT DELETE USER IF PASSWORD IS WRONG!
+      }
+
+      // 2. Admin password verified! Proceed with API deletion call
       const response = await apiFetch(`/api/users/${userToDelete.id}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          adminEmail: currentUser.email,
+          adminEmail: currentUser?.email || '',
           adminPassword: adminPassword
         })
       });
       const result = await response.json();
 
-      if (result.success) {
+      if (response.ok && result.success) {
         setIsDeleteModalOpen(false);
+        setAdminPassword('');
+        setDeleteError('');
         setSuccessMessage('User account has been successfully deleted!');
         setIsSuccessModalOpen(true);
         fetchUsers();
       } else {
-        showToast('Error: ' + result.error);
+        const errorMsg = result.error || 'Incorrect admin password';
+        setDeleteError(errorMsg);
+        showToast('Error: ' + errorMsg, 'error');
       }
     } catch (error) {
       console.error('Error deleting user:', error);
+      setDeleteError('An unexpected error occurred while deleting user');
+      showToast('Error deleting user', 'error');
     } finally {
       setIsDeleting(false);
     }
@@ -712,11 +738,11 @@ const UserManagement = () => {
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-gray-50/50">
-                    <th className="px-6 py-3 text-xs font-black text-gray-400 uppercase">Document Name</th>
-                    <th className="px-6 py-3 text-xs font-black text-gray-400 uppercase">Type</th>
-                    <th className="px-6 py-3 text-xs font-black text-gray-400 uppercase">{isOrg ? 'Date Submitted' : 'Date Logged'}</th>
-                    <th className="px-6 py-3 text-xs font-black text-gray-400 uppercase">Status</th>
+                  <tr className="bg-[#073c2d] text-white">
+                    <th className="px-6 py-3 text-xs font-black uppercase text-white">Document Name</th>
+                    <th className="px-6 py-3 text-xs font-black uppercase text-white">Type</th>
+                    <th className="px-6 py-3 text-xs font-black uppercase text-white">{isOrg ? 'Date Submitted' : 'Date Logged'}</th>
+                    <th className="px-6 py-3 text-xs font-black uppercase text-white">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
@@ -954,14 +980,14 @@ const UserManagement = () => {
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-gray-50/50 border-b border-gray-100">
-                      <th className="px-6 py-4 font-semibold text-gray-600 text-sm">User Details</th>
-                      <th className="px-6 py-4 font-semibold text-gray-600 text-sm">Role</th>
-                      <th className="px-6 py-4 font-semibold text-gray-600 text-sm">Adviser</th>
-                      <th className="px-6 py-4 font-semibold text-gray-600 text-sm text-center">Members</th>
-                      <th className="px-6 py-4 font-semibold text-gray-600 text-sm">Status</th>
-                      <th className="px-6 py-4 font-semibold text-gray-600 text-sm">Joined</th>
-                      <th className="px-6 py-4 font-semibold text-gray-600 text-sm text-right">Actions</th>
+                    <tr className="bg-[#073c2d] text-white border-b border-[#073c2d]">
+                      <th className="px-6 py-4 font-semibold text-white text-sm">User Details</th>
+                      <th className="px-6 py-4 font-semibold text-white text-sm">Role</th>
+                      <th className="px-6 py-4 font-semibold text-white text-sm">Adviser</th>
+                      <th className="px-6 py-4 font-semibold text-white text-sm text-center">Members</th>
+                      <th className="px-6 py-4 font-semibold text-white text-sm">Status</th>
+                      <th className="px-6 py-4 font-semibold text-white text-sm">Joined</th>
+                      <th className="px-6 py-4 font-semibold text-white text-sm text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
@@ -1134,7 +1160,6 @@ const UserManagement = () => {
                         const cleaned = e.target.value.replace(/[^\d-]/g, '');
                         setFormData({ ...formData, student_no: cleaned });
                       }}
-                      pattern="[0-9-]*"
                       title="Student number can contain numbers and an optional hyphen"
                     />
                   </div>
@@ -1150,7 +1175,7 @@ const UserManagement = () => {
                         const cleaned = e.target.value.replace(/[^\d]/g, '');
                         setFormData({ ...formData, contact_no: cleaned });
                       }}
-                      pattern="09[0-9]{9}"
+                      pattern="^09[0-9]{9}$"
                       maxLength="11"
                       title="Contact number must be an 11-digit mobile number starting with 09"
                     />
@@ -1167,8 +1192,7 @@ const UserManagement = () => {
                         value={formData.org_name}
                         onChange={(e) => setFormData({ ...formData, org_name: e.target.value })}
                         minLength="2"
-                        pattern="^[A-Za-z0-9\s.,()&'\-]+$"
-                        title="Organization name must contain at least 2 characters and no special symbols except standard punctuation"
+                        title="Organization name must contain at least 2 characters"
                       />
                     </div>
                   </div>
@@ -1184,7 +1208,6 @@ const UserManagement = () => {
                         const cleaned = e.target.value.replace(/[^\d]/g, '');
                         setFormData({ ...formData, no_member: cleaned });
                       }}
-                      pattern="[1-9][0-9]*"
                       title="Number of members must be a positive integer"
                     />
                   </div>
@@ -1198,7 +1221,6 @@ const UserManagement = () => {
                       value={formData.adviser_name}
                       onChange={(e) => setFormData({ ...formData, adviser_name: e.target.value })}
                       minLength="2"
-                      pattern="^[A-Za-z\s.,'\-]+$"
                       title="Adviser name must be a valid alphabetical name of at least 2 characters"
                     />
                   </div>
@@ -1225,8 +1247,7 @@ const UserManagement = () => {
                             newCoAdvisers[idx] = e.target.value;
                             setFormData({ ...formData, co_advisers: newCoAdvisers });
                           }}
-                          pattern="^[A-Za-z\s.,'\-]+$"
-                          title="Co-Adviser name must be a valid alphabetical name"
+                          title="Co-Adviser name must be a valid name"
                         />
                         <button
                           type="button"
@@ -1581,6 +1602,12 @@ const UserManagement = () => {
               </p>
 
               <form onSubmit={confirmDelete} className="space-y-4">
+                {deleteError && (
+                  <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs font-semibold rounded-xl text-left flex items-center gap-2 animate-in fade-in duration-200">
+                    <AlertTriangle size={16} className="shrink-0 text-red-500" />
+                    <span>{deleteError}</span>
+                  </div>
+                )}
                 <div className="text-left">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Verify Admin Password</label>
                   <div className="relative">
@@ -1589,9 +1616,16 @@ const UserManagement = () => {
                       type="password"
                       required
                       placeholder="Enter your password"
-                      className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-red-500 transition-all text-gray-800"
+                      className={`w-full pl-10 pr-4 py-3 border rounded-xl outline-none focus:ring-2 transition-all text-gray-800 ${
+                        deleteError
+                          ? 'border-red-500 focus:ring-red-500/25 focus:border-red-500'
+                          : 'border-gray-200 focus:ring-red-500'
+                      }`}
                       value={adminPassword}
-                      onChange={(e) => setAdminPassword(e.target.value)}
+                      onChange={(e) => {
+                        setAdminPassword(e.target.value);
+                        setDeleteError('');
+                      }}
                     />
                   </div>
                 </div>

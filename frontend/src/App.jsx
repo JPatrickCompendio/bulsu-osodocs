@@ -17,14 +17,16 @@ import {
 import Completed from './pages/Completed';
 import UserManagement from './pages/UserManagement';
 import MyProfile from './pages/MyProfile';
+import ResetPassword from './pages/ResetPassword';
 
 const App = () => {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          {/* Public Route */}
+          {/* Public Routes */}
           <Route path="/login" element={<Login />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
           {/* Protected Routes */}
           <Route element={
