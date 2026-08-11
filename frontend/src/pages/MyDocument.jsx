@@ -2557,12 +2557,17 @@ export const MyDocuments = () => {
                         const { data } = supabase.storage.from('documents').getPublicUrl(finalPath);
                         const fileUrl = data?.publicUrl || '#';
 
-                        const fileLog = timelineLogs.find(log => log.attachment_id === file.id);
+                        const currentVersionNum = currentVersion?.version_number || 1;
+                        const isResubmittedVersion = currentVersionNum > 1;
+                        const prevVersion = selectedDoc.versions?.find(v => (v?.version_number || 0) === (currentVersionNum - 1));
+                        const prevAttachment = prevVersion?.submission_attachments?.find(att => {
+                          if (att?.requirement_id && file?.requirement_id) return att.requirement_id === file.requirement_id;
+                          return !!att?.file_name && !!file?.file_name && att.file_name === file.file_name;
+                        });
+                        const existedInPreviousVersion = !!prevAttachment;
+                        const isModifiedInResubmission = existedInPreviousVersion && prevAttachment.file_url !== file.file_url;
+                        const isUnchangedApproved = isResubmittedVersion && existedInPreviousVersion && !isModifiedInResubmission;
 
-                        // Only show "returned" (orange) during chairman-stage review.
-                        // For later phases (e.g., dean review), old chairman return reasons should not force orange.
-                        const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
-                        const isReturnedAttachment = ['missing-requirements', 'incorrect-format', 'incomplete-information'].includes(reviewActionValue);
                         const viewingLatestVersion = currentVersion?.id === selectedDoc.raw?.current_version_id;
                         const docStatus = (viewingLatestVersion
                           ? (selectedDoc.raw?.status || selectedDoc.status || '')
@@ -2571,21 +2576,30 @@ export const MyDocuments = () => {
                         const isChairmanStage = docStatus === 'submitted' || docStatus === 'oso staff review' || docStatus === 'pending' || docStatus === 'returned';
                         const historicalChairmanVersion = !viewingLatestVersion && isChairmanStage;
 
+                        const fileLog = (timelineLogs || []).find(log => log.attachment_id === file.id);
+                        const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
+                        const isReturnedAttachment = ['missing-requirements', 'incorrect-format', 'incomplete-information'].includes(reviewActionValue);
+
                         const isReturnByCurrentReviewer =
                           isReturnedAttachment &&
                           ((fileLog?.user_id && fileLog.user_id === user?.id) ||
                             sameRole(fileLog?.users?.role, user?.role));
                         const returnedForDisplay = isChairmanStage ? isReturnedAttachment : isReturnByCurrentReviewer;
-                        const hasRevision = isChairmanStage && returnedForDisplay && !locallyApproved.includes(file.id);
-                        const isApproved = locallyApproved.includes(file.id) || (historicalChairmanVersion ? !returnedForDisplay : !hasRevision);
+                        const hasRevision = returnedForDisplay;
+
+                        const isExplicitlyApproved = (fileLog && fileLog.review_action === 'approved') || (locallyApproved && locallyApproved.includes(file.id));
+
+                        const isChairmanApproved = historicalChairmanVersion
+                          ? !returnedForDisplay
+                          : (isChairmanStage
+                              ? (isExplicitlyApproved || isUnchangedApproved)
+                              : !returnedForDisplay);
 
                         const reqObj = file.requirements || file.requirement;
                         const scope = reqObj?.requirement_scope || 'OSAS';
                         const isOsas = scope === 'OSAS';
                         const isForwardedPhase = docStatus.includes('main campus review') || docStatus === 'completed' || docStatus === 'waiting for accomplishment report' || docStatus === 'approved' || docStatus === 'ready for retrieval';
                         const isForwardedItem = isForwardedPhase && isOsas;
-
-                        const isChairmanApproved = (locallyApproved && locallyApproved.includes(file.id)) || (fileLog && fileLog.review_action === 'approved') || (!isChairmanStage && !returnedForDisplay);
 
                         let containerBg = 'bg-[#525252]';
                         let textColor = 'text-white';
@@ -2607,7 +2621,7 @@ export const MyDocuments = () => {
                           iconStyle = 'bg-white/20 text-white';
                           badgeStyle = 'bg-white/20 text-white border border-white/30 font-black';
                         } else {
-                          // Initial submission (before Chairman approval): Neutral Dark Gray
+                          // Resubmitted or pending review attachment: Neutral Dark Gray
                           containerBg = 'bg-[#525252]';
                           textColor = 'text-white';
                           subtitleColor = 'text-gray-300';

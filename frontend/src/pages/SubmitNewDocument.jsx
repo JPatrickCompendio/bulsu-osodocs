@@ -18,6 +18,15 @@ import DEFAULT_HEADER_IMG from '../assets/HEADER.png';
 import DEFAULT_FOOTER_IMG from '../assets/FOOTER.png';
 import HEADER_LOGO_IMG from '../assets/headerLOGO.png';
 import ActivityProposalPreviewModal from '../components/ActivityProposalPreviewModal';
+const isAllowMultiple = (val) => {
+  if (val === true || val === 1) return true;
+  if (typeof val === 'string') {
+    const s = val.trim().toLowerCase();
+    return s === 'true' || s === '1' || s === 't' || s === 'yes';
+  }
+  return false;
+};
+
 const extractIncrementNumber = (val) => {
   if (!val) return '';
   const str = String(val).trim();
@@ -318,13 +327,21 @@ const SubmitNewDocument = () => {
     const handleSidebarNav = (e) => {
       const targetPath = e.detail?.path;
       if (targetPath) {
-        setPendingNavPath(targetPath);
-        setShowUnsavedModal(true);
+        if (view === 'form' && hasUnsavedChanges) {
+          setPendingNavPath(targetPath);
+          setShowUnsavedModal(true);
+        } else {
+          setPendingNavPath(null);
+          setShowUnsavedModal(false);
+          setHasUnsavedChanges(false);
+          window.__hasUnsavedChanges = false;
+          navigate(targetPath);
+        }
       }
     };
     window.addEventListener('sidebar-nav-click', handleSidebarNav);
     return () => window.removeEventListener('sidebar-nav-click', handleSidebarNav);
-  }, []);
+  }, [view, hasUnsavedChanges, navigate]);
 
   useEffect(() => {
     loadDocumentTypes();
@@ -655,11 +672,16 @@ const SubmitNewDocument = () => {
                 });
 
                 types.forEach(dt => {
+                  const allowMultiple = isAllowMultiple(dt.allow_multiple_submissions);
                   const isActivityProposal = dt.name.toLowerCase() === 'activity proposal' || dt.name.toLowerCase().includes('proposal');
-                  if (!isActivityProposal && existingDocTypeIds.has(dt.id)) {
+                  const hasExisting = existingDocTypeIds.has(String(dt.id)) || existingDocTypeIds.has(Number(dt.id)) || existingDocTypeIds.has(dt.id);
+
+                  if (!allowMultiple && !isActivityProposal && hasExisting) {
                     if (!frontendAvailability[dt.id]) frontendAvailability[dt.id] = { isAvailable: true };
-                    frontendAvailability[dt.id].isAvailable = false;
-                    frontendAvailability[dt.id].lockedReason = 'You already have an active submission for this category. Check your My Documents page.';
+                    if (frontendAvailability[dt.id].isAvailable !== false) {
+                      frontendAvailability[dt.id].isAvailable = false;
+                      frontendAvailability[dt.id].lockedReason = 'You already have an active submission for this category. Check your My Documents page.';
+                    }
                   }
                 });
               }
@@ -989,6 +1011,11 @@ const SubmitNewDocument = () => {
   });
 
   useEffect(() => {
+    if (view !== 'form') {
+      setHasUnsavedChanges(false);
+      return;
+    }
+
     // Detect if the user has made any meaningful unsaved changes from the last save
     const currentFilesStr = JSON.stringify(Object.keys(localFiles));
     const currentDetailsStr = JSON.stringify(proposalDetails);
@@ -997,16 +1024,18 @@ const SubmitNewDocument = () => {
       currentFilesStr !== savedStateRef.current.files ||
       currentDetailsStr !== savedStateRef.current.details
     ) {
-      // Only set dirty if it's actually not empty
+      // Only set dirty if files are attached or non-empty form inputs exist
       const isNotEmpty = Object.keys(localFiles).length > 0 ||
-        proposalDetails.activity_title.trim() !== '' ||
-        proposalDetails.target_venue !== '';
+        Boolean(proposalDetails?.activity_title?.trim()) ||
+        Boolean(proposalDetails?.target_venue?.trim()) ||
+        Boolean(proposalDetails?.target_audience?.trim()) ||
+        Boolean(proposalDetails?.nature_of_activity?.trim()) ||
+        (proposalDetails?.objectives && proposalDetails.objectives.length > 0) ||
+        Boolean(proposalDetails?.satisfaction_goal_1?.trim());
 
-      if (isNotEmpty) {
-        setHasUnsavedChanges(true);
-      }
+      setHasUnsavedChanges(isNotEmpty);
     }
-  }, [proposalDetails, localFiles]);
+  }, [proposalDetails, localFiles, view]);
 
   const processUploadsAndSave = async (status) => {
     if (isSavingRef.current) return;
@@ -2237,13 +2266,23 @@ const SubmitNewDocument = () => {
                       </button>
                     )}
 
-                    {(proposalStep === 1 || proposalStep === 3) && (
+                    {proposalStep === 1 && (
                       <button
                         type="button"
                         onClick={() => setShowClearModal(true)}
                         className="px-4 py-2.5 bg-white border border-gray-200 text-gray-500 font-black rounded-lg hover:bg-gray-50 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
                       >
                         <Eraser size={14} /> Clear Form
+                      </button>
+                    )}
+
+                    {proposalStep === 3 && (Object.keys(localFiles).length > 0 || existingAttachments.length > 0) && (
+                      <button
+                        type="button"
+                        onClick={() => clearFormOptions('attachments')}
+                        className="px-4 py-2.5 bg-white border border-gray-200 text-gray-500 font-black rounded-lg hover:bg-gray-50 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
+                      >
+                        <Eraser size={14} /> Clear Attachments
                       </button>
                     )}
 
@@ -2297,13 +2336,15 @@ const SubmitNewDocument = () => {
                   </>
                 ) : (
                   <>
-                    <button
-                      type="button"
-                      onClick={() => setShowClearModal(true)}
-                      className="px-4 py-2.5 bg-white border border-gray-200 text-gray-500 font-black rounded-lg hover:bg-gray-50 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
-                    >
-                      <Eraser size={14} /> Clear Form
-                    </button>
+                    {(Object.keys(localFiles).length > 0 || existingAttachments.length > 0) && (
+                      <button
+                        type="button"
+                        onClick={() => clearFormOptions('attachments')}
+                        className="px-4 py-2.5 bg-white border border-gray-200 text-gray-500 font-black rounded-lg hover:bg-gray-50 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
+                      >
+                        <Eraser size={14} /> Clear Attachments
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => {

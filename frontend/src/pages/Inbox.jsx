@@ -1377,9 +1377,18 @@ export const Inbox = () => {
                   const isForwardedPhase = docStatus.includes('main campus review') || docStatus === 'completed' || docStatus === 'waiting for accomplishment report' || docStatus === 'approved' || docStatus === 'ready for retrieval';
                   const isForwardedItem = isForwardedPhase && isOsas;
 
+                  const currentVersionNum = activeVersion?.version_number || 1;
+                  const isResubmittedVersion = currentVersionNum > 1;
+                  const prevVersion = allVersions?.find(v => (v?.version_number || 0) === (currentVersionNum - 1));
+                  const prevAttachment = prevVersion?.submission_attachments?.find(att => {
+                    if (att?.requirement_id && file?.requirement_id) return att.requirement_id === file.requirement_id;
+                    return !!att?.file_name && !!file?.file_name && att.file_name === file.file_name;
+                  });
+                  const isUnchangedApproved = isResubmittedVersion && prevAttachment && prevAttachment.file_url === file.file_url;
+
                   // Chairman stage check: if status is submitted, oso staff review, pending, or returned
                   const isChairmanStage = docStatus === 'submitted' || docStatus === 'oso staff review' || docStatus === 'pending' || docStatus === 'returned';
-                  const isChairmanApproved = (locallyApproved && locallyApproved.includes(file.id)) || (fileLog && fileLog.review_action === 'approved') || (!isChairmanStage && !returnedForDisplay);
+                  const isChairmanApproved = isApproved || isUnchangedApproved || (locallyApproved && locallyApproved.includes(file.id)) || (fileLog && fileLog.review_action === 'approved') || (!isChairmanStage && !returnedForDisplay);
 
                   // Dynamic styles based on review status
                   let containerBg = 'bg-[#525252]';

@@ -13,6 +13,15 @@ export function jsonResponse(data: unknown, status = 200) {
   });
 }
 
+export function isAllowMultiple(val: unknown): boolean {
+  if (val === true || val === 1) return true;
+  if (typeof val === 'string') {
+    const s = val.trim().toLowerCase();
+    return s === 'true' || s === '1' || s === 't' || s === 'yes';
+  }
+  return false;
+}
+
 export function getAdminClient() {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
@@ -62,23 +71,108 @@ async function getAuthEmailsMap() {
 }
 
 function getAnnouncementAudiences(role: string, orgName = '') {
-  if (role === 'org-president') {
-    const audiences = ['all-orgs', 'all', 'org-president'];
+  const normRole = (role || '').toLowerCase();
+  const audiences = ['all', 'All'];
+
+  if (normRole === 'org-president') {
+    audiences.push('all-orgs', 'org-president');
     const trimmed = orgName.trim();
     if (trimmed) audiences.push(`org:${trimmed}`);
-    return audiences;
+  } else if (normRole === 'chairman') {
+    audiences.push('chairman', 'oso-staff');
+  } else if (normRole === 'vice-chairman') {
+    audiences.push('vice-chairman', 'oso-staff');
+  } else if (normRole === 'admin') {
+    audiences.push('admin', 'oso-staff', 'chairman', 'vice-chairman');
   }
-  if (role === 'chairman') return ['oso-staff', 'chairman'];
-  if (role === 'vice-chairman') return ['oso-staff', 'vice-chairman'];
-  return [];
+
+  return Array.from(new Set(audiences));
+}
+
+async function syncSubmissionWindowAnnouncements(supabase: ReturnType<typeof getAdminClient>) {
+  try {
+    const { data: activeSy } = await supabase.from('school_years').select('id').eq('is_active', true).maybeSingle();
+    if (!activeSy) return;
+
+    const { data: windows } = await supabase
+      .from('academic_calendar_events')
+      .select('*')
+      .eq('school_year_id', activeSy.id)
+      .eq('event_type', 'submission_window');
+
+    if (!windows || windows.length === 0) return;
+
+    const now = new Date();
+    const oneDayMs = 24 * 60 * 60 * 1000;
+
+    for (const w of windows) {
+      const windowTitle = w.title || 'Document Submission';
+      const openTitle = `📢 Submission Window Opened: ${windowTitle}`;
+      const startDate = w.start_date ? new Date(w.start_date) : null;
+      const endDate = w.end_date ? new Date(w.end_date) : null;
+      const startFormatted = startDate ? startDate.toLocaleDateString() : '';
+      const endFormatted = endDate ? endDate.toLocaleDateString() : '';
+
+      // 1. Persist OPEN announcement if window is open
+      const isOpen = (!startDate || now >= startDate) && (!endDate || now <= endDate);
+      if (isOpen) {
+        const { data: existingOpen } = await supabase
+          .from('announcements')
+          .select('id')
+          .eq('title', openTitle)
+          .maybeSingle();
+
+        if (!existingOpen) {
+          const openContent = `The submission window for ${windowTitle} is currently OPEN${startFormatted && endFormatted ? ` from ${startFormatted} to ${endFormatted}` : ''}. Organizations can submit required documents via the Submit New Document page.`;
+          await supabase.from('announcements').insert([{
+            title: openTitle,
+            content: openContent,
+            target_audience: 'all-orgs',
+            is_active: true,
+            created_at: w.created_at || new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }]);
+        }
+      }
+
+      // 2. Persist CLOSING SOON announcement if window closes within 24-36 hours
+      if (endDate) {
+        const diffMs = endDate.getTime() - now.getTime();
+        if (diffMs > 0 && diffMs <= oneDayMs * 1.5) {
+          const closingTitle = `⚠️ Submission Window Closing Soon: ${windowTitle}`;
+          const { data: existingClosing } = await supabase
+            .from('announcements')
+            .select('id')
+            .eq('title', closingTitle)
+            .maybeSingle();
+
+          if (!existingClosing) {
+            const closingContent = `Notice: The submission window for ${windowTitle} will CLOSE on ${endDate.toLocaleDateString()} (within 24 hours). Please complete and submit all required documents immediately via the Submit New Document tab.`;
+            await supabase.from('announcements').insert([{
+              title: closingTitle,
+              content: closingContent,
+              target_audience: 'all-orgs',
+              is_active: true,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }]);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Error syncing submission window announcements:', e);
+  }
 }
 
 async function fetchActiveAnnouncements(
   supabase: ReturnType<typeof getAdminClient>,
   role: string,
   orgName = '',
-  limit = 3,
+  limit = 10,
 ) {
+  await syncSubmissionWindowAnnouncements(supabase);
+
   const audiences = getAnnouncementAudiences(role, orgName);
   if (audiences.length === 0) return [];
 
@@ -751,6 +845,8 @@ async function handleDeleteUsers(id: string, body: Record<string, unknown>) {
 
 async function handleGetAnnouncements() {
   const supabase = getAdminClient();
+  await syncSubmissionWindowAnnouncements(supabase);
+
   const { data, error } = await supabase
     .from('announcements')
     .select('*')
@@ -924,40 +1020,18 @@ async function handleGetNotifications(url: URL) {
 
   let notifications: Array<Record<string, unknown>> = [];
 
-  if (role !== 'admin') {
-    const announcementsData = await fetchActiveAnnouncements(supabase, role, orgName, 50);
-    notifications = [
-      ...notifications,
-      ...announcementsData.map((a) => ({
-        id: `ann_${a.id}`,
-        type: 'announcement',
-        title: a.title,
-        message: a.content,
-        timestamp: a.created_at,
-        source: a,
-      })),
-    ];
-  } else {
-    const { data: announcementsData, error: annError } = await supabase
-      .from('announcements')
-      .select('*')
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(50);
-    if (!annError && announcementsData) {
-      notifications = [
-        ...notifications,
-        ...announcementsData.map((a) => ({
-          id: `ann_${a.id}`,
-          type: 'announcement',
-          title: a.title,
-          message: a.content,
-          timestamp: a.created_at,
-          source: a,
-        })),
-      ];
-    }
-  }
+  const announcementsData = await fetchActiveAnnouncements(supabase, role, orgName, 50);
+  notifications = [
+    ...notifications,
+    ...announcementsData.map((a) => ({
+      id: `ann_${a.id}`,
+      type: 'announcement',
+      title: a.title,
+      message: a.content,
+      timestamp: a.created_at,
+      source: a,
+    })),
+  ];
 
   let logsData: Array<Record<string, unknown>> = [];
 
@@ -1155,7 +1229,13 @@ async function handlePostSchoolYears(body: Record<string, unknown>) {
     }
   }
 
-  if (is_active) {
+  const currentDateStr = new Date().toISOString().split('T')[0];
+  const sStartStr = String(start_date).split('T')[0];
+  const sEndStr = String(end_date).split('T')[0];
+  const isCurrentDateWithin = currentDateStr >= sStartStr && currentDateStr <= sEndStr;
+  const shouldBeActive = Boolean(is_active) || isCurrentDateWithin;
+
+  if (shouldBeActive) {
     await supabase
       .from('school_years')
       .update({ is_active: false })
@@ -1164,7 +1244,7 @@ async function handlePostSchoolYears(body: Record<string, unknown>) {
 
   const { data, error } = await supabase
     .from('school_years')
-    .insert([{ name: formattedName, start_date, end_date, is_active: is_active || false }])
+    .insert([{ name: formattedName, start_date, end_date, is_active: shouldBeActive }])
     .select();
 
   if (error) {
@@ -1192,9 +1272,22 @@ async function handlePutSchoolYears(id: string, body: Record<string, unknown>) {
     }
   }
 
+  const currentDateStr = new Date().toISOString().split('T')[0];
+  const sStartStr = String(start_date).split('T')[0];
+  const sEndStr = String(end_date).split('T')[0];
+  const isCurrentDateWithin = currentDateStr >= sStartStr && currentDateStr <= sEndStr;
+  const shouldBeActive = Boolean(body.is_active) || isCurrentDateWithin;
+
+  if (shouldBeActive) {
+    await supabase
+      .from('school_years')
+      .update({ is_active: false })
+      .neq('id', id);
+  }
+
   const { data, error } = await supabase
     .from('school_years')
-    .update({ name: formattedName, start_date, end_date })
+    .update({ name: formattedName, start_date, end_date, ...(shouldBeActive ? { is_active: true } : {}) })
     .eq('id', id)
     .select();
 
@@ -1325,9 +1418,20 @@ async function handlePostSemesters(body: Record<string, unknown>) {
     }
   }
 
+  const currentDateStr = new Date().toISOString().split('T')[0];
+  const isCurrentDateWithin = currentDateStr >= semStartStr && currentDateStr <= semEndStr;
+  const shouldBeActive = Boolean(body.is_active) || isCurrentDateWithin;
+
+  if (shouldBeActive) {
+    await supabase
+      .from('semesters')
+      .update({ is_active: false })
+      .eq('school_year_id', school_year_id);
+  }
+
   const { data, error } = await supabase
     .from('semesters')
-    .insert([{ school_year_id, name, start_date: semStartStr, end_date: semEndStr, is_active: false, status: 'active' }])
+    .insert([{ school_year_id, name, start_date: semStartStr, end_date: semEndStr, is_active: shouldBeActive, status: 'active' }])
     .select();
 
   if (error) {
@@ -1382,9 +1486,20 @@ async function handlePutSemesters(id: string, body: Record<string, unknown>) {
     }
   }
 
+  const currentDateStr = new Date().toISOString().split('T')[0];
+  const isCurrentDateWithin = semStartStr && semEndStr && currentDateStr >= semStartStr && currentDateStr <= semEndStr;
+  const shouldBeActive = Boolean(body.is_active) || isCurrentDateWithin;
+
+  if (currentSem?.school_year_id && shouldBeActive) {
+    await supabase
+      .from('semesters')
+      .update({ is_active: false })
+      .eq('school_year_id', currentSem.school_year_id);
+  }
+
   const { data, error } = await supabase
     .from('semesters')
-    .update({ name, start_date: semStartStr, end_date: semEndStr })
+    .update({ name, start_date: semStartStr, end_date: semEndStr, ...(shouldBeActive ? { is_active: true } : {}) })
     .eq('id', id)
     .select();
 
@@ -1559,7 +1674,7 @@ async function handleCreateDraftSubmission(body: Record<string, unknown>) {
     }
   }
 
-  if (!dt.allow_multiple_submissions) {
+  if (!isAllowMultiple(dt.allow_multiple_submissions)) {
     const { data: userRecord } = await supabase.from('users').select('org_name').eq('id', userId).single();
     if (!userRecord || !userRecord.org_name) {
       return jsonResponse({ action: 'blocked', reason: 'User organization not found.' });
@@ -1791,7 +1906,33 @@ async function handlePostAcademicEvents(body: Record<string, unknown>) {
     return jsonResponse({ error: 'Failed to create academic event', details: error.message }, 500);
   }
 
-  return jsonResponse({ success: true, data: data?.[0] });
+  const createdEv = data?.[0];
+  if (event_type === 'submission_window' && createdEv) {
+    try {
+      const windowTitle = createdEv.title || title || 'Document Submission Window';
+      const startFormatted = start_date ? new Date(start_date as string).toLocaleDateString() : '';
+      const endFormatted = end_date ? new Date(end_date as string).toLocaleDateString() : '';
+      const announceTitle = `📢 Submission Window Opened: ${windowTitle}`;
+      const announceContent = `The submission window for ${windowTitle} is now OPEN${startFormatted && endFormatted ? ` from ${startFormatted} to ${endFormatted}` : ''}. Organizations can submit required documents via the Submit New Document page.`;
+
+      const annObj: Record<string, unknown> = {
+        title: announceTitle,
+        content: announceContent,
+        target_audience: 'all-orgs',
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      if (created_by) annObj.created_by = created_by;
+
+      const { error: annErr } = await supabase.from('announcements').insert([annObj]);
+      if (annErr) console.error('Failed to create opening window announcement:', annErr);
+    } catch (e) {
+      console.error('Failed to create opening window announcement:', e);
+    }
+  }
+
+  return jsonResponse({ success: true, data: createdEv });
 }
 
 async function handlePutAcademicEvents(id: string, body: Record<string, unknown>) {
@@ -1820,7 +1961,41 @@ async function handlePutAcademicEvents(id: string, body: Record<string, unknown>
     return jsonResponse({ error: 'Failed to update academic event', details: error.message }, 500);
   }
 
-  return jsonResponse({ success: true, data: data?.[0] });
+  const updatedEv = data?.[0];
+  if (event_type === 'submission_window' && updatedEv) {
+    try {
+      const windowTitle = updatedEv.title || title || 'Document Submission Window';
+      const startFormatted = start_date ? new Date(start_date as string).toLocaleDateString() : '';
+      const endFormatted = end_date ? new Date(end_date as string).toLocaleDateString() : '';
+      const announceTitle = `📢 Submission Window Opened: ${windowTitle}`;
+      const announceContent = `The submission window for ${windowTitle} is now OPEN${startFormatted && endFormatted ? ` from ${startFormatted} to ${endFormatted}` : ''}. Organizations can submit required documents via the Submit New Document page.`;
+
+      const { data: existingAnn } = await supabase
+        .from('announcements')
+        .select('id')
+        .eq('title', announceTitle)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (!existingAnn) {
+        const annObj: Record<string, unknown> = {
+          title: announceTitle,
+          content: announceContent,
+          target_audience: 'all-orgs',
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        const { error: annErr } = await supabase.from('announcements').insert([annObj]);
+        if (annErr) console.error('Failed to update opening window announcement:', annErr);
+      }
+    } catch (e) {
+      console.error('Failed to update opening window announcement:', e);
+    }
+  }
+
+  return jsonResponse({ success: true, data: updatedEv });
 }
 
 async function handleDeleteAcademicEvent(id: string) {
@@ -1955,7 +2130,7 @@ async function handleDocumentAvailability(url: URL) {
       }
     }
 
-    if (isAvailable && !dt.allow_multiple_submissions && existingDocTypesThisYear.has(String(dt.id))) {
+    if (isAvailable && !isAllowMultiple(dt.allow_multiple_submissions) && existingDocTypesThisYear.has(String(dt.id))) {
       // It might be a draft/returned, which means it's available to "resume", so we don't fully lock it visually in the UI.
       // But we will leave it "available" so they can click it and trigger the decision engine.
       isAvailable = true; 
@@ -2047,7 +2222,7 @@ async function handleSubmissionDecision(url: URL) {
     }
   }
 
-  if (!dt.allow_multiple_submissions) {
+  if (!isAllowMultiple(dt.allow_multiple_submissions)) {
     const { data: userRecord } = await supabase.from('users').select('org_name').eq('id', userId).single();
     if (!userRecord || !userRecord.org_name) {
        return jsonResponse({ action: 'error', reason: 'User organization not found.' });
