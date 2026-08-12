@@ -635,17 +635,17 @@ export const MyDocuments = () => {
     const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
     const isReturnedAttachment = RETURN_REASONS.includes(reviewActionValue);
 
-    const currentVersionNumber = activeVersion?.version_number || 1;
+    const currentVersionNumber = Number(activeVersion?.version_number || 1);
     const isResubmittedVersion = currentVersionNumber > 1;
-    const previousVersion = allVersions.find(
-      (v) => (v?.version_number || 0) === (currentVersionNumber - 1)
+    const previousVersion = (allVersions || []).find(
+      (v) => Number(v?.version_number || 0) === (currentVersionNumber - 1)
     );
     const previousVersionAttachments = Array.isArray(previousVersion?.submission_attachments)
       ? previousVersion.submission_attachments
       : [];
     const prevAttachmentByRequirement = previousVersionAttachments.find((att) => {
       if (att?.requirement_id && file?.requirement_id) {
-        return att.requirement_id === file.requirement_id;
+        return String(att.requirement_id) === String(file.requirement_id);
       }
       return !!att?.file_name && !!file?.file_name && att.file_name === file.file_name;
     });
@@ -1412,11 +1412,13 @@ export const MyDocuments = () => {
 
       const forwardedListText = forwardedFileNames.length > 0
         ? `Forwarded Documents:\n${forwardedFileNames.map(f => `• ${f}`).join('\n')}`
-        : 'No OSAS documents forwarded';
+        : '';
 
       const logDescription = adminComment
-        ? `${adminComment}\n\n${forwardedListText}`
-        : `Sent to Main Campus for Review.\n\n${forwardedListText}`;
+        ? (forwardedListText ? `${adminComment}\n\n${forwardedListText}` : adminComment)
+        : (forwardedListText ? `Sent to Main Campus for Review.\n\n${forwardedListText}` : 'Sent to Main Campus for Review.');
+
+      const logComment = logDescription;
 
       const { error: logErr } = await supabase
         .from('submission_logs')
@@ -1426,9 +1428,9 @@ export const MyDocuments = () => {
           user_id: user.id,
           workflow_phase: 'main-campus-review',
           action_type: 'forwarded',
-          review_action: 'forwarded',
+          review_action: 'Submitted to Main Campus',
           description: logDescription,
-          comment: adminComment ? `${adminComment}\n(${forwardedListText})` : forwardedListText,
+          comment: logComment,
           created_at: new Date().toISOString()
         }]);
 
@@ -2557,11 +2559,11 @@ export const MyDocuments = () => {
                         const { data } = supabase.storage.from('documents').getPublicUrl(finalPath);
                         const fileUrl = data?.publicUrl || '#';
 
-                        const currentVersionNum = currentVersion?.version_number || 1;
+                        const currentVersionNum = Number(currentVersion?.version_number || 1);
                         const isResubmittedVersion = currentVersionNum > 1;
-                        const prevVersion = selectedDoc.versions?.find(v => (v?.version_number || 0) === (currentVersionNum - 1));
+                        const prevVersion = (allVersions || []).find(v => Number(v?.version_number || 0) === (currentVersionNum - 1));
                         const prevAttachment = prevVersion?.submission_attachments?.find(att => {
-                          if (att?.requirement_id && file?.requirement_id) return att.requirement_id === file.requirement_id;
+                          if (att?.requirement_id && file?.requirement_id) return String(att.requirement_id) === String(file.requirement_id);
                           return !!att?.file_name && !!file?.file_name && att.file_name === file.file_name;
                         });
                         const existedInPreviousVersion = !!prevAttachment;
@@ -3194,7 +3196,7 @@ export const MyDocuments = () => {
                           action_type: 'submitted',
                           review_action: 'completed',
                           description: 'Activity accomplishment report submitted',
-                          comment: accomReportComments || null,
+                          comment: 'Activity accomplishment report submitted',
                           created_at: new Date().toISOString()
                         }]);
 

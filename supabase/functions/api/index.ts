@@ -956,36 +956,50 @@ function isWorkflowLogRelevantForRole(
 ): boolean {
   if (!submission) return false;
 
-  const status = normalizeWorkflowText(submission.status);
-  const actionType = normalizeWorkflowText(log.action_type);
-  const phase = normalizeWorkflowText(log.workflow_phase);
+  const status = String(submission.status || '').toLowerCase();
+  const actionType = String(log.action_type || '').toLowerCase();
+  const phase = String(log.workflow_phase || '').toLowerCase();
+  const desc = (String(log.description || '') + ' ' + String(log.message || '') + ' ' + String(log.comment || '')).toLowerCase();
+  const normRole = String(role || '').toLowerCase();
 
   if (status === 'draft') return false;
-  if (actionType === 'created') return false; // Hide created events
+  if (['created', 'viewed', 'attachment_review', 'draft'].includes(actionType)) return false;
 
-  if (role === 'admin') {
-    // Admin only sees document retrieved and accomplishment report submitted in the workflow log.
-    if (['document retrieved', 'document_retrieved'].includes(actionType)) return true;
-    if (['accomplishment report', 'accomplishment_report', 'accomplishment report submitted'].includes(actionType)) return true;
-    if (actionType === 'submitted' && phase === 'accomplishment') return true;
+  // (ADMIN)
+  if (normRole === 'admin' || normRole === 'oso-staff' || normRole === 'sds-coordinator') {
+    // Explicitly EXCLUDE Chairman or Vice Chairman approvals, returns, or forwarding logs from Admin
+    if (phase.includes('chairman') || desc.includes('by chairman') || desc.includes('by vice chairman')) {
+      return false;
+    }
+
+    // 1) Retain notification when Org President sets document as retrieved
+    if (actionType.includes('retriev') || desc.includes('retriev')) return true;
+
+    // 2) Retain notification when Org President submits accomplishment report
+    if (phase === 'accomplishment' || actionType.includes('accomplishment') || desc.includes('accomplishment')) return true;
+
     return false;
   }
 
-  if (role === 'chairman' || role === 'vice-chairman') {
-    // Chairman and Vice Chairman only receive 'Pending Review' inbox notifications which are handled in queueNotifications.
-    // They should not see workflow log updates.
-    return false;
-  }
-
-  if (role === 'org-president') {
-    if (['ready for retrieval', 'ready_for_retrieval'].includes(actionType)) return true;
-    if (['approved'].includes(actionType)) return true;
-    if (['forwarded'].includes(actionType)) return true; 
-    if (['ready_for_hardcopy', 'ready for hardcopy'].includes(actionType)) return true;
+  // (CHAIRMAN & VICE-CHAIRMAN)
+  if (normRole === 'chairman' || normRole === 'vice-chairman') {
+    // Chairman receives 'Pending Review' via queue. Hide duplicate 'submitted' / 'created' / 'draft' workflow log entries!
+    if (actionType === 'submitted') return false;
     
-    // Also allow if description indicates proof of delivery
-    const logText = (String(log.description || '') + ' ' + String(log.message || '')).toLowerCase();
-    if (logText.includes('proof of delivery') || logText.includes('proof attachment')) return true;
+    // Show accomplishment report submission
+    if (phase === 'accomplishment' || actionType.includes('accomplishment') || desc.includes('accomplishment')) return true;
+
+    return false;
+  }
+
+  // (ORG PRESIDENT)
+  if (normRole === 'org-president') {
+    if (actionType.includes('retriev') || desc.includes('retriev')) return true;
+    if (actionType === 'approved' || desc.includes('approved')) return true;
+    if (desc.includes('proof of delivery') || desc.includes('proof attachment')) return true;
+    if (actionType === 'forwarded' || desc.includes('forwarded')) return true;
+    if (actionType === 'returned' || desc.includes('returned')) return true;
+    if (actionType === 'disapproved' || actionType === 'rejected' || desc.includes('disapproved') || desc.includes('rejected')) return true;
 
     return false;
   }
@@ -997,15 +1011,42 @@ function formatWorkflowNotificationTitle(
   submission: Record<string, unknown> | null,
   actionLabel: string,
   log: Record<string, unknown> | null = null,
+  maxTitleLength = 32,
 ) {
-  const docTitle = getSubmissionDisplayTitle(submission);
-  let finalLabel = actionLabel.trim();
-  
-  if (log && log.workflow_phase === 'accomplishment' && finalLabel === 'SUBMITTED') {
-    finalLabel = 'REPORT SUBMITTED';
+  if (!submission) return `Document — ${actionLabel || 'UPDATE'}`;
+
+  const docType = (submission.documentType as Record<string, unknown> | undefined)?.name 
+    || (submission.document_type as Record<string, unknown> | undefined)?.name 
+    || 'Document';
+
+  let activityTitle = '';
+  const versions = Array.isArray(submission.submission_versions)
+    ? submission.submission_versions
+    : (submission.submission_versions ? [submission.submission_versions] : []);
+
+  const latestVer = (versions[0] as Record<string, unknown> | undefined) || {};
+  const details = Array.isArray(latestVer.activity_proposal_details)
+    ? (latestVer.activity_proposal_details[0] as Record<string, unknown> | undefined)
+    : (latestVer.activity_proposal_details as Record<string, unknown> | undefined);
+
+  if (details?.activity_title) {
+    activityTitle = String(details.activity_title).trim();
   }
-  
-  return `${docTitle} — ${finalLabel}`;
+
+  let finalAction = actionLabel.replace(/_/g, ' ').toUpperCase().trim();
+  if (log && log.workflow_phase === 'accomplishment' && finalAction === 'SUBMITTED') {
+    finalAction = 'REPORT SUBMITTED';
+  }
+
+  let formattedTitle = String(docType);
+  if (activityTitle && activityTitle.toLowerCase() !== String(docType).toLowerCase()) {
+    const truncatedActivity = activityTitle.length > maxTitleLength
+      ? `${activityTitle.slice(0, maxTitleLength).trim()}...`
+      : activityTitle;
+    formattedTitle = `${docType}: "${truncatedActivity}"`;
+  }
+
+  return `${formattedTitle}${finalAction ? ` — ${finalAction}` : ''}`;
 }
 
 async function handleGetNotifications(url: URL) {
@@ -1036,27 +1077,38 @@ async function handleGetNotifications(url: URL) {
   let logsData: Array<Record<string, unknown>> = [];
 
   const getReviewStatusesForRole = (viewerRole: string) => {
-    if (viewerRole === 'admin') return ['SDS coordinator review', 'oso approved'];
+    if (viewerRole === 'admin') return ['sds coordinator review', 'oso staff review', 'oso approved'];
     if (viewerRole === 'chairman' || viewerRole === 'vice-chairman') return ['submitted'];
     return [];
   };
 
   if (role === 'org-president') {
-    const { data } = await supabase
-      .from('submission_logs')
-      .select('*, submissions!inner(tracking_number,  user_id, school_year_id)')
-      .eq('submissions.user_id', userId)
-      .neq('user_id', userId)
-      .neq('action_type', 'created')
-      .neq('action_type', 'viewed')
-      .neq('action_type', 'attachment_review')
-      .order('created_at', { ascending: false })
-      .limit(50);
-      
-    logsData = (data || []).filter(log => {
-      const sub = log.submissions as Record<string, unknown> | null;
-      return isWorkflowLogRelevantForRole(role, log as Record<string, unknown>, sub);
-    });
+    const { data: userSubs } = await supabase
+      .from('submissions')
+      .select('id')
+      .eq('user_id', userId);
+
+    const subIds = (userSubs || []).map((s) => s.id);
+
+    if (subIds.length > 0) {
+      const { data, error: logErr } = await supabase
+        .from('submission_logs')
+        .select('*, submissions(id, tracking_number, status, school_year_id, document_type_id, user_id, documentType:document_type_id(name))')
+        .in('submission_id', subIds)
+        .neq('user_id', userId)
+        .not('action_type', 'in', '("created","viewed","attachment_review")')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (logErr) {
+        console.error('Error fetching org-president logs:', logErr);
+      }
+
+      logsData = (data || []).filter(log => {
+        const sub = log.submissions as Record<string, unknown> | null;
+        return isWorkflowLogRelevantForRole(role, log as Record<string, unknown>, sub);
+      });
+    }
   } else if (role === 'admin' || role === 'chairman' || role === 'vice-chairman') {
     const reviewStatuses = getReviewStatusesForRole(role);
     const { data: activeSy } = await supabase
@@ -1097,14 +1149,18 @@ async function handleGetNotifications(url: URL) {
 
     let logNotifications: Array<Record<string, unknown>> = [];
 
-    const { data: allLogs } = await supabase
+    const { data: allLogs, error: allLogsErr } = await supabase
       .from('submission_logs')
-      .select('*, submissions(tracking_number,  status, school_year_id, document_type_id, user_id, users:user_id(org_name, full_name), documentType:document_type_id(name), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title)))')
+      .select('*, submissions(tracking_number, status, school_year_id, document_type_id, user_id, users:user_id(org_name, full_name), documentType:document_type_id(name))')
       .in('action_type', ['submitted', 'returned', 'forwarded', 'approved', 'disapproved', 'completed'])
       .neq('user_id', userId)
       .not('action_type', 'in', '("viewed","attachment_review","created")')
       .order('created_at', { ascending: false })
       .limit(75);
+
+    if (allLogsErr) {
+      console.error('Error fetching allLogs:', allLogsErr);
+    }
 
     logNotifications = (allLogs || [])
       .filter((log) => {

@@ -15,6 +15,101 @@ import {
 import SchoolYearCalendarModal from './SchoolYearCalendarModal';
 import OnboardingOverlay from './OnboardingOverlay';
 
+function formatHeadlineTitle(sub, activityTitle = '', maxTitleLength = 40) {
+  if (activityTitle && activityTitle.trim()) {
+    const cleanTitle = activityTitle.trim();
+    return cleanTitle.length > maxTitleLength
+      ? `${cleanTitle.slice(0, maxTitleLength).trim()}...`
+      : cleanTitle;
+  }
+
+  const docType = sub?.documentType?.name || sub?.document_type?.name || 'Submission';
+  return docType;
+}
+
+function getDocumentTypeName(sub) {
+  if (!sub) return 'Document';
+  return sub.documentType?.name || sub.document_type?.name || 'Document';
+}
+
+function formatNotificationTitle(sub, actionLabel, activityTitle = '') {
+  return formatHeadlineTitle(sub, activityTitle, 40);
+}
+
+const fetchActivityTitlesMap = async (subIds) => {
+  if (!subIds || subIds.length === 0) return {};
+  try {
+    const { data: verData } = await supabase
+      .from('submission_versions')
+      .select('submission_id, activity_proposal_details(activity_title)')
+      .in('submission_id', subIds);
+
+    const map = {};
+    if (verData) {
+      verData.forEach((v) => {
+        if (!v.submission_id) return;
+        const details = Array.isArray(v.activity_proposal_details) 
+          ? v.activity_proposal_details[0] 
+          : v.activity_proposal_details;
+        if (details?.activity_title && !map[v.submission_id]) {
+          map[v.submission_id] = details.activity_title;
+        }
+      });
+    }
+    return map;
+  } catch (err) {
+    console.warn('Failed to fetch activity titles map:', err);
+    return {};
+  }
+};
+
+function isWorkflowLogRelevantForRole(role, log, submission) {
+  if (!submission) return false;
+
+  const status = String(submission.status || '').toLowerCase();
+  const actionType = String(log?.action_type || '').toLowerCase();
+  const phase = String(log?.workflow_phase || '').toLowerCase();
+  const desc = (String(log?.description || '') + ' ' + String(log?.message || '') + ' ' + String(log?.comment || '')).toLowerCase();
+  const normRole = String(role || '').toLowerCase();
+
+  if (status === 'draft') return false;
+  if (['created', 'viewed', 'attachment_review', 'draft'].includes(actionType)) return false;
+
+  // (ADMIN / SDS / OSO STAFF)
+  if (normRole === 'admin' || normRole === 'oso-staff' || normRole === 'sds-coordinator') {
+    // Explicitly EXCLUDE Chairman or Vice Chairman approvals, returns, or forwarding logs from Admin
+    if (phase.includes('chairman') || desc.includes('by chairman') || desc.includes('by vice chairman')) {
+      return false;
+    }
+
+    // 1) Retain notification when Org President sets document as retrieved
+    if (actionType.includes('retriev') || desc.includes('retriev')) return true;
+
+    // 2) Retain notification when Org President submits accomplishment report
+    if (phase === 'accomplishment' || actionType.includes('accomplishment') || desc.includes('accomplishment')) return true;
+
+    return false;
+  }
+
+  // (CHAIRMAN & VICE-CHAIRMAN)
+  if (normRole === 'chairman' || normRole === 'vice-chairman') {
+    // Retain 'submitted' notification permanently for Chairman (even after Chairman approves or returns)
+    if (actionType === 'submitted' || desc.includes('submitted')) return true;
+
+    // Retain accomplishment report submission
+    if (phase === 'accomplishment' || actionType.includes('accomplishment') || desc.includes('accomplishment')) return true;
+
+    return false;
+  }
+
+  // (ORG PRESIDENT)
+  if (normRole === 'org-president') {
+    return true;
+  }
+
+  return false;
+}
+
 const Header = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -34,26 +129,234 @@ const Header = () => {
 
   const fetchNotifications = async () => {
     if (!user?.id || !user?.role) return;
+
     try {
-      const res = await apiClient.get(apiUrl('/api/notifications'), {
-        params: {
-          userId: user.id,
-          role: user.role,
-          orgName: user.org_name || '',
-        },
-      });
-      if (res.data.success) {
-        setNotifications(res.data.data);
+      let notifs = [];
+
+      // 1. Fetch Announcements
+      const { data: announcements } = await supabase
+        .from('announcements')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (announcements && announcements.length > 0) {
+        notifs.push(...announcements.map(a => ({
+          id: `ann_${a.id}`,
+          type: 'announcement',
+          title: a.title,
+          message: a.content,
+          timestamp: a.created_at,
+          source: a,
+        })));
       }
+
+      // 2. Fetch Workflow Logs & Inbox Queue items based on Role
+      if (user.role === 'org-president') {
+        const { data: userSubs } = await supabase
+          .from('submissions')
+          .select('id')
+          .eq('user_id', user.id);
+
+        const subIds = (userSubs || []).map(s => s.id);
+
+        if (subIds.length > 0) {
+          const { data: logs, error: logsErr } = await supabase
+            .from('submission_logs')
+            .select('*, submissions(id, tracking_number, status, documentType:document_type_id(name))')
+            .in('submission_id', subIds)
+            .neq('user_id', user.id)
+            .not('action_type', 'in', '("created","viewed","attachment_review")')
+            .order('created_at', { ascending: false })
+            .limit(50);
+
+          if (logsErr) {
+            console.error('Error fetching logs for org-president:', logsErr);
+          }
+
+          if (logs && logs.length > 0) {
+            const logSubIds = logs.map(l => l.submission_id || l.submissions?.id).filter(Boolean);
+            const titleMap = await fetchActivityTitlesMap(logSubIds);
+            const relevantLogs = logs.filter(l => isWorkflowLogRelevantForRole(user.role, l, l.submissions));
+
+            const workflowItems = relevantLogs.map(l => {
+              const sub = l.submissions || {};
+              const subId = l.submission_id || sub.id;
+              const activityTitle = titleMap[subId] || '';
+              const docType = getDocumentTypeName(sub);
+              const mainTitle = formatHeadlineTitle(sub, activityTitle, 40);
+              const statusAction = (l.action_type || 'UPDATE').replace(/_/g, ' ').toUpperCase();
+
+              return {
+                id: `log_${l.id}`,
+                type: 'workflow',
+                docType,
+                activityTitle,
+                mainTitle,
+                statusAction,
+                title: mainTitle,
+                message: l.description || l.comment || l.message || 'Status changed',
+                timestamp: l.created_at,
+                source: {
+                  ...l,
+                  submission_id: l.submission_id,
+                  status: sub.status,
+                  submissions: sub,
+                },
+              };
+            });
+            notifs.push(...workflowItems);
+          }
+        }
+      } else if (user.role === 'admin' || user.role === 'chairman' || user.role === 'vice-chairman') {
+        // A) Workflow Logs (Accomplishment reports, org submissions, document retrievals)
+        const { data: logs, error: logsErr } = await supabase
+          .from('submission_logs')
+          .select('*, submissions(id, tracking_number, status, users:user_id(org_name, abbreviation, full_name), documentType:document_type_id(name))')
+          .neq('user_id', user.id)
+          .not('action_type', 'in', '("created","viewed","attachment_review")')
+          .order('created_at', { ascending: false })
+          .limit(50);
+
+        if (logsErr) {
+          console.error('Error fetching reviewer logs:', logsErr);
+        }
+
+        const logSubIdsSet = new Set();
+
+        if (logs && logs.length > 0) {
+          const logSubIds = logs.map(l => l.submission_id || l.submissions?.id).filter(Boolean);
+          const logTitleMap = await fetchActivityTitlesMap(logSubIds);
+          const relevantLogs = logs.filter(l => isWorkflowLogRelevantForRole(user.role, l, l.submissions));
+
+          relevantLogs.forEach(l => {
+            if (l.submission_id || l.submissions?.id) {
+              logSubIdsSet.add(l.submission_id || l.submissions?.id);
+            }
+          });
+
+          const workflowItems = relevantLogs.map(l => {
+            const sub = l.submissions || {};
+            const subId = l.submission_id || sub.id;
+            const activityTitle = logTitleMap[subId] || '';
+            const docType = getDocumentTypeName(sub);
+            const mainTitle = formatHeadlineTitle(sub, activityTitle, 40);
+            const rawActionType = String(l.action_type || 'UPDATE').toLowerCase();
+            const orgAbbr = sub.users?.abbreviation || sub.users?.org_name || '';
+            const ownerName = sub.users?.full_name || '';
+
+            let statusAction = rawActionType.replace(/_/g, ' ').toUpperCase();
+            if (rawActionType === 'submitted' || rawActionType === 'forwarded') {
+              statusAction = 'PENDING REVIEW';
+            }
+
+            return {
+              id: `log_${l.id}`,
+              type: 'workflow',
+              docType,
+              activityTitle,
+              mainTitle,
+              statusAction,
+              orgAbbr,
+              ownerName,
+              title: mainTitle,
+              message: l.description || l.comment || l.message || 'Status changed',
+              timestamp: l.created_at,
+              source: {
+                ...l,
+                submission_id: l.submission_id,
+                status: sub.status,
+                submissions: sub,
+              },
+            };
+          });
+          notifs.push(...workflowItems);
+        }
+
+        // B) Inbox Queue Notifications for submissions without workflow log entries
+        let queueQuery = supabase
+          .from('submissions')
+          .select('id, tracking_number, status, created_at, updated_at, documentType:document_type_id(name), users:user_id(full_name, org_name, abbreviation)')
+          .neq('status', 'draft');
+
+        // Admin ONLY sees submissions that have reached Admin review stage (excluding 'submitted', 'disapproved', 'returned' which belong to Chairman/Org President)
+        if (user.role === 'admin') {
+          queueQuery = queueQuery
+            .neq('status', 'submitted')
+            .neq('status', 'disapproved')
+            .neq('status', 'returned');
+        }
+
+        const { data: queueSubs } = await queueQuery
+          .order('created_at', { ascending: false })
+          .limit(25);
+
+        if (queueSubs && queueSubs.length > 0) {
+          const unhandledQueueSubs = queueSubs.filter(s => !logSubIdsSet.has(s.id));
+
+          if (unhandledQueueSubs.length > 0) {
+            const queueSubIds = unhandledQueueSubs.map(s => s.id);
+            const queueTitleMap = await fetchActivityTitlesMap(queueSubIds);
+
+            const queueItems = unhandledQueueSubs.map(sub => {
+              const orgName = sub.users?.org_name || 'An organization';
+              const orgAbbr = sub.users?.abbreviation || sub.users?.org_name || '';
+              const ownerName = sub.users?.full_name || '';
+              const docType = getDocumentTypeName(sub);
+              const activityTitle = queueTitleMap[sub.id] || '';
+              const mainTitle = formatHeadlineTitle(sub, activityTitle, 40);
+              const statusAction = 'PENDING REVIEW';
+
+              return {
+                id: `queue_${sub.id}`,
+                type: 'workflow',
+                docType,
+                activityTitle,
+                mainTitle,
+                statusAction,
+                orgAbbr,
+                ownerName,
+                title: mainTitle,
+                message: `${orgName} submitted ${docType} for review.`,
+                timestamp: sub.updated_at || sub.created_at,
+                source: {
+                  submission_id: sub.id,
+                  status: sub.status,
+                  submissions: sub,
+                },
+              };
+            });
+            notifs.push(...queueItems);
+          }
+        }
+      }
+
+      // Deduplicate notifications by unique key
+      const seen = new Set();
+      const uniqueNotifs = notifs.filter(item => {
+        const key = item.id;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      uniqueNotifs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      setNotifications(uniqueNotifs);
     } catch (err) {
-      console.error('Error fetching notifications:', err);
+      console.error('Notification fetch error:', err);
     }
   };
 
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 60000);
-    return () => clearInterval(interval);
+    const interval = setInterval(fetchNotifications, 15000);
+    window.addEventListener('inbox-updated', fetchNotifications);
+    window.addEventListener('document-status-changed', fetchNotifications);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('inbox-updated', fetchNotifications);
+      window.removeEventListener('document-status-changed', fetchNotifications);
+    };
   }, [user]);
 
   useEffect(() => {
@@ -273,7 +576,7 @@ const Header = () => {
 
       {isModalOpen && !selectedAnnouncement && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setIsModalOpen(false)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col h-[580px] max-h-[85vh]" onClick={e => e.stopPropagation()}>
             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
               <div className="flex items-center gap-2">
                 <Bell size={18} className="text-primary-green" />
@@ -339,38 +642,145 @@ const Header = () => {
                     const isRead = readNotifIds.includes(notif.id);
                     const isAnnouncement = notif.type === 'announcement';
 
+                    const rawActionType = String(notif.source?.action_type || '').toLowerCase();
+                    const rawAction = String(notif.statusAction || notif.title || '').toUpperCase();
+                    const msgText = String(notif.message || '').toLowerCase();
+
+                    const isAccomplishment = rawActionType.includes('accomplishment') || rawAction.includes('ACCOMPLISHMENT') || msgText.includes('accomplishment');
+                    const isRetrieval = !isAccomplishment && (rawActionType.includes('retriev') || rawAction.includes('RETRIEV') || msgText.includes('ready for retrieval') || msgText.includes('retriev'));
+                    const isDisapproved = !isAccomplishment && !isRetrieval && (rawActionType === 'disapproved' || rawActionType === 'rejected' || rawAction.includes('DISAPPROV') || rawAction.includes('REJECT') || msgText.includes('disapproved') || msgText.includes('rejected'));
+                    const isReturned = !isAccomplishment && !isRetrieval && !isDisapproved && (rawActionType === 'returned' || (rawAction.includes('RETURN') && !rawAction.includes('RETRIEV')) || msgText.includes('returned'));
+                    const isApproved = !isAccomplishment && !isRetrieval && !isDisapproved && !isReturned && (rawActionType === 'approved' || (rawAction.includes('APPROV') && !rawAction.includes('DISAPPROV')) || rawAction.includes('COMPLET'));
+                    const isForwarded = !isAccomplishment && !isRetrieval && !isDisapproved && !isReturned && !isApproved && (rawActionType === 'forwarded' || (rawAction.includes('FORWARD') && !rawAction.includes('MAIN CAMPUS REVIEW')) || (rawActionType === 'forwarded' && String(notif.source?.workflow_phase || '').toLowerCase().includes('main-campus')));
+                    const isPending = !isAccomplishment && !isRetrieval && !isDisapproved && !isReturned && !isApproved && !isForwarded && (rawAction.includes('PENDING') || rawAction.includes('SUBMIT'));
+
+                    let cardTheme = isRead ? 'bg-white border-gray-100 hover:border-gray-200' : 'bg-blue-50/40 border-blue-100/80 relative';
+                    let iconBg = 'bg-primary-green text-white shadow-sm';
+                    let badgeTheme = 'bg-gray-100 text-gray-700 font-semibold';
+                    let actionBtnColor = 'text-primary-green hover:text-emerald-700 font-semibold';
+                    let statusLabel = notif.statusAction || (isAnnouncement ? 'ANNOUNCEMENT' : 'UPDATE');
+                    let accentBarColor = 'bg-blue-500';
+
+                    if (isAnnouncement) {
+                      iconBg = 'bg-amber-500 text-white shadow-sm';
+                      badgeTheme = 'bg-amber-100 text-amber-800 font-bold';
+                      accentBarColor = 'bg-amber-500';
+                    } else if (isAccomplishment) {
+                      cardTheme = isRead ? 'bg-emerald-50/20 border-emerald-100/60 hover:border-emerald-200' : 'bg-emerald-50/60 border-emerald-100 relative';
+                      iconBg = 'bg-emerald-600 text-white shadow-sm';
+                      badgeTheme = 'bg-emerald-100 text-emerald-800 font-bold border border-emerald-200/60';
+                      actionBtnColor = 'text-emerald-700 hover:text-emerald-800 font-bold';
+                      statusLabel = 'COMPLETED';
+                      accentBarColor = 'bg-emerald-500';
+                    } else if (isRetrieval) {
+                      cardTheme = isRead ? 'bg-purple-50/20 border-purple-100/60 hover:border-purple-200' : 'bg-purple-50/60 border-purple-100 relative';
+                      iconBg = 'bg-purple-600 text-white shadow-sm';
+                      badgeTheme = 'bg-purple-100 text-purple-800 font-bold border border-purple-200/60';
+                      actionBtnColor = 'text-purple-700 hover:text-purple-800 font-bold';
+                      accentBarColor = 'bg-purple-500';
+
+                      if (msgText.includes('confirm') || rawAction.includes('CONFIRM')) {
+                        statusLabel = 'RETRIEVAL CONFIRMED';
+                      } else if (rawActionType === 'document_retrieved' || rawActionType === 'document retrieved' || msgText.includes('retrieved') || rawAction.includes('DOCUMENT RETRIEVED')) {
+                        statusLabel = 'DOCUMENT RETRIEVED';
+                      } else {
+                        statusLabel = 'READY FOR RETRIEVAL';
+                      }
+                    } else if (isDisapproved) {
+                      cardTheme = isRead ? 'bg-red-50/20 border-red-100/60 hover:border-red-200' : 'bg-red-50/60 border-red-200 relative';
+                      iconBg = 'bg-red-600 text-white shadow-sm';
+                      badgeTheme = 'bg-red-100 text-red-800 font-bold border border-red-200/60';
+                      actionBtnColor = 'text-red-700 hover:text-red-800 font-bold';
+                      statusLabel = 'DISAPPROVED';
+                      accentBarColor = 'bg-red-500';
+                    } else if (isReturned) {
+                      cardTheme = isRead ? 'bg-amber-50/30 border-amber-100 hover:border-amber-200' : 'bg-amber-50/80 border-amber-200 relative';
+                      iconBg = 'bg-orange-500 text-white shadow-sm';
+                      badgeTheme = 'bg-orange-100 text-orange-800 font-bold border border-orange-200/60';
+                      actionBtnColor = 'text-orange-600 hover:text-orange-700 font-bold';
+                      statusLabel = 'RETURNED';
+                      accentBarColor = 'bg-orange-500';
+                    } else if (isApproved) {
+                      cardTheme = isRead ? 'bg-emerald-50/20 border-emerald-100/60 hover:border-emerald-200' : 'bg-emerald-50/60 border-emerald-100 relative';
+                      iconBg = 'bg-emerald-600 text-white shadow-sm';
+                      badgeTheme = 'bg-emerald-100 text-emerald-800 font-bold border border-emerald-200/60';
+                      actionBtnColor = 'text-emerald-700 hover:text-emerald-800 font-bold';
+                      statusLabel = 'APPROVED';
+                      accentBarColor = 'bg-emerald-500';
+                    } else if (isForwarded) {
+                      cardTheme = isRead ? 'bg-cyan-50/30 border-cyan-100 hover:border-cyan-200' : 'bg-cyan-50/70 border-cyan-200 relative';
+                      iconBg = 'bg-cyan-600 text-white shadow-sm';
+                      badgeTheme = 'bg-cyan-100 text-cyan-800 font-bold border border-cyan-200/60';
+                      actionBtnColor = 'text-cyan-700 hover:text-cyan-800 font-bold';
+                      statusLabel = 'SUBMITTED TO MAIN CAMPUS';
+                      accentBarColor = 'bg-cyan-500';
+                    } else if (isPending) {
+                      iconBg = 'bg-blue-600 text-white shadow-sm';
+                      badgeTheme = 'bg-blue-100 text-blue-800 font-bold border border-blue-200/60';
+                      statusLabel = 'PENDING REVIEW';
+                      accentBarColor = 'bg-blue-500';
+                    }
+
+                    const headlineText = notif.mainTitle || notif.activityTitle || notif.title || 'Submission';
+                    const docTypeLabel = notif.docType || (isAnnouncement ? 'Announcement' : '');
+                    const showSubheadline = !isAnnouncement && docTypeLabel && docTypeLabel.toLowerCase() !== headlineText.toLowerCase();
+
+                    const displayMessage = String(notif.message || '')
+                      .replace(/\[?Forwarded Documents:\s*[^\]\n]+\]?/gi, '')
+                      .replace(/Forwarded Documents:[\s\S]*/gi, '')
+                      .replace(/•\s*[^\n]+/g, '')
+                      .trim() || 'Sent to Main Campus for Review.';
+
                     return (
                       <div
                         key={notif.id}
                         onClick={() => handleNotificationClick(notif)}
-                        className={`p-4 rounded-xl cursor-pointer transition-all border ${isRead
-                            ? 'bg-white border-transparent hover:border-gray-200'
-                            : 'bg-blue-50/50 border-blue-100/50 relative overflow-hidden'
-                          }`}
+                        className={`p-4 rounded-xl cursor-pointer transition-all border shadow-sm hover:shadow-md relative overflow-hidden ${cardTheme}`}
                       >
-                        {!isRead && (
-                          <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
-                        )}
+                        {/* Signature left accent border bar */}
+                        <div className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-xl ${accentBarColor}`}></div>
                         <div className="flex gap-3">
-                          <div className={`mt-0.5 w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${isAnnouncement ? 'bg-amber-100 text-amber-600' : 'bg-primary-green/10 text-primary-green'
-                            }`}>
-                            {isAnnouncement ? <Megaphone size={14} /> : <FileText size={14} />}
+                          <div className={`mt-0.5 w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${iconBg}`}>
+                            {isAnnouncement ? <Megaphone size={16} /> : <FileText size={16} />}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="flex justify-between items-start gap-2 mb-1">
-                              <h4 className={`text-sm font-bold truncate ${isRead ? 'text-gray-700' : 'text-gray-900'}`}>
-                                {notif.title}
+                            {/* Line 1: Main Title on the left (with limiter/truncate) + Status Badge on the right at the end */}
+                            <div className="flex items-center justify-between gap-2 mb-0.5">
+                              <h4 className={`text-sm font-bold leading-snug truncate flex-1 min-w-0 ${isRead ? 'text-gray-800' : 'text-gray-900'}`}>
+                                {headlineText}
                               </h4>
-                              <span className="text-[10px] text-gray-400 whitespace-nowrap font-medium shrink-0">
+                              <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-md shrink-0 ml-1 ${badgeTheme}`}>
+                                {statusLabel}
+                              </span>
+                            </div>
+
+                            {/* Line 2: Document Type Subheadline on the left + Timestamp on the right */}
+                            <div className="flex items-center justify-between gap-2 mb-1.5">
+                              <div className="flex items-center gap-1 truncate min-w-0 flex-1">
+                                {showSubheadline && (
+                                  <span className="text-xs font-semibold text-gray-500 truncate leading-snug">
+                                    {docTypeLabel}
+                                  </span>
+                                )}
+                                {(user?.role === 'admin' || user?.role === 'chairman' || user?.role === 'vice-chairman') && (notif.orgAbbr || notif.ownerName) && (
+                                  <span className="text-[11px] font-normal text-gray-400 truncate leading-snug">
+                                    {showSubheadline ? '• ' : ''}{notif.orgAbbr}{notif.ownerName ? ` (${notif.ownerName})` : ''}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[10px] text-gray-400 font-medium whitespace-nowrap shrink-0 ml-auto">
                                 {new Date(notif.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                               </span>
                             </div>
-                            <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed">
-                              {notif.message}
+
+                            {/* Line 3: Message content */}
+                            <p className="text-xs text-gray-600 line-clamp-2 leading-relaxed">
+                              {displayMessage}
                             </p>
 
-                            {!isAnnouncement && notif.source?.submissions && (
-                              <div className="mt-2 flex items-center gap-1 text-[10px] font-bold text-primary-green uppercase tracking-wider">
+                            {/* Line 4: Action Button */}
+                            {!isAnnouncement && (notif.source?.submissions || notif.source?.submission_id) && (
+                              <div className={`mt-2 flex items-center gap-1 text-[10px] uppercase tracking-wider ${actionBtnColor}`}>
                                 View document <ChevronRight size={12} />
                               </div>
                             )}

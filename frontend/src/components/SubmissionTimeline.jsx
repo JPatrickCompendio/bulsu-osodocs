@@ -73,28 +73,7 @@ const formatTimelineComment = (commentText) => {
   if (!commentText) return '';
   const str = String(commentText).trim();
   if (!str) return '';
-
-  const match = str.match(/Forwarded Documents:\s*([^\]\n]+)/i);
-  if (!match) return str;
-
-  const fileListStr = match[1].trim();
-  const fileNames = fileListStr
-    .split(',')
-    .map((f) => f.trim())
-    .filter(Boolean);
-
-  if (fileNames.length === 0) return str;
-
-  const mainComment = str
-    .replace(/\[?Forwarded Documents:\s*[^\]\n]+\]?/gi, '')
-    .trim();
-
-  const bulletList = fileNames.map((name) => `• ${name}`).join('\n');
-
-  if (mainComment) {
-    return `${mainComment}\n\nForwarded Documents:\n${bulletList}`;
-  }
-  return `Forwarded Documents:\n${bulletList}`;
+  return str;
 };
 
 const SubmissionTimeline = ({
@@ -212,7 +191,14 @@ const SubmissionTimeline = ({
             const actor = getTimelineActorDisplay(log);
             const proofKey = log.id || `${log.created_at}-${idx}`;
             const proofUrl = proofLinks[proofKey] || extractProofReference(log);
-            const visibleComment = stripProofReferenceFromText(log.comment || log.description || '');
+            const isAccomplishmentLog = log.workflow_phase === 'accomplishment' ||
+              log.action_type === 'accomplishment_report' ||
+              String(log.description || '').toLowerCase().includes('accomplishment') ||
+              String(log.comment || '').toLowerCase().includes('accomplishment');
+
+            const visibleComment = isAccomplishmentLog
+              ? 'Activity accomplishment report submitted'
+              : stripProofReferenceFromText(log.comment || log.description || '');
 
             const formattedTime = log.created_at
               ? new Date(log.created_at).toLocaleString('en-US', {

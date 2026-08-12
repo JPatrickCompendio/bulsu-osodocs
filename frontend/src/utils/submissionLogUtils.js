@@ -14,8 +14,39 @@ export const formatLogActionLabel = (log) => {
   if (log?.isPending) return 'pending';
 
   const review = String(log?.review_action || '').trim();
-  const type = String(log?.action_type || '').trim();
-  const desc = String(log?.description || '').trim();
+  const type = String(log?.action_type || '').toLowerCase().trim();
+  const desc = String(log?.description || '').toLowerCase().trim();
+  const phase = String(log?.workflow_phase || '').toLowerCase().trim();
+
+  // 1. Ready for retrieval / Document retrieved
+  if (type === 'ready_for_retrieval' || type === 'ready for retrieval' || review.toLowerCase().includes('retriev') || desc.includes('ready for retrieval') || desc.includes('retriev')) {
+    return 'ready for retrieval';
+  }
+
+  // 2. Document retrieved
+  if (type === 'document_retrieved' || type === 'document retrieved') {
+    return 'document retrieved';
+  }
+
+  // 3. Approved
+  if (type === 'approved' || review.toLowerCase() === 'approved') {
+    return 'approved';
+  }
+
+  // 4. Returned
+  if (type === 'returned' || review.toLowerCase() === 'returned') {
+    return 'returned';
+  }
+
+  // 5. Disapproved / Rejected
+  if (type === 'disapproved' || type === 'rejected') {
+    return 'disapproved';
+  }
+
+  // 6. Submitted / Forwarded to Main Campus
+  if (type === 'forwarded' || review.toLowerCase() === 'forwarded' || review.toLowerCase().includes('main campus')) {
+    return 'Submitted to Main Campus';
+  }
 
   if (review) return review.replace(/-/g, ' ');
   if (type) return type.replace(/-/g, ' ');
