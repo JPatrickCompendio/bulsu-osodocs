@@ -366,13 +366,13 @@ async function handleGetAdminEmail() {
     }
 
     const authUser = authUserData.user;
-    const email = authUser.email || 
-                  (authUser as any).Email || 
-                  authUser.user_metadata?.email || 
-                  authUser.user_metadata?.Email ||
-                  (authUser as any).user_metadata?.["Email"] ||
-                  (authUser as any).raw_user_meta_data?.email ||
-                  (authUser as any).raw_user_meta_data?.Email;
+    const email = authUser.email ||
+      (authUser as any).Email ||
+      authUser.user_metadata?.email ||
+      authUser.user_metadata?.Email ||
+      (authUser as any).user_metadata?.["Email"] ||
+      (authUser as any).raw_user_meta_data?.email ||
+      (authUser as any).raw_user_meta_data?.Email;
 
     if (email) {
       return jsonResponse({ email });
@@ -387,7 +387,7 @@ async function handleGetAdminEmail() {
 
 async function handleGetUsers() {
   const supabase = getAdminClient();
-  
+
   // Automatically check and deactivate/suspend organizations that missed deadlines
   try {
     await checkAndDeactivateLateUsers();
@@ -441,7 +441,7 @@ async function handleGetUserDetail(id: string) {
     if (versions && versions.length > 0) {
       const latest = versions.reduce((max, v) =>
         (v.version_number as number) > (max.version_number as number) ? v : max,
-      versions[0]);
+        versions[0]);
       const details = Array.isArray(latest.activity_proposal_details)
         ? latest.activity_proposal_details[0]
         : latest.activity_proposal_details;
@@ -641,9 +641,9 @@ async function handleGetUserDetail(id: string) {
 
   const pendingReviewCount = user.role === 'org-president'
     ? (submissions || []).filter((s) => {
-        const status = String(s.status || '').toLowerCase();
-        return !['completed', 'disapproved', 'draft'].includes(status);
-      }).length
+      const status = String(s.status || '').toLowerCase();
+      return !['completed', 'disapproved', 'draft'].includes(status);
+    }).length
     : reviewedDocuments.length;
 
   const documentLogs =
@@ -935,7 +935,7 @@ function getSubmissionDisplayTitle(sub: Record<string, unknown> | null | undefin
   if (versions && versions.length > 0) {
     const latest = versions.reduce((max, version) =>
       (version.version_number as number) > (max.version_number as number) ? version : max,
-    versions[0]);
+      versions[0]);
     const details = Array.isArray(latest.activity_proposal_details)
       ? latest.activity_proposal_details[0]
       : latest.activity_proposal_details;
@@ -985,7 +985,7 @@ function isWorkflowLogRelevantForRole(
   if (normRole === 'chairman' || normRole === 'vice-chairman') {
     // Chairman receives 'Pending Review' via queue. Hide duplicate 'submitted' / 'created' / 'draft' workflow log entries!
     if (actionType === 'submitted') return false;
-    
+
     // Show accomplishment report submission
     if (phase === 'accomplishment' || actionType.includes('accomplishment') || desc.includes('accomplishment')) return true;
 
@@ -1015,8 +1015,8 @@ function formatWorkflowNotificationTitle(
 ) {
   if (!submission) return `Document — ${actionLabel || 'UPDATE'}`;
 
-  const docType = (submission.documentType as Record<string, unknown> | undefined)?.name 
-    || (submission.document_type as Record<string, unknown> | undefined)?.name 
+  const docType = (submission.documentType as Record<string, unknown> | undefined)?.name
+    || (submission.document_type as Record<string, unknown> | undefined)?.name
     || 'Document';
 
   let activityTitle = '';
@@ -2065,249 +2065,282 @@ async function handleDeleteAcademicEvent(id: string) {
   return jsonResponse({ success: true, message: 'Event deleted successfully' });
 }
 
+
+
 async function handleDocumentAvailability(url: URL) {
-  const supabase = getAdminClient();
-  const userId = url.searchParams.get('userId');
+  try {
+    const supabase = getAdminClient();
+    const userId = url.searchParams.get('userId');
 
-  const { data: activeSy } = await supabase
-    .from('school_years')
-    .select('*')
-    .eq('is_active', true)
-    .single();
-
-  if (!activeSy) {
-    return jsonResponse({
-      success: true,
-      activeSchoolYear: null,
-      availability: {},
-      message: 'No active school year.',
-    });
-  }
-
-  const currentDate = new Date();
-  const syStart = activeSy.start_date ? new Date(activeSy.start_date) : null;
-  const syEnd = activeSy.end_date ? new Date(activeSy.end_date) : null;
-
-  let isWithinSy = true;
-  if (syStart && syEnd) isWithinSy = currentDate >= syStart && currentDate <= syEnd;
-  else if (syStart) isWithinSy = currentDate >= syStart;
-  else if (syEnd) isWithinSy = currentDate <= syEnd;
-
-  if (!isWithinSy) {
-    return jsonResponse({
-      success: true,
-      activeSchoolYear: activeSy,
-      availability: {},
-      message: 'The current date is outside the active School Year.',
-    });
-  }
-
-  const { data: docTypes } = await supabase.from('documentType').select('*');
-  const { data: events } = await supabase
-    .from('academic_calendar_events')
-    .select('*')
-    .eq('school_year_id', activeSy.id);
-
-  const blockedEvents = events?.filter((e) => e.event_type === 'blocked_activity' || e.description === 'BLOCKS_ACTIVITY') || [];
-  const submissionWindows = events?.filter((e) => e.event_type === 'submission_window') || [];
-  const availability: Record<string, { isAvailable: boolean; lockedReason: string | null; requiresEligibility: boolean, submissionWindow?: any }> = {};
-
-  const isWithinBounds = (start_date: string | null, end_date: string | null) => {
-    if (!start_date && !end_date) return true;
-    const start = start_date ? new Date(start_date) : null;
-    const end = end_date ? new Date(end_date) : null;
-    if (start && end) return currentDate >= start && currentDate <= end;
-    if (start) return currentDate >= start;
-    if (end) return currentDate <= end;
-    return false;
-  };
-
-  let isRenewalEligible = false;
-  const missingRenewalRequirements: string[] = [];
-  const existingDocTypesThisYear = new Set<string>();
-
-  if (userId) {
-    const { data: userRecord } = await supabase.from('users').select('org_name').eq('id', userId).single();
-    if (userRecord?.org_name) {
-      const { data: orgSubs } = await supabase
-        .from('submissions')
-        .select('status, document_type_id, documentType:document_type_id(name), users!inner(org_name)')
-        .eq('users.org_name', userRecord.org_name)
-        .eq('school_year_id', activeSy.id);
-
-      if (orgSubs) {
-        const completedSubs = orgSubs.filter((s) => s.status === 'completed');
-        const hasApprovedMidYear = completedSubs.some((s) =>
-          (s.documentType as Record<string, unknown>)?.name?.toString().toLowerCase().includes('mid-year'),
-        );
-        const hasApprovedYearEnd = completedSubs.some((s) =>
-          (s.documentType as Record<string, unknown>)?.name?.toString().toLowerCase().includes('year-end'),
-        );
-
-        if (!hasApprovedMidYear) missingRenewalRequirements.push('Approved Mid-Year Report');
-        if (!hasApprovedYearEnd) missingRenewalRequirements.push('Approved Year-End Report');
-
-        isRenewalEligible = Boolean(hasApprovedMidYear && hasApprovedYearEnd);
-
-        orgSubs.forEach((s) => {
-          if (s.status !== 'disapproved' && s.document_type_id) {
-            existingDocTypesThisYear.add(String(s.document_type_id));
-          }
-        });
-      }
+    const { data: activeSy } = await supabase.from('school_years').select('*').eq('is_active', true).maybeSingle();
+    if (!activeSy) {
+      return jsonResponse({
+        success: true,
+        activeSchoolYear: null,
+        message: 'No active school year configured.',
+        availability: {},
+      });
     }
-  }
 
-  for (const dt of docTypes || []) {
-    let isAvailable = false;
-    let lockedReason: string | null = null;
-    let subWindow = null;
+    const currentDate = new Date();
+    const syStart = activeSy.start_date ? new Date(activeSy.start_date) : null;
+    const syEnd = activeSy.end_date ? new Date(activeSy.end_date) : null;
 
-    if (dt.status !== 'active') {
-      lockedReason = 'Document type is inactive';
-    } else {
-      const windowEvent = submissionWindows.find(w => w.document_type_id === dt.id);
-      if (!windowEvent) {
-        lockedReason = 'No submission window is currently available.';
-      } else {
-        if (!isWithinBounds(windowEvent.start_date, windowEvent.end_date)) {
-          lockedReason = 'Submission Window Closed';
-          subWindow = { start: windowEvent.start_date, end: windowEvent.end_date };
-        } else {
-          isAvailable = true;
+    if ((syStart && currentDate < syStart) || (syEnd && currentDate > syEnd)) {
+      return jsonResponse({
+        success: true,
+        activeSchoolYear: activeSy,
+        message: 'The current date is outside the active School Year.',
+        availability: {},
+      });
+    }
+
+    const { data: docTypes } = await supabase.from('documentType').select('*');
+    const { data: events } = await supabase
+      .from('academic_calendar_events')
+      .select('*')
+      .eq('school_year_id', activeSy.id);
+
+    const blockedEvents = events?.filter((e) => e.event_type === 'blocked_activity' || e.description === 'BLOCKS_ACTIVITY') || [];
+    const submissionWindows = events?.filter((e) => e.event_type === 'submission_window') || [];
+    const availability: Record<string, { isAvailable: boolean; lockedReason: string | null; requiresEligibility: boolean; submissionWindow?: any }> = {};
+
+    const isWithinBounds = (start_date: string | null, end_date: string | null) => {
+      if (!start_date && !end_date) return true;
+      const start = start_date ? new Date(start_date) : null;
+      const end = end_date ? new Date(end_date) : null;
+      if (start && end) return currentDate >= start && currentDate <= end;
+      if (start) return currentDate >= start;
+      if (end) return currentDate <= end;
+      return false;
+    };
+
+    let isRenewalEligible = false;
+    const missingRenewalRequirements: string[] = [];
+    const existingActiveDocTypesThisYear = new Set<string>();
+
+    if (userId) {
+      const { data: userRecord } = await supabase.from('users').select('org_name').eq('id', userId).maybeSingle();
+      if (userRecord?.org_name) {
+        const { data: sameOrgUsers } = await supabase.from('users').select('id').eq('org_name', userRecord.org_name);
+        const sameOrgUserIds = (sameOrgUsers || []).map((u) => u.id);
+
+        if (sameOrgUserIds.length > 0) {
+          const { data: orgSubs } = await supabase
+            .from('submissions')
+            .select('status, document_type_id, documentType:document_type_id(name)')
+            .in('user_id', sameOrgUserIds)
+            .eq('school_year_id', activeSy.id);
+
+          if (orgSubs) {
+            const completedSubs = orgSubs.filter((s) => String(s.status || '').toLowerCase().trim() === 'completed');
+            const hasApprovedMidYear = completedSubs.some((s) =>
+              (s.documentType as Record<string, unknown>)?.name?.toString().toLowerCase().includes('mid-year')
+            );
+            const hasApprovedYearEnd = completedSubs.some((s) =>
+              (s.documentType as Record<string, unknown>)?.name?.toString().toLowerCase().includes('year-end')
+            );
+
+            if (!hasApprovedMidYear) missingRenewalRequirements.push('Approved Mid-Year Report');
+            if (!hasApprovedYearEnd) missingRenewalRequirements.push('Approved Year-End Report');
+
+            isRenewalEligible = Boolean(hasApprovedMidYear && hasApprovedYearEnd);
+
+            orgSubs.forEach((s) => {
+              const normStatus = String(s.status || '').toLowerCase().trim();
+              if (normStatus !== 'disapproved' && normStatus !== 'draft' && normStatus !== 'returned' && s.document_type_id) {
+                existingActiveDocTypesThisYear.add(String(s.document_type_id));
+              }
+            });
+          }
         }
       }
     }
 
-    if (isAvailable && dt.requires_eligibility && dt.name.toLowerCase().includes('renewal')) {
-      if (!isRenewalEligible) {
+    for (const dt of docTypes || []) {
+      let isAvailable = true;
+      let lockedReason: string | null = null;
+      let subWindow = null;
+
+      // 1. Is there a submission window on this document type?
+      if (dt.status !== 'active') {
         isAvailable = false;
-        lockedReason = 'Missing Requirements: ' + missingRenewalRequirements.join(', ');
+        lockedReason = 'Document type is inactive';
+      } else {
+        const windowEvent = submissionWindows.find(w => w.document_type_id === dt.id);
+        if (!windowEvent) {
+          isAvailable = false;
+          lockedReason = 'No submission window is currently available.';
+        } else if (!isWithinBounds(windowEvent.start_date, windowEvent.end_date)) {
+          isAvailable = false;
+          lockedReason = 'Submission Window Closed';
+          subWindow = { start: windowEvent.start_date, end: windowEvent.end_date };
+        }
       }
+
+      // 2. Is eligibility needed for this document type?
+      if (isAvailable && dt.requires_eligibility && dt.name.toLowerCase().includes('renewal')) {
+        if (!isRenewalEligible) {
+          isAvailable = false;
+          lockedReason = 'Missing Requirements: ' + missingRenewalRequirements.join(', ');
+        }
+      }
+
+      // 3. Is multiple submission allowed in this document type?
+      if (isAvailable) {
+        const allowMultiple = isAllowMultiple(dt.allow_multiple_submissions);
+        if (!allowMultiple) {
+          if (existingActiveDocTypesThisYear.has(String(dt.id))) {
+            isAvailable = false;
+            lockedReason = 'You already have an active submission for this category. Check your My Documents page.';
+          }
+        }
+      }
+
+      availability[dt.id] = {
+        isAvailable,
+        lockedReason,
+        requiresEligibility: dt.requires_eligibility,
+        submissionWindow: subWindow
+      };
     }
 
-    if (isAvailable && !isAllowMultiple(dt.allow_multiple_submissions) && existingDocTypesThisYear.has(String(dt.id))) {
-      // It might be a draft/returned, which means it's available to "resume", so we don't fully lock it visually in the UI.
-      // But we will leave it "available" so they can click it and trigger the decision engine.
-      isAvailable = true; 
-    }
-
-    availability[dt.id] = {
-      isAvailable,
-      lockedReason,
-      requiresEligibility: dt.requires_eligibility,
-      submissionWindow: subWindow
-    };
+    return jsonResponse({
+      success: true,
+      activeSchoolYear: activeSy,
+      availability,
+      blockedEvents,
+    });
+  } catch (err) {
+    console.error('Error in handleDocumentAvailability:', err);
+    return jsonResponse({
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+      availability: {}
+    }, 500);
   }
-
-  return jsonResponse({
-    success: true,
-    activeSchoolYear: activeSy,
-    availability,
-    blockedEvents,
-  });
 }
 
 async function handleSubmissionDecision(url: URL) {
-  const supabase = getAdminClient();
-  const userId = url.searchParams.get('userId');
-  const documentTypeId = url.searchParams.get('documentTypeId');
-  const subtypeId = url.searchParams.get('subtypeId');
+  try {
+    const supabase = getAdminClient();
+    const userId = url.searchParams.get('userId');
+    const documentTypeId = url.searchParams.get('documentTypeId');
+    const subtypeId = url.searchParams.get('subtypeId');
 
-  if (!userId || !documentTypeId) {
-    return jsonResponse({ action: 'error', reason: 'Missing required parameters' });
-  }
-
-  const { data: dt } = await supabase.from('documentType').select('*').eq('id', documentTypeId).single();
-  if (!dt || dt.status !== 'active') {
-    return jsonResponse({ action: 'blocked', reason: 'Document type is inactive.' });
-  }
-
-  const { data: activeSy } = await supabase.from('school_years').select('*').eq('is_active', true).single();
-  if (!activeSy) {
-    return jsonResponse({ action: 'blocked', reason: 'No active school year.' });
-  }
-
-  const { data: events } = await supabase
-    .from('academic_calendar_events')
-    .select('*')
-    .eq('school_year_id', activeSy.id)
-    .eq('document_type_id', documentTypeId)
-    .eq('event_type', 'submission_window');
-
-  const currentDate = new Date();
-  const isWithinBounds = (start_date: string | null, end_date: string | null) => {
-    if (!start_date && !end_date) return true;
-    const start = start_date ? new Date(start_date) : null;
-    const end = end_date ? new Date(end_date) : null;
-    if (start && end) return currentDate >= start && currentDate <= end;
-    if (start) return currentDate >= start;
-    if (end) return currentDate <= end;
-    return false;
-  };
-
-  const windowEvent = events?.find((e) => isWithinBounds(e.start_date, e.end_date)) || events?.[0];
-  if (!windowEvent) {
-    return jsonResponse({ action: 'blocked', reason: 'No submission window is currently available.' });
-  }
-
-  if (!isWithinBounds(windowEvent.start_date, windowEvent.end_date)) {
-    return jsonResponse({
-      action: 'blocked',
-      reason: 'Submission Window Closed',
-      submissionWindow: { start: windowEvent.start_date, end: windowEvent.end_date }
-    });
-  }
-
-  if (dt.requires_eligibility && dt.name.toLowerCase().includes('renewal')) {
-    const { data: userSubs } = await supabase
-      .from('submissions')
-      .select('status, documentType:document_type_id(name)')
-      .eq('user_id', userId)
-      .eq('school_year_id', activeSy.id);
-
-    const completedSubs = (userSubs || []).filter((s) => s.status === 'completed');
-    const hasApprovedMidYear = completedSubs.some((s) => (s.documentType as any)?.name?.toString().toLowerCase().includes('mid-year'));
-    const hasApprovedYearEnd = completedSubs.some((s) => (s.documentType as any)?.name?.toString().toLowerCase().includes('year-end'));
-
-    if (!hasApprovedMidYear || !hasApprovedYearEnd) {
-      const missing = [];
-      if (!hasApprovedMidYear) missing.push('Approved Mid-Year Report');
-      if (!hasApprovedYearEnd) missing.push('Approved Year-End Report');
-      return jsonResponse({ action: 'blocked', reason: 'Missing Requirements: ' + missing.join(', ') });
-    }
-  }
-
-  if (!isAllowMultiple(dt.allow_multiple_submissions)) {
-    const { data: userRecord } = await supabase.from('users').select('org_name').eq('id', userId).single();
-    if (!userRecord || !userRecord.org_name) {
-       return jsonResponse({ action: 'error', reason: 'User organization not found.' });
+    if (!userId || !documentTypeId) {
+      return jsonResponse({ action: 'error', reason: 'Missing required parameters' });
     }
 
-    let subQuery = supabase
-      .from('submissions')
-      .select(
-'id, tracking_number, status, users!inner(org_name)')
-      .eq('users.org_name', userRecord.org_name)
+    const { data: dt } = await supabase.from('documentType').select('*').eq('id', documentTypeId).maybeSingle();
+    if (!dt || dt.status !== 'active') {
+      return jsonResponse({ action: 'blocked', reason: 'Document type is inactive.' });
+    }
+
+    const { data: activeSy } = await supabase.from('school_years').select('*').eq('is_active', true).maybeSingle();
+    if (!activeSy) {
+      return jsonResponse({ action: 'blocked', reason: 'No active school year.' });
+    }
+
+    // 1. Is there a submission window on this document type?
+    const { data: events } = await supabase
+      .from('academic_calendar_events')
+      .select('*')
+      .eq('school_year_id', activeSy.id)
       .eq('document_type_id', documentTypeId)
-      .eq('school_year_id', activeSy.id);
-      
-    if (subtypeId) subQuery = subQuery.eq('subtype_id', subtypeId);
-    else subQuery = subQuery.is('subtype_id', null);
+      .eq('event_type', 'submission_window');
 
-    const { data: existingSubs } = await subQuery.order('created_at', { ascending: false }).limit(1);
+    const currentDate = new Date();
+    const isWithinBounds = (start_date: string | null, end_date: string | null) => {
+      if (!start_date && !end_date) return true;
+      const start = start_date ? new Date(start_date) : null;
+      const end = end_date ? new Date(end_date) : null;
+      if (start && end) return currentDate >= start && currentDate <= end;
+      if (start) return currentDate >= start;
+      if (end) return currentDate <= end;
+      return false;
+    };
 
-    if (existingSubs && existingSubs.length > 0) {
-      const existing = existingSubs[0];
-      if (existing.status === 'draft' || existing.status === 'returned') {
-        return jsonResponse({ action: 'resume', submissionId: existing.id, activeSchoolYear: activeSy });
-      } else if (existing.status !== 'disapproved') {
-        return jsonResponse({ action: 'blocked', reason: 'Your organization already has an active submission for this category in the current school year.' });
+    const windowEvent = events?.find((e) => isWithinBounds(e.start_date, e.end_date)) || events?.[0];
+    if (!windowEvent) {
+      return jsonResponse({ action: 'blocked', reason: 'No submission window is currently available.' });
+    }
+
+    if (!isWithinBounds(windowEvent.start_date, windowEvent.end_date)) {
+      return jsonResponse({
+        action: 'blocked',
+        reason: 'Submission Window Closed',
+        submissionWindow: { start: windowEvent.start_date, end: windowEvent.end_date }
+      });
+    }
+
+    // 2. Is eligibility needed for this document type?
+    if (dt.requires_eligibility && dt.name.toLowerCase().includes('renewal')) {
+      const { data: userRecord } = await supabase.from('users').select('org_name').eq('id', userId).maybeSingle();
+      if (userRecord?.org_name) {
+        const { data: sameOrgUsers } = await supabase.from('users').select('id').eq('org_name', userRecord.org_name);
+        const sameOrgUserIds = (sameOrgUsers || []).map((u) => u.id);
+
+        if (sameOrgUserIds.length > 0) {
+          const { data: orgSubs } = await supabase
+            .from('submissions')
+            .select('status, documentType:document_type_id(name)')
+            .in('user_id', sameOrgUserIds)
+            .eq('school_year_id', activeSy.id);
+
+          const completedSubs = (orgSubs || []).filter((s) => String(s.status || '').toLowerCase().trim() === 'completed');
+          const hasApprovedMidYear = completedSubs.some((s) => (s.documentType as any)?.name?.toString().toLowerCase().includes('mid-year'));
+          const hasApprovedYearEnd = completedSubs.some((s) => (s.documentType as any)?.name?.toString().toLowerCase().includes('year-end'));
+
+          if (!hasApprovedMidYear || !hasApprovedYearEnd) {
+            const missing = [];
+            if (!hasApprovedMidYear) missing.push('Approved Mid-Year Report');
+            if (!hasApprovedYearEnd) missing.push('Approved Year-End Report');
+            return jsonResponse({ action: 'blocked', reason: 'Missing Requirements: ' + missing.join(', ') });
+          }
+        }
       }
     }
-  }
 
-  return jsonResponse({ action: 'create', activeSchoolYear: activeSy });
+    // 3. Is multiple submission allowed for this document type?
+    if (!isAllowMultiple(dt.allow_multiple_submissions)) {
+      const { data: userRecord } = await supabase.from('users').select('org_name').eq('id', userId).maybeSingle();
+      if (!userRecord || !userRecord.org_name) {
+        return jsonResponse({ action: 'error', reason: 'User organization not found.' });
+      }
+
+      const { data: sameOrgUsers } = await supabase.from('users').select('id').eq('org_name', userRecord.org_name);
+      const sameOrgUserIds = (sameOrgUsers || []).map((u) => u.id);
+
+      if (sameOrgUserIds.length > 0) {
+        let subQuery = supabase
+          .from('submissions')
+          .select('id, tracking_number, status')
+          .in('user_id', sameOrgUserIds)
+          .eq('document_type_id', documentTypeId)
+          .eq('school_year_id', activeSy.id);
+
+        if (subtypeId) subQuery = subQuery.eq('subtype_id', subtypeId);
+
+        const { data: existingSubs } = await subQuery.order('created_at', { ascending: false }).limit(1);
+
+        if (existingSubs && existingSubs.length > 0) {
+          const existing = existingSubs[0];
+          const normStatus = String(existing.status || '').toLowerCase().trim();
+          if (normStatus === 'draft' || normStatus === 'returned') {
+            return jsonResponse({ action: 'resume', submissionId: existing.id, activeSchoolYear: activeSy });
+          } else if (normStatus !== 'disapproved') {
+            return jsonResponse({ action: 'blocked', reason: 'Your organization already has an active submission for this category in the current school year.' });
+          }
+        }
+      }
+    }
+
+    return jsonResponse({ action: 'create', activeSchoolYear: activeSy });
+  } catch (err) {
+    console.error('Error in handleSubmissionDecision:', err);
+    return jsonResponse({ action: 'error', reason: err instanceof Error ? err.message : String(err) }, 500);
+  }
 }
 
 async function handleAdminDashboard() {
@@ -2347,7 +2380,7 @@ async function handleAdminDashboard() {
   const { data: allSubmissions } = await supabase
     .from('submissions')
     .select(
-'id, tracking_number, status, school_year_id, user_id, current_version_id, documentType:document_type_id(name, id), users:user_id(org_name, full_name), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title))',
+      'id, tracking_number, status, school_year_id, user_id, current_version_id, documentType:document_type_id(name, id), users:user_id(org_name, full_name), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title))',
     )
     .order('created_at', { ascending: false });
 
@@ -2515,7 +2548,7 @@ async function handleOrgDashboard(url: URL) {
   const { data: userSubmissions } = await supabase
     .from('submissions')
     .select(
-'id, tracking_number, status, school_year_id, created_at, documentType:document_type_id(name, id), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title))',
+      'id, tracking_number, status, school_year_id, created_at, documentType:document_type_id(name, id), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title))',
     )
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
@@ -2585,11 +2618,11 @@ async function handleOrgDashboard(url: URL) {
     if (versions && versions.length > 0) {
       const latest = versions.reduce((max, v) =>
         (v.version_number as number) > (max.version_number as number) ? v : max,
-      versions[0]);
+        versions[0]);
       const details = Array.isArray(latest.activity_proposal_details)
         ? latest.activity_proposal_details[0]
         : latest.activity_proposal_details;
-        
+
       if (isActivityProposal) {
         if (details && (details as Record<string, unknown>).activity_title) {
           docTitle = (details as Record<string, unknown>).activity_title as string;
@@ -2672,7 +2705,533 @@ async function handleCheckEmail(url: URL) {
       500
     );
   }
- }
+}
+
+// ==========================================
+// WORKFLOW ENGINE FOR BULSU OSODOCS
+// ==========================================
+
+export type WorkflowStageKey =
+  | 'DRAFT'
+  | 'SUBMISSION'
+  | 'OSO_REVIEW'
+  | 'SDS_REVIEW'
+  | 'HARDCOPY_SUBMISSION'
+  | 'SIGNATORIES'
+  | 'FINAL_LOCAL_CAMPUS_REVIEW'
+  | 'MAIN_CAMPUS_REVIEW'
+  | 'DOCUMENT_RETRIEVAL'
+  | 'ACCOMPLISHMENT_REPORT'
+  | 'COMPLETED'
+  | 'RETURNED'
+  | 'DISAPPROVED';
+
+export const STAGE_DISPLAY_LABELS: Record<WorkflowStageKey, string> = {
+  DRAFT: 'Draft',
+  SUBMISSION: 'Submission',
+  OSO_REVIEW: 'OSO Staff Review',
+  SDS_REVIEW: 'SDS Coordinator Review',
+  HARDCOPY_SUBMISSION: 'Hardcopy Submission',
+  SIGNATORIES: 'Signatories',
+  FINAL_LOCAL_CAMPUS_REVIEW: 'Final Local Campus Review',
+  MAIN_CAMPUS_REVIEW: 'Main Campus Review',
+  DOCUMENT_RETRIEVAL: 'Document Retrieval',
+  ACCOMPLISHMENT_REPORT: 'Accomplishment Report',
+  COMPLETED: 'Completed',
+  RETURNED: 'Returned for Edits',
+  DISAPPROVED: 'Disapproved',
+};
+
+export function normalizeStatusToStage(statusStr: string | null | undefined): WorkflowStageKey {
+  if (!statusStr) return 'DRAFT';
+  const s = statusStr.trim().toLowerCase();
+
+  if (s === 'draft') return 'DRAFT';
+  if (s === 'submitted' || s === 'pending') return 'OSO_REVIEW';
+  if (s.includes('oso staff') || s.includes('oso review') || s.includes('oso approved')) return 'OSO_REVIEW';
+  if (s.includes('sds coordinator review') || s.includes('sds review') || s.includes('sds coordinator')) return 'SDS_REVIEW';
+  if (s === 'to forward' || s.includes('hardcopy')) return 'HARDCOPY_SUBMISSION';
+  if (s.includes('signatories')) return 'SIGNATORIES';
+  if (s.includes('dean review') || s.includes('dean approved') || s.includes('final local campus review')) return 'FINAL_LOCAL_CAMPUS_REVIEW';
+  if (s.includes('main campus review') || s.includes('main campus') || s.includes('sent to main campus')) return 'MAIN_CAMPUS_REVIEW';
+  if (s === 'approved' || s.includes('ready for retrieval') || s.includes('document retrieval') || s.includes('retrieved')) return 'DOCUMENT_RETRIEVAL';
+  if (s.includes('waiting for accomplishment report') || s.includes('accomplishment report')) return 'ACCOMPLISHMENT_REPORT';
+  if (s === 'completed') return 'COMPLETED';
+  if (s === 'returned') return 'RETURNED';
+  if (s === 'disapproved') return 'DISAPPROVED';
+
+  return 'OSO_REVIEW';
+}
+
+export function stageToDbStatus(stage: WorkflowStageKey): string {
+  switch (stage) {
+    case 'DRAFT': return 'draft';
+    case 'SUBMISSION': return 'submitted';
+    case 'OSO_REVIEW': return 'submitted';
+    case 'SDS_REVIEW': return 'sds coordinator review';
+    case 'HARDCOPY_SUBMISSION': return 'to forward';
+    case 'SIGNATORIES': return 'to forward';
+    case 'FINAL_LOCAL_CAMPUS_REVIEW': return 'dean review';
+    case 'MAIN_CAMPUS_REVIEW': return 'main campus review';
+    case 'DOCUMENT_RETRIEVAL': return 'approved';
+    case 'ACCOMPLISHMENT_REPORT': return 'waiting for accomplishment report';
+    case 'COMPLETED': return 'completed';
+    case 'RETURNED': return 'returned';
+    case 'DISAPPROVED': return 'disapproved';
+    default: return 'submitted';
+  }
+}
+
+export function getDocumentTypeKey(typeNameStr: string | null | undefined): string {
+  if (!typeNameStr) return 'ACTIVITY_PROPOSAL';
+  const name = typeNameStr.trim().toLowerCase();
+
+  if (name.includes('mid-year') || name.includes('mid year')) return 'MID_YEAR_REPORT';
+  if (name.includes('year-end') || name.includes('year end')) return 'YEAR_END_REPORT';
+  if (name.includes('renewal') || name.includes('reaccreditation') || name.includes('re-accreditation')) return 'RENEWAL';
+  return 'ACTIVITY_PROPOSAL';
+}
+
+export const WORKFLOW_CONFIGS: Record<string, {
+  stages: WorkflowStageKey[];
+  allowedRoles: Partial<Record<WorkflowStageKey, string[]>>;
+  transitions: Partial<Record<WorkflowStageKey, Record<string, WorkflowStageKey>>>;
+}> = {
+  ACTIVITY_PROPOSAL: {
+    stages: [
+      'SUBMISSION',
+      'OSO_REVIEW',
+      'SDS_REVIEW',
+      'HARDCOPY_SUBMISSION',
+      'FINAL_LOCAL_CAMPUS_REVIEW',
+      'MAIN_CAMPUS_REVIEW',
+      'DOCUMENT_RETRIEVAL',
+      'ACCOMPLISHMENT_REPORT',
+      'COMPLETED'
+    ],
+    allowedRoles: {
+      DRAFT: ['org-president'],
+      SUBMISSION: ['org-president'],
+      OSO_REVIEW: ['admin', 'chairman', 'vice-chairman', 'oso-staff'],
+      SDS_REVIEW: ['admin', 'chairman', 'vice-chairman', 'oso-staff'],
+      HARDCOPY_SUBMISSION: ['admin', 'chairman', 'vice-chairman', 'oso-staff', 'org-president'],
+      SIGNATORIES: ['admin', 'chairman', 'vice-chairman', 'oso-staff'],
+      FINAL_LOCAL_CAMPUS_REVIEW: ['admin', 'chairman', 'vice-chairman', 'oso-staff'],
+      MAIN_CAMPUS_REVIEW: ['admin', 'chairman', 'vice-chairman', 'oso-staff'],
+      DOCUMENT_RETRIEVAL: ['admin', 'chairman', 'vice-chairman', 'oso-staff', 'org-president'],
+      ACCOMPLISHMENT_REPORT: ['admin', 'chairman', 'vice-chairman', 'oso-staff', 'org-president'],
+      RETURNED: ['org-president'],
+    },
+    transitions: {
+      DRAFT: { submit: 'OSO_REVIEW' },
+      OSO_REVIEW: { approve: 'SDS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      SDS_REVIEW: { approve: 'HARDCOPY_SUBMISSION', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      HARDCOPY_SUBMISSION: { approve: 'HARDCOPY_SUBMISSION', ready_for_retrieval: 'HARDCOPY_SUBMISSION', document_retrieved: 'HARDCOPY_SUBMISSION', confirm_retrieval: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'FINAL_LOCAL_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      FINAL_LOCAL_CAMPUS_REVIEW: { approve: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'MAIN_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      MAIN_CAMPUS_REVIEW: { approve: 'DOCUMENT_RETRIEVAL', ready_for_retrieval: 'DOCUMENT_RETRIEVAL', forward: 'DOCUMENT_RETRIEVAL', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      DOCUMENT_RETRIEVAL: { ready_for_retrieval: 'DOCUMENT_RETRIEVAL', document_retrieved: 'DOCUMENT_RETRIEVAL', confirm_retrieval: 'ACCOMPLISHMENT_REPORT', approve: 'ACCOMPLISHMENT_REPORT', return: 'RETURNED' },
+      ACCOMPLISHMENT_REPORT: { approve: 'COMPLETED', submit_report: 'COMPLETED', return: 'RETURNED' },
+      RETURNED: { resubmit: 'OSO_REVIEW' }
+    }
+  },
+  MID_YEAR_REPORT: {
+    stages: [
+      'SUBMISSION',
+      'OSO_REVIEW',
+      'SDS_REVIEW',
+      'COMPLETED'
+    ],
+    allowedRoles: {
+      DRAFT: ['org-president'],
+      SUBMISSION: ['org-president'],
+      OSO_REVIEW: ['admin', 'chairman', 'vice-chairman', 'oso-staff'],
+      SDS_REVIEW: ['admin', 'chairman', 'vice-chairman', 'oso-staff'],
+      RETURNED: ['org-president'],
+    },
+    transitions: {
+      DRAFT: { submit: 'OSO_REVIEW' },
+      OSO_REVIEW: { approve: 'SDS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      // Mid-Year COMPLETES immediately after SDS Coordinator approval
+      SDS_REVIEW: { approve: 'COMPLETED', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      RETURNED: { resubmit: 'OSO_REVIEW' }
+    }
+  },
+  YEAR_END_REPORT: {
+    stages: [
+      'SUBMISSION',
+      'OSO_REVIEW',
+      'SDS_REVIEW',
+      'HARDCOPY_SUBMISSION',
+      'FINAL_LOCAL_CAMPUS_REVIEW',
+      'MAIN_CAMPUS_REVIEW',
+      'COMPLETED'
+    ],
+    allowedRoles: {
+      DRAFT: ['org-president'],
+      SUBMISSION: ['org-president'],
+      OSO_REVIEW: ['admin', 'chairman', 'vice-chairman', 'oso-staff'],
+      SDS_REVIEW: ['admin', 'chairman', 'vice-chairman', 'oso-staff'],
+      HARDCOPY_SUBMISSION: ['admin', 'chairman', 'vice-chairman', 'oso-staff', 'org-president'],
+      FINAL_LOCAL_CAMPUS_REVIEW: ['admin', 'chairman', 'vice-chairman', 'oso-staff'],
+      MAIN_CAMPUS_REVIEW: ['admin', 'chairman', 'vice-chairman', 'oso-staff'],
+      RETURNED: ['org-president'],
+    },
+    transitions: {
+      DRAFT: { submit: 'OSO_REVIEW' },
+      OSO_REVIEW: { approve: 'SDS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      SDS_REVIEW: { approve: 'HARDCOPY_SUBMISSION', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      HARDCOPY_SUBMISSION: { approve: 'HARDCOPY_SUBMISSION', ready_for_retrieval: 'HARDCOPY_SUBMISSION', document_retrieved: 'HARDCOPY_SUBMISSION', confirm_retrieval: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'FINAL_LOCAL_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      FINAL_LOCAL_CAMPUS_REVIEW: { approve: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'MAIN_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      // Year-End COMPLETES immediately after Main Campus approval
+      MAIN_CAMPUS_REVIEW: { approve: 'COMPLETED', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      RETURNED: { resubmit: 'OSO_REVIEW' }
+    }
+  },
+  RENEWAL: {
+    stages: [
+      'SUBMISSION',
+      'OSO_REVIEW',
+      'SDS_REVIEW',
+      'HARDCOPY_SUBMISSION',
+      'FINAL_LOCAL_CAMPUS_REVIEW',
+      'MAIN_CAMPUS_REVIEW',
+      'COMPLETED'
+    ],
+    allowedRoles: {
+      DRAFT: ['org-president'],
+      SUBMISSION: ['org-president'],
+      OSO_REVIEW: ['admin', 'chairman', 'vice-chairman', 'oso-staff'],
+      SDS_REVIEW: ['admin', 'chairman', 'vice-chairman', 'oso-staff'],
+      HARDCOPY_SUBMISSION: ['admin', 'chairman', 'vice-chairman', 'oso-staff', 'org-president'],
+      FINAL_LOCAL_CAMPUS_REVIEW: ['admin', 'chairman', 'vice-chairman', 'oso-staff'],
+      MAIN_CAMPUS_REVIEW: ['admin', 'chairman', 'vice-chairman', 'oso-staff'],
+      RETURNED: ['org-president'],
+    },
+    transitions: {
+      DRAFT: { submit: 'OSO_REVIEW' },
+      OSO_REVIEW: { approve: 'SDS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      SDS_REVIEW: { approve: 'HARDCOPY_SUBMISSION', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      HARDCOPY_SUBMISSION: { approve: 'HARDCOPY_SUBMISSION', ready_for_retrieval: 'HARDCOPY_SUBMISSION', document_retrieved: 'HARDCOPY_SUBMISSION', confirm_retrieval: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'FINAL_LOCAL_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      FINAL_LOCAL_CAMPUS_REVIEW: { approve: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'MAIN_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      // Renewal COMPLETES immediately after Main Campus approval
+      MAIN_CAMPUS_REVIEW: { approve: 'COMPLETED', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      RETURNED: { resubmit: 'OSO_REVIEW' }
+    }
+  }
+};
+
+export function getAllowedActionsForStage(cfgKey: string, stage: WorkflowStageKey, role: string): string[] {
+  const cfg = WORKFLOW_CONFIGS[cfgKey] || WORKFLOW_CONFIGS.ACTIVITY_PROPOSAL;
+  const allowedForStage = cfg.allowedRoles[stage] || [];
+  const normRole = (role || '').toLowerCase();
+
+  const isRoleAllowed = allowedForStage.some(r => r.toLowerCase() === normRole);
+  if (!isRoleAllowed) return [];
+
+  const stageTransitions = cfg.transitions[stage] || {};
+  return Object.keys(stageTransitions);
+}
+
+export function generateDescriptiveLogMessage(
+  currentStage: WorkflowStageKey,
+  nextStage: WorkflowStageKey,
+  action: string,
+  userRole: string,
+  userComment?: string | null
+): string {
+  if (userComment && userComment.trim().length > 0) {
+    return userComment.trim();
+  }
+
+  const roleTitle = userRole === 'org-president' ? 'Organization President'
+    : userRole === 'admin' ? 'SDS Coordinator'
+      : userRole === 'chairman' ? 'Chairman'
+        : userRole === 'vice-chairman' ? 'Vice Chairman'
+          : userRole === 'oso-staff' ? 'OSO Staff'
+            : userRole;
+
+  if (action === 'submit') {
+    return `Submitted document by ${roleTitle}`;
+  }
+
+  if (action === 'resubmit') {
+    return `Resubmitted document by ${roleTitle}`;
+  }
+
+  if (action === 'forward' || action === 'send_to_external') {
+    if (nextStage === 'MAIN_CAMPUS_REVIEW') {
+      return `Sent to Main Campus for Review`;
+    }
+    if (nextStage === 'FINAL_LOCAL_CAMPUS_REVIEW') {
+      return `Forwarded for Final In-Campus Review`;
+    }
+    return `Forwarded document by ${roleTitle}`;
+  }
+
+  if (action === 'ready_for_retrieval') {
+    return `Marked Ready for Retrieval`;
+  }
+
+  if (action === 'document_retrieved') {
+    return `Document retrieved by Organization President`;
+  }
+
+  if (action === 'confirm_retrieval') {
+    return `Retrieval confirmed by ${roleTitle}`;
+  }
+
+  if (action === 'approve') {
+    switch (currentStage) {
+      case 'OSO_REVIEW':
+        return `Approved by OSO Staff`;
+      case 'SDS_REVIEW':
+        return `Approved by SDS Coordinator`;
+      case 'HARDCOPY_SUBMISSION':
+        return `Hard copy verified and approved by ${roleTitle}`;
+      case 'FINAL_LOCAL_CAMPUS_REVIEW':
+        return `Approved by Dean on Final In-Campus Review`;
+      case 'MAIN_CAMPUS_REVIEW':
+        return `Approved by Main Campus`;
+      case 'ACCOMPLISHMENT_REPORT':
+        return `Accomplishment Report approved by ${roleTitle}`;
+      default:
+        return `Approved by ${roleTitle}`;
+    }
+  }
+
+  if (action === 'return') {
+    switch (currentStage) {
+      case 'OSO_REVIEW':
+        return `Returned by OSO Staff`;
+      case 'SDS_REVIEW':
+        return `Returned by SDS Coordinator`;
+      case 'FINAL_LOCAL_CAMPUS_REVIEW':
+        return `Returned on Final In-Campus Review`;
+      case 'MAIN_CAMPUS_REVIEW':
+        return `Returned by Main Campus`;
+      default:
+        return `Returned by ${roleTitle}`;
+    }
+  }
+
+  if (action === 'disapprove') {
+    switch (currentStage) {
+      case 'OSO_REVIEW':
+        return `Disapproved by OSO Staff`;
+      case 'SDS_REVIEW':
+        return `Disapproved by SDS Coordinator`;
+      case 'FINAL_LOCAL_CAMPUS_REVIEW':
+        return `Disapproved on Final In-Campus Review`;
+      case 'MAIN_CAMPUS_REVIEW':
+        return `Disapproved by Main Campus`;
+      default:
+        return `Disapproved by ${roleTitle}`;
+    }
+  }
+
+  return `${action.toUpperCase()} by ${roleTitle}`;
+}
+
+async function handleSubmissionTransition(body: Record<string, unknown>) {
+  const submissionId = String(body.submissionId || '');
+  const action = String(body.action || '').trim().toLowerCase();
+  const comment = body.comment ? String(body.comment) : '';
+  const userId = body.userId ? String(body.userId) : null;
+  const attachmentReviews = Array.isArray(body.attachmentReviews) ? body.attachmentReviews : [];
+
+  if (!submissionId || !action) {
+    return jsonResponse({ error: 'submissionId and action are required' }, 400);
+  }
+
+  const supabase = getAdminClient();
+
+  const { data: sub, error: subErr } = await supabase
+    .from('submissions')
+    .select('*, documentType:document_type_id(name), users:user_id(role, full_name, org_name)')
+    .eq('id', submissionId)
+    .maybeSingle();
+
+  if (subErr || !sub) {
+    return jsonResponse({ error: 'Submission not found', details: subErr?.message }, 404);
+  }
+
+  let actingUserRole = 'admin';
+  let actingUserId = userId;
+  if (userId) {
+    const { data: userRec } = await supabase.from('users').select('id, role, full_name').eq('id', userId).maybeSingle();
+    if (userRec) {
+      actingUserRole = userRec.role;
+      actingUserId = userRec.id;
+    }
+  } else {
+    actingUserId = sub.user_id;
+    actingUserRole = (sub.users as Record<string, unknown>)?.role as string || 'admin';
+  }
+
+  const docTypeName = (sub.documentType as Record<string, unknown>)?.name as string || 'Activity Proposal';
+  const docTypeKey = getDocumentTypeKey(docTypeName);
+  const currentStage = normalizeStatusToStage(sub.status);
+  const cfg = WORKFLOW_CONFIGS[docTypeKey] || WORKFLOW_CONFIGS.ACTIVITY_PROPOSAL;
+
+  const allowedActions = getAllowedActionsForStage(docTypeKey, currentStage, actingUserRole);
+  if (!allowedActions.includes(action)) {
+    return jsonResponse({
+      error: `Invalid action '${action}' for current stage '${STAGE_DISPLAY_LABELS[currentStage]}' on document type '${docTypeKey}' for role '${actingUserRole}'`,
+      allowedActions
+    }, 400);
+  }
+
+  const nextStage = cfg.transitions[currentStage]?.[action];
+  if (!nextStage) {
+    return jsonResponse({ error: `No transition defined for action '${action}' from stage '${currentStage}'` }, 400);
+  }
+
+  let newDbStatus = stageToDbStatus(nextStage);
+  if (currentStage === 'FINAL_LOCAL_CAMPUS_REVIEW' && action === 'approve') {
+    newDbStatus = 'dean approved';
+  }
+
+  const defaultDescriptiveMsg = generateDescriptiveLogMessage(currentStage, nextStage, action, actingUserRole, null);
+  const userOrDescriptiveMsg = generateDescriptiveLogMessage(currentStage, nextStage, action, actingUserRole, comment);
+  const formattedRemarks = userOrDescriptiveMsg;
+
+  const { error: updateErr } = await supabase
+    .from('submissions')
+    .update({
+      status: newDbStatus,
+      remarks: formattedRemarks
+    })
+    .eq('id', submissionId);
+
+  if (updateErr) {
+    return jsonResponse({ error: 'Failed to update submission status', details: updateErr.message }, 500);
+  }
+
+  const activeVersionId = sub.current_version_id;
+  if (activeVersionId && attachmentReviews.length > 0) {
+    for (const attRev of attachmentReviews) {
+      if (attRev.attachment_id && attRev.review_action) {
+        await supabase.from('submission_logs').insert([{
+          submission_id: submissionId,
+          submission_version_id: activeVersionId,
+          user_id: actingUserId,
+          attachment_id: attRev.attachment_id,
+          workflow_phase: STAGE_DISPLAY_LABELS[currentStage],
+          action_type: 'attachment_review',
+          review_action: attRev.review_action,
+          description: attRev.comment || `Attachment ${attRev.review_action}`,
+          comment: attRev.comment || null,
+          created_at: new Date().toISOString()
+        }]);
+      }
+    }
+  }
+
+  const isForwardToMain = nextStage === 'MAIN_CAMPUS_REVIEW' && (action === 'forward' || action === 'send_to_external');
+  const logActionType = isForwardToMain ? 'forwarded' : action === 'approve' ? 'approved' : action;
+  const logReviewAction = defaultDescriptiveMsg;
+  const logWorkflowPhase = isForwardToMain ? 'main-campus-review' : STAGE_DISPLAY_LABELS[currentStage];
+
+  await supabase.from('submission_logs').insert([{
+    submission_id: submissionId,
+    submission_version_id: activeVersionId || null,
+    user_id: actingUserId,
+    workflow_phase: logWorkflowPhase,
+    action_type: logActionType,
+    review_action: logReviewAction,
+    description: userOrDescriptiveMsg,
+    comment: comment || null,
+    created_at: new Date().toISOString()
+  }]);
+
+  return jsonResponse({
+    success: true,
+    submission: {
+      ...sub,
+      status: newDbStatus,
+      remarks: formattedRemarks
+    },
+    workflow: {
+      documentType: docTypeKey,
+      documentTypeName: docTypeName,
+      currentStage: nextStage,
+      displayLabel: STAGE_DISPLAY_LABELS[nextStage],
+      stages: cfg.stages,
+      allowedActions: getAllowedActionsForStage(docTypeKey, nextStage, actingUserRole)
+    }
+  });
+}
+
+async function handleSubmissionResubmit(body: Record<string, unknown>) {
+  const submissionId = String(body.submissionId || '');
+  const userId = body.userId ? String(body.userId) : null;
+  const oldVersionId = body.oldVersionId ? String(body.oldVersionId) : null;
+
+  if (!submissionId || !userId) {
+    return jsonResponse({ error: 'submissionId and userId are required for resubmission' }, 400);
+  }
+
+  const supabase = getAdminClient();
+
+  const { data: sub, error: subErr } = await supabase
+    .from('submissions')
+    .select('*, documentType:document_type_id(name)')
+    .eq('id', submissionId)
+    .maybeSingle();
+
+  if (subErr || !sub) {
+    return jsonResponse({ error: 'Submission not found', details: subErr?.message }, 404);
+  }
+
+  const docTypeName = (sub.documentType as Record<string, unknown>)?.name as string || 'Activity Proposal';
+  const docTypeKey = getDocumentTypeKey(docTypeName);
+  const cfg = WORKFLOW_CONFIGS[docTypeKey] || WORKFLOW_CONFIGS.ACTIVITY_PROPOSAL;
+
+  const resubmitStage: WorkflowStageKey = 'OSO_REVIEW';
+  const newDbStatus = stageToDbStatus(resubmitStage);
+
+  const { error: updateErr } = await supabase
+    .from('submissions')
+    .update({
+      status: newDbStatus,
+      remarks: 'Resubmitted for edits'
+    })
+    .eq('id', submissionId);
+
+  if (updateErr) {
+    return jsonResponse({ error: 'Failed to update resubmission status', details: updateErr.message }, 500);
+  }
+
+  await supabase.from('users').update({ status: 'Active' }).eq('id', userId);
+
+  await supabase.from('submission_logs').insert([{
+    submission_id: submissionId,
+    submission_version_id: sub.current_version_id || oldVersionId || null,
+    user_id: userId,
+    workflow_phase: 'Resubmission',
+    action_type: 'resubmitted',
+    review_action: 'resubmitted',
+    description: 'Document resubmitted for edits.',
+    created_at: new Date().toISOString()
+  }]);
+
+  return jsonResponse({
+    success: true,
+    submission: {
+      ...sub,
+      status: newDbStatus,
+      remarks: 'Resubmitted for edits'
+    },
+    workflow: {
+      documentType: docTypeKey,
+      documentTypeName: docTypeName,
+      currentStage: resubmitStage,
+      displayLabel: STAGE_DISPLAY_LABELS[resubmitStage],
+      stages: cfg.stages,
+      allowedActions: getAllowedActionsForStage(docTypeKey, resubmitStage, 'org-president')
+    }
+  });
+}
 
 async function routeRequest(req: Request): Promise<Response> {
   const url = new URL(req.url);
@@ -2685,7 +3244,7 @@ async function routeRequest(req: Request): Promise<Response> {
   if (method === 'GET' && /^\/users\/[^/]+\/detail$/.test(path)) {
     return handleGetUserDetail(path.split('/')[2]);
   }
-  
+
   if (method === 'POST' && path === '/users') return handlePostUsers(body);
   if (method === 'POST' && path === '/auth/verify-password') return handleVerifyPassword(body);
   if (method === 'PUT' && /^\/users\/[^/]+$/.test(path)) {
@@ -2728,6 +3287,12 @@ async function routeRequest(req: Request): Promise<Response> {
 
   if (method === 'POST' && path === '/submissions/draft') {
     return handleCreateDraftSubmission(body);
+  }
+  if (method === 'POST' && path === '/submissions/transition') {
+    return handleSubmissionTransition(body);
+  }
+  if (method === 'POST' && path === '/submissions/resubmit') {
+    return handleSubmissionResubmit(body);
   }
 
   if (method === 'GET' && path === '/school-years') return handleGetSchoolYears();

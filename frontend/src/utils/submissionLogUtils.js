@@ -13,44 +13,61 @@ export const normalizeSubmissionStatus = norm;
 export const formatLogActionLabel = (log) => {
   if (log?.isPending) return 'pending';
 
-  const review = String(log?.review_action || '').trim();
+  const review = String(log?.review_action || '').trim().toLowerCase();
   const type = String(log?.action_type || '').toLowerCase().trim();
   const desc = String(log?.description || '').toLowerCase().trim();
-  const phase = String(log?.workflow_phase || '').toLowerCase().trim();
 
-  // 1. Ready for retrieval / Document retrieved
-  if (type === 'ready_for_retrieval' || type === 'ready for retrieval' || review.toLowerCase().includes('retriev') || desc.includes('ready for retrieval') || desc.includes('retriev')) {
+  // 1. Approved actions ALWAYS render 'approved' badge
+  if (type === 'approved' || type === 'approve') {
+    return 'approved';
+  }
+
+  // 2. Returned actions ALWAYS render 'returned' badge
+  if (type === 'returned' || type === 'return') {
+    return 'returned';
+  }
+
+  // 3. Disapproved / Rejected actions
+  if (type === 'disapproved' || type === 'disapprove' || type === 'rejected') {
+    return 'disapproved';
+  }
+
+  // 4. Ready for retrieval
+  if (type === 'ready_for_retrieval' || type === 'ready for retrieval') {
     return 'ready for retrieval';
   }
 
-  // 2. Document retrieved
+  // 5. Document retrieved
   if (type === 'document_retrieved' || type === 'document retrieved') {
     return 'document retrieved';
   }
 
-  // 3. Approved
-  if (type === 'approved' || review.toLowerCase() === 'approved') {
-    return 'approved';
+  // 6. Confirm retrieval
+  if (type === 'confirm_retrieval' || type === 'confirm retrieval') {
+    return 'retrieval confirmed';
   }
 
-  // 4. Returned
-  if (type === 'returned' || review.toLowerCase() === 'returned') {
-    return 'returned';
+  // 7. Submitted / Resubmitted
+  if (type === 'submitted' || type === 'submit') {
+    return 'submitted';
+  }
+  if (type === 'resubmitted' || type === 'resubmit') {
+    return 'resubmitted';
   }
 
-  // 5. Disapproved / Rejected
-  if (type === 'disapproved' || type === 'rejected') {
-    return 'disapproved';
+  // 8. Forwarded / Submitted to Main Campus
+  if (type === 'forwarded' || type === 'forward' || type === 'send_to_external') {
+    if (review.includes('main campus') || desc.includes('main campus')) {
+      return 'Submitted to Main Campus';
+    }
+    return 'forwarded';
   }
 
-  // 6. Submitted / Forwarded to Main Campus
-  if (type === 'forwarded' || review.toLowerCase() === 'forwarded' || review.toLowerCase().includes('main campus')) {
-    return 'Submitted to Main Campus';
+  if (review && review !== 'approved' && review !== 'returned' && review !== 'forwarded') {
+    return review.replace(/-/g, ' ');
   }
 
-  if (review) return review.replace(/-/g, ' ');
   if (type) return type.replace(/-/g, ' ');
-  if (desc) return desc.length > 80 ? `${desc.slice(0, 80)}…` : desc;
   return 'updated';
 };
 
@@ -125,7 +142,7 @@ export const isLogApproved = (log) => {
   if (log?.isPending) return false;
   const type = String(log?.action_type || '').toLowerCase();
   const review = String(log?.review_action || '').toLowerCase();
-  return type === 'approved' || review === 'approved';
+  return type === 'approved' || type === 'approve' || review === 'approved';
 };
 
 export const isLogReturned = (log) => {
@@ -182,7 +199,11 @@ const phaseMatchers = {
       type === 'ready for retrieval' ||
       review === 'ready for retrieval' ||
       review === 'ready-for-retrieval' ||
-      logText(log).includes('ready for retrieval')
+      type === 'document retrieved' ||
+      review === 'document retrieved' ||
+      review === 'document-retrieved' ||
+      logText(log).includes('ready for retrieval') ||
+      logText(log).includes('document retrieved')
     );
   },
   document_retrieved: (log) => {
@@ -381,7 +402,7 @@ export const getTimelineActorDisplay = (log) => {
     if (log.pendingPhaseId === 'approved_sds') {
       return {
         name: 'Teresita delacruz',
-        role: 'admin'
+        role: 'Admin'
       };
     }
     return {
@@ -390,13 +411,19 @@ export const getTimelineActorDisplay = (log) => {
     };
   }
 
-  if (norm(log?.workflow_phase).includes('dean')) {
-    return { name: 'Final In-Campus review', role: 'Dean' };
-  }
+  const rawRole = (log?.users?.role || '').toLowerCase().trim();
+  let roleLabel = log?.users?.role || 'User';
+
+  if (rawRole === 'oso-staff') roleLabel = 'OSO Staff';
+  else if (rawRole === 'admin') roleLabel = 'Admin';
+  else if (rawRole === 'chairman') roleLabel = 'Chairman';
+  else if (rawRole === 'vice-chairman') roleLabel = 'Vice Chairman';
+  else if (rawRole === 'org-president') roleLabel = 'Org President';
+  else if (rawRole === 'dean') roleLabel = 'Dean';
 
   return {
-    name: log.users?.full_name || 'System',
-    role: log.users?.role || 'System'
+    name: log?.users?.full_name || log?.displayName || 'System',
+    role: roleLabel
   };
 };
 

@@ -736,37 +736,39 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
 
 
 
-        <div>
-          <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider mb-4">
-            Proof of Activity Implementation
-          </h3>
-          {proofImages.length > 0 ? (
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {proofImages.map((file, idx) => {
-                const fileUrl = file.file_url?.startsWith('http')
-                  ? file.file_url
-                  : getStoragePublicUrl(file.file_url);
-                return (
-                  <a
-                    key={file.id || idx}
-                    href={fileUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block rounded-2xl overflow-hidden border border-gray-100 shadow-sm hover:shadow-md transition-all"
-                  >
-                    <img
-                      src={fileUrl}
-                      alt={file.file_name || `Proof ${idx + 1}`}
-                      className="w-full h-36 object-cover bg-gray-100"
-                    />
-                  </a>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-sm text-gray-500 italic py-4">No proof of activity images uploaded.</p>
-          )}
-        </div>
+        {isActivityProposal && (
+          <div>
+            <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider mb-4">
+              Proof of Activity Implementation
+            </h3>
+            {proofImages.length > 0 ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {proofImages.map((file, idx) => {
+                  const fileUrl = file.file_url?.startsWith('http')
+                    ? file.file_url
+                    : getStoragePublicUrl(file.file_url);
+                  return (
+                    <a
+                      key={file.id || idx}
+                      href={fileUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block rounded-2xl overflow-hidden border border-gray-100 shadow-sm hover:shadow-md transition-all"
+                    >
+                      <img
+                        src={fileUrl}
+                        alt={file.file_name || `Proof ${idx + 1}`}
+                        className="w-full h-36 object-cover bg-gray-100"
+                      />
+                    </a>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 italic py-4">No proof of activity images uploaded.</p>
+            )}
+          </div>
+        )}
 
         <SubmissionTimeline
           timelineLogs={timelineLogs}

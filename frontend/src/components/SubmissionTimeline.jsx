@@ -196,9 +196,11 @@ const SubmissionTimeline = ({
               String(log.description || '').toLowerCase().includes('accomplishment') ||
               String(log.comment || '').toLowerCase().includes('accomplishment');
 
-            const visibleComment = isAccomplishmentLog
+            let visibleComment = isAccomplishmentLog
               ? 'Activity accomplishment report submitted'
               : stripProofReferenceFromText(log.comment || log.description || '');
+
+            visibleComment = visibleComment.replace(/\bOSD Admin\b/gi, 'SDS Coordinator');
 
             const formattedTime = log.created_at
               ? new Date(log.created_at).toLocaleString('en-US', {

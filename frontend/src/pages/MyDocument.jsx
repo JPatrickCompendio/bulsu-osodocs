@@ -1130,41 +1130,8 @@ export const MyDocuments = () => {
           ? selectedDoc.raw?.submission_versions[0]?.id
           : selectedDoc.raw?.submission_versions?.id);
 
-      const currentStatus = (selectedDoc.raw?.status || selectedDoc.status || '').toLowerCase();
-      const workflowPhase = currentStatus.includes('dean review')
-        ? 'dean-review'
-        : currentStatus.includes('sds coordinator review')
-          ? 'sds-review'
-          : 'Chairman Review';
-
-      const formattedRemarks = comments || `Returned for edits by ${formatReviewerRoleLabel(user?.role)}`;
-      const { error: subErr } = await supabase
-        .from('submissions')
-        .update({
-          status: 'returned',
-          remarks: formattedRemarks
-        })
-        .eq('id', selectedDoc.id);
-
-      if (subErr) throw subErr;
-
       await persistLocalAttachmentReviews(activeVersionId);
-
-      const { error: logErr } = await supabase
-        .from('submission_logs')
-        .insert([{
-          submission_id: selectedDoc.id,
-          submission_version_id: activeVersionId,
-          user_id: user.id,
-          workflow_phase: workflowPhase,
-          action_type: 'returned',
-          review_action: null,
-          description: comments || `Returned for edits by ${formatReviewerRoleLabel(user?.role)}`,
-          comment: comments || null,
-          created_at: new Date().toISOString()
-        }]);
-
-      if (logErr) throw logErr;
+      await subService.transitionSubmission(selectedDoc.id, 'return', comments, [], user?.id);
 
       setIsReturnModalOpen(false);
       setReturnComments('');
@@ -1175,7 +1142,7 @@ export const MyDocuments = () => {
       showToast('Submission returned for edits successfully!');
     } catch (err) {
       console.error('Error returning submission:', err);
-      showToast('Failed to return submission.');
+      showToast(err.message || 'Failed to return submission.');
     } finally {
       setLoading(false);
     }
@@ -1221,6 +1188,9 @@ export const MyDocuments = () => {
         await subService.saveAttachmentRecord(newVersion.id, reqId, file.name, path);
       }
 
+      // 4. Invoke authoritative resubmission backend API transition
+      await subService.resubmitSubmission(submissionId, user.id, oldVersionId);
+
       setIsResubmitModalOpen(false);
       setResubmitFiles({});
       setSelectedDoc(null);
@@ -1231,7 +1201,7 @@ export const MyDocuments = () => {
       showToast('Document resubmitted successfully!');
     } catch (err) {
       console.error('Error resubmitting:', err);
-      showToast('Failed to resubmit document.');
+      showToast(err.message || 'Failed to resubmit document.');
     } finally {
       setIsResubmitting(false);
     }
@@ -1241,44 +1211,8 @@ export const MyDocuments = () => {
     if (!selectedDoc) return;
     try {
       setLoading(true);
-      const activeVersionId = selectedDoc.raw?.current_version_id ||
-        (Array.isArray(selectedDoc.raw?.submission_versions)
-          ? selectedDoc.raw?.submission_versions[0]?.id
-          : selectedDoc.raw?.submission_versions?.id);
 
-      const currentStatus = (selectedDoc.raw?.status || selectedDoc.status || '').toLowerCase();
-      const workflowPhase = currentStatus.includes('dean review')
-        ? 'dean-review'
-        : currentStatus.includes('sds coordinator review')
-          ? 'sds-review'
-          : 'Chairman Review';
-
-      const formattedRemarks = comments || `Disapproved by ${formatReviewerRoleLabel(user?.role)}`;
-      const { error: subErr } = await supabase
-        .from('submissions')
-        .update({
-          status: 'disapproved',
-          remarks: formattedRemarks
-        })
-        .eq('id', selectedDoc.id);
-
-      if (subErr) throw subErr;
-
-      const { error: logErr } = await supabase
-        .from('submission_logs')
-        .insert([{
-          submission_id: selectedDoc.id,
-          submission_version_id: activeVersionId,
-          user_id: user.id,
-          workflow_phase: workflowPhase,
-          action_type: 'disapproved',
-          review_action: null,
-          description: comments || `Disapproved by ${formatReviewerRoleLabel(user?.role)}`,
-          comment: comments || null,
-          created_at: new Date().toISOString()
-        }]);
-
-      if (logErr) throw logErr;
+      await subService.transitionSubmission(selectedDoc.id, 'disapprove', comments, [], user?.id);
 
       setIsReturnModalOpen(false);
       setReturnComments('');
@@ -1293,7 +1227,7 @@ export const MyDocuments = () => {
       }
     } catch (err) {
       console.error('Error disapproving submission:', err);
-      showToast('Failed to disapprove submission.');
+      showToast(err.message || 'Failed to disapprove submission.');
     } finally {
       setLoading(false);
     }
@@ -1308,33 +1242,8 @@ export const MyDocuments = () => {
           ? selectedDoc.raw?.submission_versions[0]?.id
           : selectedDoc.raw?.submission_versions?.id);
 
-      const { error: subErr } = await supabase
-        .from('submissions')
-        .update({
-          status: 'sds coordinator review',
-          remarks: "Verified the chairman's signature and approved the document."
-        })
-        .eq('id', selectedDoc.id);
-
-      if (subErr) throw subErr;
-
       await persistLocalAttachmentReviews(activeVersionId);
-
-      const { error: logErr } = await supabase
-        .from('submission_logs')
-        .insert([{
-          submission_id: selectedDoc.id,
-          submission_version_id: activeVersionId,
-          user_id: user.id,
-          workflow_phase: 'sds-review',
-          action_type: 'approved',
-          review_action: 'approved',
-          description: "Verified the chairman's signature and approved the document.",
-          comment: "Verified the chairman's signature and approved the document.",
-          created_at: new Date().toISOString()
-        }]);
-
-      if (logErr) throw logErr;
+      await subService.transitionSubmission(selectedDoc.id, 'forward', "Verified the chairman's signature and approved the document.", [], user?.id);
 
       setIsForwardModalOpen(false);
       setLocallyApproved([]);
@@ -1344,7 +1253,7 @@ export const MyDocuments = () => {
       showToast('Submission forwarded successfully!');
     } catch (err) {
       console.error('Error forwarding submission:', err);
-      showToast('Failed to forward submission.');
+      showToast(err.message || 'Failed to forward submission.');
     } finally {
       setLoading(false);
     }
@@ -1398,18 +1307,6 @@ export const MyDocuments = () => {
       }
 
       const adminComment = comments?.trim() || '';
-      const finalRemarks = adminComment || null;
-
-      const { error: subErr } = await supabase
-        .from('submissions')
-        .update({
-          status: 'main campus review',
-          remarks: finalRemarks || null
-        })
-        .eq('id', selectedDoc.id);
-
-      if (subErr) throw subErr;
-
       const forwardedListText = forwardedFileNames.length > 0
         ? `Forwarded Documents:\n${forwardedFileNames.map(f => `• ${f}`).join('\n')}`
         : '';
@@ -1418,23 +1315,7 @@ export const MyDocuments = () => {
         ? (forwardedListText ? `${adminComment}\n\n${forwardedListText}` : adminComment)
         : (forwardedListText ? `Sent to Main Campus for Review.\n\n${forwardedListText}` : 'Sent to Main Campus for Review.');
 
-      const logComment = logDescription;
-
-      const { error: logErr } = await supabase
-        .from('submission_logs')
-        .insert([{
-          submission_id: selectedDoc.id,
-          submission_version_id: activeVersionId,
-          user_id: user.id,
-          workflow_phase: 'main-campus-review',
-          action_type: 'forwarded',
-          review_action: 'Submitted to Main Campus',
-          description: logDescription,
-          comment: logComment,
-          created_at: new Date().toISOString()
-        }]);
-
-      if (logErr) throw logErr;
+      await subService.transitionSubmission(selectedDoc.id, 'forward', logDescription, [], user?.id);
 
       setIsReturnModalOpen(false);
       setReturnComments('');
@@ -1444,7 +1325,7 @@ export const MyDocuments = () => {
       showToast('Sent to Main Campus successfully!');
     } catch (err) {
       console.error('Error sending to main campus:', err);
-      showToast('Failed to send to main campus review.');
+      showToast(err.message || 'Failed to send to main campus review.');
     } finally {
       setLoading(false);
       setExternalProofUploading(false);
@@ -1455,50 +1336,17 @@ export const MyDocuments = () => {
     if (!selectedDoc) return;
     try {
       setLoading(true);
-      const activeVersionId = selectedDoc.raw?.current_version_id ||
-        (Array.isArray(selectedDoc.raw?.submission_versions)
-          ? selectedDoc.raw?.submission_versions[0]?.id
-          : selectedDoc.raw?.submission_versions?.id);
 
-      const docStatusLower = getDocStatusLower(selectedDoc);
-      const isSds = docStatusLower === 'sds coordinator review' || docStatusLower.includes('sds') || selectedDoc?.category === 'SDS Review';
-
-      const newStatus = isSds ? 'sds coordinator review' : 'approved';
-      const wpStr = isSds ? 'sds-review' : 'main-campus-review';
-
-      const { error: subErr } = await supabase
-        .from('submissions')
-        .update({
-          status: newStatus,
-          remarks: comments || 'Ready for Retrieval'
-        })
-        .eq('id', selectedDoc.id);
-
-      if (subErr) throw subErr;
-
-      const { error: logErr } = await supabase
-        .from('submission_logs')
-        .insert([{
-          submission_id: selectedDoc.id,
-          submission_version_id: activeVersionId,
-          user_id: user.id,
-          workflow_phase: wpStr,
-          action_type: 'ready_for_retrieval',
-          review_action: 'ready-for-retrieval',
-          description: comments || 'Document is ready for retrieval',
-          comment: comments || null,
-          created_at: new Date().toISOString()
-        }]);
-
-      if (logErr) throw logErr;
+      await subService.transitionSubmission(selectedDoc.id, 'ready_for_retrieval', comments, [], user?.id);
 
       setIsReturnModalOpen(false);
       setReturnComments('');
       await refreshSelectedDoc(selectedDoc.id);
+      await fetchTimelineLogs(selectedDoc.id);
       showToast('Document marked ready for retrieval successfully!');
     } catch (err) {
       console.error('Error marking ready for retrieval:', err);
-      showToast('Failed to mark document ready for retrieval.');
+      showToast(err.message || 'Failed to mark document ready for retrieval.');
     } finally {
       setLoading(false);
     }
@@ -1508,68 +1356,15 @@ export const MyDocuments = () => {
     if (!selectedDoc) return;
     try {
       setLoading(true);
-      const activeVersionId = selectedDoc.raw?.current_version_id ||
-        (Array.isArray(selectedDoc.raw?.submission_versions)
-          ? selectedDoc.raw?.submission_versions[0]?.id
-          : selectedDoc.raw?.submission_versions?.id);
 
-      const docStatusLower = getDocStatusLower(selectedDoc);
-      const isSds = docStatusLower === 'sds coordinator review' || docStatusLower.includes('sds') || selectedDoc?.category === 'SDS Review';
+      await subService.transitionSubmission(selectedDoc.id, 'document_retrieved', descText, [], user?.id);
 
-      if (isSds) {
-        const { error: subErr } = await supabase
-          .from('submissions')
-          .update({
-            status: 'sds coordinator review',
-            remarks: descText
-          })
-          .eq('id', selectedDoc.id);
-
-        if (subErr) throw subErr;
-
-        await supabase.from('submission_logs').insert([{
-          submission_id: selectedDoc.id,
-          submission_version_id: activeVersionId,
-          user_id: user.id,
-          workflow_phase: 'sds-review',
-          action_type: 'document_retrieved',
-          review_action: 'document-retrieved',
-          description: descText,
-          comment: null,
-          created_at: new Date().toISOString()
-        }]);
-
-        showToast('Document marked as retrieved!');
-        await refreshSelectedDoc(selectedDoc.id);
-      } else {
-        const { error: subErr } = await supabase
-          .from('submissions')
-          .update({
-            status: 'approved',
-            remarks: descText || 'Document retrieved'
-          })
-          .eq('id', selectedDoc.id);
-
-        if (subErr) throw subErr;
-
-        await supabase.from('submission_logs').insert([{
-          submission_id: selectedDoc.id,
-          submission_version_id: activeVersionId,
-          user_id: user.id,
-          workflow_phase: 'main-campus-review',
-          action_type: 'document_retrieved',
-          review_action: 'document-retrieved',
-          description: descText || 'Document retrieved',
-          comment: null,
-          created_at: new Date().toISOString()
-        }]);
-
-        showToast('Document marked as retrieved!');
-        await refreshSelectedDoc(selectedDoc.id);
-      }
+      showToast('Document marked as retrieved!');
+      await refreshSelectedDoc(selectedDoc.id);
+      await fetchTimelineLogs(selectedDoc.id);
     } catch (err) {
       console.error('Error marking document retrieved:', err);
-      showToast('Failed to mark as retrieved.');
+      showToast(err.message || 'Failed to mark as retrieved.');
     } finally {
       setLoading(false);
     }
@@ -1579,70 +1374,16 @@ export const MyDocuments = () => {
     if (!selectedDoc) return;
     try {
       setLoading(true);
-      const activeVersionId = selectedDoc.raw?.current_version_id ||
-        (Array.isArray(selectedDoc.raw?.submission_versions)
-          ? selectedDoc.raw?.submission_versions[0]?.id
-          : selectedDoc.raw?.submission_versions?.id);
 
-      const docStatusLower = getDocStatusLower(selectedDoc);
-      const isSds = docStatusLower === 'sds coordinator review' || docStatusLower.includes('sds') || selectedDoc?.category === 'SDS Review';
+      await subService.transitionSubmission(selectedDoc.id, 'confirm_retrieval', descText, [], user?.id);
 
-      if (isSds) {
-        const { error: subErr } = await supabase
-          .from('submissions')
-          .update({
-            status: 'dean review',
-            remarks: 'Retrieval confirmed. Forwarded to Dean Review'
-          })
-          .eq('id', selectedDoc.id);
-
-        if (subErr) throw subErr;
-
-        await supabase.from('submission_logs').insert([{
-          submission_id: selectedDoc.id,
-          submission_version_id: activeVersionId,
-          user_id: user.id,
-          workflow_phase: 'sds-review',
-          action_type: 'document_retrieved_confirmed',
-          review_action: 'document-retrieved-confirmed',
-          description: descText,
-          comment: null,
-          created_at: new Date().toISOString()
-        }]);
-
-        showToast('Retrieval confirmed! Forwarded to Dean Review.');
-        setSelectedDoc(null);
-        await fetchHandledLogs();
-      } else {
-        const { error: subErr } = await supabase
-          .from('submissions')
-          .update({
-            status: 'waiting for accomplishment report',
-            remarks: 'Retrieval confirmed. Waiting for Accomplishment Report'
-          })
-          .eq('id', selectedDoc.id);
-
-        if (subErr) throw subErr;
-
-        await supabase.from('submission_logs').insert([{
-          submission_id: selectedDoc.id,
-          submission_version_id: activeVersionId,
-          user_id: user.id,
-          workflow_phase: 'main-campus-review',
-          action_type: 'document_retrieved_confirmed',
-          review_action: 'document-retrieved-confirmed',
-          description: descText,
-          comment: null,
-          created_at: new Date().toISOString()
-        }]);
-
-        showToast('Retrieval confirmed! Waiting for Accomplishment Report.');
-        setSelectedDoc(null);
-        await fetchHandledLogs();
-      }
+      showToast('Retrieval confirmed!');
+      await fetchTimelineLogs(selectedDoc.id);
+      setSelectedDoc(null);
+      await fetchHandledLogs();
     } catch (err) {
       console.error('Error confirming retrieval:', err);
-      showToast('Failed to confirm retrieval.');
+      showToast(err.message || 'Failed to confirm retrieval.');
     } finally {
       setLoading(false);
     }
@@ -1657,99 +1398,24 @@ export const MyDocuments = () => {
           ? selectedDoc.raw?.submission_versions[0]?.id
           : selectedDoc.raw?.submission_versions?.id);
 
-      const formattedRemarks = comments || 'Approved';
-      const currentStatus = (selectedDoc.raw?.status || selectedDoc.status || '').toLowerCase();
-      const reviewerLabel = formatReviewerRoleLabel(user?.role);
-
-      let newStatus = 'to forward';
-      let workflowPhaseStr = 'Chairman Review';
-      let descriptionStr = comments || `Approved by ${reviewerLabel}`;
-      let insertHardcopyLog = false;
-      let stayOnDocument = false;
-
-      if (currentStatus.includes('to forward') || currentStatus.includes('hardcopy')) {
-        newStatus = 'sds coordinator review';
-        workflowPhaseStr = 'sds-review';
-        descriptionStr = comments || "Verified the chairman's signature and approved the document.";
-        insertHardcopyLog = false;
-      } else if (currentStatus.includes('sds')) {
-        newStatus = 'to forward';
-        workflowPhaseStr = 'sds-review';
-        descriptionStr = comments || 'Approved by SDS Coordinator';
-        insertHardcopyLog = true;
-      } else if (currentStatus.includes('dean review')) {
-        newStatus = 'dean approved';
-        workflowPhaseStr = 'dean-review';
-        descriptionStr = comments || 'Approved by Dean';
-        stayOnDocument = true;
-      } else if (currentStatus.includes('main campus review')) {
-        newStatus = 'approved';
-        workflowPhaseStr = 'main-campus-review';
-        descriptionStr = comments || 'Approved by Main Campus';
-      } else {
-        newStatus = 'sds coordinator review';
-        workflowPhaseStr = 'Chairman Review';
-        descriptionStr = comments || `Approved by ${reviewerLabel} & Forwarded to SDS Coordinator`;
-        insertHardcopyLog = false;
-      }
-
-      const { error: subErr } = await supabase
-        .from('submissions')
-        .update({ status: newStatus, remarks: formattedRemarks })
-        .eq('id', selectedDoc.id);
-
-      if (subErr) throw subErr;
-
       await persistLocalAttachmentReviews(activeVersionId);
-
-      const { error: logErr1 } = await supabase
-        .from('submission_logs')
-        .insert([{
-          submission_id: selectedDoc.id,
-          submission_version_id: activeVersionId,
-          user_id: user.id,
-          workflow_phase: workflowPhaseStr,
-          action_type: 'approved',
-          review_action: 'approved',
-          description: descriptionStr,
-          comment: comments || null,
-          created_at: new Date().toISOString()
-        }]);
-
-      if (logErr1) throw logErr1;
-
-      if (insertHardcopyLog) {
-        const { error: logErr2 } = await supabase
-          .from('submission_logs')
-          .insert([{
-            submission_id: selectedDoc.id,
-            submission_version_id: activeVersionId,
-            user_id: user.id,
-            workflow_phase: workflowPhaseStr || 'sds-review',
-            action_type: 'ready_for_hardcopy',
-            review_action: 'ready-for-hardcopy',
-            description: 'Ready for hardcopy submission',
-            comment: null,
-            created_at: new Date(Date.now() + 1000).toISOString()
-          }]);
-
-        if (logErr2) throw logErr2;
-      }
+      const result = await subService.transitionSubmission(selectedDoc.id, 'approve', comments, [], user?.id);
 
       setIsReturnModalOpen(false);
       setReturnComments('');
       setLocallyApproved([]);
       setLocallyReturned({});
 
-      if (stayOnDocument) {
+      const isDeanApprovedStage = result?.workflow?.next_stage === 'FINAL_LOCAL_CAMPUS_REVIEW';
+      if (isDeanApprovedStage) {
         setSelectedDoc((prev) => prev ? {
           ...prev,
-          category: 'Dean Review',
+          category: 'Final Local Campus Review',
           status: 'DEAN APPROVED',
           raw: {
             ...prev.raw,
             status: 'dean approved',
-            remarks: formattedRemarks
+            remarks: comments || 'Approved'
           }
         } : prev);
         await fetchTimelineLogs(selectedDoc.id);
@@ -1763,7 +1429,7 @@ export const MyDocuments = () => {
       showToast('Submission approved successfully!');
     } catch (err) {
       console.error('Error approving submission:', err);
-      showToast('Failed to approve submission.');
+      showToast(err.message || 'Failed to approve submission.');
     } finally {
       setLoading(false);
     }
@@ -2133,15 +1799,21 @@ export const MyDocuments = () => {
 
     const docStatusLower = getDocStatusLower(selectedDoc);
     const isDeanApprovedDoc = docStatusLower === 'dean approved';
-    const isApprovedDoc = docStatusLower === 'approved';
+    const isMainCampusReviewDoc = docStatusLower === 'main campus review' || docStatusLower.includes('main campus') || selectedDoc?.category === 'Main Campus Review';
+    const isApprovedDoc =
+      docStatusLower === 'approved' ||
+      docStatusLower === 'ready for retrieval' ||
+      docStatusLower === 'document retrieval' ||
+      docStatusLower === 'document_retrieval' ||
+      docStatusLower === 'ready for org pickup';
     const isReadyForOrgPickup = isReadyForOrgRetrieval(selectedDoc);
     const isWaitingForAccomplishment = isWaitingForAccomplishmentReport(selectedDoc);
 
-    const isSdsStage = docStatusLower === 'sds coordinator review' || docStatusLower.includes('sds') || selectedDoc?.category === 'SDS Review';
+    const isSdsStage = docStatusLower === 'sds coordinator review' || docStatusLower.includes('sds') || docStatusLower === 'to forward' || docStatusLower.includes('hardcopy') || selectedDoc?.category === 'SDS Review' || selectedDoc?.category === 'Pending Hard Copy';
 
     const sdsPhaseLogs = (timelineLogs || []).filter(l => {
       const wp = String(l.workflow_phase || '').toLowerCase().replace(/[_-]/g, ' ').trim();
-      return wp === 'sds review';
+      return wp === 'sds review' || wp === 'hardcopy submission';
     });
 
     const isSdsApprovedLog = sdsPhaseLogs.some(l => {
@@ -2150,60 +1822,116 @@ export const MyDocuments = () => {
       return at === 'approved' || ra === 'approved';
     });
 
-    const isSdsReadyForRetrievalLog = sdsPhaseLogs.some(l => {
-      const at = String(l.action_type || '').toLowerCase();
-      const ra = String(l.review_action || '').toLowerCase();
-      const desc = String(l.description || '').toLowerCase();
-      return at === 'ready_for_retrieval' || ra === 'ready-for-retrieval' || desc.includes('ready for retrieval');
-    });
+    const isSdsReadyForRetrievalLog =
+      docStatusLower === 'ready for retrieval' ||
+      (timelineLogs || []).some(l => {
+        const at = String(l.action_type || '').toLowerCase();
+        const ra = String(l.review_action || '').toLowerCase();
+        const desc = String(l.description || '').toLowerCase().trim();
+        return (
+          at === 'ready_for_retrieval' ||
+          ra === 'ready_for_retrieval' ||
+          ra === 'ready-for-retrieval' ||
+          desc.includes('ready for retrieval') ||
+          desc.includes('marked ready for retrieval')
+        );
+      });
 
-    const sdsRetrievalLog = sdsPhaseLogs.find(l => {
-      const at = String(l.action_type || '').toLowerCase();
-      const ra = String(l.review_action || '').toLowerCase();
-      const desc = String(l.description || '').toLowerCase();
-      return (at === 'document_retrieved' || ra === 'document-retrieved' || desc.includes('retrieved by')) && !at.includes('confirmed') && !desc.includes('confirmed');
-    });
+    const sameRole = (r1, r2) => {
+      const a = String(r1 || '').toLowerCase().replace(/[^a-z]/g, '');
+      const b = String(r2 || '').toLowerCase().replace(/[^a-z]/g, '');
+      if (!a || !b) return false;
+      if (a === b) return true;
+      if ((a.includes('admin') || a.includes('sds')) && (b.includes('admin') || b.includes('sds'))) return true;
+      if (a.includes('org') && b.includes('org')) return true;
+      return false;
+    };
 
-    const sdsRetrievedByAdmin = sdsRetrievalLog && (
-      sdsRetrievalLog.users?.role === 'admin' ||
-      String(sdsRetrievalLog.description || '').toLowerCase().includes('admin')
-    );
-
-    const sdsRetrievedByOrg = sdsRetrievalLog && (
-      sdsRetrievalLog.users?.role === 'org-president' ||
-      String(sdsRetrievalLog.description || '').toLowerCase().includes('organization president') ||
-      String(sdsRetrievalLog.description || '').toLowerCase().includes('org')
-    );
-
-    const mainCampusPhaseLogs = (timelineLogs || []).filter(l => {
+    // Separate logs for SDS Hardcopy Stage vs Main Campus Stage
+    const mainCampusReviewLogIndex = (timelineLogs || []).findIndex(l => {
       const wp = String(l.workflow_phase || '').toLowerCase().replace(/[_-]/g, ' ').trim();
-      return wp === 'main campus review' || wp === 'approved';
+      const desc = String(l.description || '').toLowerCase();
+      const at = String(l.action_type || '').toLowerCase();
+      return (
+        wp === 'main campus review' ||
+        desc.includes('approved by main campus') ||
+        desc.includes('sent to main campus') ||
+        at === 'forward' ||
+        at === 'send_to_external'
+      );
     });
 
-    const isMainReadyForRetrievalLog = mainCampusPhaseLogs.some(l => {
+    const mainCampusLogs = mainCampusReviewLogIndex >= 0 ? (timelineLogs || []).slice(0, mainCampusReviewLogIndex + 1) : [];
+    const sdsLogs = mainCampusReviewLogIndex >= 0 ? (timelineLogs || []).slice(mainCampusReviewLogIndex + 1) : (timelineLogs || []);
+
+    const sdsRetrievalLog = sdsLogs.find(l => {
       const at = String(l.action_type || '').toLowerCase();
       const ra = String(l.review_action || '').toLowerCase();
       const desc = String(l.description || '').toLowerCase();
-      return at === 'ready_for_retrieval' || ra === 'ready-for-retrieval' || desc.includes('ready for retrieval');
+      return (
+        at === 'document_retrieved' ||
+        ra === 'document_retrieved' ||
+        ra === 'document-retrieved' ||
+        desc.includes('document retrieved') ||
+        (desc.includes('retrieved by') && !desc.includes('ready for retrieval'))
+      ) && !at.includes('confirm') && !ra.includes('confirm') && !desc.includes('confirm');
     });
 
-    const mainRetrievalLog = mainCampusPhaseLogs.find(l => {
+    const isFirstSdsRetriever = Boolean(
+      sdsRetrievalLog && (
+        (sdsRetrievalLog.user_id && String(sdsRetrievalLog.user_id) === String(user?.id)) ||
+        (sdsRetrievalLog.users?.role && sameRole(sdsRetrievalLog.users.role, user?.role))
+      )
+    );
+
+    const isSdsConfirmedRetrievalLog = sdsLogs.some(l => {
       const at = String(l.action_type || '').toLowerCase();
       const ra = String(l.review_action || '').toLowerCase();
       const desc = String(l.description || '').toLowerCase();
-      return (at === 'document_retrieved' || ra === 'document-retrieved' || desc.includes('retrieved by')) && !at.includes('confirmed') && !desc.includes('confirmed');
+      return at === 'confirm_retrieval' || ra === 'confirm_retrieval' || ra === 'confirm-retrieval' || desc.includes('retrieval confirmed') || desc.includes('confirmed retrieval');
     });
 
-    const mainRetrievedByAdmin = mainRetrievalLog && (
-      mainRetrievalLog.users?.role === 'admin' ||
-      String(mainRetrievalLog.description || '').toLowerCase().includes('admin')
+    const isMainReadyForRetrievalLog =
+      docStatusLower === 'ready for retrieval' ||
+      mainCampusLogs.some(l => {
+        const at = String(l.action_type || '').toLowerCase();
+        const ra = String(l.review_action || '').toLowerCase();
+        const desc = String(l.description || '').toLowerCase().trim();
+        return (
+          at === 'ready_for_retrieval' ||
+          ra === 'ready_for_retrieval' ||
+          ra === 'ready-for-retrieval' ||
+          desc.includes('ready for retrieval') ||
+          desc.includes('marked ready for retrieval')
+        );
+      });
+
+    const mainRetrievalLog = mainCampusLogs.find(l => {
+      const at = String(l.action_type || '').toLowerCase();
+      const ra = String(l.review_action || '').toLowerCase();
+      const desc = String(l.description || '').toLowerCase();
+      return (
+        at === 'document_retrieved' ||
+        ra === 'document_retrieved' ||
+        ra === 'document-retrieved' ||
+        desc.includes('document retrieved') ||
+        (desc.includes('retrieved by') && !desc.includes('ready for retrieval'))
+      ) && !at.includes('confirm') && !ra.includes('confirm') && !desc.includes('confirm');
+    });
+
+    const isFirstRetriever = Boolean(
+      mainRetrievalLog && (
+        (mainRetrievalLog.user_id && String(mainRetrievalLog.user_id) === String(user?.id)) ||
+        (mainRetrievalLog.users?.role && sameRole(mainRetrievalLog.users.role, user?.role))
+      )
     );
 
-    const mainRetrievedByOrg = mainRetrievalLog && (
-      mainRetrievalLog.users?.role === 'org-president' ||
-      String(mainRetrievalLog.description || '').toLowerCase().includes('organization president') ||
-      String(mainRetrievalLog.description || '').toLowerCase().includes('org')
-    );
+    const isMainConfirmedRetrievalLog = mainCampusLogs.some(l => {
+      const at = String(l.action_type || '').toLowerCase();
+      const ra = String(l.review_action || '').toLowerCase();
+      const desc = String(l.description || '').toLowerCase();
+      return at === 'confirm_retrieval' || ra === 'confirm_retrieval' || ra === 'confirm-retrieval' || desc.includes('retrieval confirmed') || desc.includes('confirmed retrieval');
+    });
 
     const formatDuration = (val) => {
       if (!val || val === '-') return '-';
@@ -2697,7 +2425,7 @@ export const MyDocuments = () => {
               </div>
 
               {/* Proof of activity implementation */}
-              {proofAttachments.length > 0 && (
+              {isActivityProposal && proofAttachments.length > 0 && (
                 <div className="mb-10">
                   <h4 className="text-sm font-bold text-gray-800 uppercase tracking-wider mb-4">
                     Proof of Activity Implementation
@@ -2859,78 +2587,143 @@ export const MyDocuments = () => {
                 </button>
               )}
 
-              {/* Org President SDS Stage Retrieval Buttons */}
-              {user?.role === 'org-president' && isSdsStage && isSdsApprovedLog && isSdsReadyForRetrievalLog && (
-                <>
-                  {!sdsRetrievalLog && (
+              {/* SDS Stage Retrieval Buttons */}
+              {isSdsStage && (
+                !isSdsApprovedLog ? (
+                  (user?.role === 'admin' || user?.role === 'oso-staff' || user?.role === 'sds-coordinator') ? (
+                    <div className="flex flex-col gap-2 mt-2 w-full">
+                      <button
+                        onClick={() => {
+                          setDecisionType('approve');
+                          setReturnComments('');
+                          setIsReturnModalOpen(true);
+                        }}
+                        disabled={loading}
+                        className="w-full px-5 py-3.5 bg-green-700 text-white rounded-xl text-sm font-semibold hover:bg-green-800 transition-all shadow-sm flex items-center justify-center gap-2"
+                      >
+                        <CheckCircle size={16} />
+                        <span>Verify & Approve Hard Copy</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setDecisionType('return');
+                          setReturnComments('');
+                          setIsReturnModalOpen(true);
+                        }}
+                        disabled={loading}
+                        className="w-full px-5 py-3.5 bg-amber-600 text-white rounded-xl text-sm font-semibold hover:bg-amber-700 transition-all shadow-sm flex items-center justify-center gap-2"
+                      >
+                        <RotateCcw size={16} />
+                        <span>Return</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setDecisionType('disapprove');
+                          setReturnComments('');
+                          setIsReturnModalOpen(true);
+                        }}
+                        disabled={loading}
+                        className="w-full px-5 py-3.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-all shadow-sm flex items-center justify-center gap-2"
+                      >
+                        <X size={16} />
+                        <span>Disapprove</span>
+                      </button>
+                    </div>
+                  ) : null
+                ) : !isSdsConfirmedRetrievalLog ? (
+                  !isSdsReadyForRetrievalLog ? (
+                    (user?.role === 'admin' || user?.role === 'oso-staff' || user?.role === 'sds-coordinator') ? (
+                      <button
+                        onClick={() => {
+                          setDecisionType('ready_for_retrieval');
+                          setReturnComments('');
+                          setExternalProofFile(null);
+                          setIsReturnModalOpen(true);
+                        }}
+                        disabled={loading}
+                        className="w-full px-5 py-3.5 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        <CheckCircle size={16} />
+                        <span>Ready for retrieval</span>
+                      </button>
+                    ) : null
+                  ) : !sdsRetrievalLog ? (
                     <button
-                      onClick={() => handleDocumentRetrieved('Document retrieved by Organization President')}
+                      onClick={() => handleDocumentRetrieved('Document retrieved')}
                       disabled={loading}
                       className="w-full px-5 py-3.5 bg-green-700 text-white rounded-xl text-sm font-semibold hover:bg-green-800 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
                     >
                       <CheckCircle size={16} />
                       <span>Document Retrieved</span>
                     </button>
-                  )}
-
-                  {sdsRetrievalLog && sdsRetrievedByOrg && (
+                  ) : isFirstSdsRetriever ? (
                     <button
                       disabled
-                      className="w-full px-5 py-3.5 bg-purple-600/50 text-white rounded-xl text-sm font-semibold cursor-not-allowed shadow-sm mt-2 flex items-center justify-center gap-2"
+                      className="w-full px-5 py-3.5 bg-purple-600/50 text-white rounded-xl text-sm font-semibold cursor-not-allowed shadow-sm mt-2 flex items-center justify-center gap-2 opacity-80"
                     >
                       <CheckCircle size={16} />
-                      <span>Waiting for Admin Confirmation</span>
+                      <span>Awaiting retrieval confirmation</span>
                     </button>
-                  )}
-
-                  {sdsRetrievalLog && sdsRetrievedByAdmin && (
+                  ) : (
                     <button
-                      onClick={() => handleConfirmRetrieval('Retrieval confirmed by Organization President')}
+                      onClick={() => handleConfirmRetrieval(user?.role === 'org-president' ? 'Retrieval confirmed by Organization President' : 'Retrieval confirmed by SDS Coordinator')}
                       disabled={loading}
                       className="w-full px-5 py-3.5 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
                     >
                       <CheckCircle size={16} />
-                      <span>Confirm Retrieval</span>
+                      <span>Confirm Document Retrieval</span>
                     </button>
-                  )}
-                </>
+                  )
+                ) : null
               )}
 
               {/* Final Approval Retrieval (Approved / Main Campus Approved) */}
-              {user?.role === 'org-president' && (isReadyForOrgPickup || isApprovedDoc) && !isSdsStage && isMainReadyForRetrievalLog && (
-                <>
-                  {!mainRetrievalLog && (
+              {(isReadyForOrgPickup || isApprovedDoc || docStatusLower === 'document retrieval' || docStatusLower === 'document_retrieval') && !isSdsStage && (
+                !isMainConfirmedRetrievalLog ? (
+                  !isMainReadyForRetrievalLog ? (
+                    (user?.role === 'admin' || user?.role === 'oso-staff') ? (
+                      <button
+                        onClick={() => {
+                          setDecisionType('ready_for_retrieval');
+                          setReturnComments('');
+                          setExternalProofFile(null);
+                          setIsReturnModalOpen(true);
+                        }}
+                        disabled={loading}
+                        className="w-full px-5 py-3.5 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        <CheckCircle size={16} />
+                        <span>Ready for retrieval</span>
+                      </button>
+                    ) : null
+                  ) : !mainRetrievalLog ? (
                     <button
-                      onClick={() => handleDocumentRetrieved('Document retrieved by Organization President')}
+                      onClick={() => handleDocumentRetrieved('Document retrieved')}
                       disabled={loading}
                       className="w-full px-5 py-3.5 bg-green-700 text-white rounded-xl text-sm font-semibold hover:bg-green-800 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
                     >
                       <CheckCircle size={16} />
                       <span>Document Retrieved</span>
                     </button>
-                  )}
-
-                  {mainRetrievalLog && mainRetrievedByOrg && (
+                  ) : isFirstRetriever ? (
                     <button
                       disabled
-                      className="w-full px-5 py-3.5 bg-purple-600/50 text-white rounded-xl text-sm font-semibold cursor-not-allowed shadow-sm mt-2 flex items-center justify-center gap-2"
+                      className="w-full px-5 py-3.5 bg-purple-600/50 text-white rounded-xl text-sm font-semibold cursor-not-allowed shadow-sm mt-2 flex items-center justify-center gap-2 opacity-80"
                     >
                       <CheckCircle size={16} />
-                      <span>Waiting for Admin Confirmation</span>
+                      <span>Awaiting retrieval confirmation</span>
                     </button>
-                  )}
-
-                  {mainRetrievalLog && mainRetrievedByAdmin && (
+                  ) : (
                     <button
-                      onClick={() => handleConfirmRetrieval('Retrieval confirmed by Organization President')}
+                      onClick={() => handleConfirmRetrieval(user?.role === 'org-president' ? 'Retrieval confirmed by Organization President' : 'Retrieval confirmed by Admin')}
                       disabled={loading}
                       className="w-full px-5 py-3.5 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
                     >
                       <CheckCircle size={16} />
-                      <span>Confirm Retrieval</span>
+                      <span>Confirm Document Retrieval</span>
                     </button>
-                  )}
-                </>
+                  )
+                ) : null
               )}
 
               {isWaitingForAccomplishment && (
@@ -3488,7 +3281,7 @@ export const MyDocuments = () => {
           {[
             { label: 'ORGANIZATION', value: selectedDoc.fullOrgName || selectedDoc.raw?.users?.org_name || selectedDoc.sender || '-', icon: <User size={18} /> },
             { label: 'TYPE', value: `${selectedDoc.type}`, icon: <FileText size={18} />, color: 'text-blue-500' },
-            { label: 'STATUS', value: selectedDoc.status?.toLowerCase() === 'waiting for accomplishment report' ? 'APPROVED' : selectedDoc.status, icon: <Clock size={18} />, badge: true },
+            { label: 'STATUS', value: (['ready for retrieval', 'waiting for accomplishment report', 'approved'].includes(selectedDoc.status?.toLowerCase())) ? 'APPROVED' : selectedDoc.status, icon: <Clock size={18} />, badge: true },
             { label: 'LAST ACTION', value: selectedDoc.lastAction || selectedDoc.submittedDate, icon: <Calendar size={18} /> }
           ].map((card, idx) => (
             <div key={idx} className="bg-gray-100 p-6 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
@@ -3875,25 +3668,65 @@ export const MyDocuments = () => {
           </div>
         )}
 
-        {/* Admin workflow actions in My Documents */}
-        {(user?.role || '').toLowerCase() === 'admin' && (
-          isDeanApprovedDoc ||
-          isReadyForOrgPickup ||
-          isApprovedDoc ||
-          selectedDoc?.category === 'Final In-Campus review' ||
-          selectedDoc?.category === 'Dean Review' ||
-          selectedDoc?.category === 'SDS Review' ||
-          selectedDoc?.category === 'Main Campus Review' ||
-          selectedDoc?.category === 'Pending Hard Copy' ||
-          selectedDoc?.category === 'To Forward' ||
-          isSdsStage
-        ) && (
-          <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50">
-            <div className="bg-white/80 backdrop-blur-2xl px-8 py-4 rounded-[2rem] border border-white/50 shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex items-center gap-4 animate-in slide-in-from-bottom-12 duration-1000">
-              {isSdsStage && isSdsApprovedLog ? (
-                <>
-                  {!isSdsReadyForRetrievalLog && (
+        {/* Workflow actions in My Documents */}
+        {(() => {
+          const userRoleNorm = (user?.role || '').toLowerCase();
+          const canViewActions =
+            userRoleNorm === 'admin' ||
+            (userRoleNorm === 'org-president' && (isApprovedDoc || isSdsStage));
+
+          if (!canViewActions) return null;
+
+          const buttons = [];
+
+          if (isSdsStage) {
+            if (!isSdsApprovedLog) {
+              if (userRoleNorm === 'admin') {
+                buttons.push(
+                  <button
+                    key="verify-approve"
+                    onClick={() => {
+                      setDecisionType('approve');
+                      setReturnComments('');
+                      setIsReturnModalOpen(true);
+                    }}
+                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-green-700 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-widest"
+                  >
+                    <CheckCircle size={16} />
+                    <span>Verify & Approve Hard Copy</span>
+                  </button>,
+                  <button
+                    key="sds-return"
+                    onClick={() => {
+                      setDecisionType('return');
+                      setReturnComments('');
+                      setIsReturnModalOpen(true);
+                    }}
+                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-amber-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-amber-600/20 uppercase tracking-widest"
+                  >
+                    <RotateCcw size={16} />
+                    <span>Return</span>
+                  </button>,
+                  <button
+                    key="sds-disapprove"
+                    onClick={() => {
+                      setDecisionType('disapprove');
+                      setReturnComments('');
+                      setIsReturnModalOpen(true);
+                    }}
+                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-red-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-red-600/20 uppercase tracking-widest"
+                  >
+                    <X size={16} />
+                    <span>Disapprove</span>
+                  </button>
+                );
+              }
+            } else if (!isSdsConfirmedRetrievalLog) {
+              if (!isSdsReadyForRetrievalLog) {
+                if (userRoleNorm === 'admin') {
+                  buttons.push(
                     <button
+                      key="sds-ready"
                       onClick={() => {
                         setDecisionType('ready_for_retrieval');
                         setReturnComments('');
@@ -3905,57 +3738,68 @@ export const MyDocuments = () => {
                       <CheckCircle size={16} />
                       <span>Ready for retrieval</span>
                     </button>
-                  )}
-
-                  {isSdsReadyForRetrievalLog && !sdsRetrievalLog && (
+                  );
+                }
+              } else if (!sdsRetrievalLog) {
+                buttons.push(
+                  <button
+                    key="sds-retrieved"
+                    onClick={() => handleDocumentRetrieved('Document retrieved')}
+                    disabled={loading}
+                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-green-700 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-widest disabled:opacity-50"
+                  >
+                    <CheckCircle size={16} />
+                    <span>Document Retrieved</span>
+                  </button>
+                );
+              } else if (sdsRetrievalLog && isFirstSdsRetriever) {
+                buttons.push(
+                  <button
+                    key="sds-awaiting"
+                    disabled
+                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-purple-600/50 text-white text-xs font-bold rounded-2xl cursor-not-allowed shadow-lg shadow-purple-600/10 uppercase tracking-widest"
+                  >
+                    <CheckCircle size={16} />
+                    <span>Awaiting retrieval confirmation</span>
+                  </button>
+                );
+              } else if (sdsRetrievalLog && !isFirstSdsRetriever) {
+                buttons.push(
+                  <button
+                    key="sds-confirm"
+                    onClick={() => handleConfirmRetrieval(userRoleNorm === 'org-president' ? 'Retrieval confirmed by Organization President' : 'Retrieval confirmed by SDS Coordinator')}
+                    disabled={loading}
+                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-purple-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-widest disabled:opacity-50"
+                  >
+                    <CheckCircle size={16} />
+                    <span>Confirm Document Retrieval</span>
+                  </button>
+                );
+              }
+            }
+          } else if (isDeanApprovedDoc) {
+            buttons.push(
+              <button
+                key="send-external"
+                onClick={() => {
+                  setDecisionType('send_to_external');
+                  setReturnComments('');
+                  setExternalProofFile(null);
+                  setIsReturnModalOpen(true);
+                }}
+                className="flex items-center justify-center gap-3 px-8 py-3.5 bg-blue-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-blue-600/20 uppercase tracking-widest"
+              >
+                <ArrowUpRight size={16} />
+                <span>Sent to main campus</span>
+              </button>
+            );
+          } else if (isApprovedDoc || docStatusLower === 'document retrieval' || docStatusLower === 'ready for retrieval' || docStatusLower === 'document_retrieval') {
+            if (!isMainConfirmedRetrievalLog) {
+              if (!isMainReadyForRetrievalLog) {
+                if (userRoleNorm === 'admin') {
+                  buttons.push(
                     <button
-                      onClick={() => handleDocumentRetrieved('Document retrieved by Admin')}
-                      disabled={loading}
-                      className="flex items-center justify-center gap-3 px-8 py-3.5 bg-green-700 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-widest disabled:opacity-50"
-                    >
-                      <CheckCircle size={16} />
-                      <span>Document Retrieved</span>
-                    </button>
-                  )}
-
-                  {sdsRetrievalLog && sdsRetrievedByAdmin && (
-                    <button
-                      disabled
-                      className="flex items-center justify-center gap-3 px-8 py-3.5 bg-purple-600/50 text-white text-xs font-bold rounded-2xl cursor-not-allowed shadow-lg shadow-purple-600/10 uppercase tracking-widest"
-                    >
-                      <CheckCircle size={16} />
-                      <span>Waiting for Org Pres to confirm</span>
-                    </button>
-                  )}
-
-                  {sdsRetrievalLog && sdsRetrievedByOrg && (
-                    <button
-                      onClick={() => handleConfirmRetrieval('Retrieval confirmed by Admin')}
-                      disabled={loading}
-                      className="flex items-center justify-center gap-3 px-8 py-3.5 bg-purple-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-widest disabled:opacity-50"
-                    >
-                      <CheckCircle size={16} />
-                      <span>Confirm Retrieval</span>
-                    </button>
-                  )}
-                </>
-              ) : isDeanApprovedDoc ? (
-                <button
-                  onClick={() => {
-                    setDecisionType('send_to_external');
-                    setReturnComments('');
-                    setExternalProofFile(null);
-                    setIsReturnModalOpen(true);
-                  }}
-                  className="flex items-center justify-center gap-3 px-8 py-3.5 bg-blue-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-blue-600/20 uppercase tracking-widest"
-                >
-                  <ArrowUpRight size={16} />
-                  <span>Sent to main campus</span>
-                </button>
-              ) : isApprovedDoc ? (
-                <>
-                  {!isMainReadyForRetrievalLog && (
-                    <button
+                      key="main-ready"
                       onClick={() => {
                         setDecisionType('ready_for_retrieval');
                         setReturnComments('');
@@ -3967,118 +3811,137 @@ export const MyDocuments = () => {
                       <CheckCircle size={16} />
                       <span>Ready for retrieval</span>
                     </button>
-                  )}
-
-                  {isMainReadyForRetrievalLog && !mainRetrievalLog && (
-                    <button
-                      onClick={() => handleDocumentRetrieved('Document retrieved by Admin')}
-                      disabled={loading}
-                      className="flex items-center justify-center gap-3 px-8 py-3.5 bg-green-700 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-widest disabled:opacity-50"
-                    >
-                      <CheckCircle size={16} />
-                      <span>Document Retrieved</span>
-                    </button>
-                  )}
-
-                  {mainRetrievalLog && mainRetrievedByAdmin && (
-                    <button
-                      disabled
-                      className="flex items-center justify-center gap-3 px-8 py-3.5 bg-purple-600/50 text-white text-xs font-bold rounded-2xl cursor-not-allowed shadow-lg shadow-purple-600/10 uppercase tracking-widest"
-                    >
-                      <CheckCircle size={16} />
-                      <span>Waiting for Org Pres to confirm</span>
-                    </button>
-                  )}
-
-                  {mainRetrievalLog && mainRetrievedByOrg && (
-                    <button
-                      onClick={() => handleConfirmRetrieval('Retrieval confirmed by Admin')}
-                      disabled={loading}
-                      className="flex items-center justify-center gap-3 px-8 py-3.5 bg-purple-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-widest disabled:opacity-50"
-                    >
-                      <CheckCircle size={16} />
-                      <span>Confirm Retrieval</span>
-                    </button>
-                  )}
-                </>
-              ) : (selectedDoc?.category === 'Pending Hard Copy' || selectedDoc?.category === 'To Forward' || (selectedDoc?.raw?.status || selectedDoc?.status || '').toLowerCase().includes('forward')) ? (
-                <>
+                  );
+                }
+              } else if (!mainRetrievalLog) {
+                buttons.push(
                   <button
-                    onClick={() => {
-                      setDecisionType('approve');
-                      setReturnComments('');
-                      setIsReturnModalOpen(true);
-                    }}
-                    disabled={hasBlockingReturnedAttachments || hasLocallyReturnedAttachments}
-                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-green-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-lg shadow-green-600/20 uppercase tracking-widest"
+                    key="main-retrieved"
+                    onClick={() => handleDocumentRetrieved('Document retrieved')}
+                    disabled={loading}
+                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-green-700 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-widest disabled:opacity-50"
                   >
                     <CheckCircle size={16} />
-                    <span>Verify & Approve</span>
+                    <span>Document Retrieved</span>
                   </button>
+                );
+              } else if (mainRetrievalLog && isFirstRetriever) {
+                buttons.push(
                   <button
-                    onClick={() => {
-                      setDecisionType('return');
-                      setReturnComments('');
-                      setIsReturnModalOpen(true);
-                    }}
-                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-amber-500 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-amber-500/20 uppercase tracking-widest"
-                  >
-                    <RotateCcw size={16} />
-                    <span>Return</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      setDecisionType('disapprove');
-                      setReturnComments('');
-                      setIsReturnModalOpen(true);
-                    }}
-                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-red-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-red-600/20 uppercase tracking-widest"
-                  >
-                    <X size={16} />
-                    <span>Disapprove</span>
-                  </button>
-                </>
-              ) : (selectedDoc?.category === 'Final In-Campus review' || selectedDoc?.category === 'Dean Review' || selectedDoc?.category === 'SDS Review' || selectedDoc?.category === 'Main Campus Review') && (
-                <>
-                  <button
-                    onClick={() => {
-                      setDecisionType('approve');
-                      setReturnComments('');
-                      setIsReturnModalOpen(true);
-                    }}
-                    disabled={hasBlockingReturnedAttachments || hasLocallyReturnedAttachments}
-                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-green-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-lg shadow-green-600/20 uppercase tracking-widest"
+                    key="main-awaiting"
+                    disabled
+                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-purple-600/50 text-white text-xs font-bold rounded-2xl cursor-not-allowed shadow-lg shadow-purple-600/10 uppercase tracking-widest"
                   >
                     <CheckCircle size={16} />
-                    <span>Approve</span>
+                    <span>Awaiting retrieval confirmation</span>
                   </button>
+                );
+              } else if (mainRetrievalLog && !isFirstRetriever) {
+                buttons.push(
                   <button
-                    onClick={() => {
-                      setDecisionType('return');
-                      setReturnComments('');
-                      setIsReturnModalOpen(true);
-                    }}
-                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-amber-500 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-amber-500/20 uppercase tracking-widest"
+                    key="main-confirm"
+                    onClick={() => handleConfirmRetrieval(userRoleNorm === 'org-president' ? 'Retrieval confirmed by Organization President' : 'Retrieval confirmed by Admin')}
+                    disabled={loading}
+                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-purple-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-widest disabled:opacity-50"
                   >
-                    <RotateCcw size={16} />
-                    <span>Return</span>
+                    <CheckCircle size={16} />
+                    <span>Confirm Document Retrieval</span>
                   </button>
-                  <button
-                    onClick={() => {
-                      setDecisionType('disapprove');
-                      setReturnComments('');
-                      setIsReturnModalOpen(true);
-                    }}
-                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-red-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-red-600/20 uppercase tracking-widest"
-                  >
-                    <X size={16} />
-                    <span>Disapprove</span>
-                  </button>
-                </>
-              )}
+                );
+              }
+            }
+          } else if (selectedDoc?.category === 'Pending Hard Copy' || selectedDoc?.category === 'To Forward' || (selectedDoc?.raw?.status || selectedDoc?.status || '').toLowerCase().includes('forward')) {
+            buttons.push(
+              <button
+                key="verify-approve"
+                onClick={() => {
+                  setDecisionType('approve');
+                  setReturnComments('');
+                  setIsReturnModalOpen(true);
+                }}
+                disabled={hasBlockingReturnedAttachments || hasLocallyReturnedAttachments}
+                className="flex items-center justify-center gap-3 px-8 py-3.5 bg-green-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-lg shadow-green-600/20 uppercase tracking-widest"
+              >
+                <CheckCircle size={16} />
+                <span>Verify & Approve</span>
+              </button>,
+              <button
+                key="return"
+                onClick={() => {
+                  setDecisionType('return');
+                  setReturnComments('');
+                  setIsReturnModalOpen(true);
+                }}
+                className="flex items-center justify-center gap-3 px-8 py-3.5 bg-amber-500 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-amber-500/20 uppercase tracking-widest"
+              >
+                <RotateCcw size={16} />
+                <span>Return</span>
+              </button>,
+              <button
+                key="disapprove"
+                onClick={() => {
+                  setDecisionType('disapprove');
+                  setReturnComments('');
+                  setIsReturnModalOpen(true);
+                }}
+                className="flex items-center justify-center gap-3 px-8 py-3.5 bg-red-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-red-600/20 uppercase tracking-widest"
+              >
+                <X size={16} />
+                <span>Disapprove</span>
+              </button>
+            );
+          } else if (selectedDoc?.category === 'Final In-Campus review' || selectedDoc?.category === 'Dean Review' || selectedDoc?.category === 'SDS Review' || selectedDoc?.category === 'Main Campus Review') {
+            buttons.push(
+              <button
+                key="approve"
+                onClick={() => {
+                  setDecisionType('approve');
+                  setReturnComments('');
+                  setIsReturnModalOpen(true);
+                }}
+                disabled={hasBlockingReturnedAttachments || hasLocallyReturnedAttachments}
+                className="flex items-center justify-center gap-3 px-8 py-3.5 bg-green-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-lg shadow-green-600/20 uppercase tracking-widest"
+              >
+                <CheckCircle size={16} />
+                <span>Approve</span>
+              </button>,
+              <button
+                key="return"
+                onClick={() => {
+                  setDecisionType('return');
+                  setReturnComments('');
+                  setIsReturnModalOpen(true);
+                }}
+                className="flex items-center justify-center gap-3 px-8 py-3.5 bg-amber-500 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-amber-500/20 uppercase tracking-widest"
+              >
+                <RotateCcw size={16} />
+                <span>Return</span>
+              </button>,
+              <button
+                key="disapprove"
+                onClick={() => {
+                  setDecisionType('disapprove');
+                  setReturnComments('');
+                  setIsReturnModalOpen(true);
+                }}
+                className="flex items-center justify-center gap-3 px-8 py-3.5 bg-red-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-red-600/20 uppercase tracking-widest"
+              >
+                <X size={16} />
+                <span>Disapprove</span>
+              </button>
+            );
+          }
+
+          if (buttons.length === 0) return null;
+
+          return (
+            <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50">
+              <div className="bg-white/80 backdrop-blur-2xl px-8 py-4 rounded-[2rem] border border-white/50 shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex items-center gap-4 animate-in slide-in-from-bottom-12 duration-1000">
+                {buttons}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* PDF Preview Modal Overlay */}
         {previewFile && (() => {
@@ -4826,11 +4689,11 @@ export const MyDocuments = () => {
                     <td className="px-6 py-5 text-center">
                       <span
                         style={{
-                          backgroundColor: getStatusColor(doc.status?.toLowerCase() === 'waiting for accomplishment report' ? 'approved' : doc.status)
+                          backgroundColor: getStatusColor((['ready for retrieval', 'waiting for accomplishment report'].includes(doc.status?.toLowerCase())) ? 'approved' : doc.status)
                         }}
                         className="px-4 py-1.5 rounded-full text-[10px] font-bold shadow-sm inline-block min-w-[120px] transition-all uppercase text-white"
                       >
-                        {doc.status?.toLowerCase() === 'waiting for accomplishment report' ? 'APPROVED' : doc.status}
+                        {(['ready for retrieval', 'waiting for accomplishment report'].includes(doc.status?.toLowerCase())) ? 'APPROVED' : doc.status}
                       </span>
                     </td>
                     <td className="px-6 py-5 text-right text-sm text-gray-500 font-medium">{doc.lastAction}</td>

@@ -489,17 +489,23 @@ export const createNewVersion = async (submissionId, oldVersionId, userId) => {
     }
   }
 
-  // 4. Update the main submissions table to point to the new version and reset status
+  // 4. Update the main submissions table to point to the new version
   const { error: updateSubErr } = await supabase
     .from('submissions')
     .update({ 
       current_version_id: newVersion.id,
-      status: 'submitted',
       remarks: `Resubmitted as Version ${newVersionNumber}`
     })
     .eq('id', submissionId);
 
   if (updateSubErr) throw updateSubErr;
+
+  // Trigger backend workflow transition for resubmission
+  try {
+    await transitionSubmission(submissionId, 'resubmit', `Resubmitted as Version ${newVersionNumber}`, [], userId);
+  } catch (tErr) {
+    console.warn('Backend transition notice in createNewVersion:', tErr);
+  }
 
   // Automatically update the user account status to 'Active' upon resubmission
   const { error: userErr } = await supabase
@@ -522,6 +528,45 @@ export const createNewVersion = async (submissionId, oldVersionId, userId) => {
   );
 
   return newVersion;
+};
+
+/**
+ * CENTRALIZED BACKEND WORKFLOW TRANSITIONS
+ */
+export const transitionSubmission = async (submissionId, action, comment = '', attachmentReviews = [], userId = null) => {
+  const response = await apiFetch('/submissions/transition', {
+    method: 'POST',
+    body: JSON.stringify({
+      submissionId,
+      action,
+      comment,
+      attachmentReviews,
+      userId
+    }),
+  });
+
+  const resData = await response.json();
+  if (!response.ok) {
+    throw new Error(resData.error || resData.details || 'Failed to transition submission workflow state');
+  }
+  return resData;
+};
+
+export const resubmitSubmission = async (submissionId, userId, oldVersionId = null) => {
+  const response = await apiFetch('/submissions/resubmit', {
+    method: 'POST',
+    body: JSON.stringify({
+      submissionId,
+      userId,
+      oldVersionId
+    }),
+  });
+
+  const resData = await response.json();
+  if (!response.ok) {
+    throw new Error(resData.error || resData.details || 'Failed to complete resubmission workflow transition');
+  }
+  return resData;
 };
 
 export const copyApprovedAttachments = async (oldVersionId, newVersionId, returnedAttachmentIds, submissionId) => {

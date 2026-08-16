@@ -648,47 +648,6 @@ const SubmitNewDocument = () => {
             setAvailability(frontendAvailability);
           } else {
             setActiveSchoolYearId(sy.id);
-
-            try {
-              const { data: userSubs } = await supabase
-                .from('submissions')
-                .select('status, document_type_id, documentType:document_type_id(name)')
-                .eq('user_id', user.id)
-                .eq('school_year_id', sy.id);
-
-              if (userSubs && userSubs.length > 0) {
-                const existingDocTypeIds = new Set();
-                const draftMap = new Map();
-                userSubs.forEach(s => {
-                  if (s.status !== 'disapproved' && s.document_type_id) {
-                    if (s.status === 'draft') {
-                      draftMap.set(String(s.document_type_id), s.id);
-                      draftMap.set(Number(s.document_type_id), s.id);
-                    } else {
-                      existingDocTypeIds.add(String(s.document_type_id));
-                      existingDocTypeIds.add(Number(s.document_type_id));
-                    }
-                  }
-                });
-
-                types.forEach(dt => {
-                  const allowMultiple = isAllowMultiple(dt.allow_multiple_submissions);
-                  const isActivityProposal = dt.name.toLowerCase() === 'activity proposal' || dt.name.toLowerCase().includes('proposal');
-                  const hasExisting = existingDocTypeIds.has(String(dt.id)) || existingDocTypeIds.has(Number(dt.id)) || existingDocTypeIds.has(dt.id);
-
-                  if (!allowMultiple && !isActivityProposal && hasExisting) {
-                    if (!frontendAvailability[dt.id]) frontendAvailability[dt.id] = { isAvailable: true };
-                    if (frontendAvailability[dt.id].isAvailable !== false) {
-                      frontendAvailability[dt.id].isAvailable = false;
-                      frontendAvailability[dt.id].lockedReason = 'You already have an active submission for this category. Check your My Documents page.';
-                    }
-                  }
-                });
-              }
-            } catch (err) {
-              console.error('Failed to fetch user submissions for availability check:', err);
-            }
-
             setAvailability(frontendAvailability);
           }
         }

@@ -2,6 +2,7 @@ import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { transitionSubmission } from '../services/submissionService';
 import SubmissionTimeline from '../components/SubmissionTimeline';
 import { parseObjectivesList } from '../utils/submissionLogUtils';
 import PageHeader from '../components/PageHeader';
@@ -765,75 +766,11 @@ export const Inbox = () => {
           ? selectedDoc.raw.submission_versions[0]?.id 
           : selectedDoc.raw.submission_versions?.id);
 
-      // 1. Update submissions table status and remarks
-      const formattedRemarks = comments || `Approved by ${formatReviewerRoleLabel(user?.role)}`;
-      const isSdsCoordinatorStage = (selectedDoc.raw?.status || '').toLowerCase() === 'sds coordinator review' || (selectedDoc.status || '').toLowerCase().includes('sds');
-
-      // NEW WORKFLOW:
-      // Chairman approved -> sds coordinator review (forwarded to SDS Coordinator in Inbox)
-      // Admin / SDS Coordinator approved -> to forward (Ready for hardcopy submission)
-      const isAdminOrSdsStage = user?.role === 'admin' || isSdsCoordinatorStage;
-      const updatePayload = isAdminOrSdsStage
-        ? { status: 'to forward', remarks: formattedRemarks }
-        : { status: 'sds coordinator review', remarks: formattedRemarks };
-
-      const { error: subErr } = await supabase
-        .from('submissions')
-        .update(updatePayload)
-        .eq('id', selectedDoc.id);
-
-      if (subErr) throw subErr;
-
+      // Persist attachment-level reviews first
       await persistLocalAttachmentReviews(activeVersionId);
 
-      // 2. Insert workflow action log(s)
-      if (isAdminOrSdsStage) {
-        const now = new Date();
-        const { error: sdsLogErr } = await supabase
-          .from('submission_logs')
-          .insert([
-            {
-              submission_id: selectedDoc.id,
-              submission_version_id: activeVersionId,
-              user_id: user.id,
-              workflow_phase: 'sds-review',
-              action_type: 'approved',
-              review_action: null,
-              description: comments || 'Approved by SDS Coordinator',
-              comment: comments || null,
-              created_at: now.toISOString()
-            },
-            {
-              submission_id: selectedDoc.id,
-              submission_version_id: activeVersionId,
-              user_id: user.id,
-              workflow_phase: 'sds-review',
-              action_type: 'ready_for_hardcopy',
-              review_action: null,
-              description: 'Ready for hardcopy submission',
-              comment: null,
-              created_at: new Date(now.getTime() + 1000).toISOString()
-            }
-          ]);
-
-        if (sdsLogErr) throw sdsLogErr;
-      } else {
-        const { error: logErr1 } = await supabase
-          .from('submission_logs')
-          .insert([{
-            submission_id: selectedDoc.id,
-            submission_version_id: activeVersionId,
-            user_id: user.id,
-            workflow_phase: 'Chairman Review',
-            action_type: 'approved',
-            review_action: null,
-            description: comments || `Approved by ${formatReviewerRoleLabel(user?.role)} & Forwarded to SDS Coordinator`,
-            comment: comments || null,
-            created_at: new Date().toISOString()
-          }]);
-
-        if (logErr1) throw logErr1;
-      }
+      // Call backend workflow transition API authoritatively
+      await transitionSubmission(selectedDoc.id, 'approve', comments, [], user?.id);
 
       // Close modal inputs, triggers and refresh list
       setPreviewFile(null);
@@ -861,36 +798,11 @@ export const Inbox = () => {
           ? selectedDoc.raw.submission_versions[0]?.id 
           : selectedDoc.raw.submission_versions?.id);
 
-      // 1. Update submissions table status and remarks
-      const formattedRemarks = comments || `Returned for edits by ${formatReviewerRoleLabel(user?.role)}`;
-      const { error: subErr } = await supabase
-        .from('submissions')
-        .update({ 
-          status: 'returned',
-          remarks: formattedRemarks
-        })
-        .eq('id', selectedDoc.id);
-
-      if (subErr) throw subErr;
-
+      // Persist attachment-level reviews first
       await persistLocalAttachmentReviews(activeVersionId);
 
-      // 2. Insert workflow action log into submission_logs
-      const { error: logErr } = await supabase
-        .from('submission_logs')
-        .insert([{
-          submission_id: selectedDoc.id,
-          submission_version_id: activeVersionId,
-          user_id: user.id,
-          workflow_phase: 'Chairman Review',
-          action_type: 'returned',
-          review_action: null,
-          description: comments || `Returned for edits by ${formatReviewerRoleLabel(user?.role)}`,
-          comment: comments || null,
-          created_at: new Date().toISOString()
-        }]);
-
-      if (logErr) throw logErr;
+      // Call backend workflow transition API authoritatively
+      await transitionSubmission(selectedDoc.id, 'return', comments, [], user?.id);
 
       // Close modal inputs, triggers and refresh list
       setPreviewFile(null);
@@ -915,50 +827,21 @@ export const Inbox = () => {
     if (!selectedDoc) return;
     try {
       setLoading(true);
-      const activeVersionId = selectedDoc.raw.current_version_id || 
-        (Array.isArray(selectedDoc.raw.submission_versions) 
-          ? selectedDoc.raw.submission_versions[0]?.id 
-          : selectedDoc.raw.submission_versions?.id);
 
-      // 1. Update submissions table status and remarks
-      const formattedRemarks = comments || `Disapproved by ${formatReviewerRoleLabel(user?.role)}`;
-      const { error: subErr } = await supabase
-        .from('submissions')
-        .update({ 
-          status: 'disapproved',
-          remarks: formattedRemarks
-        })
-        .eq('id', selectedDoc.id);
-
-      if (subErr) throw subErr;
-
-      // 2. Insert workflow action log into submission_logs
-      const { error: logErr } = await supabase
-        .from('submission_logs')
-        .insert([{
-          submission_id: selectedDoc.id,
-          submission_version_id: activeVersionId,
-          user_id: user.id,
-          workflow_phase: 'Chairman Review',
-          action_type: 'disapproved',
-          review_action: null,
-          description: comments || `Disapproved by ${formatReviewerRoleLabel(user?.role)}`,
-          comment: comments || null,
-          created_at: new Date().toISOString()
-        }]);
-
-      if (logErr) throw logErr;
+      // Call backend workflow transition API authoritatively
+      await transitionSubmission(selectedDoc.id, 'disapprove', comments, [], user?.id);
 
       // Close modal inputs, triggers and refresh list
       setPreviewFile(null);
       setIsReturnModalOpen(false);
       setReturnComments('');
-      const disapprovedId = selectedDoc.id;
+      setLocallyApproved([]);
+      setLocallyReturned({});
       await fetchSubmissions();
       setSelectedDoc(null);
       window.dispatchEvent(new CustomEvent('inbox-updated'));
-      showToast('Submission disapproved successfully!');
-      navigate('/completed', { state: { openDocId: disapprovedId } });
+      showToast('Submission disapproved.');
+      navigate('/my-documents', { state: { highlightedId: selectedDoc.id } });
     } catch (err) {
       console.error('Error disapproving submission:', err);
       showToast('Failed to disapprove submission.');
