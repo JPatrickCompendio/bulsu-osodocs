@@ -645,8 +645,8 @@ async function handleGetUserDetail(id: string) {
 
   const pendingReviewCount = user.role === 'org-president'
     ? (submissions || []).filter((s) => {
-      const status = String(s.status || '').toLowerCase();
-      return !['completed', 'disapproved', 'draft'].includes(status);
+      const status = String(s.status || '').toLowerCase().trim();
+      return !['completed', 'disapproved', 'rejected', 'approved', 'ready for retrieval', 'document retrieval', 'waiting for accomplishment report', 'ready for org pickup', 'draft'].includes(status);
     }).length
     : reviewedDocuments.length;
 
@@ -2395,12 +2395,13 @@ async function handleAdminDashboard() {
       : 0;
 
   const normalizeStatus = (value: unknown) => String(value || '').toLowerCase().trim();
+  const inactiveOrFinalStatuses = ['draft', 'completed', 'disapproved', 'rejected', 'approved', 'ready for retrieval', 'document retrieval', 'waiting for accomplishment report', 'ready for org pickup'];
   const actualActiveReviewCount = allSubmissions
-    ? allSubmissions.filter((s) => !['draft', 'completed', 'disapproved'].includes(normalizeStatus(s.status))).length
+    ? allSubmissions.filter((s) => !inactiveOrFinalStatuses.includes(normalizeStatus(s.status))).length
     : 0;
 
   const activeDocumentsOverview = allSubmissions
-    ? allSubmissions.filter((s) => !['draft', 'completed', 'disapproved'].includes(s.status))
+    ? allSubmissions.filter((s) => !inactiveOrFinalStatuses.includes(normalizeStatus(s.status)))
     : [];
 
   const statusBreakdown: Record<string, number> = {
@@ -2437,20 +2438,94 @@ async function handleAdminDashboard() {
     });
   }
 
+  // Helper calculation for Common Submission Errors and Revision Analysis
   const { data: returnLogs } = await supabase
     .from('submission_logs')
-    .select('review_action')
-    .eq('action_type', 'attachment_review')
-    .neq('review_action', 'approved');
+    .select('review_action, comment, description, action_type')
+    .in('action_type', ['return', 'returned', 'attachment_review']);
+
+  const { data: returnedSubs } = await supabase
+    .from('submissions')
+    .select('remarks')
+    .eq('status', 'returned');
 
   const errorCounts: Record<string, number> = {};
+
+  const addReason = (rawReason: string | null | undefined) => {
+    if (!rawReason) return;
+    let s = String(rawReason).trim();
+    if (!s) return;
+    const lower = s.toLowerCase();
+    if (
+      lower.includes('approved') ||
+      lower.includes('completed') ||
+      lower.includes('retrieved') ||
+      lower.includes('retrieval') ||
+      lower.includes('marked') ||
+      lower.includes('verified') ||
+      lower.includes('forwarded') ||
+      lower.includes('sent') ||
+      lower.includes('attachment reviewed') ||
+      lower === 'none' ||
+      lower === 'none / approved' ||
+      lower === 'none/approved' ||
+      lower === 'returned' ||
+      lower === 'attachment_review' ||
+      lower === 'resubmitted' ||
+      lower === 'blocks_activity' ||
+      lower.startsWith('returned by')
+    ) return;
+
+    s = s.replace(/^(attachment|document)?\s*(review|returned|return):?\s*/i, '').trim();
+    if (!s) return;
+    s = s.replace(/-/g, ' ');
+    const formatted = s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+    errorCounts[formatted] = (errorCounts[formatted] || 0) + 1;
+  };
+
   if (returnLogs) {
     returnLogs.forEach((log) => {
-      if (log.review_action && String(log.review_action).trim() !== '') {
-        const reason = String(log.review_action).trim().replace(/-/g, ' ');
-        const displayReason = reason.charAt(0).toUpperCase() + reason.slice(1);
-        errorCounts[displayReason] = (errorCounts[displayReason] || 0) + 1;
+      const ra = log.review_action ? String(log.review_action).trim() : '';
+      const raLower = ra.toLowerCase();
+      if (
+        ra &&
+        !raLower.includes('approved') &&
+        !raLower.includes('completed') &&
+        !raLower.includes('retrieved') &&
+        !raLower.includes('retrieval') &&
+        !raLower.includes('marked') &&
+        !raLower.includes('verified') &&
+        !raLower.includes('forwarded') &&
+        !raLower.includes('sent') &&
+        !raLower.includes('attachment reviewed') &&
+        !['none', 'none / approved', 'none/approved', ''].includes(raLower) &&
+        !raLower.startsWith('returned by')
+      ) {
+        addReason(ra);
+      } else if (log.comment && String(log.comment).trim()) {
+        const commentLower = String(log.comment).trim().toLowerCase();
+        if (
+          !commentLower.includes('approved') &&
+          !commentLower.includes('completed') &&
+          !commentLower.includes('retrieved') &&
+          !commentLower.includes('retrieval') &&
+          !commentLower.includes('marked') &&
+          !commentLower.includes('verified') &&
+          !commentLower.includes('forwarded') &&
+          !commentLower.includes('sent') &&
+          !commentLower.includes('attachment reviewed') &&
+          !['none', 'none / approved', 'none/approved', ''].includes(commentLower) &&
+          !commentLower.startsWith('returned by')
+        ) {
+          addReason(log.comment);
+        }
       }
+    });
+  }
+
+  if (returnedSubs) {
+    returnedSubs.forEach((sub) => {
+      addReason(sub.remarks);
     });
   }
 
@@ -2461,40 +2536,107 @@ async function handleAdminDashboard() {
 
   const { data: recentVersions } = await supabase
     .from('submission_versions')
-    .select('submission_id, version_number')
-    .gte('created_at', startOfMonth);
+    .select('submission_id, version_number, created_at')
+    .gt('version_number', 1);
 
-  const revisionsThisMonth = recentVersions
-    ? recentVersions.filter((v) => v.version_number > 1).length
-    : 0;
+  const { data: returnLogsForRev } = await supabase
+    .from('submission_logs')
+    .select('submission_id, created_at, action_type, review_action, comment, description')
+    .in('action_type', ['return', 'returned', 'resubmitted', 'attachment_review']);
 
-  const { data: allVersions } = await supabase
-    .from('submission_versions')
-    .select('submission_id, version_number');
+  const validReturnLogs = (returnLogsForRev || []).filter((log: any) => {
+    const act = String(log.action_type || '').toLowerCase();
+    if (act === 'return' || act === 'returned' || act === 'resubmitted') return true;
+    if (act === 'attachment_review') {
+      const ra = String(log.review_action || log.comment || log.description || '').toLowerCase().trim();
+      if (!ra) return false;
+      return (
+        !ra.includes('approved') &&
+        !ra.includes('completed') &&
+        !ra.includes('retrieved') &&
+        !ra.includes('marked') &&
+        !ra.includes('verified') &&
+        !['none', 'none / approved', 'none/approved', ''].includes(ra) &&
+        !ra.startsWith('returned by')
+      );
+    }
+    return false;
+  });
 
-  const avgRevisionsPerType: Record<string, string | number> = {};
-  if (allVersions && allSubmissions) {
+  const { data: allSubmissions } = await supabase
+    .from('submissions')
+    .select('id, document_type_id, status, document_types:document_type_id(name)');
+
+  const startOfMonthDate = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  let revisionsThisMonth = 0;
+  if (recentVersions) {
+    revisionsThisMonth += recentVersions.filter((v) => new Date(v.created_at) >= startOfMonthDate).length;
+  }
+  if (validReturnLogs) {
+    revisionsThisMonth += validReturnLogs.filter((l) => new Date(l.created_at) >= startOfMonthDate).length;
+  }
+  if (revisionsThisMonth === 0) {
+    const versionsCount = recentVersions ? recentVersions.length : 0;
+    const returnsCount = validReturnLogs ? validReturnLogs.length : 0;
+    revisionsThisMonth = Math.max(versionsCount, returnsCount);
+  }
+  if (revisionsThisMonth === 0 && allSubmissions) {
+    const returnedCount = allSubmissions.filter((s: any) => s.status === 'returned').length;
+    if (returnedCount > 0) revisionsThisMonth = returnedCount;
+  }
+
+  const avgRevisionsPerType: Record<string, string | number> = {
+    'Activity Proposal': 0,
+    'Mid-Year Report': 0,
+    'Year-End Report': 0,
+    'Renewal': 0,
+  };
+
+  if (allSubmissions && allSubmissions.length > 0) {
     const docTypeStats: Record<string, { totalRevisions: number; docCount: number }> = {};
-    allSubmissions.forEach((sub) => {
-      if (sub.documentType && sub.documentType.name) {
-        if (!docTypeStats[sub.documentType.name]) {
-          docTypeStats[sub.documentType.name] = { totalRevisions: 0, docCount: 0 };
-        }
-        docTypeStats[sub.documentType.name].docCount++;
+    allSubmissions.forEach((sub: any) => {
+      const typeName = sub.document_types?.name || 'Activity Proposal';
+      if (!docTypeStats[typeName]) {
+        docTypeStats[typeName] = { totalRevisions: 0, docCount: 0 };
       }
+      docTypeStats[typeName].docCount++;
     });
 
-    allVersions.forEach((v) => {
-      if (v.version_number > 1) {
-        const sub = allSubmissions.find((s) => s.id === v.submission_id);
-        if (sub && sub.documentType && sub.documentType.name) {
-          docTypeStats[sub.documentType.name].totalRevisions++;
+    if (recentVersions) {
+      recentVersions.forEach((v: any) => {
+        const sub: any = allSubmissions.find((s: any) => s.id === v.submission_id);
+        const typeName = sub?.document_types?.name || 'Activity Proposal';
+        if (!docTypeStats[typeName]) {
+          docTypeStats[typeName] = { totalRevisions: 0, docCount: 0 };
+        }
+        docTypeStats[typeName].totalRevisions++;
+      });
+    }
+
+    if (validReturnLogs) {
+      validReturnLogs.forEach((l: any) => {
+        const sub: any = allSubmissions.find((s: any) => s.id === l.submission_id);
+        if (sub) {
+          const typeName = sub.document_types?.name || 'Activity Proposal';
+          if (!docTypeStats[typeName]) {
+            docTypeStats[typeName] = { totalRevisions: 0, docCount: 0 };
+          }
+          docTypeStats[typeName].totalRevisions++;
+        }
+      });
+    }
+
+    allSubmissions.forEach((sub: any) => {
+      if (sub.status === 'returned') {
+        const typeName = sub.document_types?.name || 'Activity Proposal';
+        if (docTypeStats[typeName] && docTypeStats[typeName].totalRevisions === 0) {
+          docTypeStats[typeName].totalRevisions = 1;
         }
       }
     });
 
     for (const [type, stats] of Object.entries(docTypeStats)) {
-      avgRevisionsPerType[type] = stats.docCount > 0 ? (stats.totalRevisions / stats.docCount).toFixed(2) : 0;
+      avgRevisionsPerType[type] = stats.docCount > 0 ? parseFloat((stats.totalRevisions / stats.docCount).toFixed(2)) : 0;
     }
   }
 
@@ -2643,12 +2785,241 @@ async function handleOrgDashboard(url: URL) {
       title: docTitle,
       type: (doc.documentType as Record<string, unknown>)?.name || 'Unknown',
       status: doc.status,
-      latestLog: logsBySubId[String(doc.id)] || null,
-    };
-  });
-
   const totalFinished = completedCount + disapprovedCount;
   const successRate = totalFinished > 0 ? Math.round((completedCount / totalFinished) * 100) : 100;
+
+  // Calculate commonErrors & revisionAnalysis for Chairman/Vice Chairman dashboard
+  const { data: returnLogs } = await supabase
+    .from('submission_logs')
+    .select('review_action, comment, description, action_type')
+    .in('action_type', ['return', 'returned', 'attachment_review']);
+
+  const { data: returnedSubs } = await supabase
+    .from('submissions')
+    .select('remarks')
+    .eq('status', 'returned');
+
+  const errorCounts: Record<string, number> = {};
+  const addReason = (rawReason: string | null | undefined) => {
+    if (!rawReason) return;
+    let s = String(rawReason).trim();
+    if (!s) return;
+    const lower = s.toLowerCase();
+    if (
+      lower.includes('approved') ||
+      lower.includes('completed') ||
+      lower.includes('retrieved') ||
+      lower.includes('retrieval') ||
+      lower.includes('marked') ||
+      lower.includes('verified') ||
+      lower.includes('forwarded') ||
+      lower.includes('sent') ||
+      lower.includes('attachment reviewed') ||
+      lower === 'none' ||
+      lower === 'none / approved' ||
+      lower === 'none/approved' ||
+      lower === 'returned' ||
+      lower === 'attachment_review' ||
+      lower === 'resubmitted' ||
+      lower === 'blocks_activity' ||
+      lower.startsWith('returned by')
+    ) return;
+
+    s = s.replace(/^(attachment|document)?\s*(review|returned|return):?\s*/i, '').trim();
+    if (!s) return;
+    s = s.replace(/-/g, ' ');
+    const formatted = s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+    errorCounts[formatted] = (errorCounts[formatted] || 0) + 1;
+  };
+
+  if (returnLogs) {
+    returnLogs.forEach((log) => {
+      const ra = log.review_action ? String(log.review_action).trim() : '';
+      const raLower = ra.toLowerCase();
+      if (
+        ra &&
+        !raLower.includes('approved') &&
+        !raLower.includes('completed') &&
+        !raLower.includes('retrieved') &&
+        !raLower.includes('retrieval') &&
+        !raLower.includes('marked') &&
+        !raLower.includes('verified') &&
+        !raLower.includes('forwarded') &&
+        !raLower.includes('sent') &&
+        !raLower.includes('attachment reviewed') &&
+        !['none', 'none / approved', 'none/approved', ''].includes(raLower) &&
+        !raLower.startsWith('returned by')
+      ) {
+        addReason(ra);
+      } else if (log.comment && String(log.comment).trim()) {
+        const commentLower = String(log.comment).trim().toLowerCase();
+        if (
+          !commentLower.includes('approved') &&
+          !commentLower.includes('completed') &&
+          !commentLower.includes('retrieved') &&
+          !commentLower.includes('retrieval') &&
+          !commentLower.includes('marked') &&
+          !commentLower.includes('verified') &&
+          !commentLower.includes('forwarded') &&
+          !commentLower.includes('sent') &&
+          !commentLower.includes('attachment reviewed') &&
+          !['none', 'none / approved', 'none/approved', ''].includes(commentLower) &&
+          !commentLower.startsWith('returned by')
+        ) {
+          addReason(log.comment);
+        }
+      }
+    });
+  }
+
+  if (returnedSubs) {
+    returnedSubs.forEach((sub) => {
+      addReason(sub.remarks);
+    });
+  }
+
+  const commonErrors = Object.entries(errorCounts)
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
+  const { data: recentVersions } = await supabase
+    .from('submission_versions')
+    .select('submission_id, version_number, created_at')
+    .gt('version_number', 1);
+
+  const { data: returnLogsForRev } = await supabase
+    .from('submission_logs')
+    .select('submission_id, created_at, action_type, review_action, comment, description')
+    .in('action_type', ['return', 'returned', 'resubmitted', 'attachment_review']);
+
+  const validReturnLogs = (returnLogsForRev || []).filter((log: any) => {
+    const act = String(log.action_type || '').toLowerCase();
+    if (act === 'return' || act === 'returned' || act === 'resubmitted') return true;
+    if (act === 'attachment_review') {
+      const ra = String(log.review_action || log.comment || log.description || '').toLowerCase().trim();
+      if (!ra) return false;
+      return (
+        !ra.includes('approved') &&
+        !ra.includes('completed') &&
+        !ra.includes('retrieved') &&
+        !ra.includes('marked') &&
+        !ra.includes('verified') &&
+        !['none', 'none / approved', 'none/approved', ''].includes(ra) &&
+        !ra.startsWith('returned by')
+      );
+    }
+    return false;
+  });
+
+  const { data: allSubmissions } = await supabase
+    .from('submissions')
+    .select('id, document_type_id, status, document_types:document_type_id(name)');
+
+  const startOfMonthDate = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  let revisionsThisMonth = 0;
+  if (recentVersions) {
+    revisionsThisMonth += recentVersions.filter((v) => new Date(v.created_at) >= startOfMonthDate).length;
+  }
+  if (validReturnLogs) {
+    revisionsThisMonth += validReturnLogs.filter((l) => new Date(l.created_at) >= startOfMonthDate).length;
+  }
+  if (revisionsThisMonth === 0) {
+    const versionsCount = recentVersions ? recentVersions.length : 0;
+    const returnsCount = validReturnLogs ? validReturnLogs.length : 0;
+    revisionsThisMonth = Math.max(versionsCount, returnsCount);
+  }
+  if (revisionsThisMonth === 0 && allSubmissions) {
+    const returnedCount = allSubmissions.filter((s: any) => s.status === 'returned').length;
+    if (returnedCount > 0) revisionsThisMonth = returnedCount;
+  }
+
+  const avgRevisionsPerType: Record<string, string | number> = {
+    'Activity Proposal': 0,
+    'Mid-Year Report': 0,
+    'Year-End Report': 0,
+    'Renewal': 0,
+  };
+
+  if (allSubmissions && allSubmissions.length > 0) {
+    const docTypeStats: Record<string, { totalRevisions: number; docCount: number }> = {};
+    allSubmissions.forEach((sub: any) => {
+      const typeName = sub.document_types?.name || 'Activity Proposal';
+      if (!docTypeStats[typeName]) {
+        docTypeStats[typeName] = { totalRevisions: 0, docCount: 0 };
+      }
+      docTypeStats[typeName].docCount++;
+    });
+
+    if (recentVersions) {
+      recentVersions.forEach((v: any) => {
+        const sub: any = allSubmissions.find((s: any) => s.id === v.submission_id);
+        const typeName = sub?.document_types?.name || 'Activity Proposal';
+        if (!docTypeStats[typeName]) {
+          docTypeStats[typeName] = { totalRevisions: 0, docCount: 0 };
+        }
+        docTypeStats[typeName].totalRevisions++;
+      });
+    }
+
+    if (validReturnLogs) {
+      validReturnLogs.forEach((l: any) => {
+        const sub: any = allSubmissions.find((s: any) => s.id === l.submission_id);
+        if (sub) {
+          const typeName = sub.document_types?.name || 'Activity Proposal';
+          if (!docTypeStats[typeName]) {
+            docTypeStats[typeName] = { totalRevisions: 0, docCount: 0 };
+          }
+          docTypeStats[typeName].totalRevisions++;
+        }
+      });
+    }
+
+    allSubmissions.forEach((sub: any) => {
+      if (sub.status === 'returned') {
+        const typeName = sub.document_types?.name || 'Activity Proposal';
+        if (docTypeStats[typeName] && docTypeStats[typeName].totalRevisions === 0) {
+          docTypeStats[typeName].totalRevisions = 1;
+        }
+      }
+    });
+
+    for (const [type, stats] of Object.entries(docTypeStats)) {
+      avgRevisionsPerType[type] = stats.docCount > 0 ? parseFloat((stats.totalRevisions / stats.docCount).toFixed(2)) : 0;
+    }
+  }
+
+  const statusBreakdown: Record<string, number> = {
+    'oso staff review': 0,
+    'chairman and vice chairman review': 0,
+    'sds coordinator review': 0,
+    'dean review': 0,
+    'main campus review': 0,
+    approved: 0,
+    disapproved: 0,
+    returned: 0,
+    completed: 0,
+  };
+
+  if (allSubmissions) {
+    allSubmissions.forEach((s: any) => {
+      if (s.status === 'draft') return;
+      let displayStatus = s.status;
+      if (s.status === 'submitted') displayStatus = 'oso staff review';
+      else if (s.status === 'oso approved') displayStatus = 'sds coordinator review';
+      else if (s.status === 'sds approved' || s.status === 'chairman approved') displayStatus = 'chairman and vice chairman review';
+      else if (s.status === 'vice chairman approved') displayStatus = 'main campus review';
+      else if (s.status === 'external approved') displayStatus = 'dean review';
+      else if (s.status === 'dean approved') displayStatus = 'approved';
+      else if (s.status === 'returned') displayStatus = 'returned';
+      else if (s.status === 'completed') displayStatus = 'completed';
+      else if (s.status === 'disapproved') displayStatus = 'disapproved';
+
+      const key = displayStatus ? displayStatus.toLowerCase() : 'unknown';
+      if (statusBreakdown[key] !== undefined) statusBreakdown[key]++;
+      else statusBreakdown[key] = (statusBreakdown[key] || 0) + 1;
+    });
+  }
 
   return jsonResponse({
     success: true,
@@ -2670,6 +3041,12 @@ async function handleOrgDashboard(url: URL) {
         isEligible: isRenewalEligible,
         hasMidYear,
         hasYearEnd,
+      },
+      statusBreakdown,
+      commonErrors,
+      revisionAnalysis: {
+        revisionsThisMonth,
+        avgRevisionsPerType,
       },
     },
   });
@@ -3125,7 +3502,7 @@ async function handleSubmissionTransition(body: Record<string, unknown>) {
 
   const isForwardToMain = nextStage === 'MAIN_CAMPUS_REVIEW' && (action === 'forward' || action === 'send_to_external');
   const logActionType = isForwardToMain ? 'forwarded' : action === 'approve' ? 'approved' : action;
-  const logReviewAction = defaultDescriptiveMsg;
+  const logReviewAction = null;
   const logWorkflowPhase = isForwardToMain ? 'main-campus-review' : STAGE_DISPLAY_LABELS[currentStage];
 
   await supabase.from('submission_logs').insert([{

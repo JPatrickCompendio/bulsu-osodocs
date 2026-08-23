@@ -467,67 +467,77 @@ export const calculateProposalDuration = (proposalDetails) => {
   const schedules = proposalDetails.schedules || proposalDetails.activity_schedules || [];
 
   if (Array.isArray(schedules) && schedules.length > 0) {
-    const durations = schedules.map(sched => {
-      // Check if it's a date range
-      if (sched.end_date && sched.activity_date) {
-        const start = new Date(sched.activity_date);
-        const end = new Date(sched.end_date);
-        const diffMs = end - start;
-        const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+    const validScheds = schedules.filter(s => s && (s.activity_date || s.start_time || s.duration_minutes));
+
+    // Check range schedule (start_date to end_date)
+    const rangeSched = validScheds.find(s => s.activity_date && s.end_date && s.end_date !== s.activity_date);
+    if (rangeSched) {
+      try {
+        const start = new Date(rangeSched.activity_date.split('T')[0]);
+        const end = new Date(rangeSched.end_date.split('T')[0]);
+        const diffMs = Math.abs(end.getTime() - start.getTime());
+        const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24)) + 1;
         if (diffDays > 0) {
-          return `${diffDays} day${diffDays > 1 ? 's' : ''}`;
-        } else if (diffDays === 0) {
-          return `1 day`;
+          return `${diffDays} Day${diffDays > 1 ? 's' : ''}`;
+        }
+      } catch (e) {}
+    }
+
+    // Check multiple or single schedule dates
+    const uniqueDates = Array.from(new Set(validScheds.map(s => s.activity_date ? s.activity_date.split('T')[0] : null).filter(Boolean)));
+    
+    if (uniqueDates.length > 1) {
+      return `${uniqueDates.length} Days`;
+    }
+
+    // If 1 schedule date / single date
+    if (validScheds.length === 1) {
+      const sched = validScheds[0];
+      if (sched.is_indefinite) return 'INDEFINITE';
+
+      let totalMinutes = sched.duration_minutes || 0;
+      if (!totalMinutes && sched.start_time && sched.end_time) {
+        const start = new Date(`1970-01-01T${sched.start_time}`);
+        const end = new Date(`1970-01-01T${sched.end_time}`);
+        if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+          let diff = (end - start) / (1000 * 60);
+          if (diff < 0) diff += 24 * 60;
+          totalMinutes = Math.round(diff);
         }
       }
 
-      // Check if indefinite
-      if (sched.is_indefinite) {
-        return 'INDEFINITE';
+      if (totalMinutes > 0) {
+        const hrs = Math.floor(totalMinutes / 60);
+        const mins = totalMinutes % 60;
+        const parts = [];
+        if (hrs > 0) parts.push(`${hrs} Hour${hrs === 1 ? '' : 's'}`);
+        if (mins > 0) parts.push(`${mins} Minute${mins === 1 ? '' : 's'}`);
+        return parts.join(' ');
       }
 
-      // Check single date duration_minutes or start_time/end_time
-      let mins = sched.duration_minutes;
-      if (!mins && sched.start_time && sched.end_time) {
-        try {
-          const start = new Date(`1970-01-01T${sched.start_time}`);
-          const end = new Date(`1970-01-01T${sched.end_time}`);
-          let diff = (end - start) / (1000 * 60);
-          if (diff < 0) diff += 24 * 60;
-          mins = Math.round(diff);
-        } catch (e) {}
-      }
-
-      if (mins && mins > 0) {
-        const h = Math.floor(mins / 60);
-        const m = mins % 60;
-        let res = [];
-        if (h > 0) res.push(`${h} hour${h > 1 ? 's' : ''}`);
-        if (m > 0) res.push(`${m} minute${m > 1 ? 's' : ''}`);
-        return res.join(' and ') || `${mins} mins`;
-      }
-
-      return null;
-    }).filter(Boolean);
-
-    if (durations.length > 0) {
-      return durations.join(' | ');
+      return '1 Day';
+    } else if (validScheds.length > 1) {
+      return `${validScheds.length} Days`;
     }
   }
 
-  // Fallback checks on legacy proposalDetails properties if any
+  // Fallback checks on legacy proposalDetails properties
   if (proposalDetails.is_indefinite_end_time) return 'INDEFINITE';
   if (proposalDetails.duration) {
     const num = parseFloat(proposalDetails.duration);
     if (!isNaN(num) && num > 0) {
-      const mins = Math.round(num * 60);
-      const h = Math.floor(mins / 60);
-      const m = mins % 60;
-      let res = [];
-      if (h > 0) res.push(`${h} hour${h > 1 ? 's' : ''}`);
-      if (m > 0) res.push(`${m} minute${m > 1 ? 's' : ''}`);
-      return res.join(' and ') || '';
+      const hrs = Math.floor(num);
+      const mins = Math.round((num - hrs) * 60);
+      if (num < 24) {
+        const parts = [];
+        if (hrs > 0) parts.push(`${hrs} Hour${hrs === 1 ? '' : 's'}`);
+        if (mins > 0) parts.push(`${mins} Minute${mins === 1 ? '' : 's'}`);
+        if (parts.length > 0) return parts.join(' ');
+      }
+      const days = Math.ceil(num / 24) || 1;
+      return `${days} Day${days > 1 ? 's' : ''}`;
     }
+    return String(proposalDetails.duration);
   }
 
   return '—';

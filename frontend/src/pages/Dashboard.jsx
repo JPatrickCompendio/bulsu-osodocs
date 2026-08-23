@@ -15,6 +15,223 @@ import {
 
 const STAFF_ROLES = new Set(['admin', 'chairman', 'vice-chairman']);
 
+const calculateDashboardMetricsFallback = async (statsData = {}) => {
+  const resultStats = { ...statsData };
+  let commonErrors = Array.isArray(resultStats.commonErrors) ? [...resultStats.commonErrors] : [];
+  let revisionAnalysis = resultStats.revisionAnalysis ? { ...resultStats.revisionAnalysis } : null;
+
+  try {
+    // 1. Calculate commonErrors if missing or empty
+    if (commonErrors.length === 0) {
+      const { data: returnLogs } = await supabase
+        .from('submission_logs')
+        .select('review_action, comment, description, action_type')
+        .in('action_type', ['return', 'returned', 'attachment_review']);
+
+      const { data: returnedSubs } = await supabase
+        .from('submissions')
+        .select('remarks')
+        .eq('status', 'returned');
+
+      const errorCounts = {};
+      const addReason = (rawReason) => {
+        if (!rawReason) return;
+        let s = String(rawReason).trim();
+        if (!s) return;
+        const lower = s.toLowerCase();
+        if (
+          lower.includes('approved') ||
+          lower.includes('completed') ||
+          lower.includes('retrieved') ||
+          lower.includes('retrieval') ||
+          lower.includes('marked') ||
+          lower.includes('verified') ||
+          lower.includes('forwarded') ||
+          lower.includes('sent') ||
+          lower.includes('attachment reviewed') ||
+          lower === 'none' ||
+          lower === 'none / approved' ||
+          lower === 'none/approved' ||
+          lower === 'returned' ||
+          lower === 'attachment_review' ||
+          lower === 'resubmitted' ||
+          lower === 'blocks_activity' ||
+          lower.startsWith('returned by')
+        ) return;
+
+        s = s.replace(/^(attachment|document)?\s*(review|returned|return):?\s*/i, '').trim();
+        if (!s) return;
+        s = s.replace(/-/g, ' ');
+        const formatted = s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+        errorCounts[formatted] = (errorCounts[formatted] || 0) + 1;
+      };
+
+      if (returnLogs) {
+        returnLogs.forEach((log) => {
+          const ra = log.review_action ? String(log.review_action).trim() : '';
+          const raLower = ra.toLowerCase();
+          if (
+            ra &&
+            !raLower.includes('approved') &&
+            !raLower.includes('completed') &&
+            !raLower.includes('retrieved') &&
+            !raLower.includes('retrieval') &&
+            !raLower.includes('marked') &&
+            !raLower.includes('verified') &&
+            !raLower.includes('forwarded') &&
+            !raLower.includes('sent') &&
+            !raLower.includes('attachment reviewed') &&
+            !['none', 'none / approved', 'none/approved', ''].includes(raLower) &&
+            !raLower.startsWith('returned by')
+          ) {
+            addReason(ra);
+          } else if (log.comment && String(log.comment).trim()) {
+            const commentLower = String(log.comment).trim().toLowerCase();
+            if (
+              !commentLower.includes('approved') &&
+              !commentLower.includes('completed') &&
+              !commentLower.includes('retrieved') &&
+              !commentLower.includes('retrieval') &&
+              !commentLower.includes('marked') &&
+              !commentLower.includes('verified') &&
+              !commentLower.includes('forwarded') &&
+              !commentLower.includes('sent') &&
+              !commentLower.includes('attachment reviewed') &&
+              !['none', 'none / approved', 'none/approved', ''].includes(commentLower) &&
+              !commentLower.startsWith('returned by')
+            ) {
+              addReason(log.comment);
+            }
+          }
+        });
+      }
+
+      if (returnedSubs) {
+        returnedSubs.forEach((sub) => {
+          addReason(sub.remarks);
+        });
+      }
+
+      commonErrors = Object.entries(errorCounts)
+        .map(([reason, count]) => ({ reason, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10);
+    }
+
+    // 2. Calculate revisionAnalysis if missing or empty
+    if (!revisionAnalysis || !revisionAnalysis.avgRevisionsPerType || Object.keys(revisionAnalysis.avgRevisionsPerType).length === 0) {
+      const { data: recentVersions } = await supabase
+        .from('submission_versions')
+        .select('submission_id, version_number, created_at')
+        .gt('version_number', 1);
+
+      const { data: returnLogsForRev } = await supabase
+        .from('submission_logs')
+        .select('submission_id, created_at, action_type, review_action, comment, description')
+        .in('action_type', ['return', 'returned', 'resubmitted', 'attachment_review']);
+
+      const validReturnLogs = (returnLogsForRev || []).filter((log) => {
+        const act = String(log.action_type || '').toLowerCase();
+        if (act === 'return' || act === 'returned' || act === 'resubmitted') return true;
+        if (act === 'attachment_review') {
+          const ra = String(log.review_action || log.comment || log.description || '').toLowerCase().trim();
+          if (!ra) return false;
+          return (
+            !ra.includes('approved') &&
+            !ra.includes('completed') &&
+            !ra.includes('retrieved') &&
+            !ra.includes('marked') &&
+            !ra.includes('verified') &&
+            !['none', 'none / approved', 'none/approved', ''].includes(ra) &&
+            !ra.startsWith('returned by')
+          );
+        }
+        return false;
+      });
+
+      const { data: allSubmissions } = await supabase
+        .from('submissions')
+        .select('id, document_type_id, status, document_types:document_type_id(name)');
+
+      const startOfMonthDate = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+      let revisionsThisMonth = 0;
+      if (recentVersions) {
+        revisionsThisMonth += recentVersions.filter(v => new Date(v.created_at) >= startOfMonthDate).length;
+      }
+      if (validReturnLogs) {
+        revisionsThisMonth += validReturnLogs.filter(l => new Date(l.created_at) >= startOfMonthDate).length;
+      }
+      if (revisionsThisMonth === 0) {
+        const versionsCount = recentVersions ? recentVersions.length : 0;
+        const returnsCount = validReturnLogs ? validReturnLogs.length : 0;
+        revisionsThisMonth = Math.max(versionsCount, returnsCount);
+      }
+      if (revisionsThisMonth === 0 && allSubmissions) {
+        const returnedCount = allSubmissions.filter(s => s.status === 'returned').length;
+        if (returnedCount > 0) revisionsThisMonth = returnedCount;
+      }
+
+      const avgRevisionsPerType = {
+        'Activity Proposal': 0,
+        'Mid-Year Report': 0,
+        'Year-End Report': 0,
+        'Renewal': 0,
+      };
+
+      if (allSubmissions && allSubmissions.length > 0) {
+        const docTypeStats = {};
+        allSubmissions.forEach((sub) => {
+          const typeName = sub.document_types?.name || 'Activity Proposal';
+          if (!docTypeStats[typeName]) docTypeStats[typeName] = { totalRevisions: 0, docCount: 0 };
+          docTypeStats[typeName].docCount++;
+        });
+
+        if (recentVersions) {
+          recentVersions.forEach((v) => {
+            const sub = allSubmissions.find((s) => s.id === v.submission_id);
+            const typeName = sub?.document_types?.name || 'Activity Proposal';
+            if (!docTypeStats[typeName]) docTypeStats[typeName] = { totalRevisions: 0, docCount: 0 };
+            docTypeStats[typeName].totalRevisions++;
+          });
+        }
+
+        if (validReturnLogs) {
+          validReturnLogs.forEach((l) => {
+            const sub = allSubmissions.find((s) => s.id === l.submission_id);
+            if (sub) {
+              const typeName = sub.document_types?.name || 'Activity Proposal';
+              if (!docTypeStats[typeName]) docTypeStats[typeName] = { totalRevisions: 0, docCount: 0 };
+              docTypeStats[typeName].totalRevisions++;
+            }
+          });
+        }
+
+        allSubmissions.forEach((sub) => {
+          if (sub.status === 'returned') {
+            const typeName = sub.document_types?.name || 'Activity Proposal';
+            if (docTypeStats[typeName] && docTypeStats[typeName].totalRevisions === 0) {
+              docTypeStats[typeName].totalRevisions = 1;
+            }
+          }
+        });
+
+        for (const [type, stats] of Object.entries(docTypeStats)) {
+          avgRevisionsPerType[type] = stats.docCount > 0 ? parseFloat((stats.totalRevisions / stats.docCount).toFixed(2)) : 0;
+        }
+      }
+
+      revisionAnalysis = { revisionsThisMonth, avgRevisionsPerType };
+    }
+
+    resultStats.commonErrors = commonErrors;
+    resultStats.revisionAnalysis = revisionAnalysis;
+  } catch (err) {
+    console.error('Error calculating dashboard fallback metrics:', err);
+  }
+
+  return resultStats;
+};
+
 const fetchAnnouncementsForUser = async (user) => {
   if (!user?.id || !user?.role) return [];
   try {
@@ -441,8 +658,16 @@ const AdminDashboardView = () => {
     const fetchStats = async () => {
       try {
         setLoading(true);
-        const res = await apiClient.get(apiUrl('/api/admin/dashboard'));
-        if (res.data?.success) setStats(res.data.data);
+        let rawStats = null;
+        try {
+          const res = await apiClient.get(apiUrl('/api/admin/dashboard'));
+          if (res.data?.success) rawStats = res.data.data;
+        } catch (e) {
+          console.warn('API get admin dashboard fallback:', e);
+        }
+
+        const enhancedStats = await calculateDashboardMetricsFallback(rawStats || {});
+        setStats(enhancedStats);
 
         // Fetch active school year
         const { data: sy } = await supabase
@@ -877,6 +1102,8 @@ const ChairmanDashboardView = ({ role }) => {
           console.error('Failed to load admin stats for chairman dashboard:', apiErr);
         }
 
+        const enhancedStats = await calculateDashboardMetricsFallback(dashboardStats || {});
+
         const announcements = await fetchAnnouncementsForUser(user);
 
         // Fetch active school year
@@ -887,9 +1114,7 @@ const ChairmanDashboardView = ({ role }) => {
           .maybeSingle();
         setActiveSy(sy);
 
-        if (dashboardStats) {
-          setData({ stats: dashboardStats, announcements });
-        }
+        setData({ stats: enhancedStats, announcements });
       } catch (err) {
         console.error('Failed to load chairman dashboard data:', err);
       } finally {

@@ -1776,6 +1776,7 @@ export const MyDocuments = () => {
 
   if (selectedDoc) {
     const isActivityProposal = selectedDoc.isActivityProposal;
+    const docStatusLower = String(selectedDoc?.status || selectedDoc?.raw?.status || '').toLowerCase().trim();
 
 
     const allVersions = Array.isArray(selectedDoc.raw?.submission_versions)
@@ -1806,8 +1807,7 @@ export const MyDocuments = () => {
       }, new Map()).values()
     );
 
-    const docStatusLower = getDocStatusLower(selectedDoc);
-    const isDeanApprovedDoc = docStatusLower === 'dean approved';
+    const isDeanApprovedDoc = docStatusLower === 'dean approved' || docStatusLower === 'external approved' || docStatusLower.includes('dean approved') || docStatusLower.includes('external approved');
     const isMainCampusReviewDoc = docStatusLower === 'main campus review' || docStatusLower.includes('main campus') || selectedDoc?.category === 'Main Campus Review';
     const isApprovedDoc =
       docStatusLower === 'approved' ||
@@ -3883,7 +3883,7 @@ export const MyDocuments = () => {
             );
           });
 
-          if (buttons.length === 0 && (selectedDoc?.category === 'Pending Hard Copy' || selectedDoc?.category === 'To Forward' || (selectedDoc?.raw?.status || selectedDoc?.status || '').toLowerCase().includes('forward'))) {
+          if (!isDeanApprovedDoc && buttons.length === 0 && (selectedDoc?.category === 'Pending Hard Copy' || selectedDoc?.category === 'To Forward' || (selectedDoc?.raw?.status || selectedDoc?.status || '').toLowerCase().includes('forward'))) {
             buttons.push(
               <button
                 key="forward-verify-approve"
@@ -3927,7 +3927,7 @@ export const MyDocuments = () => {
                 <span>Disapprove</span>
               </button>
             );
-          } else if (buttons.length === 0 && (selectedDoc?.category === 'Final In-Campus review' || selectedDoc?.category === 'Dean Review' || selectedDoc?.category === 'SDS Review' || selectedDoc?.category === 'Main Campus Review')) {
+          } else if (!isDeanApprovedDoc && buttons.length === 0 && (selectedDoc?.category === 'Final In-Campus review' || selectedDoc?.category === 'Dean Review' || selectedDoc?.category === 'SDS Review' || selectedDoc?.category === 'Main Campus Review')) {
             buttons.push(
               <button
                 key="review-approve"

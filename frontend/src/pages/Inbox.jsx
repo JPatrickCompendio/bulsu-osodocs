@@ -542,7 +542,7 @@ export const Inbox = () => {
         `)
         .eq('submission_id', submissionId)
         .eq('action_type', 'attachment_review')
-        .in('review_action', ['missing-requirements', 'incorrect-format', 'incomplete-information'])
+        .neq('review_action', 'approved')
         .order('created_at', { ascending: false });
 
       if (error) throw error;

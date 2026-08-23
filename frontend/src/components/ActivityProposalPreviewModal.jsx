@@ -84,6 +84,21 @@ const renderSignatureBlocksHtml = (proposalDetails, user, orgName) => {
   `).join('');
 };
 
+const getBase64 = (src) => new Promise((resolve) => {
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.src = src;
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    resolve(canvas.toDataURL('image/png'));
+  };
+  img.onerror = () => resolve(src);
+});
+
 const ActivityProposalPreviewModal = ({
   isOpen,
   onClose,
@@ -94,8 +109,8 @@ const ActivityProposalPreviewModal = ({
 }) => {
   const [content, setContent] = useState('');
   const [isInitialized, setIsInitialized] = useState(false);
-  const [headerLogoBase64, setHeaderLogoBase64] = useState('');
-  
+  const headerLogoRef = useRef('');
+
   const editorRef = useRef(null);
 
   const config = useMemo(() => ({
@@ -112,37 +127,20 @@ const ActivityProposalPreviewModal = ({
     uploader: { insertImageAsBase64URI: true }
   }), []);
 
-  const getBase64 = (src) => new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.src = src;
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-      resolve(canvas.toDataURL('image/png'));
-    };
-    img.onerror = () => resolve(src);
-  });
-
   useEffect(() => {
-    const loadDefaultImages = async () => {
-      if (!headerLogoBase64) setHeaderLogoBase64(await getBase64(HEADER_LOGO_IMG));
-    };
-    if (isOpen || inline) loadDefaultImages();
-  }, [isOpen, inline]);
-
-  useEffect(() => {
+    let isMounted = true;
     if (!isOpen && !inline) {
       setIsInitialized(false);
       setContent('');
       return;
     }
-    if (isInitialized) return;
 
     const buildInitialHtml = async () => {
+      if (!headerLogoRef.current) {
+        headerLogoRef.current = await getBase64(HEADER_LOGO_IMG);
+      }
+      const logoSrc = headerLogoRef.current || HEADER_LOGO_IMG;
+
       const renderCheckbox = (label, isChecked) => `
         <div style="display: flex; align-items: center; margin-right: 25px; font-size: 12px; font-weight: bold; margin-bottom: 4px;">
           <div style="display: flex; justify-content: center; align-items: center; width: 13px; height: 13px; border: 1.5px solid black; margin-right: 6px; font-size: 12px; flex-shrink: 0;">
@@ -152,7 +150,7 @@ const ActivityProposalPreviewModal = ({
         </div>
       `;
 
-      const getObjectiveChecked = (val) => proposalDetails.objectives?.includes(val);
+      const getObjectiveChecked = (val) => proposalDetails?.objectives?.includes(val);
 
       const formatTime = (t) => {
         if (!t || t === 'TBD') return 'TBD';
@@ -165,17 +163,7 @@ const ActivityProposalPreviewModal = ({
         } catch (e) { return t; }
       };
 
-      const formatDuration = (mins) => {
-        if (!mins) return '';
-        const h = Math.floor(mins / 60);
-        const m = mins % 60;
-        let res = [];
-        if (h > 0) res.push(`${h} hour${h > 1 ? 's' : ''}`);
-        if (m > 0) res.push(`${m} minute${m > 1 ? 's' : ''}`);
-        return res.join(' and ') || '';
-      };
-
-      const orgName = proposalDetails.organization_name || user?.organization_name || user?.organization || 'Student Organization';
+      const orgName = proposalDetails?.organization_name || user?.organization_name || user?.organization || 'Student Organization';
 
       const initialHtml = `
         <style>
@@ -187,52 +175,52 @@ const ActivityProposalPreviewModal = ({
         <div style="padding: 10px 15px; font-family: Arial, Helvetica, sans-serif; color: black; background: white; font-size: 12px; display: flex; flex-direction: column; min-height: 1040px; box-sizing: border-box;">
           
           <div style="text-align: center; margin-bottom: 6px;">
-            <img src="${headerLogoBase64 || HEADER_LOGO_IMG}" style="height: 70px; width: auto; object-fit: contain; margin: 0 auto; display: block;" alt="BulSU Logo" />
+            <img src="${logoSrc}" style="height: 70px; width: auto; object-fit: contain; margin: 0 auto; display: block;" alt="BulSU Logo" />
           </div>
 
           <div style="text-align: center; font-size: 15px; font-weight: bold; margin-bottom: 28px;">Activity Proposal Form</div>
           
           <div class="form-row">
             <div class="form-label">Name of Student Organization:</div>
-            <div class="form-line">${proposalDetails.organization_name || ''}</div>
+            <div class="form-line">${proposalDetails?.organization_name || ''}</div>
           </div>
           <div class="form-row">
             <div class="form-label">Name of Adviser:</div>
-            <div class="form-line">${proposalDetails.adviser_name || ''}</div>
+            <div class="form-line">${proposalDetails?.adviser_name || ''}</div>
           </div>
           <div class="form-row">
             <div class="form-label">Activity Number:</div>
-            <div class="form-line">${proposalDetails.activity_number || proposalDetails.tracking_number || ''}</div>
+            <div class="form-line">${proposalDetails?.activity_number || proposalDetails?.tracking_number || ''}</div>
           </div>
           <div class="form-row">
             <div class="form-label">Activity Title:</div>
-            <div class="form-line">${proposalDetails.activity_title || ''}</div>
+            <div class="form-line">${proposalDetails?.activity_title || ''}</div>
           </div>
           <div class="form-row">
             <div class="form-label">Name of Person-in-Charge:</div>
-            <div class="form-line" style="flex-grow: 0.6; margin-right: 15px;">${proposalDetails.person_in_charge || ''}</div>
+            <div class="form-line" style="flex-grow: 0.6; margin-right: 15px;">${proposalDetails?.person_in_charge || ''}</div>
             <div class="form-label">Student ID No.:</div>
-            <div class="form-line">${proposalDetails.student_id_no || ''}</div>
+            <div class="form-line">${proposalDetails?.student_id_no || ''}</div>
           </div>
           <div class="form-row">
             <div class="form-label">Contact Number of Person-in-Charge:</div>
-            <div class="form-line">${proposalDetails.contact_number || ''}</div>
+            <div class="form-line">${proposalDetails?.contact_number || ''}</div>
           </div>
           <div class="form-row">
             <div class="form-label">Target Venue:</div>
-            <div class="form-line">${proposalDetails.target_venue || ''}</div>
+            <div class="form-line">${proposalDetails?.target_venue || ''}</div>
           </div>
           <div class="form-row">
             <div class="form-label">Target Date and Time:</div>
             <div class="form-line">
-              ${(proposalDetails.schedules && proposalDetails.schedules.length > 0) ? proposalDetails.schedules.map(sched => {
+              ${(proposalDetails?.schedules && proposalDetails.schedules.length > 0) ? proposalDetails.schedules.map(sched => {
                 const startStr = sched.activity_date ? new Date(sched.activity_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'TBD';
                 if (sched.end_date) {
                   const endStr = new Date(sched.end_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
                   return `${startStr} – ${endStr}`;
                 }
                 return `${startStr} — ${formatTime(sched.start_time)} – ${sched.is_indefinite ? 'INDEFINITE' : formatTime(sched.end_time)}`;
-              }).join(' | ') : (proposalDetails.activity_dates && proposalDetails.activity_dates.length > 0 ? proposalDetails.activity_dates.map(d => new Date(d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })).join(', ') : '—')}
+              }).join(' | ') : (proposalDetails?.activity_dates && proposalDetails.activity_dates.length > 0 ? proposalDetails.activity_dates.map(d => new Date(d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })).join(', ') : '—')}
             </div>
           </div>
 
@@ -243,20 +231,20 @@ const ActivityProposalPreviewModal = ({
 
           <div class="form-row">
             <div class="form-label">Number of Student Involved:</div>
-            <div class="form-line">${proposalDetails.number_of_students || ''}</div>
+            <div class="form-line">${proposalDetails?.number_of_students || ''}</div>
           </div>
 
           <div class="section-title">Target Audience/Participants:</div>
           <div style="margin-left: 20px; margin-bottom: 6px; display: flex;">
-            ${renderCheckbox('Members only', proposalDetails.target_audience === 'Members only')}
-            ${renderCheckbox('BulSUans only', proposalDetails.target_audience === 'BulSUans only')}
-            ${renderCheckbox('Open to the public', proposalDetails.target_audience === 'Open to the public')}
+            ${renderCheckbox('Members only', proposalDetails?.target_audience === 'Members only')}
+            ${renderCheckbox('BulSUans only', proposalDetails?.target_audience === 'BulSUans only')}
+            ${renderCheckbox('Open to the public', proposalDetails?.target_audience === 'Open to the public')}
           </div>
 
           <div class="section-title">Nature of Activity:</div>
           <div style="margin-left: 20px; margin-bottom: 6px; display: flex;">
-            ${renderCheckbox('Co-Curricular', proposalDetails.nature_of_activity === 'Co-Curricular')}
-            ${renderCheckbox('Extra-Curricular', proposalDetails.nature_of_activity === 'Extra-Curricular')}
+            ${renderCheckbox('Co-Curricular', proposalDetails?.nature_of_activity === 'Co-Curricular')}
+            ${renderCheckbox('Extra-Curricular', proposalDetails?.nature_of_activity === 'Extra-Curricular')}
           </div>
 
           <div class="section-title">Objectives of the Activity:</div>
@@ -268,25 +256,25 @@ const ActivityProposalPreviewModal = ({
             ${renderCheckbox('Skills Enhancement', getObjectiveChecked('Skills Enhancement'))}
             <div class="form-row" style="margin-top: 2px; margin-bottom: 0;">
               ${renderCheckbox('Others:', getObjectiveChecked('Others'))}
-              <div class="form-line" style="margin-left: -20px; text-align: left;">${proposalDetails.others_objective || ''}</div>
+              <div class="form-line" style="margin-left: -20px; text-align: left;">${proposalDetails?.others_objective || ''}</div>
             </div>
           </div>
 
           <div style="font-size: 11px; margin-left: 30px; margin-top: 8px; margin-bottom: 6px;">
             Describe how this activity will satisfy the needs of the organization and how it will help the<br/>organization achieve its goals:
           </div>
-          <div class="form-row" style="margin-left: 30px;"><div class="form-label">1.</div><div class="form-line" style="text-align: left;">${proposalDetails.satisfaction_goal_1 || ''}</div></div>
-          <div class="form-row" style="margin-left: 30px;"><div class="form-label">2.</div><div class="form-line" style="text-align: left;">${proposalDetails.satisfaction_goal_2 || ''}</div></div>
-          <div class="form-row" style="margin-left: 30px;"><div class="form-label">3.</div><div class="form-line" style="text-align: left;">${proposalDetails.satisfaction_goal_3 || ''}</div></div>
+          <div class="form-row" style="margin-left: 30px;"><div class="form-label">1.</div><div class="form-line" style="text-align: left;">${proposalDetails?.satisfaction_goal_1 || ''}</div></div>
+          <div class="form-row" style="margin-left: 30px;"><div class="form-label">2.</div><div class="form-line" style="text-align: left;">${proposalDetails?.satisfaction_goal_2 || ''}</div></div>
+          <div class="form-row" style="margin-left: 30px;"><div class="form-label">3.</div><div class="form-line" style="text-align: left;">${proposalDetails?.satisfaction_goal_3 || ''}</div></div>
 
           <div style="margin-top: 10px;">
             <div class="form-row">
               <div class="form-label">Name of Partners (if any):</div>
-              <div class="form-line" style="text-align: left;">${proposalDetails.partners || ''}</div>
+              <div class="form-line" style="text-align: left;">${proposalDetails?.partners || ''}</div>
             </div>
             <div class="form-row">
               <div class="form-label">Name of Sponsors (if any):</div>
-              <div class="form-line" style="text-align: left;">${proposalDetails.sponsors || ''}</div>
+              <div class="form-line" style="text-align: left;">${proposalDetails?.sponsors || ''}</div>
             </div>
           </div>
 
@@ -312,12 +300,18 @@ const ActivityProposalPreviewModal = ({
         </div>
       `;
 
-      setContent(initialHtml);
-      setIsInitialized(true);
+      if (isMounted) {
+        setContent(initialHtml);
+        setIsInitialized(true);
+      }
     };
 
     buildInitialHtml();
-  }, [isOpen, isInitialized, proposalDetails, user]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, inline, proposalDetails, user]);
 
   if (!isOpen && !inline) return null;
 

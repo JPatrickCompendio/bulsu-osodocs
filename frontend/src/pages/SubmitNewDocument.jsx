@@ -11,7 +11,7 @@ import {
   AlertCircle, Loader2, Info, Calendar, User, MapPin,
   Clock, Users, Search, ChevronRight, RefreshCcw, X,
   FileCheck, Download, Eye, Trash2, File as FileIcon,
-  Eraser, Check, CheckSquare, Lock, Paperclip, Settings, FilePlus, ChevronDown
+  Eraser, Check, CheckSquare, Lock, Paperclip, Settings, FilePlus, ChevronDown, WifiOff
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import DEFAULT_HEADER_IMG from '../assets/HEADER.png';
@@ -169,6 +169,7 @@ const SubmitNewDocument = () => {
   // UI States
   const [showClearModal, setShowClearModal] = useState(false);
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
+  const [networkErrorModal, setNetworkErrorModal] = useState(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const isSavingRef = useRef(false);
@@ -214,6 +215,42 @@ const SubmitNewDocument = () => {
   }, [proposalStep, view]);
 
   useEffect(() => {
+    const handleOffline = () => {
+      setNetworkErrorModal({
+        title: 'Internet Connection Lost',
+        message: 'You are currently offline. Please check your network connection and try again.'
+      });
+      isSavingRef.current = false;
+      setIsSaving(false);
+    };
+
+    const handleUnhandledRejection = (event) => {
+      const reasonStr = String(event?.reason?.message || event?.reason || '').toLowerCase();
+      if (
+        reasonStr.includes('err_internet_disconnected') ||
+        reasonStr.includes('failed to fetch') ||
+        reasonStr.includes('networkerror') ||
+        reasonStr.includes('network error')
+      ) {
+        setNetworkErrorModal({
+          title: 'Connection Lost / Network Issue',
+          message: 'A network request failed because internet connection was lost or interrupted. Please check your network connection and try again.'
+        });
+        isSavingRef.current = false;
+        setIsSaving(false);
+      }
+    };
+
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!formRef.current) return;
 
     // Find the closest scrollable ancestor
@@ -248,6 +285,7 @@ const SubmitNewDocument = () => {
   // Print Images State
   const [headerBase64, setHeaderBase64] = useState('');
   const [footerBase64, setFooterBase64] = useState('');
+  const [blockedDateModal, setBlockedDateModal] = useState(null);
 
   const getBase64 = (src) => new Promise((resolve) => {
     const img = new Image();
@@ -389,12 +427,23 @@ const SubmitNewDocument = () => {
     const checkVal = val.split('T')[0];
     const minAllowedStr = getMinAllowedDate();
 
+    // 1. Current Work Week restriction
     if (checkVal < minAllowedStr) {
-      showToast("Invalid Activity Date: Activities must be scheduled in advance and cannot be set within the current work week.", "error");
+      let formattedDateStr = checkVal;
+      try {
+        formattedDateStr = new Date(checkVal).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+      } catch (e) {}
+
+      setBlockedDateModal({
+        date: formattedDateStr,
+        title: "Current Work Week Restriction",
+        reason: "Activities must be scheduled in advance and cannot be set within the current work week."
+      });
       return false;
     }
 
-    const isBlocked = (blockedEvents || []).some(ev => {
+    // 2. Academic Calendar Event restriction
+    const matchingEvent = (blockedEvents || []).find(ev => {
       if (ev.document_type_id && selectedType?.id && ev.document_type_id !== selectedType?.id) return false;
       const evStart = ev.start_date ? ev.start_date.split('T')[0] : '';
       const evEnd = ev.end_date ? ev.end_date.split('T')[0] : evStart;
@@ -402,8 +451,27 @@ const SubmitNewDocument = () => {
       return checkVal >= evStart && checkVal <= evEnd;
     });
 
-    if (isBlocked) {
-      showToast("Date Unavailable: The selected date coincides with an official Academic Calendar Event / Holiday. Please choose another date.", "error");
+    if (matchingEvent) {
+      let formattedDateStr = checkVal;
+      try {
+        formattedDateStr = new Date(checkVal).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+      } catch (e) {}
+
+      let rawTitle = matchingEvent.title || matchingEvent.event_name || 'Academic Calendar Event';
+      if (rawTitle.toUpperCase() === 'BLOCKS_ACTIVITY' || rawTitle === 'BLOCK_ACTIVITY') {
+        rawTitle = matchingEvent.event_name || 'Academic Calendar Event';
+      }
+
+      let rawReason = matchingEvent.description || matchingEvent.reason || '';
+      if (!rawReason || rawReason.trim() === '' || rawReason.toUpperCase().includes('BLOCKS_ACTIVITY') || rawReason.includes('_')) {
+        rawReason = 'This date is blocked because student activities are not allowed during this event.';
+      }
+
+      setBlockedDateModal({
+        date: formattedDateStr,
+        title: rawTitle,
+        reason: rawReason
+      });
       return false;
     }
 
@@ -1066,8 +1134,6 @@ const SubmitNewDocument = () => {
     return Object.fromEntries(existingAttachments.map((item) => [item.requirement_id, item]));
   }, [existingAttachments]);
 
-  const attachedRequirementIds = useMemo(() => getAttachedRequirementIds(), [existingAttachments, localFiles]);
-
   const isReturnedDocument = useMemo(() => {
     return String(loadedSubmission?.status || '').toLowerCase() === 'returned';
   }, [loadedSubmission]);
@@ -1100,12 +1166,54 @@ const SubmitNewDocument = () => {
     setHasUnsavedChanges(true);
   };
 
+  const attachedRequirementIds = useMemo(() => {
+    const ids = new Set();
+    Object.keys(localFiles || {}).forEach(id => ids.add(String(id)));
+    (existingAttachments || []).forEach(att => {
+      if (att.requirement_id) ids.add(String(att.requirement_id));
+    });
+    const isProposal = selectedType?.name?.toLowerCase().includes('activity proposal');
+    if (isProposal) {
+      const proposalReq = requirements.find(r => 
+        r.id === 78 || 
+        String(r.referenceCode || '').toLowerCase().includes('02f1') || 
+        String(r.title || '').toLowerCase().includes('02f1') || 
+        String(r.title || '').toLowerCase().includes('activity proposal form')
+      );
+      if (proposalReq) {
+        ids.add(String(proposalReq.id));
+      }
+    }
+    return ids;
+  }, [localFiles, existingAttachments, selectedType, requirements]);
+
+  const isAllRequiredAttached = useMemo(() => {
+    const requiredReqs = requirements.filter(r => 
+      !r.is_optional && 
+      String(r.is_optional) !== 'true' && 
+      !r.title.toLowerCase().includes('(optional)')
+    );
+
+    if (requiredReqs.length === 0) return true;
+
+    return requiredReqs.every(r => {
+      const code = String(r.referenceCode || '').toLowerCase();
+      const title = String(r.title || '').toLowerCase();
+      const is02F1 = r.id === 78 || code.includes('02f1') || title.includes('02f1') || title.includes('activity proposal form');
+
+      if (is02F1) {
+        return Boolean(proposalDetails?.activity_title?.trim());
+      }
+
+      return attachedRequirementIds.has(String(r.id));
+    });
+  }, [requirements, attachedRequirementIds, proposalDetails]);
+
   const isResubmitDisabled = useMemo(() => {
     if (isSaving) return true;
 
     if (!isReturnedDocument) {
-      const requiredReqs = requirements.filter(r => !r.is_optional && !String(r.is_optional) === 'true' && !r.title.toLowerCase().includes('(optional)'));
-      return attachedRequirementIds.size < requiredReqs.length;
+      return !isAllRequiredAttached;
     }
 
     // For returned documents:
@@ -1120,7 +1228,7 @@ const SubmitNewDocument = () => {
     }
 
     return false;
-  }, [isSaving, isReturnedDocument, attachedRequirementIds, requirements, is02F1Returned, hasFormChanges, returnedReqIds, localFiles]);
+  }, [isSaving, isReturnedDocument, isAllRequiredAttached, is02F1Returned, hasFormChanges, returnedReqIds, localFiles]);
 
   const getReqCount = (typeId, subtypeObj) => {
     const sId = subtypeObj ? subtypeObj.id : null;
@@ -1202,6 +1310,15 @@ const SubmitNewDocument = () => {
 
   const processUploadsAndSave = async (status) => {
     if (isSavingRef.current) return;
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setNetworkErrorModal({
+        title: 'Internet Connection Lost',
+        message: 'You are currently offline. Please check your network connection and try again.'
+      });
+      return;
+    }
+
     isSavingRef.current = true;
     setIsSaving(true);
     let isSuccessSubmit = false;
@@ -1336,12 +1453,27 @@ const SubmitNewDocument = () => {
       }
     } catch (err) {
       console.error('Registration error:', err);
-      showToast('Action failed: ' + (err.message || ''), 'error');
-    } finally {
-      if (!isSuccessSubmit) {
-        isSavingRef.current = false;
-        setIsSaving(false);
+      const errStr = String(err?.message || err || '').toLowerCase();
+      const isNetworkIssue = 
+        (typeof navigator !== 'undefined' && !navigator.onLine) ||
+        errStr.includes('failed to fetch') ||
+        errStr.includes('networkerror') ||
+        errStr.includes('network error') ||
+        errStr.includes('offline') ||
+        errStr.includes('timeout') ||
+        errStr.includes('connection');
+
+      if (isNetworkIssue) {
+        setNetworkErrorModal({
+          title: 'Connection Lost / Network Issue',
+          message: 'The registration request failed due to a slow or disconnected internet connection. Please check your network connection and try again.'
+        });
+      } else {
+        showToast('Action failed: ' + (err.message || ''), 'error');
       }
+    } finally {
+      isSavingRef.current = false;
+      setIsSaving(false);
     }
   };
 
@@ -1349,8 +1481,13 @@ const SubmitNewDocument = () => {
     if (e) e.preventDefault();
     if (isSavingRef.current || isSaving) return;
 
-    isSavingRef.current = true;
-    setIsSaving(true);
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setNetworkErrorModal({
+        title: 'Internet Connection Lost',
+        message: 'You are currently offline. Please check your network connection and try again.'
+      });
+      return;
+    }
 
     // Validate form inputs if proposal
     const isProposal = selectedType.name.toLowerCase().includes('activity proposal');
@@ -1382,25 +1519,19 @@ const SubmitNewDocument = () => {
         !p.satisfaction_goal_1?.trim()
       ) {
         showToast('Please fill in all required form fields.', 'error');
-        isSavingRef.current = false;
-        setIsSaving(false);
         return;
       }
 
       if (!/^09\d{9}$/.test(p.contact_number)) {
         showToast('Contact number must start with 09 and have exactly 11 digits.', 'error');
-        isSavingRef.current = false;
-        setIsSaving(false);
         return;
       }
     }
 
-    const attachedIds = getAttachedRequirementIds();
-    const requiredReqs = requirements.filter(r => !r.is_optional && !r.title.toLowerCase().includes('(optional)'));
+    const attachedIds = attachedRequirementIds;
+    const requiredReqs = requirements.filter(r => !r.is_optional && String(r.is_optional) !== 'true' && !r.title.toLowerCase().includes('(optional)'));
     if (attachedIds.size < requiredReqs.length) {
       showToast(`Please attach all ${requiredReqs.length} required documents before registering.`, 'error');
-      isSavingRef.current = false;
-      setIsSaving(false);
       return;
     }
 
@@ -2045,12 +2176,13 @@ const SubmitNewDocument = () => {
                               <div className="space-y-4">
                                 {proposalDetails.schedules.map((sched, idx) => (
                                   <div key={idx} className="bg-white border border-gray-200 rounded-xl p-4 relative group hover:border-primary-green transition-colors">
-                                    
                                     {scheduleMode === 'range' ? (
-                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                         <div className="space-y-1">
-                                          <span className="text-[10px] font-bold text-gray-400 uppercase">Start Date</span>
+                                          <label htmlFor={`sched-start-date-${idx}`} className="text-[10px] font-bold text-gray-400 uppercase">Start Date</label>
                                           <input
+                                            id={`sched-start-date-${idx}`}
+                                            name={`sched_start_date_${idx}`}
                                             type="date"
                                             required
                                             min={getMinAllowedDate()}
@@ -2066,8 +2198,10 @@ const SubmitNewDocument = () => {
                                           />
                                         </div>
                                         <div className="space-y-1">
-                                          <span className="text-[10px] font-bold text-gray-400 uppercase">End Date</span>
+                                          <label htmlFor={`sched-end-date-${idx}`} className="text-[10px] font-bold text-gray-400 uppercase">End Date</label>
                                           <input
+                                            id={`sched-end-date-${idx}`}
+                                            name={`sched_end_date_${idx}`}
                                             type="date"
                                             required
                                             min={sched.activity_date || getMinAllowedDate()}
@@ -2082,12 +2216,29 @@ const SubmitNewDocument = () => {
                                             }}
                                           />
                                         </div>
+                                        <div className="space-y-1">
+                                          <label htmlFor={`sched-range-duration-${idx}`} className="text-[10px] font-bold text-gray-400 uppercase">Duration</label>
+                                          <div id={`sched-range-duration-${idx}`} className="w-full px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg text-gray-700 font-bold text-xs flex items-center justify-between min-h-[38px]">
+                                            <span>
+                                              {(() => {
+                                                if (!sched.activity_date || !sched.end_date) return '0 Days';
+                                                const start = new Date(sched.activity_date);
+                                                const end = new Date(sched.end_date);
+                                                if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return '0 Days';
+                                                const diffDays = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
+                                                return `${diffDays} Day${diffDays === 1 ? '' : 's'}`;
+                                              })()}
+                                            </span>
+                                          </div>
+                                        </div>
                                       </div>
                                     ) : (
                                       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                         <div className="space-y-1">
-                                          <span className="text-[10px] font-bold text-gray-400 uppercase">Date</span>
+                                          <label htmlFor={`sched-single-date-${idx}`} className="text-[10px] font-bold text-gray-400 uppercase">Date</label>
                                           <input
+                                            id={`sched-single-date-${idx}`}
+                                            name={`sched_single_date_${idx}`}
                                             type="date"
                                             required
                                             min={getMinAllowedDate()}
@@ -2103,8 +2254,10 @@ const SubmitNewDocument = () => {
                                           />
                                         </div>
                                         <div className="space-y-1">
-                                          <span className="text-[10px] font-bold text-gray-400 uppercase">Start Time</span>
+                                          <label htmlFor={`sched-start-time-${idx}`} className="text-[10px] font-bold text-gray-400 uppercase">Start Time</label>
                                           <input
+                                            id={`sched-start-time-${idx}`}
+                                            name={`sched_start_time_${idx}`}
                                             type="time"
                                             required
                                             className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary-green font-bold text-xs outline-none"
@@ -2124,8 +2277,10 @@ const SubmitNewDocument = () => {
                                           />
                                         </div>
                                         <div className="space-y-1">
-                                          <span className="text-[10px] font-bold text-gray-400 uppercase">End Time</span>
+                                          <label htmlFor={`sched-end-time-${idx}`} className="text-[10px] font-bold text-gray-400 uppercase">End Time</label>
                                           <input
+                                            id={`sched-end-time-${idx}`}
+                                            name={`sched_end_time_${idx}`}
                                             type="time"
                                             required={!sched.is_indefinite}
                                             disabled={sched.is_indefinite}
@@ -2144,8 +2299,10 @@ const SubmitNewDocument = () => {
                                               setProposalDetails(prev => ({ ...prev, schedules: newScheds }));
                                             }}
                                           />
-                                          <label className="flex items-center gap-2 cursor-pointer mt-1">
+                                          <label htmlFor={`sched-indefinite-${idx}`} className="flex items-center gap-2 cursor-pointer mt-1">
                                             <input
+                                              id={`sched-indefinite-${idx}`}
+                                              name={`sched_indefinite_${idx}`}
                                               type="checkbox"
                                               checked={sched.is_indefinite}
                                               onChange={e => {
@@ -2163,9 +2320,21 @@ const SubmitNewDocument = () => {
                                           </label>
                                         </div>
                                         <div className="space-y-1">
-                                          <span className="text-[10px] font-bold text-gray-400 uppercase">Duration</span>
-                                          <div className="w-full px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg text-gray-500 font-bold text-xs flex items-center justify-between">
-                                            <span>{sched.is_indefinite ? 'N/A' : `${((sched.duration_minutes || 0) / 60).toFixed(1)} hrs`}</span>
+                                          <label htmlFor={`sched-single-duration-${idx}`} className="text-[10px] font-bold text-gray-400 uppercase">Duration</label>
+                                          <div id={`sched-single-duration-${idx}`} className="w-full px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg text-gray-700 font-bold text-xs flex items-center justify-between min-h-[38px]">
+                                            <span>
+                                              {(() => {
+                                                if (sched.is_indefinite) return 'Indefinite (N/A)';
+                                                const minutes = sched.duration_minutes || 0;
+                                                if (minutes <= 0) return '0 Minutes';
+                                                const hrs = Math.floor(minutes / 60);
+                                                const mins = minutes % 60;
+                                                const parts = [];
+                                                if (hrs > 0) parts.push(`${hrs} Hour${hrs === 1 ? '' : 's'}`);
+                                                if (mins > 0) parts.push(`${mins} Minute${mins === 1 ? '' : 's'}`);
+                                                return parts.join(' ');
+                                              })()}
+                                            </span>
                                           </div>
                                         </div>
                                       </div>
@@ -2769,6 +2938,69 @@ const SubmitNewDocument = () => {
         </div>
       )}
 
+
+      {/* Blocked Date Modal */}
+      {blockedDateModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-[2rem] w-full max-w-md p-8 flex flex-col shadow-2xl animate-in zoom-in-95 duration-200 text-gray-800 relative overflow-hidden border border-gray-100">
+            <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-red-500 via-amber-500 to-red-500"></div>
+
+            <div className="w-14 h-14 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center mb-5 mx-auto border border-red-100 shadow-inner">
+              <AlertCircle size={28} />
+            </div>
+
+            <h3 className="text-xl font-extrabold text-center text-gray-900 tracking-tight">Date Unavailable</h3>
+            <p className="text-center font-semibold text-gray-500 text-xs mt-1 uppercase tracking-wider">{blockedDateModal.date}</p>
+
+            <div className="my-6 bg-red-50/60 border border-red-100 rounded-2xl p-5 text-center space-y-2">
+              <p className="text-sm font-bold text-red-900">
+                Event: {blockedDateModal.title}
+              </p>
+              <p className="text-xs text-red-700 leading-relaxed font-medium">
+                {blockedDateModal.reason}
+              </p>
+            </div>
+
+            <button
+              onClick={() => setBlockedDateModal(null)}
+              className="w-full py-3.5 bg-gray-900 hover:bg-gray-800 text-white font-bold rounded-xl text-xs uppercase tracking-widest transition-all shadow-md active:scale-95"
+            >
+              Understood
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Network Connection Error Modal */}
+      {networkErrorModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-[2rem] w-full max-w-md p-8 flex flex-col shadow-2xl animate-in zoom-in-95 duration-200 text-gray-800 relative overflow-hidden border border-gray-100 text-center">
+            <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-amber-500 via-red-500 to-amber-500"></div>
+
+            <div className="w-14 h-14 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mb-5 mx-auto border border-amber-100 shadow-inner">
+              <WifiOff size={28} />
+            </div>
+
+            <h3 className="text-xl font-extrabold text-gray-900 tracking-tight mb-2">
+              {networkErrorModal.title || 'Network Connection Issue'}
+            </h3>
+
+            <div className="my-4 bg-amber-50/60 border border-amber-100 rounded-2xl p-5 text-center space-y-2">
+              <p className="text-xs text-amber-900 leading-relaxed font-semibold">
+                {networkErrorModal.message || 'We lost connection to the server or your internet connection is slow/unstable. Please check your network connection and try again.'}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setNetworkErrorModal(null)}
+              className="w-full py-3.5 bg-gray-900 hover:bg-gray-800 text-white font-bold rounded-xl text-xs uppercase tracking-widest transition-all shadow-md active:scale-95 mt-2"
+            >
+              Understood
+            </button>
+          </div>
+        </div>
+      )}
 
       <ActivityProposalPreviewModal
         isOpen={isActivityPreviewOpen}
