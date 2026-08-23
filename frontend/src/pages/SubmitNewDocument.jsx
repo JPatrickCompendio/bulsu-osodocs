@@ -20,6 +20,13 @@ import HEADER_LOGO_IMG from '../assets/headerLOGO.png';
 import ActivityProposalPreviewModal from '../components/ActivityProposalPreviewModal';
 import { calculateProposalDuration } from '../utils/submissionLogUtils';
 
+const formatDateLocal = (d) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const getMinAllowedDate = () => {
   const today = new Date();
   const dayOfWeek = today.getDay();
@@ -27,7 +34,7 @@ const getMinAllowedDate = () => {
   if (dayOfWeek === 0) daysUntilNextMonday = 1;
   const minDate = new Date(today);
   minDate.setDate(today.getDate() + daysUntilNextMonday);
-  return minDate.toISOString().split('T')[0];
+  return formatDateLocal(minDate);
 };
 
 const isAllowMultiple = (val) => {
