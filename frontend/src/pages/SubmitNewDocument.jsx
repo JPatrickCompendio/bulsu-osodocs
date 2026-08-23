@@ -120,6 +120,14 @@ const renderSignatureBlocksHtml = (proposalDetails, user, orgName) => {
   `).join('');
 };
 
+const humanizeProposalType = (typeStr) => {
+  if (!typeStr) return '';
+  return String(typeStr)
+    .split(/[-_]/)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+};
+
 const SubmitNewDocument = () => {
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
@@ -154,6 +162,11 @@ const SubmitNewDocument = () => {
   const [scheduleMode, setScheduleMode] = useState('single'); // 'single', 'multiple', 'range'
   const [proposalStep, setProposalStep] = useState(1);
   const [hasDownloadedProposal, setHasDownloadedProposal] = useState(false);
+  const [loadedSubmission, setLoadedSubmission] = useState(null);
+  const initialFormSnapshotRef = useRef(null);
+  const [returnedReqIds, setReturnedReqIds] = useState(new Set());
+  const [approvedReqIds, setApprovedReqIds] = useState(new Set());
+  const [is02F1Returned, setIs02F1Returned] = useState(false);
 
   // Scroll behavior state
   const [showHeader, setShowHeader] = useState(true);
@@ -681,7 +694,16 @@ const SubmitNewDocument = () => {
 
       const { submission, version } = result;
       console.debug('Loaded submission for editing:', { submission, version });
-      const type = submission.documentType;
+      let type = submission.documentType;
+      if (!type && submission.document_type_id) {
+        const { data: dtData } = await supabase.from('document_types').select('*').eq('id', submission.document_type_id).maybeSingle();
+        type = dtData;
+      }
+      if (!type) {
+        showToast('Document type information is missing for this submission.', 'error');
+        return;
+      }
+
       const isProposal = type?.name?.toLowerCase().includes('activity proposal');
       const rawDetails = version?.activity_proposal_details;
       const details = (Array.isArray(rawDetails) ? rawDetails[0] : rawDetails) || {};
@@ -692,13 +714,13 @@ const SubmitNewDocument = () => {
 
       if (!subtypeId && proposalTypeStr) {
         // Fallback mapping for existing records without subtype_id
-        const stRes = await supabase.from('document_subtypes').select('*').eq('document_type_id', type.id).eq('name', proposalTypeStr).single();
+        const stRes = await supabase.from('document_subtypes').select('*').eq('document_type_id', type.id).eq('name', proposalTypeStr).maybeSingle();
         if (stRes.data) {
           subtypeId = stRes.data.id;
           matchedSubtype = stRes.data;
         }
       } else if (subtypeId) {
-        const stRes = await supabase.from('document_subtypes').select('*').eq('id', subtypeId).single();
+        const stRes = await supabase.from('document_subtypes').select('*').eq('id', subtypeId).maybeSingle();
         if (stRes.data) matchedSubtype = stRes.data;
       }
 
@@ -712,9 +734,11 @@ const SubmitNewDocument = () => {
       setSelectedSubtypeObj(matchedSubtype);
       setExistingAttachments(version?.submission_attachments || []);
       setActiveDraft({ submissionId: submission.id, versionId: version?.id });
+      setLoadedSubmission(submission);
       setDraftNotice('');
       populateDraftFields(details);
 
+      let finalFormObject = { ...defaultForm };
       if (isProposal) {
         const scheds = details.activity_schedules || [];
 
@@ -726,7 +750,7 @@ const SubmitNewDocument = () => {
         }
         setScheduleMode(inferredMode);
 
-        setProposalDetails({
+        finalFormObject = {
           ...defaultForm,
           ...details,
           schedules: scheds.length > 0 ? scheds : (details.target_date ? details.target_date.split(',').map(d => ({
@@ -743,23 +767,93 @@ const SubmitNewDocument = () => {
           person_in_charge: details.person_in_charge || user?.full_name || '',
           student_id_no: details.student_id_no || user?.student_no || '',
           contact_number: details.contact_number || user?.contact_no || ''
-        });
+        };
+        setProposalDetails(finalFormObject);
       } else {
-        setProposalDetails({
+        finalFormObject = {
           ...defaultForm,
           organization_name: user?.org_name || '',
           adviser_name: user?.adviser_name || '',
           person_in_charge: user?.full_name || '',
           student_id_no: user?.student_no || '',
           contact_number: user?.contact_no || ''
-        });
+        };
+        setProposalDetails(finalFormObject);
       }
 
+      initialFormSnapshotRef.current = JSON.stringify(finalFormObject);
+      savedStateRef.current = {
+        files: '[]',
+        details: JSON.stringify(finalFormObject)
+      };
+      setHasUnsavedChanges(false);
+      window.__hasUnsavedChanges = false;
       setLocalFiles({});
+
+      // Evaluate review logs for returned vs approved attachments
+      const isReturnedSub = String(submission.status || '').toLowerCase() === 'returned';
+      const { data: logsData } = await supabase
+        .from('submission_logs')
+        .select('*')
+        .eq('submission_id', submission.id)
+        .order('created_at', { ascending: false });
+
+      const versionAttachments = version?.submission_attachments || [];
+      const returnedSet = new Set();
+      const approvedSet = new Set();
+      const RETURN_REASONS = ['missing-requirements', 'incorrect-format', 'incomplete-information', 'returned', 'revisions-required', 'disapproved'];
+
+      // Check if any attachment has an explicit returned log
+      const hasExplicitReturnedAttLog = versionAttachments.some((att) => {
+        const fileLog = (logsData || []).find(l => l.attachment_id === att.id);
+        const reviewAction = String(fileLog?.review_action || '').toLowerCase();
+        return fileLog && RETURN_REASONS.includes(reviewAction);
+      });
+
+      versionAttachments.forEach((att) => {
+        const reqId = att.requirement_id;
+        const fileLog = (logsData || []).find(l => l.attachment_id === att.id);
+        const reviewAction = String(fileLog?.review_action || '').toLowerCase();
+
+        if (fileLog && RETURN_REASONS.includes(reviewAction)) {
+          returnedSet.add(reqId);
+        } else if (fileLog && reviewAction === 'approved') {
+          approvedSet.add(reqId);
+        } else {
+          if (hasExplicitReturnedAttLog) {
+            // Other attachments were NOT returned, so mark them as approved/locked
+            approvedSet.add(reqId);
+          } else if (isReturnedSub) {
+            // Default fallback if overall submission was returned without specific attachment logs
+            returnedSet.add(reqId);
+          }
+        }
+      });
+
+      setReturnedReqIds(returnedSet);
+      setApprovedReqIds(approvedSet);
+
+      // Check if 02F1 Activity Proposal Form (Requirement ID 78 or referenceCode 02F1) is in returnedSet
+      const is02F1InReturned = (reqs || []).some(r => {
+        if (!returnedSet.has(r.id)) return false;
+        const code = String(r.referenceCode || '').toLowerCase();
+        const title = String(r.title || '').toLowerCase();
+        return r.id === 78 || code.includes('02f1') || title.includes('02f1') || title.includes('activity proposal form');
+      });
+
+      setIs02F1Returned(is02F1InReturned);
+
+      // If document is returned and 02F1 is NOT returned, skip Phase 1 and Phase 2, go straight to Phase 3 (Upload Requirements)
+      if (isReturnedSub && !is02F1InReturned) {
+        setProposalStep(3);
+      } else {
+        setProposalStep(1);
+      }
+
       setView('form');
     } catch (err) {
       console.error('Failed to load draft by ID:', err);
-      showToast('Could not load saved draft details.', 'error');
+      showToast(`Could not load saved draft details: ${err.message || err}`, 'error');
     } finally {
       setLoading(false);
     }
@@ -893,6 +987,12 @@ const SubmitNewDocument = () => {
           });
         }
       }
+      savedStateRef.current = {
+        files: '[]',
+        details: JSON.stringify(proposalDetails)
+      };
+      setHasUnsavedChanges(false);
+      window.__hasUnsavedChanges = false;
       setView('form');
     } catch (err) {
       console.error('Failed to initialize submission:', err);
@@ -914,6 +1014,60 @@ const SubmitNewDocument = () => {
   }, [existingAttachments]);
 
   const attachedRequirementIds = useMemo(() => getAttachedRequirementIds(), [existingAttachments, localFiles]);
+
+  const isReturnedDocument = useMemo(() => {
+    return String(loadedSubmission?.status || '').toLowerCase() === 'returned';
+  }, [loadedSubmission]);
+
+  const hasFormChanges = useMemo(() => {
+    if (!isReturnedDocument) return true;
+    if (!initialFormSnapshotRef.current) return false;
+
+    const isDetailsChanged = JSON.stringify(proposalDetails) !== initialFormSnapshotRef.current;
+    const isFilesUploaded = Object.keys(localFiles).length > 0;
+
+    return isDetailsChanged || isFilesUploaded;
+  }, [isReturnedDocument, proposalDetails, localFiles]);
+
+  const handleFileUpload = (reqId, file) => {
+    if (!file) return;
+
+    const fileExt = file.name.split('.').pop().toLowerCase();
+    const isPdf = file.type === 'application/pdf' || fileExt === 'pdf';
+
+    if (!isPdf) {
+      showToast('Only PDF files (.pdf) are allowed for document attachments.', 'error');
+      return;
+    }
+
+    setLocalFiles(prev => ({
+      ...prev,
+      [reqId]: file
+    }));
+    setHasUnsavedChanges(true);
+  };
+
+  const isResubmitDisabled = useMemo(() => {
+    if (isSaving) return true;
+
+    if (!isReturnedDocument) {
+      const requiredReqs = requirements.filter(r => !r.is_optional && !String(r.is_optional) === 'true' && !r.title.toLowerCase().includes('(optional)'));
+      return attachedRequirementIds.size < requiredReqs.length;
+    }
+
+    // For returned documents:
+    // 1. If 02F1 Activity Proposal Form was returned, hasFormChanges MUST be true
+    if (is02F1Returned && !hasFormChanges) return true;
+
+    // 2. All returned requirements MUST have a replacement file in localFiles
+    for (const reqId of returnedReqIds) {
+      if (!localFiles[reqId]) {
+        return true;
+      }
+    }
+
+    return false;
+  }, [isSaving, isReturnedDocument, attachedRequirementIds, requirements, is02F1Returned, hasFormChanges, returnedReqIds, localFiles]);
 
   const getReqCount = (typeId, subtypeObj) => {
     const sId = subtypeObj ? subtypeObj.id : null;
@@ -959,40 +1113,37 @@ const SubmitNewDocument = () => {
     }
   };
 
-  const handleFileUpload = (reqId, file) => {
-    if (!file) return;
-    setLocalFiles(prev => ({ ...prev, [reqId]: file }));
-  };
-
   const savedStateRef = useRef({
-    files: '',
+    files: '[]',
     details: ''
   });
 
   useEffect(() => {
     if (view !== 'form') {
       setHasUnsavedChanges(false);
+      window.__hasUnsavedChanges = false;
       return;
     }
 
-    // Detect if the user has made any meaningful unsaved changes from the last save
-    const currentFilesStr = JSON.stringify(Object.keys(localFiles));
+    const currentFilesStr = JSON.stringify(Object.keys(localFiles).sort());
     const currentDetailsStr = JSON.stringify(proposalDetails);
 
-    if (
-      currentFilesStr !== savedStateRef.current.files ||
-      currentDetailsStr !== savedStateRef.current.details
-    ) {
-      // Only set dirty if files are attached or non-empty form inputs exist
-      const isNotEmpty = Object.keys(localFiles).length > 0 ||
+    const isFilesChanged = currentFilesStr !== (savedStateRef.current.files || '[]');
+    const isDetailsChanged = savedStateRef.current.details ? currentDetailsStr !== savedStateRef.current.details : false;
+
+    if (isFilesChanged || isDetailsChanged) {
+      const hasTypedContent =
+        Object.keys(localFiles).length > 0 ||
         Boolean(proposalDetails?.activity_title?.trim()) ||
         Boolean(proposalDetails?.target_venue?.trim()) ||
         Boolean(proposalDetails?.target_audience?.trim()) ||
         Boolean(proposalDetails?.nature_of_activity?.trim()) ||
-        (proposalDetails?.objectives && proposalDetails.objectives.length > 0) ||
+        (proposalDetails?.objectives && proposalDetails.objectives.some(o => o?.trim())) ||
         Boolean(proposalDetails?.satisfaction_goal_1?.trim());
 
-      setHasUnsavedChanges(isNotEmpty);
+      setHasUnsavedChanges(hasTypedContent);
+    } else {
+      setHasUnsavedChanges(false);
     }
   }, [proposalDetails, localFiles, view]);
 
@@ -1005,6 +1156,52 @@ const SubmitNewDocument = () => {
       let submissionId = activeDraft.submissionId;
       let versionId = activeDraft.versionId;
       let versionNumber = 1;
+
+      // If this is a returned document being resubmitted, use authoritative versioning & attachment replacement
+      if (isReturnedDocument && status === 'submitted') {
+        const oldVersionId = activeDraft.versionId;
+
+        // 1. Create new version
+        const newVersion = await subService.createNewVersion(submissionId, oldVersionId, user.id);
+        const targetVersionId = newVersion.id;
+        const targetVersionNumber = newVersion.version_number;
+
+        // 2. Identify old returned attachment DB IDs to exclude from copy
+        const oldAttachments = existingAttachments || [];
+        const returnedAttachmentDbIds = oldAttachments
+          .filter(att => returnedReqIds.has(att.requirement_id) || !approvedReqIds.has(att.requirement_id))
+          .map(att => att.id);
+
+        // 3. Copy approved attachments from old version to new version
+        await subService.copyApprovedAttachments(oldVersionId, targetVersionId, returnedAttachmentDbIds, submissionId);
+
+        // 4. Upload replacement files in localFiles to new version
+        const isProposal = selectedType.name.toLowerCase().includes('activity proposal');
+        const proposalType = selectedType?.name || subType || null;
+
+        await Promise.all(
+          Object.entries(localFiles).map(async ([reqId, file]) => {
+            const path = await subService.uploadSubmissionFile(file, selectedType.name, submissionId, targetVersionNumber, proposalType, reqId);
+            return await subService.saveAttachmentRecord(targetVersionId, reqId, file.name, path);
+          })
+        );
+
+        // 5. Save proposal details to new version
+        if (isProposal) {
+          await subService.saveProposalDetails(targetVersionId, proposalDetails, selectedSubtypeObj?.id || null, subType);
+        }
+
+        // 6. Invoke resubmit submission transition
+        await subService.resubmitSubmission(submissionId, user.id, oldVersionId);
+
+        if (refreshUser) {
+          await refreshUser();
+        }
+        showToast('Document Resubmitted Successfully!');
+        isSuccessSubmit = true;
+        setTimeout(() => navigate('/my-documents', { state: { highlightedId: submissionId } }), 500);
+        return;
+      }
 
       // 1. Create submission and version records first if not existing
       if (!submissionId || !versionId) {
@@ -1168,8 +1365,16 @@ const SubmitNewDocument = () => {
   };
 
   const handleBackNavigation = async () => {
-    setPendingNavPath('/my-documents');
-    setShowUnsavedModal(true);
+    if (hasUnsavedChanges) {
+      setPendingNavPath('/my-documents');
+      setShowUnsavedModal(true);
+    } else {
+      setPendingNavPath(null);
+      setShowUnsavedModal(false);
+      setHasUnsavedChanges(false);
+      window.__hasUnsavedChanges = false;
+      navigate('/my-documents');
+    }
   };
 
   const clearFormOptions = (type, silent = false) => {
@@ -1302,6 +1507,9 @@ const SubmitNewDocument = () => {
     <div className={`space-y-4 ${isModal ? '' : 'w-full max-w-5xl mx-auto'}`}>
       {requirements.map((req, i) => {
         const existing = existingAttachmentMap[req.id];
+        const isApprovedReq = isReturnedDocument && approvedReqIds.has(req.id);
+        const isReturnedReq = isReturnedDocument && (returnedReqIds.has(req.id) || !isApprovedReq);
+
         return (
           <div key={req.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 bg-white rounded-xl shadow-sm border border-gray-100 hover:border-amber-200 transition-all">
             <div className="flex items-start sm:items-center gap-4 sm:gap-6">
@@ -1318,7 +1526,17 @@ const SubmitNewDocument = () => {
                   }`}>
                     {(req.requirement_scope || 'OSAS') === 'OSAS' ? 'OSAS Requirement' : 'LOCAL Requirement'}
                   </span>
-                  {(req.is_optional === true || String(req.is_optional) === 'true') && (
+                  {isApprovedReq && (
+                    <span className="px-2.5 py-0.5 bg-green-100 text-green-700 text-[9px] font-black uppercase rounded flex items-center gap-1">
+                      <Lock size={10} /> Approved (Locked)
+                    </span>
+                  )}
+                  {isReturnedReq && isReturnedDocument && (
+                    <span className="px-2.5 py-0.5 bg-amber-100 text-amber-800 text-[9px] font-black uppercase rounded">
+                      Returned (Action Required)
+                    </span>
+                  )}
+                  {(req.is_optional === true || String(req.is_optional) === 'true') && !isReturnedDocument && (
                     <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 text-[9px] font-black uppercase rounded">Optional</span>
                   )}
                 </h4>
@@ -1327,7 +1545,15 @@ const SubmitNewDocument = () => {
               </div>
             </div>
 
-            {localFiles[req.id] ? (
+            {isApprovedReq ? (
+              <div className="flex items-center gap-3 bg-green-50 px-5 py-2.5 rounded-lg border border-green-200 self-start sm:self-auto shrink-0">
+                <Lock className="text-green-600" size={16} />
+                <span className="text-xs font-bold text-green-800 max-w-[180px] truncate" title={existing?.file_name || 'Approved Attachment'}>
+                  {existing?.file_name || 'Approved File'}
+                </span>
+                <span className="text-[10px] font-black uppercase tracking-wider text-green-700 bg-green-100 px-2 py-0.5 rounded">Locked</span>
+              </div>
+            ) : localFiles[req.id] ? (
               <div className="flex items-center gap-3 bg-green-50 px-5 py-2.5 rounded-lg border border-green-100 self-start sm:self-auto shrink-0">
                 <Check className="text-green-600" size={16} />
                 <span className="text-xs font-bold text-green-700 max-w-[150px] truncate" title={localFiles[req.id].name}>
@@ -1339,7 +1565,7 @@ const SubmitNewDocument = () => {
                   <Trash2 size={14} />
                 </button>
               </div>
-            ) : existing ? (
+            ) : existing && !isReturnedDocument ? (
               <div className="flex flex-col gap-2 bg-yellow-50 px-5 py-3 rounded-lg border border-yellow-100 self-start sm:self-auto shrink-0 max-w-full">
                 <div className="flex items-center gap-3">
                   <CheckSquare className="text-amber-600" size={16} />
@@ -1355,10 +1581,13 @@ const SubmitNewDocument = () => {
                 onClick={() => document.getElementById(`file-${isModal ? 'modal' : 'inline'}-${req.id}`).click()}
                 className="px-6 py-2.5 bg-[#f5b027] text-white font-bold rounded-lg hover:bg-amber-500 transition-all text-xs flex items-center justify-center gap-2 self-start sm:self-auto shrink-0 shadow-md"
               >
-                <Paperclip size={14} /> Attach File
+                <Paperclip size={14} /> Attach File (.pdf)
                 <input
-                  type="file" id={`file-${isModal ? 'modal' : 'inline'}-${req.id}`} className="hidden" accept=".pdf"
-                  onChange={(e) => handleFileUpload(req.id, e.target.files[0])}
+                  type="file" id={`file-${isModal ? 'modal' : 'inline'}-${req.id}`} className="hidden" accept=".pdf,application/pdf"
+                  onChange={(e) => {
+                    handleFileUpload(req.id, e.target.files[0]);
+                    e.target.value = '';
+                  }}
                 />
               </button>
             )}
@@ -1579,6 +1808,30 @@ const SubmitNewDocument = () => {
 
           <div className="flex-1 p-8 pb-5 pt-15 bg-gray-50/20">
             <div className={`w-full max-w-5xl mx-auto space-y-8`}>
+
+              {/* Returned Document Revision Banner */}
+              {isReturnedDocument && (
+                <div className="p-5 bg-amber-50 border-2 border-amber-200 rounded-2xl flex items-center justify-between gap-4 shadow-sm animate-in fade-in">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 bg-amber-100 text-amber-700 rounded-xl shrink-0">
+                      <RefreshCcw size={22} className="animate-spin-slow" />
+                    </div>
+                    <div>
+                      <h4 className="font-black text-amber-900 text-sm uppercase tracking-wider">Returned Document Revision</h4>
+                      <p className="text-xs text-amber-700 font-bold mt-0.5">
+                        {hasFormChanges
+                          ? "Form changes detected! You can now click Resubmit Document to update your submission."
+                          : "Edit the form content fields below to make your changes before resubmitting."}
+                      </p>
+                    </div>
+                  </div>
+                  <span className={`px-4 py-1.5 rounded-full text-xs font-black uppercase shadow-sm tracking-wider shrink-0 ${
+                    hasFormChanges ? 'bg-green-600 text-white' : 'bg-amber-200 text-amber-800'
+                  }`}>
+                    {hasFormChanges ? 'Ready to Resubmit' : 'Awaiting Form Edits'}
+                  </span>
+                </div>
+              )}
 
               {/* Conditional Proposal Form */}
               {isProposal && (
@@ -2215,7 +2468,7 @@ const SubmitNewDocument = () => {
               <div className="flex items-center gap-3">
                 {isProposal ? (
                   <>
-                    {proposalStep > 1 && (
+                    {proposalStep > 1 && !(isReturnedDocument && !is02F1Returned) && (
                       <button
                         type="button"
                         onClick={() => setProposalStep(prev => prev - 1)}
@@ -2247,10 +2500,7 @@ const SubmitNewDocument = () => {
 
                     <button
                       type="button"
-                      onClick={() => {
-                        setPendingNavPath('/my-documents');
-                        setShowUnsavedModal(true);
-                      }}
+                      onClick={handleSaveDraft}
                       disabled={isSaving}
                       className="px-5 py-2.5 bg-amber-50 text-amber-600 border border-amber-200 font-black rounded-lg hover:bg-amber-100 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
                     >
@@ -2261,9 +2511,15 @@ const SubmitNewDocument = () => {
                       <button
                         type="button"
                         onClick={() => setProposalStep(2)}
-                        disabled={!isActivityProposalFormComplete}
+                        disabled={!isActivityProposalFormComplete || (isReturnedDocument && is02F1Returned && !hasFormChanges)}
                         className="px-8 py-2.5 bg-primary-green text-white font-black rounded-lg hover:bg-green-700 hover:scale-105 active:scale-95 transition-all shadow-md shadow-green-600/20 flex items-center gap-2 text-[11px] uppercase disabled:opacity-50 tracking-widest"
-                        title={!isActivityProposalFormComplete ? "Please fill all required fields to continue" : "Proceed to next step"}
+                        title={
+                          isReturnedDocument && is02F1Returned && !hasFormChanges
+                            ? "Make changes to the form content before proceeding"
+                            : !isActivityProposalFormComplete
+                              ? "Please fill all required fields to continue"
+                              : "Proceed to next step"
+                        }
                       >
                         Next Step <ChevronRight size={14} />
                       </button>
@@ -2284,12 +2540,22 @@ const SubmitNewDocument = () => {
                     {proposalStep === 3 && (
                       <button
                         type="submit"
-                        disabled={isSaving || attachedRequirementIds.size !== requirements.length}
-                        className="px-6 py-2.5 bg-primary-green text-white font-black rounded-lg hover:bg-green-700 hover:scale-105 active:scale-95 transition-all shadow-md shadow-green-600/20 flex items-center gap-2 text-[11px] uppercase disabled:opacity-50 tracking-widest"
-                        title={attachedRequirementIds.size !== requirements.length ? "Please upload all requirements" : "Register Proposal"}
+                        disabled={isResubmitDisabled}
+                        className={`px-6 py-2.5 font-black rounded-lg transition-all shadow-md flex items-center gap-2 text-[11px] uppercase tracking-widest ${
+                          isResubmitDisabled
+                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-60'
+                            : 'bg-primary-green text-white hover:bg-green-700 hover:scale-105 active:scale-95 shadow-green-600/20'
+                        }`}
+                        title={
+                          isResubmitDisabled
+                            ? (is02F1Returned && !hasFormChanges
+                                ? "Edit the form content fields to enable the Resubmit button."
+                                : "Please upload replacement .pdf files for all returned attachments.")
+                            : "Resubmit Document"
+                        }
                       >
-                        {isSaving ? <Loader2 className="animate-spin" size={14} /> : <Send size={14} />}
-                        Register
+                        {isSaving ? <Loader2 className="animate-spin" size={14} /> : (isReturnedDocument ? <RefreshCcw size={14} /> : <Send size={14} />)}
+                        {isReturnedDocument ? 'Resubmit Document' : 'Register'}
                       </button>
                     )}
                   </>
@@ -2306,10 +2572,7 @@ const SubmitNewDocument = () => {
                     )}
                     <button
                       type="button"
-                      onClick={() => {
-                        setPendingNavPath('/my-documents');
-                        setShowUnsavedModal(true);
-                      }}
+                      onClick={handleSaveDraft}
                       disabled={isSaving}
                       className="px-5 py-2.5 bg-amber-50 text-amber-600 border border-amber-200 font-black rounded-lg hover:bg-amber-100 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
                     >
@@ -2317,11 +2580,16 @@ const SubmitNewDocument = () => {
                     </button>
                     <button
                       type="submit"
-                      disabled={isSaving}
-                      className="px-6 py-2.5 bg-primary-green text-white font-black rounded-lg hover:bg-green-700 hover:scale-105 active:scale-95 transition-all shadow-md shadow-green-600/20 flex items-center gap-2 text-[11px] uppercase disabled:opacity-50 tracking-widest"
+                      disabled={isResubmitDisabled}
+                      className={`px-6 py-2.5 font-black rounded-lg transition-all shadow-md flex items-center gap-2 text-[11px] uppercase tracking-widest ${
+                        isResubmitDisabled
+                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-60'
+                          : 'bg-primary-green text-white hover:bg-green-700 hover:scale-105 active:scale-95 shadow-green-600/20'
+                      }`}
+                      title={isResubmitDisabled ? "Upload replacement .pdf files for all returned attachments." : ""}
                     >
-                      {isSaving ? <Loader2 className="animate-spin" size={14} /> : <Send size={14} />}
-                      Register
+                      {isSaving ? <Loader2 className="animate-spin" size={14} /> : (isReturnedDocument ? <RefreshCcw size={14} /> : <Send size={14} />)}
+                      {isReturnedDocument ? 'Resubmit Document' : 'Register'}
                     </button>
                   </>
                 )}
@@ -2390,46 +2658,82 @@ const SubmitNewDocument = () => {
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8 text-center animate-in zoom-in-95">
             <AlertCircle size={56} className="text-amber-500 mx-auto mb-6" />
-            <h3 className="text-2xl font-black text-gray-800 mb-2 uppercase tracking-tight">Unsaved Progress</h3>
-            <p className="text-sm font-bold text-gray-500 mb-8">You have unsaved changes. Would you like to save them as a draft before leaving?</p>
-            <div className="flex flex-col gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowUnsavedModal(false);
-                  handleSaveDraft();
-                }}
-                className="w-full py-3.5 bg-primary-green text-white font-black rounded-xl hover:bg-green-700 transition-all uppercase tracking-widest text-sm shadow-lg shadow-green-600/20"
-              >
-                Save as Draft
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  setShowUnsavedModal(false);
-                  await deleteDraftIfNew();
-                  clearFormOptions('both', true);
-                  setHasUnsavedChanges(false);
-                  window.__hasUnsavedChanges = false;
-                  const dest = pendingNavPath || '/my-documents';
-                  setPendingNavPath(null);
-                  navigate(dest);
-                }}
-                className="w-full py-3.5 bg-red-50 text-red-600 hover:bg-red-100 font-black rounded-xl transition-all uppercase tracking-widest text-sm"
-              >
-                Discard Changes
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowUnsavedModal(false);
-                  setPendingNavPath(null);
-                }}
-                className="w-full py-3 text-gray-400 font-bold text-sm hover:text-gray-600 transition-all mt-2 uppercase tracking-widest"
-              >
-                Cancel
-              </button>
-            </div>
+            {isReturnedDocument ? (
+              <>
+                <h3 className="text-2xl font-black text-gray-800 mb-2 uppercase tracking-tight">Leave Revision</h3>
+                <p className="text-sm font-bold text-gray-500 mb-8">Changes will not be saved. Are you sure you want to leave?</p>
+                <div className="flex flex-col gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUnsavedModal(false);
+                      setLocalFiles({});
+                      setHasUnsavedChanges(false);
+                      window.__hasUnsavedChanges = false;
+                      const dest = pendingNavPath || '/my-documents';
+                      setPendingNavPath(null);
+                      navigate(dest);
+                    }}
+                    className="w-full py-3.5 bg-red-600 hover:bg-red-700 text-white font-black rounded-xl transition-all uppercase tracking-widest text-sm shadow-lg shadow-red-600/20"
+                  >
+                    OK
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUnsavedModal(false);
+                      setPendingNavPath(null);
+                    }}
+                    className="w-full py-3 text-gray-400 font-bold text-sm hover:text-gray-600 transition-all uppercase tracking-widest"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="text-2xl font-black text-gray-800 mb-2 uppercase tracking-tight">Unsaved Progress</h3>
+                <p className="text-sm font-bold text-gray-500 mb-8">You have unsaved changes. Would you like to save them as a draft before leaving?</p>
+                <div className="flex flex-col gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUnsavedModal(false);
+                      handleSaveDraft();
+                    }}
+                    className="w-full py-3.5 bg-primary-green text-white font-black rounded-xl hover:bg-green-700 transition-all uppercase tracking-widest text-sm shadow-lg shadow-green-600/20"
+                  >
+                    Save as Draft
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setShowUnsavedModal(false);
+                      await deleteDraftIfNew();
+                      clearFormOptions('both', true);
+                      setHasUnsavedChanges(false);
+                      window.__hasUnsavedChanges = false;
+                      const dest = pendingNavPath || '/my-documents';
+                      setPendingNavPath(null);
+                      navigate(dest);
+                    }}
+                    className="w-full py-3.5 bg-red-50 text-red-600 hover:bg-red-100 font-black rounded-xl transition-all uppercase tracking-widest text-sm"
+                  >
+                    Discard Changes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUnsavedModal(false);
+                      setPendingNavPath(null);
+                    }}
+                    className="w-full py-3 text-gray-400 font-bold text-sm hover:text-gray-600 transition-all mt-2 uppercase tracking-widest"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

@@ -296,6 +296,19 @@ const DocumentTypeSettings = () => {
         setIsAddingSubtype(false);
         setSubtypeForm({ id: null, name: '', description: '', status: 'active', sort_order: 0 });
       } else {
+        const item = deleteTarget?.item;
+        const refCode = String(item?.referenceCode || '').toLowerCase().trim();
+        const titleStr = String(item?.title || '').toLowerCase().trim();
+        const isProtected02F1 = item?.id === 78 || refCode.includes('02f1') || titleStr.includes('02f1') || titleStr.includes('activity proposal form');
+
+        if (isProtected02F1) {
+          showToast('The 02F1 Activity Proposal Form is a system requirement and cannot be deleted.', 'error');
+          setDeleteTarget(null);
+          setAdminPassword('');
+          setIsSaving(false);
+          return;
+        }
+
         await reqService.deleteRequirement(deleteTarget.item.id, deleteTarget.item.file_url);
         showToast('Requirement deleted');
         loadRequirements(documentType.id, subType);
@@ -707,13 +720,26 @@ const DocumentTypeSettings = () => {
                         >
                           Edit
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => requestDelete({ type: 'requirement', item: req })}
-                          className="px-4 py-2 bg-red-50 text-red-600 font-bold rounded-lg text-xs hover:bg-red-100"
-                        >
-                          Delete
-                        </button>
+                        {(() => {
+                          const refCode = String(req?.referenceCode || '').toLowerCase().trim();
+                          const titleStr = String(req?.title || '').toLowerCase().trim();
+                          const isProtected02F1 = req?.id === 78 || refCode.includes('02f1') || titleStr.includes('02f1') || titleStr.includes('activity proposal form');
+                          return (
+                            <button
+                              type="button"
+                              disabled={isProtected02F1}
+                              onClick={() => !isProtected02F1 && requestDelete({ type: 'requirement', item: req })}
+                              title={isProtected02F1 ? "System requirement (02F1 Activity Proposal Form) cannot be deleted." : "Delete requirement"}
+                              className={`px-4 py-2 font-bold rounded-lg text-xs transition-all ${
+                                isProtected02F1
+                                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-50'
+                                  : 'bg-red-50 text-red-600 hover:bg-red-100'
+                              }`}
+                            >
+                              Delete
+                            </button>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}

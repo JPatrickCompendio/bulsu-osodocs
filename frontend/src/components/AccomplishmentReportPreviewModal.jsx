@@ -91,21 +91,40 @@ const AccomplishmentReportPreviewModal = ({
 
       let actNoDisplay = '';
       if (submission?.tracking_number) {
-        actNoDisplay = submission.tracking_number;
+        const parts = String(submission.tracking_number).split('-');
+        const lastPart = parts[parts.length - 1];
+        actNoDisplay = lastPart ? lastPart.trim() : submission.tracking_number;
       }
 
       const formatList = (val) => {
         if (!val) return '';
+        let items = [];
         try {
-          const parsed = JSON.parse(val);
-          if (Array.isArray(parsed)) return parsed.map(v => `<li>${v}</li>`).join('');
+          const parsed = typeof val === 'string' ? JSON.parse(val) : val;
+          if (Array.isArray(parsed)) {
+            items = parsed.map(v => String(v || '').trim()).filter(Boolean);
+          }
         } catch (e) { }
-        if (Array.isArray(val)) return val.map(v => `<li>${v}</li>`).join('');
-        return `<ul>` + String(val).split('\n').map(l => {
-          const trimmed = l.trim();
-          if (!trimmed) return '';
-          return `<li>${trimmed.replace(/^[•-]\s*/, '')}</li>`;
-        }).filter(Boolean).join('') + `</ul>`;
+
+        if (items.length === 0) {
+          if (Array.isArray(val)) {
+            items = val.map(v => String(v || '').trim()).filter(Boolean);
+          } else {
+            items = String(val)
+              .split('\n')
+              .map(l => l.trim().replace(/^[•-]\s*/, ''))
+              .filter(Boolean);
+          }
+        }
+
+        if (items.length === 0) return '';
+        if (items.length === 1 && !Array.isArray(val) && !String(val).includes('\n') && !String(val).startsWith('[')) {
+          return items[0];
+        }
+
+        return `<ul style="margin: 0; padding-left: 20px; list-style-type: disc; list-style-position: outside;">` +
+          items.map(item => `<li style="margin-bottom: 3px; line-height: 1.4;">${item}</li>`).join('') +
+          `</ul>`;
       };
 
       let dateStrings = [];
@@ -142,8 +161,8 @@ const AccomplishmentReportPreviewModal = ({
           <table style="width: 100%; border-collapse: collapse; border: 1px solid black; font-family: 'Times New Roman', Times, serif; font-size: 13px;">
             <tbody>
               <tr>
-                <td style="border: 1px solid black; padding: 8px; width: 35%; font-weight: bold;">Activity No. ${actNoDisplay}</td>
-                <td style="border: 1px solid black; padding: 8px; width: 65%;"></td>
+                <td style="border: 1px solid black; padding: 8px; width: 35%; font-weight: bold;">Activity No.</td>
+                <td style="border: 1px solid black; padding: 8px; width: 65%; font-weight: bold;">${actNoDisplay}</td>
               </tr>
               <tr>
                 <td style="border: 1px solid black; padding: 8px; font-weight: bold;">Name of Activity</td>
@@ -228,35 +247,127 @@ const AccomplishmentReportPreviewModal = ({
           <title>Accomplishment Report Document</title>
           <style>
             @media print {
-              body { margin: 0; padding: 0; background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-              @page { margin: 0; size: auto; }
-              thead { display: table-header-group; }
-              tfoot { display: table-footer-group; }
-              table { width: 100%; border-collapse: collapse; border: none; }
-              img { max-width: 100% !important; }
+              html, body {
+                margin: 0;
+                padding: 0;
+                background: white;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+              @page {
+                margin: 0;
+                size: A4 portrait;
+              }
+              thead {
+                display: table-header-group;
+              }
+              tfoot {
+                display: table-footer-group;
+              }
+              tr, table, figure, p, div {
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+              }
+              img {
+                max-width: 100% !important;
+                height: auto !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+              }
+              .print-footer-fixed {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                width: 100%;
+                z-index: 9999;
+                background: white;
+              }
             }
-            body { font-family: 'Times New Roman', Times, serif; color: black; background: white; margin: 0; }
-            .default-center-img { display: block; margin: 0 auto; }
+            body {
+              font-family: 'Times New Roman', Times, serif;
+              color: black;
+              background: white;
+              margin: 0;
+              padding: 0;
+            }
+            .default-center-img {
+              display: block;
+              margin: 0 auto;
+            }
+            .header-img {
+              width: 100%;
+              display: block;
+              max-height: 160px;
+              object-fit: fill;
+            }
+            .footer-img {
+              width: 100%;
+              display: block;
+              max-height: 120px;
+              object-fit: fill;
+            }
+            .print-main-table {
+              width: 100%;
+              border-collapse: collapse;
+              border: none;
+              margin: 0;
+              padding: 0;
+            }
+            .print-main-table td {
+              border: none;
+              padding: 0;
+            }
+            .content-padding {
+              padding: 10px 40px;
+              box-sizing: border-box;
+            }
+            .print-footer-fixed {
+              position: fixed;
+              bottom: 0;
+              left: 0;
+              right: 0;
+              width: 100%;
+              z-index: 9999;
+              background: white;
+            }
           </style>
         </head>
         <body>
-          <table style="width: 100%; border-collapse: collapse; border: none; background: white;">
-            <thead>
-              <tr><td style="border: none; padding: 0;">
-                <img src="${headerBase64}" style="width: 100%; display: block; max-height: 160px; object-fit: fill;" alt="Header" />
-              </td></tr>
-            </thead>
+          <table class="print-main-table">
+            ${headerBase64 ? `
+              <thead>
+                <tr>
+                  <td>
+                    <img src="${headerBase64}" class="header-img" alt="Header" />
+                  </td>
+                </tr>
+              </thead>
+            ` : ''}
             <tbody>
-              <tr><td style="border: none; padding: 0;">
-                ${content}
-              </td></tr>
+              <tr>
+                <td>
+                  <div class="content-padding">
+                    ${content}
+                  </div>
+                </td>
+              </tr>
             </tbody>
-            <tfoot>
-              <tr><td style="border: none; padding: 0;">
-                <img src="${footerBase64}" style="width: 100%; display: block; max-height: 120px; object-fit: fill;" alt="Footer" />
-              </td></tr>
-            </tfoot>
+            ${footerBase64 ? `
+              <tfoot>
+                <tr>
+                  <td style="border: none; padding: 0;">
+                    <div style="height: 125px; width: 100%;"></div>
+                  </td>
+                </tr>
+              </tfoot>
+            ` : ''}
           </table>
+          ${footerBase64 ? `
+            <div class="print-footer-fixed">
+              <img src="${footerBase64}" class="footer-img" alt="Footer" />
+            </div>
+          ` : ''}
         </body>
       </html>
     `);

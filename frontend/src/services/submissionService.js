@@ -49,13 +49,20 @@ export const startNewSubmission = async (userId, typeId, typeName = 'Document', 
   return resData;
 };
 
-const getCurrentVersion = (submission) => {
+export const getCurrentVersion = (submission) => {
   if (!submission) return null;
   const versions = submission.submission_versions;
-  if (Array.isArray(versions)) {
-    return versions.find(v => v.id === submission.current_version_id) || versions[0];
+  if (Array.isArray(versions) && versions.length > 0) {
+    if (submission.current_version_id) {
+      const match = versions.find(v => v.id === submission.current_version_id);
+      if (match) return match;
+    }
+    return versions[0];
   }
-  return versions;
+  if (versions && typeof versions === 'object') {
+    return versions;
+  }
+  return null;
 };
 
 const normalizeProposalType = (proposalType) => proposalType ? proposalType.toLowerCase().replace(/\s+/g, '-') : null;
@@ -107,7 +114,7 @@ export const getSubmissionById = async (submissionId) => {
     .from('submissions')
     .select('*, documentType (*)')
     .eq('id', submissionId)
-    .single();
+    .maybeSingle();
 
   if (subErr) throw subErr;
   const submission = subs;

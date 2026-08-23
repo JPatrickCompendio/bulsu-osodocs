@@ -460,16 +460,15 @@ async function handleGetUserDetail(id: string) {
 
     const status = String(doc.status || '').toLowerCase();
     let displayStatus = 'Pending';
-    if (status === 'completed' || status === 'dean approved') displayStatus = 'Approved';
+    if (status === 'completed' || status === 'approved' || status === 'waiting for accomplishment report' || status === 'ready for retrieval' || status === 'dean approved') displayStatus = 'Completed';
     else if (status === 'disapproved') displayStatus = 'Disapproved';
     else if (status === 'returned') displayStatus = 'Returned';
     else if (status === 'submitted' || status === 'pending') displayStatus = 'OSO Staff Review';
     else if (status === 'oso approved' || status === 'sds coordinator review') displayStatus = 'SDS Coordinator Review';
     else if (status === 'sds approved' || status === 'chairman approved') displayStatus = 'Chairman Review';
-    else if (status === 'vice chairman approved' || status === 'main campus review') displayStatus = 'main campus review';
+    else if (status === 'vice chairman approved' || status === 'main campus review') displayStatus = 'Main Campus Review';
     else if (status === 'external approved' || status === 'dean review') displayStatus = 'Dean Review';
-    else if (status === 'approved') displayStatus = 'Approved';
-    else if (status === 'to forward') displayStatus = 'To Forward';
+    else if (status === 'to forward' || status.includes('hardcopy')) displayStatus = 'Pending Hard Copy';
 
     return {
       id: doc.id,
@@ -478,6 +477,7 @@ async function handleGetUserDetail(id: string) {
       type: (doc.documentType as Record<string, unknown>)?.name || 'Unknown',
       dateSubmitted: doc.created_at,
       status: displayStatus,
+      rawStatus: doc.status,
       venue,
       personInCharge,
       contactNumber,

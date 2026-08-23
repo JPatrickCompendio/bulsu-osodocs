@@ -25,7 +25,8 @@ import {
   ArrowUpRight,
   Lock,
   LogOut,
-  FolderOpen
+  FolderOpen,
+  Pencil
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { useToast } from '../hooks/useToast';
@@ -2580,10 +2581,11 @@ export const MyDocuments = () => {
 
               {isReturnedStatus && (
                 <button
-                  onClick={handleResubmitClick}
-                  className="w-full px-5 py-3.5 bg-amber-500 text-white rounded-xl text-sm font-semibold hover:bg-amber-600 transition-all shadow-sm"
+                  onClick={handleContinueClick}
+                  className="w-full px-5 py-3.5 bg-amber-500 text-white rounded-xl text-sm font-semibold hover:bg-amber-600 transition-all shadow-sm flex items-center justify-center gap-2"
                 >
-                  Resubmit
+                  <Pencil size={16} />
+                  <span>Edit & Resubmit</span>
                 </button>
               )}
 
@@ -3850,7 +3852,21 @@ export const MyDocuments = () => {
                 );
               }
             }
-          } else if (selectedDoc?.category === 'Pending Hard Copy' || selectedDoc?.category === 'To Forward' || (selectedDoc?.raw?.status || selectedDoc?.status || '').toLowerCase().includes('forward')) {
+          }
+
+          const allFilesApproved = submissionAttachments.length > 0 && submissionAttachments.every((file) => {
+            if (locallyReturned[file.id]) return false;
+            const fileLog = (timelineLogs || []).find((l) => l.attachment_id === file.id || (l.comment && l.comment.includes(file.file_name)));
+            const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
+            if (RETURN_REASONS.includes(reviewActionValue)) return false;
+
+            return (
+              locallyApproved.includes(file.id) ||
+              reviewActionValue === 'approved'
+            );
+          });
+
+          if (selectedDoc?.category === 'Pending Hard Copy' || selectedDoc?.category === 'To Forward' || (selectedDoc?.raw?.status || selectedDoc?.status || '').toLowerCase().includes('forward')) {
             buttons.push(
               <button
                 key="verify-approve"
@@ -3872,7 +3888,11 @@ export const MyDocuments = () => {
                   setReturnComments('');
                   setIsReturnModalOpen(true);
                 }}
-                className="flex items-center justify-center gap-3 px-8 py-3.5 bg-amber-500 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-amber-500/20 uppercase tracking-widest"
+                disabled={allFilesApproved}
+                title={allFilesApproved ? "All attachments are approved. Click Approve to proceed." : ""}
+                className={`flex items-center justify-center gap-3 px-8 py-3.5 bg-amber-500 text-white text-xs font-bold rounded-2xl transition-all shadow-lg shadow-amber-500/20 uppercase tracking-widest ${
+                  allFilesApproved ? 'opacity-40 cursor-not-allowed' : 'hover:scale-105 active:scale-95'
+                }`}
               >
                 <RotateCcw size={16} />
                 <span>Return</span>
@@ -3912,7 +3932,11 @@ export const MyDocuments = () => {
                   setReturnComments('');
                   setIsReturnModalOpen(true);
                 }}
-                className="flex items-center justify-center gap-3 px-8 py-3.5 bg-amber-500 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-amber-500/20 uppercase tracking-widest"
+                disabled={allFilesApproved}
+                title={allFilesApproved ? "All attachments are approved. Click Approve to proceed." : ""}
+                className={`flex items-center justify-center gap-3 px-8 py-3.5 bg-amber-500 text-white text-xs font-bold rounded-2xl transition-all shadow-lg shadow-amber-500/20 uppercase tracking-widest ${
+                  allFilesApproved ? 'opacity-40 cursor-not-allowed' : 'hover:scale-105 active:scale-95'
+                }`}
               >
                 <RotateCcw size={16} />
                 <span>Return</span>

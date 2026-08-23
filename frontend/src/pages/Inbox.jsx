@@ -1427,6 +1427,20 @@ export const Inbox = () => {
             : true;
 
           const hasLocallyReturnedAttachments = Object.keys(locallyReturned).length > 0;
+
+          const allFilesApproved = attachments.length > 0 && attachments.every((file) => {
+            if (locallyReturned[file.id]) return false;
+            const fileLog = (timelineLogs || []).find((l) => l.attachment_id === file.id || (l.comment && l.comment.includes(file.file_name)));
+            const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
+            if (RETURN_REASONS.includes(reviewActionValue)) return false;
+
+            return (
+              locallyApproved.includes(file.id) ||
+              reviewActionValue === 'approved' ||
+              (isResubmittedVersion && !RETURN_REASONS.includes(reviewActionValue))
+            );
+          });
+
           const statusLower = (selectedDoc.raw?.status || selectedDoc.status || '').toLowerCase();
           const isReturnedDoc = statusLower === 'returned';
           const requireAllReviewed = user?.role !== 'admin' || isReturnedDoc;
@@ -1434,6 +1448,7 @@ export const Inbox = () => {
           const disabledByVersion = !isLatestVersion;
           const disableActions = disabledByReview || disabledByVersion;
           const disableApprove = disableActions || hasLocallyReturnedAttachments || !isPreviewLoaded;
+          const disableReturn = disableActions || allFilesApproved;
 
           if (!isLatestVersion) return null;
 
@@ -1465,12 +1480,11 @@ export const Inbox = () => {
                     setReturnComments('');
                     setIsReturnModalOpen(true);
                   }}
-                  disabled={disableActions}
+                  disabled={disableReturn}
+                  title={allFilesApproved ? "All attachments are approved. Click Approve to proceed." : ""}
                   className={`flex items-center gap-3 px-8 py-3.5 bg-amber-500 text-white rounded-2xl font-bold transition-all shadow-lg shadow-amber-500/20 group ${
-                    disableActions
-                      ? (disabledByReview
-                          ? 'opacity-40 cursor-not-allowed'
-                          : 'cursor-not-allowed')
+                    disableReturn
+                      ? 'opacity-40 cursor-not-allowed'
                       : 'hover:scale-105 active:scale-95'
                   }`}
                 >
@@ -1776,7 +1790,14 @@ export const Inbox = () => {
             </h3>
             
             <p className="text-gray-500 text-sm mb-6 leading-relaxed">
-              The file <strong className="text-gray-700">{attachmentSuccessModal.fileName}</strong> has been successfully {attachmentSuccessModal.type === 'approved' ? 'approved' : 'marked for correction'}.
+              The file{' '}
+              <strong 
+                className="text-gray-800 font-semibold block truncate max-w-[260px] mx-auto my-2 px-3 py-1.5 bg-gray-50 rounded-xl border border-gray-100 text-xs" 
+                title={attachmentSuccessModal.fileName}
+              >
+                {attachmentSuccessModal.fileName}
+              </strong>
+              has been successfully {attachmentSuccessModal.type === 'approved' ? 'approved' : 'marked for correction'}.
             </p>
 
             <button 

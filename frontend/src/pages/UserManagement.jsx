@@ -507,18 +507,36 @@ const UserManagement = () => {
 
     const rawDocLogs = detailData?.documentLogs || [];
 
+    const isDocCompleted = (statusStr) => {
+      const s = String(statusStr || '').toLowerCase().trim();
+      return (
+        s === 'completed' ||
+        s === 'approved' ||
+        s === 'ready for retrieval' ||
+        s === 'waiting for accomplishment report' ||
+        s === 'dean approved'
+      );
+    };
+
+    const isDocDisapproved = (statusStr) => {
+      const s = String(statusStr || '').toLowerCase().trim();
+      return s.includes('disapproved') || s.includes('rejected');
+    };
+
     const matchDocStatusFilter = (doc, filter) => {
       if (!filter || filter === 'all') return true;
-      const status = String(doc?.status || '').toLowerCase().trim();
+      const statusStr = doc?.rawStatus || doc?.status || '';
+      const isCompleted = isDocCompleted(statusStr);
+      const isDisapproved = isDocDisapproved(statusStr);
 
       if (filter === 'completed') {
-        return status === 'completed';
+        return isCompleted;
       }
       if (filter === 'disapproved') {
-        return status.includes('disapproved') || status.includes('rejected');
+        return isDisapproved;
       }
       if (filter === 'under-process') {
-        return status !== 'completed' && !status.includes('disapproved') && !status.includes('rejected');
+        return !isCompleted && !isDisapproved;
       }
       return true;
     };
@@ -756,15 +774,21 @@ const UserManagement = () => {
                     </tr>
                   ) : (
                     filteredDocLogs.map((doc) => {
-                      const statusLower = String(doc.status || '').toLowerCase().trim();
-                      const isCompleted = statusLower === 'completed';
-                      const isDisapproved = statusLower.includes('disapproved') || statusLower.includes('rejected');
-                      const isReturned = statusLower.includes('returned');
+                      const statusStr = doc.rawStatus || doc.status || '';
+                      const isCompleted = isDocCompleted(statusStr);
+                      const isDisapproved = isDocDisapproved(statusStr);
+                      const isReturned = String(statusStr).toLowerCase().includes('returned');
 
                       let badgeStyle = 'bg-yellow-100 text-yellow-700';
                       if (isCompleted) badgeStyle = 'bg-green-100 text-green-700';
                       else if (isDisapproved) badgeStyle = 'bg-red-100 text-red-700';
                       else if (isReturned) badgeStyle = 'bg-orange-100 text-orange-700';
+
+                      const statusLower = String(doc.status || '').toLowerCase().trim();
+                      const isPendingHardCopy = statusLower === 'to forward' || statusLower.includes('hardcopy');
+                      const displayStatusText = isPendingHardCopy
+                        ? 'PENDING HARD COPY'
+                        : (isCompleted ? 'COMPLETED' : doc.status);
 
                       return (
                         <tr
@@ -782,7 +806,7 @@ const UserManagement = () => {
                               {isCompleted && <CheckCircle size={12} />}
                               {isDisapproved && <XCircle size={12} />}
                               {!isCompleted && !isDisapproved && <Clock size={12} />}
-                              {doc.status}
+                              {displayStatusText}
                             </span>
                           </td>
                         </tr>
