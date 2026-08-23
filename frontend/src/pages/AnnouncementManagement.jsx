@@ -84,10 +84,14 @@ const AnnouncementManagement = () => {
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
-      setSelectedFiles(Array.from(e.target.files));
-    } else {
-      setSelectedFiles([]);
+      const newFiles = Array.from(e.target.files);
+      setSelectedFiles(prev => [...prev, ...newFiles]);
     }
+    e.target.value = '';
+  };
+
+  const removeSelectedFile = (indexToRemove) => {
+    setSelectedFiles(prev => prev.filter((_, idx) => idx !== indexToRemove));
   };
 
   const uploadFiles = async (announcementId) => {
@@ -440,24 +444,69 @@ const AnnouncementManagement = () => {
                     </div>
                   )}
 
-                  <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-2 px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors text-sm font-medium text-gray-700 shrink-0">
-                      <UploadCloud size={18} className="text-gray-500" />
-                      <span>Choose Files</span>
-                      <input 
-                        type="file" 
-                        multiple
-                        onChange={handleFileChange}
-                        className="hidden"
-                      />
-                    </label>
-                    <div className="text-sm text-gray-500 truncate flex-1 flex flex-col justify-center">
-                      {selectedFiles.length > 0 ? (
-                        <span className="font-medium text-primary-green">{selectedFiles.length} file(s) selected</span>
-                      ) : (
-                        <span>Select multiple files/photos to attach</span>
-                      )}
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-2 px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors text-sm font-medium text-gray-700 shrink-0">
+                        <UploadCloud size={18} className="text-gray-500" />
+                        <span>Choose Files</span>
+                        <input 
+                          type="file" 
+                          multiple
+                          onChange={handleFileChange}
+                          className="hidden"
+                        />
+                      </label>
+                      <div className="text-xs text-gray-500 truncate flex-1">
+                        {selectedFiles.length > 0 ? (
+                          <span className="font-semibold text-primary-green">{selectedFiles.length} new file(s) selected</span>
+                        ) : (
+                          <span>Select images or documents to attach</span>
+                        )}
+                      </div>
                     </div>
+
+                    {selectedFiles.length > 0 && (
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                        <p className="text-xs font-bold text-gray-500 uppercase">New Attachments to Upload:</p>
+                        <div className="grid grid-cols-1 gap-2">
+                          {selectedFiles.map((file, idx) => {
+                            const isImage = file.type.startsWith('image/') || /\.(jpeg|jpg|png|gif|webp)$/i.test(file.name);
+                            const previewUrl = isImage ? URL.createObjectURL(file) : null;
+                            const fileSizeKb = (file.size / 1024).toFixed(1);
+
+                            return (
+                              <div key={`${file.name}-${idx}`} className="flex items-center justify-between bg-white p-2 rounded-xl border border-gray-200 shadow-xs gap-3">
+                                <div className="flex items-center gap-3 truncate min-w-0">
+                                  {isImage && previewUrl ? (
+                                    <img 
+                                      src={previewUrl} 
+                                      alt="Preview" 
+                                      className="w-10 h-10 object-cover rounded-lg border border-gray-200 shrink-0" 
+                                    />
+                                  ) : (
+                                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-500 shrink-0">
+                                      <Paperclip size={18} />
+                                    </div>
+                                  )}
+                                  <div className="truncate text-left">
+                                    <p className="text-xs font-bold text-gray-800 truncate">{file.name}</p>
+                                    <p className="text-[10px] text-gray-400 font-medium">{fileSizeKb} KB</p>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => removeSelectedFile(idx)}
+                                  className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"
+                                  title="Remove attached file"
+                                >
+                                  <X size={16} />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 

@@ -7,6 +7,7 @@ import ReportPreviewModal from '../components/ReportPreviewModal';
 import {
   FileText, CheckCircle, Clock, AlertCircle, RefreshCcw,
   ChevronRight, BarChart2, Activity, UserCheck, Calendar, Bell, XCircle, Inbox,
+  Megaphone, Paperclip, ExternalLink, X
 } from 'lucide-react';
 
 
@@ -25,10 +26,27 @@ const fetchAnnouncementsForUser = async (user) => {
       },
     });
     if (res.data?.success) {
-      return res.data.data
+      const rawAnnouncements = res.data.data
         .filter((n) => n.type === 'announcement' && n.source)
-        .slice(0, 3)
+        .slice(0, 5)
         .map((n) => n.source);
+
+      const annWithAttachments = await Promise.all(
+        rawAnnouncements.map(async (ann) => {
+          let hasAttachment = false;
+          try {
+            const folderPath = `announcements/${ann.id}`;
+            const { data } = await supabase.storage.from('documents').list(folderPath);
+            if (data && data.filter(f => f.name !== '.emptyFolderPlaceholder').length > 0) {
+              hasAttachment = true;
+            }
+          } catch (e) {
+            console.warn('Error checking announcement attachments:', e);
+          }
+          return { ...ann, hasAttachment };
+        })
+      );
+      return annWithAttachments;
     }
   } catch (err) {
     console.error('Failed to fetch announcements:', err);
@@ -67,6 +85,144 @@ const formatSubmissionTitle = (doc, activeSy) => {
     }
   }
   return docTitle;
+};
+
+const AnnouncementDetailModal = ({ announcement, attachments, loading, onClose }) => {
+  if (!announcement) return null;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Banner Header */}
+        <div className="relative h-20 bg-gradient-to-r from-amber-500 to-orange-400 px-6 py-5 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white shrink-0">
+              <Megaphone size={20} />
+            </div>
+            <div>
+              <div className="text-white/80 text-[10px] font-bold uppercase tracking-widest mb-0.5">System Announcement</div>
+              <h2 className="text-white font-bold text-lg leading-tight">Announcement Details</h2>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center bg-black/10 hover:bg-black/20 text-white rounded-full transition-colors shrink-0"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Content Body */}
+        <div className="p-6 md:p-8 overflow-y-auto space-y-6">
+          <div>
+            <h3 className="font-bold text-xl md:text-2xl text-gray-800 mb-2 leading-tight">{announcement.title}</h3>
+            <div className="flex items-center gap-2 text-xs text-gray-500 font-medium">
+              <span>Posted {new Date(announcement.created_at).toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}</span>
+              {announcement.target_audience && (
+                <>
+                  <span>•</span>
+                  <span className="px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-[10px] uppercase font-bold tracking-wider">
+                    {announcement.target_audience}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed whitespace-pre-wrap bg-gray-50 p-4 rounded-xl border border-gray-100 font-normal">
+            {announcement.content}
+          </div>
+
+          {/* Attachments Section */}
+          {loading ? (
+            <div className="pt-4 border-t border-gray-100 flex items-center justify-center py-6 text-gray-400 text-xs font-semibold gap-2">
+              <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
+              Loading attachments...
+            </div>
+          ) : attachments && attachments.length > 0 ? (
+            <div className="pt-4 border-t border-gray-100 space-y-4">
+              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                <Paperclip size={14} className="text-amber-500" />
+                Attached Files & Photos ({attachments.length})
+              </h4>
+
+              {/* Images Preview */}
+              {attachments.filter(a => a.isImage).length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[11px] font-bold text-gray-500 uppercase">Images:</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {attachments.filter(a => a.isImage).map((img, idx) => (
+                      <a
+                        key={idx}
+                        href={img.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="group rounded-xl overflow-hidden border border-gray-200 bg-gray-50 block relative shadow-xs"
+                      >
+                        <img
+                          src={img.url}
+                          alt={`Attachment ${idx + 1}`}
+                          className="w-full h-44 object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-bold gap-1.5">
+                          <ExternalLink size={14} /> Preview Image
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Document Files List */}
+              {attachments.filter(a => !a.isImage).length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[11px] font-bold text-gray-500 uppercase">Documents:</p>
+                  <div className="space-y-2">
+                    {attachments.filter(a => !a.isImage).map((doc, idx) => (
+                      <div key={idx} className="flex items-center justify-between gap-3 p-3 bg-gray-50 border border-gray-200 rounded-xl hover:bg-amber-50/30 transition-colors">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="w-9 h-9 bg-amber-100 text-amber-700 rounded-lg flex items-center justify-center shrink-0">
+                            <FileText size={18} />
+                          </div>
+                          <span className="text-xs font-bold text-gray-800 truncate" title={doc.name}>{doc.name}</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <a
+                            href={doc.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-3 py-1.5 bg-white border border-gray-200 text-gray-700 hover:text-amber-700 text-xs font-bold rounded-lg hover:bg-gray-100 transition-colors flex items-center gap-1 shadow-xs"
+                          >
+                            <ExternalLink size={13} /> View
+                          </a>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : null}
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-5 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-bold rounded-lg transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 const fetchChairmanDashboardFallback = async (user, role) => {
@@ -599,6 +755,44 @@ const ChairmanDashboardView = ({ role }) => {
   const [data, setData] = useState(null);
   const [activeSy, setActiveSy] = useState(null);
 
+  const [selectedAnnouncement, setSelectedAnnouncement] = useState(null);
+  const [announcementAttachments, setAnnouncementAttachments] = useState([]);
+  const [loadingAttachments, setLoadingAttachments] = useState(false);
+
+  const openAnnouncementModal = async (ann) => {
+    setSelectedAnnouncement(ann);
+    setAnnouncementAttachments([]);
+    setLoadingAttachments(true);
+    try {
+      const folderPath = `announcements/${ann.id}`;
+      const { data: files } = await supabase.storage.from('documents').list(folderPath);
+      if (files && files.length > 0) {
+        const validFiles = files.filter(f => f.name !== '.emptyFolderPlaceholder');
+        if (validFiles.length > 0) {
+          const filePromises = validFiles.map(async (file) => {
+            const { data: signedUrlData } = await supabase.storage
+              .from('documents')
+              .createSignedUrl(`${folderPath}/${file.name}`, 3600);
+            if (signedUrlData) {
+              return {
+                name: file.name,
+                url: signedUrlData.signedUrl,
+                isImage: file.name.match(/\.(jpeg|jpg|gif|png|webp)$/i) != null,
+              };
+            }
+            return null;
+          });
+          const atts = (await Promise.all(filePromises)).filter(Boolean);
+          setAnnouncementAttachments(atts);
+        }
+      }
+    } catch (err) {
+      console.error('Error loading announcement attachments:', err);
+    } finally {
+      setLoadingAttachments(false);
+    }
+  };
+
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [reportData, setReportData] = useState({ title: '', stats: [], headers: [], rows: [], secondHeaders: null, secondRows: null, secondTitle: '', filename: '' });
 
@@ -928,7 +1122,7 @@ const ChairmanDashboardView = ({ role }) => {
           </div>
 
           <div className="space-y-8">
-            <section className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col">
+            <section className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
               <div className="p-6 border-b border-gray-50 flex items-center gap-2">
                 <Bell size={20} className="text-gray-400" />
                 <h2 className="text-lg font-black text-gray-800 uppercase tracking-tight">Announcements</h2>
@@ -939,12 +1133,31 @@ const ChairmanDashboardView = ({ role }) => {
                 ) : (
                   <div className="divide-y divide-gray-50">
                     {(announcements || []).map((ann) => (
-                      <div key={ann.id} className="p-6 hover:bg-gray-50 transition-colors">
-                        <div className="flex justify-between items-start mb-2">
-                          <h3 className="font-bold text-gray-800 text-sm">{ann.title}</h3>
-                          <span className="text-[10px] font-bold text-gray-400 whitespace-nowrap bg-gray-100 px-2 py-1 rounded ml-2 shrink-0">{formatDate(ann.created_at)}</span>
+                      <div
+                        key={ann.id}
+                        onClick={() => openAnnouncementModal(ann)}
+                        className="p-6 hover:bg-amber-50/30 transition-all cursor-pointer group border-l-4 border-transparent hover:border-amber-500"
+                      >
+                        <div className="flex justify-between items-start mb-2 gap-3">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <h3 className="font-bold text-gray-800 text-sm group-hover:text-amber-600 transition-colors truncate">
+                              {ann.title}
+                            </h3>
+                            {ann.hasAttachment && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-100/90 px-2 py-0.5 rounded-md border border-amber-200/80 shrink-0" title="Has attachments">
+                                <Paperclip size={11} className="text-amber-600" />
+                                Attachment
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] font-bold text-gray-400 whitespace-nowrap bg-gray-100 px-2 py-1 rounded shrink-0">
+                            {formatDate(ann.created_at)}
+                          </span>
                         </div>
-                        <p className="text-xs font-medium text-gray-500 line-clamp-3">{ann.content}</p>
+                        <p className="text-xs font-medium text-gray-500 line-clamp-3 leading-relaxed">{ann.content}</p>
+                        <div className="mt-2 flex items-center gap-1 text-[10px] font-bold text-amber-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                          View details <ChevronRight size={12} />
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1000,6 +1213,13 @@ const ChairmanDashboardView = ({ role }) => {
         pdfFilename={reportData.filename}
         schoolYear={activeSy?.name || ''}
       />
+
+      <AnnouncementDetailModal
+        announcement={selectedAnnouncement}
+        attachments={announcementAttachments}
+        loading={loadingAttachments}
+        onClose={() => setSelectedAnnouncement(null)}
+      />
     </div>
   );
 };
@@ -1013,6 +1233,44 @@ const OrgDashboardView = () => {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [showDates, setShowDates] = useState(false);
+
+  const [selectedAnnouncement, setSelectedAnnouncement] = useState(null);
+  const [announcementAttachments, setAnnouncementAttachments] = useState([]);
+  const [loadingAttachments, setLoadingAttachments] = useState(false);
+
+  const openAnnouncementModal = async (ann) => {
+    setSelectedAnnouncement(ann);
+    setAnnouncementAttachments([]);
+    setLoadingAttachments(true);
+    try {
+      const folderPath = `announcements/${ann.id}`;
+      const { data: files } = await supabase.storage.from('documents').list(folderPath);
+      if (files && files.length > 0) {
+        const validFiles = files.filter(f => f.name !== '.emptyFolderPlaceholder');
+        if (validFiles.length > 0) {
+          const filePromises = validFiles.map(async (file) => {
+            const { data: signedUrlData } = await supabase.storage
+              .from('documents')
+              .createSignedUrl(`${folderPath}/${file.name}`, 3600);
+            if (signedUrlData) {
+              return {
+                name: file.name,
+                url: signedUrlData.signedUrl,
+                isImage: file.name.match(/\.(jpeg|jpg|gif|png|webp)$/i) != null,
+              };
+            }
+            return null;
+          });
+          const atts = (await Promise.all(filePromises)).filter(Boolean);
+          setAnnouncementAttachments(atts);
+        }
+      }
+    } catch (err) {
+      console.error('Error loading announcement attachments:', err);
+    } finally {
+      setLoadingAttachments(false);
+    }
+  };
 
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [reportData, setReportData] = useState({ title: '', stats: [], headers: [], rows: [], secondHeaders: null, secondRows: null, secondTitle: '', filename: '' });
@@ -1262,23 +1520,42 @@ const OrgDashboardView = () => {
               </div>
             </section>
 
-            <section className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col">
+            <section className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
               <div className="p-6 border-b border-gray-50 flex items-center gap-2">
                 <Bell size={20} className="text-gray-400" />
                 <h2 className="text-lg font-black text-gray-800 uppercase tracking-tight">Announcements</h2>
               </div>
-              <div className="p-0">
+              <div className="p-0 max-h-[400px] overflow-y-auto">
                 {(data.announcements || []).length === 0 ? (
                   <div className="p-6 text-center text-gray-400 font-bold text-sm">No announcements at this time.</div>
                 ) : (
                   <div className="divide-y divide-gray-50">
                     {(data.announcements || []).map((ann) => (
-                      <div key={ann.id} className="p-6 hover:bg-gray-50 transition-colors">
-                        <div className="flex justify-between items-start mb-2">
-                          <h3 className="font-bold text-gray-800 text-sm">{ann.title}</h3>
-                          <span className="text-[10px] font-bold text-gray-400 whitespace-nowrap bg-gray-100 px-2 py-1 rounded">{formatDate(ann.created_at)}</span>
+                      <div
+                        key={ann.id}
+                        onClick={() => openAnnouncementModal(ann)}
+                        className="p-6 hover:bg-amber-50/30 transition-all cursor-pointer group border-l-4 border-transparent hover:border-amber-500"
+                      >
+                        <div className="flex justify-between items-start mb-2 gap-3">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <h3 className="font-bold text-gray-800 text-sm group-hover:text-amber-600 transition-colors truncate">
+                              {ann.title}
+                            </h3>
+                            {ann.hasAttachment && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-100/90 px-2 py-0.5 rounded-md border border-amber-200/80 shrink-0" title="Has attachments">
+                                <Paperclip size={11} className="text-amber-600" />
+                                Attachment
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] font-bold text-gray-400 whitespace-nowrap bg-gray-100 px-2 py-1 rounded shrink-0">
+                            {formatDate(ann.created_at)}
+                          </span>
                         </div>
-                        <p className="text-xs font-medium text-gray-500 line-clamp-3">{ann.content}</p>
+                        <p className="text-xs font-medium text-gray-500 line-clamp-3 leading-relaxed">{ann.content}</p>
+                        <div className="mt-2 flex items-center gap-1 text-[10px] font-bold text-amber-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                          View details <ChevronRight size={12} />
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1302,6 +1579,13 @@ const OrgDashboardView = () => {
         secondTableTitle={reportData.secondTitle}
         pdfFilename={reportData.filename}
         schoolYear={data.hero.activeSy?.name || ''}
+      />
+
+      <AnnouncementDetailModal
+        announcement={selectedAnnouncement}
+        attachments={announcementAttachments}
+        loading={loadingAttachments}
+        onClose={() => setSelectedAnnouncement(null)}
       />
     </div>
   );

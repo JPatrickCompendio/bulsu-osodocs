@@ -182,14 +182,29 @@ const Header = () => {
 
       if (announcements && announcements.length > 0) {
         const targetedAnnouncements = announcements.filter(a => isAnnouncementTargetedToUser(a, user));
-        notifs.push(...targetedAnnouncements.map(a => ({
-          id: `ann_${a.id}`,
-          type: 'announcement',
-          title: a.title,
-          message: a.content,
-          timestamp: a.created_at,
-          source: a,
-        })));
+        const annPromises = targetedAnnouncements.map(async (a) => {
+          let hasAttachment = false;
+          try {
+            const { data: files } = await supabase.storage.from('documents').list(`announcements/${a.id}`);
+            if (files && files.filter(f => f.name !== '.emptyFolderPlaceholder').length > 0) {
+              hasAttachment = true;
+            }
+          } catch (e) {
+            console.warn('Error checking announcement files:', e);
+          }
+          return {
+            id: `ann_${a.id}`,
+            type: 'announcement',
+            title: a.title,
+            message: a.content,
+            timestamp: a.created_at,
+            source: a,
+            hasAttachment: hasAttachment,
+          };
+        });
+
+        const annNotifs = await Promise.all(annPromises);
+        notifs.push(...annNotifs);
       }
 
       // 2. Fetch Workflow Logs & Inbox Queue items based on Role
@@ -512,9 +527,10 @@ const Header = () => {
   };
 
   const unreadCount = notifications.filter(n => !readNotifIds.includes(n.id)).length;
+  const effectiveFilter = (user?.role === 'admin' && filter === 'all') ? 'workflow' : filter;
   const filteredNotifications = notifications.filter(n => {
-    if (filter === 'all') return true;
-    return n.type === filter;
+    if (effectiveFilter === 'all') return true;
+    return n.type === effectiveFilter;
   });
 
   return (
@@ -648,21 +664,25 @@ const Header = () => {
             </div>
 
             <div className="flex border-b border-gray-100 px-4 pt-2">
-              <button
-                onClick={() => setFilter('all')}
-                className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${filter === 'all' ? 'border-primary-green text-primary-green' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-              >
-                All
-              </button>
-              <button
-                onClick={() => setFilter('announcement')}
-                className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${filter === 'announcement' ? 'border-primary-green text-primary-green' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-              >
-                Announcements
-              </button>
+              {user?.role !== 'admin' && (
+                <button
+                  onClick={() => setFilter('all')}
+                  className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${effectiveFilter === 'all' ? 'border-primary-green text-primary-green' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                >
+                  All
+                </button>
+              )}
+              {user?.role !== 'admin' && (
+                <button
+                  onClick={() => setFilter('announcement')}
+                  className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${effectiveFilter === 'announcement' ? 'border-primary-green text-primary-green' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                >
+                  Announcements
+                </button>
+              )}
               <button
                 onClick={() => setFilter('workflow')}
-                className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${filter === 'workflow' ? 'border-primary-green text-primary-green' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${effectiveFilter === 'workflow' ? 'border-primary-green text-primary-green' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
               >
                 Workflow Updates
               </button>
@@ -785,11 +805,19 @@ const Header = () => {
                             {isAnnouncement ? <Megaphone size={16} /> : <FileText size={16} />}
                           </div>
                           <div className="flex-1 min-w-0">
-                            {/* Line 1: Main Title on the left (with limiter/truncate) + Status Badge on the right at the end */}
+                            {/* Line 1: Main Title + Attachment Badge + Status Badge */}
                             <div className="flex items-center justify-between gap-2 mb-0.5">
-                              <h4 className={`text-sm font-bold leading-snug truncate flex-1 min-w-0 ${isRead ? 'text-gray-800' : 'text-gray-900'}`}>
-                                {headlineText}
-                              </h4>
+                              <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
+                                <h4 className={`text-sm font-bold leading-snug truncate ${isRead ? 'text-gray-800' : 'text-gray-900'}`}>
+                                  {headlineText}
+                                </h4>
+                                {isAnnouncement && notif.hasAttachment && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-100/90 px-2 py-0.5 rounded-md border border-amber-200/80 shrink-0" title="Has attachments">
+                                    <Paperclip size={11} className="text-amber-600" />
+                                    Attachment
+                                  </span>
+                                )}
+                              </div>
                               <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-md shrink-0 ml-1 ${badgeTheme}`}>
                                 {statusLabel}
                               </span>
