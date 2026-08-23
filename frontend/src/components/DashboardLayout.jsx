@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import { Bell, Search, X, Check, CheckCircle2, Megaphone, FileText, ChevronRight, Paperclip, ExternalLink, Image as ImageIcon, ShieldAlert, AlertTriangle, Lock, Clock, LogOut, User as UserIcon, Calendar } from 'lucide-react';
@@ -35,6 +35,46 @@ function getDocumentTypeName(sub) {
 function formatNotificationTitle(sub, actionLabel, activityTitle = '') {
   return formatHeadlineTitle(sub, activityTitle, 40);
 }
+
+const isAnnouncementTargetedToUser = (ann, user) => {
+  if (!ann || ann.is_active === false) return false;
+
+  const role = String(user?.role || '').toLowerCase().trim();
+  if (role === 'admin') return false;
+
+  const target = String(ann.target_audience || 'all').trim();
+  const targetLower = target.toLowerCase();
+
+  if (targetLower === 'all') return true;
+
+  if (targetLower.startsWith('org:')) {
+    const targetOrg = target.substring(4).trim().toLowerCase();
+    const userOrg = String(user?.org_name || '').trim().toLowerCase();
+    return role === 'org-president' && !!userOrg && userOrg === targetOrg;
+  }
+
+  if (targetLower === 'all-orgs' || targetLower === 'org-president' || targetLower === 'organization') {
+    return role === 'org-president';
+  }
+
+  if (targetLower === 'oso-staff' || targetLower === 'oso_staff') {
+    return role === 'oso-staff' || role === 'chairman' || role === 'vice-chairman';
+  }
+
+  if (targetLower === 'sds-coordinator' || targetLower === 'sds_coordinator') {
+    return role === 'sds-coordinator';
+  }
+
+  if (targetLower === 'chairman') {
+    return role === 'chairman';
+  }
+
+  if (targetLower === 'vice-chairman' || targetLower === 'vice_chairman') {
+    return role === 'vice-chairman';
+  }
+
+  return role === targetLower;
+};
 
 const fetchActivityTitlesMap = async (subIds) => {
   if (!subIds || subIds.length === 0) return {};
@@ -133,7 +173,7 @@ const Header = () => {
     try {
       let notifs = [];
 
-      // 1. Fetch Announcements
+      // 1. Fetch Announcements (Filtered by target audience)
       const { data: announcements } = await supabase
         .from('announcements')
         .select('*')
@@ -141,7 +181,8 @@ const Header = () => {
         .limit(20);
 
       if (announcements && announcements.length > 0) {
-        notifs.push(...announcements.map(a => ({
+        const targetedAnnouncements = announcements.filter(a => isAnnouncementTargetedToUser(a, user));
+        notifs.push(...targetedAnnouncements.map(a => ({
           id: `ann_${a.id}`,
           type: 'announcement',
           title: a.title,
@@ -913,9 +954,45 @@ const Header = () => {
 
 const DashboardLayout = () => {
   const { user } = useAuth();
+  const [showSuspendedModal, setShowSuspendedModal] = useState(false);
+  const [showReactivatedModal, setShowReactivatedModal] = useState(false);
+  const [adminEmail, setAdminEmail] = useState('');
   
+  const isSuspended = user?.status?.startsWith('Suspended') && user?.role === 'org-president';
+  const prevStatusRef = useRef(user?.status);
+
+  useEffect(() => {
+    const prevStatus = prevStatusRef.current;
+    const currentStatus = user?.status;
+
+    const wasSuspended = prevStatus && String(prevStatus).startsWith('Suspended');
+    const isNowActive = currentStatus && !String(currentStatus).startsWith('Suspended');
+
+    if (isSuspended) {
+      setShowSuspendedModal(true);
+      setShowReactivatedModal(false);
+      apiClient.get(apiUrl('/api/system/admin-email'))
+        .then(res => {
+          if (res.data?.email) setAdminEmail(res.data.email);
+        })
+        .catch(err => console.error('Error fetching admin email:', err));
+    } else {
+      setShowSuspendedModal(false);
+      if (wasSuspended && isNowActive && user?.role === 'org-president') {
+        setShowReactivatedModal(true);
+      }
+    }
+
+    prevStatusRef.current = currentStatus;
+  }, [isSuspended, user?.status, user?.role]);
+
   if (user?.role === 'org-president' && !user?.abbreviation) {
     return <OnboardingOverlay />;
+  }
+
+  let suspensionMessage = 'Your account has been suspended due to system requirements or missing submissions.';
+  if (user?.status && user.status.includes(':')) {
+    suspensionMessage = user.status.split(':').slice(1).join(':').trim();
   }
 
   return (
@@ -931,6 +1008,97 @@ const DashboardLayout = () => {
           </PageTransition>
         </main>
       </div>
+
+      {showSuspendedModal && isSuspended && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-100 flex flex-col animate-in zoom-in-95 duration-300">
+            <div className="p-6 text-white flex items-center gap-4 bg-gradient-to-r from-red-600 to-red-500">
+              <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-white shrink-0">
+                <Lock size={28} />
+              </div>
+              <div className="text-left">
+                <h2 className="text-xl font-black tracking-wide">ACCOUNT SUSPENDED</h2>
+                <p className="text-white/80 text-xs mt-0.5 font-medium">Access to document submission is restricted</p>
+              </div>
+            </div>
+
+            <div className="p-8 text-gray-800 text-left">
+              <p className="text-gray-600 text-sm leading-relaxed mb-6 font-medium">
+                An administrator has suspended your organization's account. While suspended, you can access your dashboard and view documents, but you cannot submit new documents or new versions.
+              </p>
+
+              <div className="mb-6 p-4 bg-red-50 rounded-xl border border-red-100">
+                <span className="block text-[10px] font-black text-red-500 uppercase tracking-widest mb-1.5">Suspension Reason</span>
+                <p className="text-red-700 text-xs leading-relaxed italic whitespace-pre-wrap">
+                  "{suspensionMessage}"
+                </p>
+              </div>
+
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 flex items-center gap-3">
+                <AlertTriangle className="text-red-500 shrink-0" size={20} />
+                <span className="text-xs text-gray-500 font-medium text-left">
+                  Please contact the SDS Coordinator at {adminEmail && adminEmail.includes('@') ? (
+                    <a href={`mailto:${adminEmail}`} className="text-blue-600 hover:underline font-bold">{adminEmail}</a>
+                  ) : adminEmail ? (
+                    <span className="font-bold text-gray-800">{adminEmail}</span>
+                  ) : (
+                    <span className="font-bold text-gray-800">the administrator</span>
+                  )} to reactivate your account.
+                </span>
+              </div>
+            </div>
+
+            <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowSuspendedModal(false)}
+                className="px-6 py-2.5 bg-primary-green hover:bg-green-700 text-white text-xs font-black rounded-xl transition-all duration-200 shadow-md shadow-green-600/10"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showReactivatedModal && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-100 flex flex-col animate-in zoom-in-95 duration-300 text-left">
+            <div className="p-6 text-white flex items-center gap-4 bg-gradient-to-r from-emerald-600 to-green-500">
+              <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-white shrink-0">
+                <CheckCircle2 size={28} />
+              </div>
+              <div>
+                <h2 className="text-xl font-black tracking-wide">ACCOUNT REACTIVATED</h2>
+                <p className="text-white/80 text-xs mt-0.5 font-medium">Full submission access has been restored</p>
+              </div>
+            </div>
+
+            <div className="p-8 text-gray-800">
+              <p className="text-gray-600 text-sm leading-relaxed mb-6 font-medium">
+                Great news! An administrator has reactivated your organization's account. You can now create new proposals, upload documents, and submit revisions normally.
+              </p>
+
+              <div className="bg-green-50 rounded-xl p-4 border border-green-100 flex items-center gap-3">
+                <CheckCircle2 className="text-emerald-600 shrink-0" size={20} />
+                <span className="text-xs text-emerald-800 font-medium">
+                  Your account status is now <strong>Active</strong>. Thank you for your patience!
+                </span>
+              </div>
+            </div>
+
+            <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowReactivatedModal(false)}
+                className="px-6 py-2.5 bg-primary-green hover:bg-green-700 text-white text-xs font-black rounded-xl transition-all duration-200 shadow-md shadow-green-600/10"
+              >
+                Got It
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

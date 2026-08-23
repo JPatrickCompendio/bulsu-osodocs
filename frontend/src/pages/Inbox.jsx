@@ -734,7 +734,9 @@ export const Inbox = () => {
   }, [subtypesMap]);
 
   React.useEffect(() => {
-    const targetId = location.state?.submissionId || location.state?.highlightedId;
+    const searchParams = new URLSearchParams(location.search);
+    const queryTargetId = searchParams.get('submissionId') || searchParams.get('id');
+    const targetId = location.state?.submissionId || location.state?.highlightedId || queryTargetId;
     if (!targetId) return;
 
     const openFromNotification = async () => {
@@ -755,7 +757,7 @@ export const Inbox = () => {
     };
 
     openFromNotification();
-  }, [inboxData, location.state, location.pathname, navigate, loading, user]);
+  }, [inboxData, location.state, location.search, location.pathname, navigate, loading, user]);
 
   const handleApproveSubmission = async (comments = '') => {
     if (!selectedDoc) return;

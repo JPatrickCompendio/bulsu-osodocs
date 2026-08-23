@@ -273,6 +273,25 @@ const UserManagement = () => {
       const result = await response.json();
 
       if (result.success) {
+        try {
+          const broadcastCh = supabase.channel(`user-status-broadcast-${suspendUser.id}`);
+          broadcastCh.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+              broadcastCh.send({
+                type: 'broadcast',
+                event: 'status-changed',
+                payload: { status: newStatus },
+              });
+            }
+          });
+
+          const bc = new BroadcastChannel(`user-status-${suspendUser.id}`);
+          bc.postMessage({ status: newStatus });
+          bc.close();
+        } catch (e) {
+          console.error('Broadcast error:', e);
+        }
+
         setIsSuspendModalOpen(false);
         setSuccessMessage(isCurrentlySuspended ? 'Account has been successfully reactivated!' : 'Account has been successfully suspended!');
         setIsSuccessModalOpen(true);
@@ -425,6 +444,27 @@ const UserManagement = () => {
       const result = await response.json();
 
       if (result.success) {
+        if (isEditMode && editingUserId) {
+          try {
+            const broadcastCh = supabase.channel(`user-status-broadcast-${editingUserId}`);
+            broadcastCh.subscribe((status) => {
+              if (status === 'SUBSCRIBED') {
+                broadcastCh.send({
+                  type: 'broadcast',
+                  event: 'status-changed',
+                  payload: { status: payload.status },
+                });
+              }
+            });
+
+            const bc = new BroadcastChannel(`user-status-${editingUserId}`);
+            bc.postMessage({ status: payload.status });
+            bc.close();
+          } catch (e) {
+            console.error('Broadcast error:', e);
+          }
+        }
+
         setIsModalOpen(false);
         setIsAdminModalOpen(false);
         setSuccessMessage(isEditMode ? 'User account has been successfully updated!' : 'New user account has been successfully created!');

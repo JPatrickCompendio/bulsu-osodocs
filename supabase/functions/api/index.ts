@@ -78,12 +78,16 @@ function getAnnouncementAudiences(role: string, orgName = '') {
     audiences.push('all-orgs', 'org-president');
     const trimmed = orgName.trim();
     if (trimmed) audiences.push(`org:${trimmed}`);
+  } else if (normRole === 'oso-staff') {
+    audiences.push('oso-staff');
+  } else if (normRole === 'sds-coordinator') {
+    audiences.push('sds-coordinator');
   } else if (normRole === 'chairman') {
     audiences.push('chairman', 'oso-staff');
   } else if (normRole === 'vice-chairman') {
     audiences.push('vice-chairman', 'oso-staff');
   } else if (normRole === 'admin') {
-    audiences.push('admin', 'oso-staff', 'chairman', 'vice-chairman');
+    audiences.push('admin', 'oso-staff', 'sds-coordinator', 'chairman', 'vice-chairman', 'all-orgs', 'org-president');
   }
 
   return Array.from(new Set(audiences));

@@ -209,6 +209,7 @@ const AnnouncementManagement = () => {
       }
 
       fetchAnnouncements();
+      window.dispatchEvent(new CustomEvent('announcement-updated'));
       closeModal();
     } catch (err) {
       console.error('Error saving announcement:', err);
@@ -221,6 +222,7 @@ const AnnouncementManagement = () => {
       try {
         await apiClient.delete(apiUrl(`/api/announcements/${id}`));
         fetchAnnouncements();
+        window.dispatchEvent(new CustomEvent('announcement-updated'));
       } catch (err) {
         console.error('Error deleting announcement:', err);
         showToast('Failed to delete announcement.');
@@ -235,6 +237,7 @@ const AnnouncementManagement = () => {
         is_active: !ann.is_active
       });
       fetchAnnouncements();
+      window.dispatchEvent(new CustomEvent('announcement-updated'));
     } catch (err) {
       console.error('Error toggling status:', err);
     }

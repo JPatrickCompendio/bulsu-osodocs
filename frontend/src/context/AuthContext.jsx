@@ -67,6 +67,83 @@ export const AuthProvider = ({ children }) => {
         };
     }, []);
 
+    useEffect(() => {
+        if (!user?.id) return;
+
+        // 1. Supabase Realtime Postgres Changes
+        const postgresChannel = supabase
+            .channel(`user-profile-postgres-${user.id}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'users',
+                    filter: `id=eq.${user.id}`,
+                },
+                (payload) => {
+                    if (payload?.new) {
+                        setUser((prev) => {
+                            if (!prev) return null;
+                            return {
+                                ...prev,
+                                ...payload.new,
+                                role: payload.new.role || prev.role || 'user',
+                            };
+                        });
+                    }
+                }
+            )
+            .subscribe();
+
+        // 2. Supabase Realtime Broadcast Channel
+        const broadcastChannel = supabase
+            .channel(`user-status-broadcast-${user.id}`)
+            .on('broadcast', { event: 'status-changed' }, (payload) => {
+                if (payload?.payload?.status) {
+                    setUser((prev) => (prev ? { ...prev, status: payload.payload.status } : null));
+                }
+            })
+            .subscribe();
+
+        // 3. Browser BroadcastChannel (for same browser multi-tab testing)
+        let bc = null;
+        try {
+            bc = new BroadcastChannel(`user-status-${user.id}`);
+            bc.onmessage = (event) => {
+                if (event.data?.status) {
+                    setUser((prev) => (prev ? { ...prev, status: event.data.status } : null));
+                }
+            };
+        } catch (e) {
+            // BroadcastChannel fallback
+        }
+
+        // 4. Lightweight polling sync fallback (every 3 seconds)
+        const pollInterval = setInterval(async () => {
+            try {
+                const { data: latest } = await supabase
+                    .from('users')
+                    .select('status')
+                    .eq('id', user.id)
+                    .maybeSingle();
+
+                if (latest && latest.status !== user.status) {
+                    setUser((prev) => (prev ? { ...prev, status: latest.status } : null));
+                }
+            } catch (err) {
+                // Silent catch
+            }
+        }, 3000);
+
+        return () => {
+            supabase.removeChannel(postgresChannel);
+            supabase.removeChannel(broadcastChannel);
+            if (bc) bc.close();
+            clearInterval(pollInterval);
+        };
+    }, [user?.id, user?.status]);
+
     const fetchProfile = async (authUser) => {
         try {
             const { data: profile, error } = await supabase

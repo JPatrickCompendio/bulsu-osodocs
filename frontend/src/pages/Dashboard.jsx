@@ -414,8 +414,38 @@ const AdminDashboardView = () => {
                     const statusName = formatStatus(doc.status, 'admin');
                     const docTitle = formatSubmissionTitle(doc, stats?.hero?.activeSy);
                     const typeColor = getDocTypeColor(doc.documentType?.name);
+                    const rawStatus = String(doc.status || '').toLowerCase().trim();
+
+                    const isOsoStaffReview =
+                      rawStatus === 'submitted' ||
+                      rawStatus === 'pending' ||
+                      rawStatus === 'oso staff review' ||
+                      rawStatus === 'oso-staff-review' ||
+                      statusName.toLowerCase() === 'oso staff review';
+
+                    const handleRowClick = () => {
+                      if (isOsoStaffReview) return;
+
+                      const isUnderAdminInbox =
+                        rawStatus.includes('sds') ||
+                        rawStatus.includes('oso approved') ||
+                        rawStatus.includes('coordinator');
+
+                      if (isUnderAdminInbox) {
+                        navigate(`/inbox?submissionId=${doc.id}`, { state: { submissionId: doc.id } });
+                      } else {
+                        navigate(`/my-documents?submissionId=${doc.id}`, { state: { submissionId: doc.id } });
+                      }
+                    };
+
                     return (
-                      <tr key={doc.id} className="hover:bg-gray-50/50 transition-colors group">
+                      <tr
+                        key={doc.id}
+                        className={`transition-colors group ${
+                          isOsoStaffReview ? 'hover:bg-transparent cursor-not-allowed opacity-80' : 'hover:bg-gray-50/50 cursor-pointer'
+                        }`}
+                        onClick={handleRowClick}
+                      >
                         <td className="px-6 py-4">
                           <div className="font-bold text-sm text-gray-800 line-clamp-2 max-w-xs" title={docTitle}>{docTitle}</div>
                         </td>
@@ -433,9 +463,15 @@ const AdminDashboardView = () => {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-right">
-                          <button onClick={() => navigate(`/my-documents?submissionId=${doc.id}`)} className="p-2 text-gray-400 hover:text-primary-green transition-colors rounded-lg hover:bg-green-50">
-                            <ChevronRight size={20} />
-                          </button>
+                          {isOsoStaffReview ? (
+                            <div className="p-2 text-amber-500 inline-flex items-center justify-center" title="Under OSO Staff Review - Not yet accessible by Admin">
+                              <Clock size={20} />
+                            </div>
+                          ) : (
+                            <button onClick={(e) => { e.stopPropagation(); handleRowClick(); }} className="p-2 text-gray-400 hover:text-primary-green transition-colors rounded-lg hover:bg-green-50">
+                              <ChevronRight size={20} />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -762,9 +798,6 @@ const ChairmanDashboardView = ({ role }) => {
               <h2 className="text-lg font-black text-gray-800 uppercase">Active Documents Overview</h2>
               <p className="text-xs font-bold text-gray-400">All documents currently under review</p>
             </div>
-            <button onClick={() => navigate('/inbox')} className="px-4 py-2 bg-primary-green text-white text-xs font-bold rounded-xl hover:shadow-md transition-all">
-              Go to Inbox
-            </button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
@@ -787,8 +820,24 @@ const ChairmanDashboardView = ({ role }) => {
                     const statusName = formatStatus(doc.status, 'admin');
                     const docTitle = formatSubmissionTitle(doc, stats?.hero?.activeSy);
                     const typeColor = getDocTypeColor(doc.documentType?.name);
+                    const rawStatus = String(doc.status || '').toLowerCase().trim();
+                    const isUnderStaffReview =
+                      rawStatus === 'submitted' ||
+                      rawStatus === 'pending' ||
+                      rawStatus === 'oso staff review' ||
+                      rawStatus.includes('staff review') ||
+                      rawStatus.includes('pending');
+
+                    const handleRowClick = () => {
+                      if (isUnderStaffReview) {
+                        navigate(`/inbox?submissionId=${doc.id}`, { state: { submissionId: doc.id } });
+                      } else {
+                        navigate(`/my-documents?submissionId=${doc.id}`, { state: { submissionId: doc.id } });
+                      }
+                    };
+
                     return (
-                      <tr key={doc.id} className="hover:bg-gray-50/50 transition-colors group cursor-pointer" onClick={() => navigate(`/inbox`)}>
+                      <tr key={doc.id} className="hover:bg-gray-50/50 transition-colors group cursor-pointer" onClick={handleRowClick}>
                         <td className="px-6 py-4">
                           <div className="font-bold text-sm text-gray-800 line-clamp-2 max-w-xs" title={docTitle}>{docTitle}</div>
                         </td>
@@ -806,7 +855,7 @@ const ChairmanDashboardView = ({ role }) => {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-right">
-                          <button className="p-2 text-gray-400 hover:text-primary-green transition-colors rounded-lg hover:bg-green-50">
+                          <button onClick={(e) => { e.stopPropagation(); handleRowClick(); }} className="p-2 text-gray-400 hover:text-primary-green transition-colors rounded-lg hover:bg-green-50">
                             <ChevronRight size={20} />
                           </button>
                         </td>

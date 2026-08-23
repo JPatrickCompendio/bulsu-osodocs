@@ -1441,6 +1441,17 @@ const SubmitNewDocument = () => {
   };
 
 
+  if (loading && view === 'dashboard') {
+    return (
+      <div className="flex h-[80vh] items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 border-4 border-primary-green border-t-transparent rounded-full animate-spin"></div>
+          <span className="text-primary-green font-bold tracking-[0.2em] text-xs uppercase animate-pulse">Loading Data...</span>
+        </div>
+      </div>
+    );
+  }
+
   if (isSuspended) {
     let suspensionMessage = 'Your account has been suspended due to system requirements or missing submissions.';
     if (user.status.includes(':')) {
@@ -1495,17 +1506,6 @@ const SubmitNewDocument = () => {
               Back to Dashboard
             </button>
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (loading && view === 'dashboard') {
-    return (
-      <div className="flex h-[80vh] items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 border-4 border-primary-green border-t-transparent rounded-full animate-spin"></div>
-          <span className="text-primary-green font-bold tracking-[0.2em] text-xs uppercase animate-pulse">Loading Data...</span>
         </div>
       </div>
     );
