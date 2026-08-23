@@ -18,6 +18,18 @@ import DEFAULT_HEADER_IMG from '../assets/HEADER.png';
 import DEFAULT_FOOTER_IMG from '../assets/FOOTER.png';
 import HEADER_LOGO_IMG from '../assets/headerLOGO.png';
 import ActivityProposalPreviewModal from '../components/ActivityProposalPreviewModal';
+import { calculateProposalDuration } from '../utils/submissionLogUtils';
+
+const getMinAllowedDate = () => {
+  const today = new Date();
+  const dayOfWeek = today.getDay();
+  let daysUntilNextMonday = 8 - dayOfWeek;
+  if (dayOfWeek === 0) daysUntilNextMonday = 1;
+  const minDate = new Date(today);
+  minDate.setDate(today.getDate() + daysUntilNextMonday);
+  return minDate.toISOString().split('T')[0];
+};
+
 const isAllowMultiple = (val) => {
   if (val === true || val === 1) return true;
   if (typeof val === 'string') {
@@ -365,6 +377,32 @@ const SubmitNewDocument = () => {
     setTimeout(() => setToast(null), 4000);
   };
 
+  const validateDateSelection = (val) => {
+    if (!val) return true;
+    const checkVal = val.split('T')[0];
+    const minAllowedStr = getMinAllowedDate();
+
+    if (checkVal < minAllowedStr) {
+      showToast("Invalid Activity Date: Activities must be scheduled in advance and cannot be set within the current work week.", "error");
+      return false;
+    }
+
+    const isBlocked = (blockedEvents || []).some(ev => {
+      if (ev.document_type_id && selectedType?.id && ev.document_type_id !== selectedType?.id) return false;
+      const evStart = ev.start_date ? ev.start_date.split('T')[0] : '';
+      const evEnd = ev.end_date ? ev.end_date.split('T')[0] : evStart;
+      if (!evStart) return false;
+      return checkVal >= evStart && checkVal <= evEnd;
+    });
+
+    if (isBlocked) {
+      showToast("Date Unavailable: The selected date coincides with an official Academic Calendar Event / Holiday. Please choose another date.", "error");
+      return false;
+    }
+
+    return true;
+  };
+
   const isProposal = selectedType?.name.toLowerCase().includes('activity proposal');
 
   const isActivityProposalFormComplete = useMemo(() => {
@@ -511,13 +549,21 @@ const SubmitNewDocument = () => {
             <div class="form-row">
               <div class="form-label">Target Date and Time:</div>
               <div class="form-line">
-                ${proposalDetails.activity_dates.map(d => new Date(d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })).join(', ')} 
-                | ${formatTime(proposalDetails.target_time)} - ${proposalDetails.is_indefinite_end_time ? 'INDEFINITE' : formatTime(proposalDetails.target_end_time)}
+                ${(proposalDetails.schedules || []).map(s => {
+                  if (s.end_date && s.activity_date) {
+                    return `${new Date(s.activity_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} to ${new Date(s.end_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`;
+                  }
+                  if (s.activity_date) {
+                    const timeStr = s.is_indefinite ? 'INDEFINITE' : `${formatTime(s.start_time)} - ${formatTime(s.end_time)}`;
+                    return `${new Date(s.activity_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} (${timeStr})`;
+                  }
+                  return '';
+                }).filter(Boolean).join('; ') || (proposalDetails.target_date || '')}
               </div>
             </div>
             <div class="form-row">
               <div class="form-label">Duration:</div>
-              <div class="form-line">${proposalDetails.is_indefinite_end_time ? 'INDEFINITE' : formatDuration(Math.round(parseFloat(proposalDetails.duration || 0) * 60))}</div>
+              <div class="form-line">${calculateProposalDuration(proposalDetails)}</div>
             </div>
             <div class="form-row">
               <div class="form-label">Number of Student Involved:</div>
@@ -2000,23 +2046,12 @@ const SubmitNewDocument = () => {
                                           <input
                                             type="date"
                                             required
-                                            min={new Date().toISOString().split('T')[0]}
+                                            min={getMinAllowedDate()}
                                             className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary-green font-bold text-xs outline-none"
                                             value={sched.activity_date}
                                             onChange={e => {
                                               const val = e.target.value;
-                                              const checkVal = val ? val.split('T')[0] : '';
-                                              const isBlocked = blockedEvents.some(ev => {
-                                                if (ev.document_type_id && ev.document_type_id !== selectedType?.id) return false;
-                                                const evStart = ev.start_date ? ev.start_date.split('T')[0] : '';
-                                                const evEnd = ev.end_date ? ev.end_date.split('T')[0] : evStart;
-                                                if (!evStart) return false;
-                                                return checkVal >= evStart && checkVal <= evEnd;
-                                              });
-                                              if (isBlocked) {
-                                                showToast(`Cannot select ${val}: This date is blocked by the Academic Calendar.`, 'error');
-                                                return;
-                                              }
+                                              if (!validateDateSelection(val)) return;
                                               const newScheds = [...proposalDetails.schedules];
                                               newScheds[idx].activity_date = val;
                                               setProposalDetails(prev => ({ ...prev, schedules: newScheds }));
@@ -2028,23 +2063,12 @@ const SubmitNewDocument = () => {
                                           <input
                                             type="date"
                                             required
-                                            min={sched.activity_date || new Date().toISOString().split('T')[0]}
+                                            min={sched.activity_date || getMinAllowedDate()}
                                             className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary-green font-bold text-xs outline-none"
                                             value={sched.end_date || ''}
                                             onChange={e => {
                                               const val = e.target.value;
-                                              const checkVal = val ? val.split('T')[0] : '';
-                                              const isBlocked = blockedEvents.some(ev => {
-                                                if (ev.document_type_id && ev.document_type_id !== selectedType?.id) return false;
-                                                const evStart = ev.start_date ? ev.start_date.split('T')[0] : '';
-                                                const evEnd = ev.end_date ? ev.end_date.split('T')[0] : evStart;
-                                                if (!evStart) return false;
-                                                return checkVal >= evStart && checkVal <= evEnd;
-                                              });
-                                              if (isBlocked) {
-                                                showToast(`Cannot select ${val}: This date is blocked by the Academic Calendar.`, 'error');
-                                                return;
-                                              }
+                                              if (!validateDateSelection(val)) return;
                                               const newScheds = [...proposalDetails.schedules];
                                               newScheds[idx].end_date = val;
                                               setProposalDetails(prev => ({ ...prev, schedules: newScheds }));
@@ -2059,23 +2083,12 @@ const SubmitNewDocument = () => {
                                           <input
                                             type="date"
                                             required
-                                            min={new Date().toISOString().split('T')[0]}
+                                            min={getMinAllowedDate()}
                                             className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary-green font-bold text-xs outline-none"
                                             value={sched.activity_date}
                                             onChange={e => {
                                               const val = e.target.value;
-                                              const checkVal = val ? val.split('T')[0] : '';
-                                              const isBlocked = blockedEvents.some(ev => {
-                                                if (ev.document_type_id && ev.document_type_id !== selectedType?.id) return false;
-                                                const evStart = ev.start_date ? ev.start_date.split('T')[0] : '';
-                                                const evEnd = ev.end_date ? ev.end_date.split('T')[0] : evStart;
-                                                if (!evStart) return false;
-                                                return checkVal >= evStart && checkVal <= evEnd;
-                                              });
-                                              if (isBlocked) {
-                                                showToast(`Cannot select ${val}: This date is blocked by the Academic Calendar.`, 'error');
-                                                return;
-                                              }
+                                              if (!validateDateSelection(val)) return;
                                               const newScheds = [...proposalDetails.schedules];
                                               newScheds[idx].activity_date = val;
                                               setProposalDetails(prev => ({ ...prev, schedules: newScheds }));

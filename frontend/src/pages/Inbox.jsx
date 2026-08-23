@@ -211,7 +211,7 @@ const mapInboxSubmission = (sub, viewer, subtypesMap = {}) => {
     proposal_title: isActivityProposal ? (customDetails.activity_title || '-') : '-',
     targetDate: isActivityProposal ? (customDetails.target_date || '-') : '-',
     targetTime: isActivityProposal ? (customDetails.target_time || '-') : '-',
-    duration: customDetails.duration || 'N/A',
+    duration: calculateProposalDuration(customDetails),
     students: customDetails.number_of_students ? `${customDetails.number_of_students} Students` : 'N/A',
     nature: customDetails.nature_of_activity || 'N/A',
     objectives: customDetails.objectives || '',

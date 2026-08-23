@@ -2395,17 +2395,8 @@ async function handleAdminDashboard() {
       : 0;
 
   const normalizeStatus = (value: unknown) => String(value || '').toLowerCase().trim();
-  const activeReviewStatuses = new Set([
-    'oso approved',
-    'sds approved',
-    'chairman approved',
-    'vice chairman approved',
-    'external approved',
-    'dean approved',
-    'approved',
-  ]);
   const actualActiveReviewCount = allSubmissions
-    ? allSubmissions.filter((s) => activeReviewStatuses.has(normalizeStatus(s.status))).length
+    ? allSubmissions.filter((s) => !['draft', 'completed', 'disapproved'].includes(normalizeStatus(s.status))).length
     : 0;
 
   const activeDocumentsOverview = allSubmissions
@@ -2582,7 +2573,8 @@ async function handleOrgDashboard(url: URL) {
         disapprovedCount++;
       } else if (s === 'returned') {
         returnedCount++;
-      } else if (s === 'dean approved') {
+        underReviewDocs.push(sub);
+      } else if (['dean approved', 'approved', 'waiting for accomplishment report'].includes(s)) {
         approvedCount++;
         underReviewDocs.push(sub);
       } else if (s !== 'draft') {

@@ -253,7 +253,7 @@ const fetchChairmanDashboardFallback = async (user, role) => {
 
   const pendingCount = allSubmissions?.filter((s) => s.status === 'submitted').length || 0;
   const approvedCount = allSubmissions?.filter((s) =>
-    ['dean approved', 'completed', 'waiting for accomplishment report'].includes(String(s.status || '').toLowerCase()),
+    ['dean approved', 'approved', 'waiting for accomplishment report'].includes(String(s.status || '').toLowerCase()),
   ).length || 0;
   const returnedCount = allSubmissions?.filter((s) => s.status === 'returned').length || 0;
   const completedCount = allSubmissions?.filter((s) => s.status === 'completed').length || 0;

@@ -229,7 +229,7 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy, subtypesMap =
     contact: details?.contact_number || '-',
     targetDate,
     targetTime: details?.target_time || '-',
-    duration: details?.duration || '-',
+    duration: calculateProposalDuration(details),
     schedules: details?.activity_schedules || [],
     students: details?.number_of_students || '-',
     nature: details?.nature_of_activity || '-',
@@ -1656,7 +1656,7 @@ export const MyDocuments = () => {
       contact: details?.contact_number || '-',
       targetDate,
       targetTime,
-      duration: details?.duration || '-',
+      duration: calculateProposalDuration(details),
       students: details?.number_of_students || '-',
       nature: details?.nature_of_activity || '-',
       objectives: details?.objectives || null,
@@ -3927,7 +3927,7 @@ export const MyDocuments = () => {
                 <span>Disapprove</span>
               </button>
             );
-          } else if (selectedDoc?.category === 'Final In-Campus review' || selectedDoc?.category === 'Dean Review' || selectedDoc?.category === 'SDS Review' || selectedDoc?.category === 'Main Campus Review') {
+          } else if (buttons.length === 0 && (selectedDoc?.category === 'Final In-Campus review' || selectedDoc?.category === 'Dean Review' || selectedDoc?.category === 'SDS Review' || selectedDoc?.category === 'Main Campus Review')) {
             buttons.push(
               <button
                 key="review-approve"
