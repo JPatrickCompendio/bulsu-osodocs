@@ -1293,8 +1293,11 @@ const SubmitNewDocument = () => {
   };
 
   const handleRegisterDocument = (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     if (isSavingRef.current || isSaving) return;
+
+    isSavingRef.current = true;
+    setIsSaving(true);
 
     // Validate form inputs if proposal
     const isProposal = selectedType.name.toLowerCase().includes('activity proposal');
@@ -1326,11 +1329,15 @@ const SubmitNewDocument = () => {
         !p.satisfaction_goal_1?.trim()
       ) {
         showToast('Please fill in all required form fields.', 'error');
+        isSavingRef.current = false;
+        setIsSaving(false);
         return;
       }
 
       if (!/^09\d{9}$/.test(p.contact_number)) {
         showToast('Contact number must start with 09 and have exactly 11 digits.', 'error');
+        isSavingRef.current = false;
+        setIsSaving(false);
         return;
       }
     }
@@ -1339,6 +1346,8 @@ const SubmitNewDocument = () => {
     const requiredReqs = requirements.filter(r => !r.is_optional && !r.title.toLowerCase().includes('(optional)'));
     if (attachedIds.size < requiredReqs.length) {
       showToast(`Please attach all ${requiredReqs.length} required documents before registering.`, 'error');
+      isSavingRef.current = false;
+      setIsSaving(false);
       return;
     }
 
@@ -1516,9 +1525,8 @@ const SubmitNewDocument = () => {
               <div className="w-10 h-10 bg-green-100 text-green-800 font-black text-sm flex items-center justify-center rounded-lg shrink-0">
                 {i + 1}
               </div>
-              <div className="flex flex-col">
-                <h4 className="text-sm font-black text-gray-800 leading-tight uppercase flex flex-wrap items-center gap-2">
-                  {req.title}
+              <div className="flex flex-col gap-1">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className={`px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full ${
                     (req.requirement_scope || 'OSAS') === 'OSAS'
                       ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
@@ -1539,6 +1547,9 @@ const SubmitNewDocument = () => {
                   {(req.is_optional === true || String(req.is_optional) === 'true') && !isReturnedDocument && (
                     <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 text-[9px] font-black uppercase rounded">Optional</span>
                   )}
+                </div>
+                <h4 className="text-sm font-black text-gray-800 leading-tight uppercase">
+                  {req.title}
                 </h4>
                 <p className="text-[11px] font-bold text-gray-500 mt-1">{req.description || 'Please provide the requested document'}</p>
                 <span className="text-[11px] font-bold text-gray-400 mt-2 block">{req.referenceCode || 'REQ'}</span>
@@ -2540,9 +2551,9 @@ const SubmitNewDocument = () => {
                     {proposalStep === 3 && (
                       <button
                         type="submit"
-                        disabled={isResubmitDisabled}
+                        disabled={isResubmitDisabled || isSaving}
                         className={`px-6 py-2.5 font-black rounded-lg transition-all shadow-md flex items-center gap-2 text-[11px] uppercase tracking-widest ${
-                          isResubmitDisabled
+                          isResubmitDisabled || isSaving
                             ? 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-60'
                             : 'bg-primary-green text-white hover:bg-green-700 hover:scale-105 active:scale-95 shadow-green-600/20'
                         }`}
@@ -2580,9 +2591,9 @@ const SubmitNewDocument = () => {
                     </button>
                     <button
                       type="submit"
-                      disabled={isResubmitDisabled}
+                      disabled={isResubmitDisabled || isSaving}
                       className={`px-6 py-2.5 font-black rounded-lg transition-all shadow-md flex items-center gap-2 text-[11px] uppercase tracking-widest ${
-                        isResubmitDisabled
+                        isResubmitDisabled || isSaving
                           ? 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-60'
                           : 'bg-primary-green text-white hover:bg-green-700 hover:scale-105 active:scale-95 shadow-green-600/20'
                       }`}

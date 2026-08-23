@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import SubmissionTimeline from './SubmissionTimeline';
-import { parseObjectivesList } from '../utils/submissionLogUtils';
+import { parseObjectivesList, calculateProposalDuration } from '../utils/submissionLogUtils';
 import AccomplishmentReportPreviewModal from './AccomplishmentReportPreviewModal';
 
 const getStoragePublicUrl = (fileUrl) => {
@@ -514,6 +514,11 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
               </div>
 
               <div className="flex gap-2">
+                <span className="font-bold min-w-[200px]">Duration:</span>
+                <span>{calculateProposalDuration(details)}</span>
+              </div>
+
+              <div className="flex gap-2">
                 <span className="font-bold min-w-[200px]">Number of Students Involved:</span>
                 <span>{details?.number_of_students ? `${details.number_of_students} Students` : '—'}</span>
               </div>
@@ -668,12 +673,12 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
                       <div className="flex items-center gap-3 min-w-0">
                         <CheckCircle size={18} className={iconColor} />
                         <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className={`${titleColor} font-semibold text-sm truncate`}>{fileName}</p>
+                          <div className="mb-1 flex flex-wrap items-center gap-2">
                             <span className="text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-white/20 text-white border border-white/30 font-black">
                               {isOsas ? 'OSAS Requirement' : 'LOCAL Requirement'}
                             </span>
                           </div>
+                          <p className={`${titleColor} font-semibold text-sm truncate`}>{fileName}</p>
                           {meta && <p className={`text-[10px] uppercase font-semibold ${metaColor}`}>{meta}</p>}
                         </div>
                       </div>

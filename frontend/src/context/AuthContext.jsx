@@ -78,21 +78,14 @@ export const AuthProvider = ({ children }) => {
             if (!error && profile) {
                 let avatarUrl = null;
                 if (profile.profile_image) {
-                    try {
-                        const { data: blob } = await supabase.storage
-                            .from('profile_img')
-                            .download(profile.profile_image);
-                        if (blob) {
-                            avatarUrl = URL.createObjectURL(blob);
-                        }
-                    } catch (e) {
-                        console.error('Failed to download profile image:', e);
+                    if (profile.profile_image.startsWith('http')) {
+                        avatarUrl = profile.profile_image;
+                    } else {
+                        const { data: pubData } = supabase.storage.from('profile_img').getPublicUrl(profile.profile_image);
+                        avatarUrl = pubData?.publicUrl || null;
                     }
                 }
                 setUser((prev) => {
-                    if (prev?.avatarUrl && prev.avatarUrl !== avatarUrl) {
-                        URL.revokeObjectURL(prev.avatarUrl);
-                    }
                     return {
                         ...prev,
                         ...authUser,
@@ -103,7 +96,6 @@ export const AuthProvider = ({ children }) => {
                 });
             } else {
                 setUser((prev) => {
-                    if (prev?.avatarUrl) URL.revokeObjectURL(prev.avatarUrl);
                     return { ...authUser, role: 'user' };
                 });
             }
@@ -131,15 +123,11 @@ export const AuthProvider = ({ children }) => {
 
             let avatarUrl = null;
             if (profile.profile_image) {
-                try {
-                    const { data: blob } = await supabase.storage
-                        .from('profile_img')
-                        .download(profile.profile_image);
-                    if (blob) {
-                        avatarUrl = URL.createObjectURL(blob);
-                    }
-                } catch (e) {
-                    console.error('Failed to download profile image:', e);
+                if (profile.profile_image.startsWith('http')) {
+                    avatarUrl = profile.profile_image;
+                } else {
+                    const { data: pubData } = supabase.storage.from('profile_img').getPublicUrl(profile.profile_image);
+                    avatarUrl = pubData?.publicUrl || null;
                 }
             }
 

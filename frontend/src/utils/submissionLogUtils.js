@@ -460,3 +460,76 @@ export const parseObjectivesList = (objectives) => {
 
   return [];
 };
+
+export const calculateProposalDuration = (proposalDetails) => {
+  if (!proposalDetails) return '—';
+
+  const schedules = proposalDetails.schedules || proposalDetails.activity_schedules || [];
+
+  if (Array.isArray(schedules) && schedules.length > 0) {
+    const durations = schedules.map(sched => {
+      // Check if it's a date range
+      if (sched.end_date && sched.activity_date) {
+        const start = new Date(sched.activity_date);
+        const end = new Date(sched.end_date);
+        const diffMs = end - start;
+        const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+        if (diffDays > 0) {
+          return `${diffDays} day${diffDays > 1 ? 's' : ''}`;
+        } else if (diffDays === 0) {
+          return `1 day`;
+        }
+      }
+
+      // Check if indefinite
+      if (sched.is_indefinite) {
+        return 'INDEFINITE';
+      }
+
+      // Check single date duration_minutes or start_time/end_time
+      let mins = sched.duration_minutes;
+      if (!mins && sched.start_time && sched.end_time) {
+        try {
+          const start = new Date(`1970-01-01T${sched.start_time}`);
+          const end = new Date(`1970-01-01T${sched.end_time}`);
+          let diff = (end - start) / (1000 * 60);
+          if (diff < 0) diff += 24 * 60;
+          mins = Math.round(diff);
+        } catch (e) {}
+      }
+
+      if (mins && mins > 0) {
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        let res = [];
+        if (h > 0) res.push(`${h} hour${h > 1 ? 's' : ''}`);
+        if (m > 0) res.push(`${m} minute${m > 1 ? 's' : ''}`);
+        return res.join(' and ') || `${mins} mins`;
+      }
+
+      return null;
+    }).filter(Boolean);
+
+    if (durations.length > 0) {
+      return durations.join(' | ');
+    }
+  }
+
+  // Fallback checks on legacy proposalDetails properties if any
+  if (proposalDetails.is_indefinite_end_time) return 'INDEFINITE';
+  if (proposalDetails.duration) {
+    const num = parseFloat(proposalDetails.duration);
+    if (!isNaN(num) && num > 0) {
+      const mins = Math.round(num * 60);
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      let res = [];
+      if (h > 0) res.push(`${h} hour${h > 1 ? 's' : ''}`);
+      if (m > 0) res.push(`${m} minute${m > 1 ? 's' : ''}`);
+      return res.join(' and ') || '';
+    }
+  }
+
+  return '—';
+};
+

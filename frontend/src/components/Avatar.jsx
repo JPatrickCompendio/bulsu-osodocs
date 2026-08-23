@@ -1,50 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { supabase } from '../supabaseClient';
 
 const Avatar = ({ profileImage, name, className = '', fallbackClassName = '' }) => {
-    const [avatarUrl, setAvatarUrl] = useState(null);
+    const [hasError, setHasError] = useState(false);
 
-    useEffect(() => {
-        let isMounted = true;
-        let objectUrl = null;
+    if (profileImage && !hasError) {
+        let imageUrl = profileImage;
+        if (!profileImage.startsWith('http')) {
+            const { data } = supabase.storage.from('profile_img').getPublicUrl(profileImage);
+            imageUrl = data?.publicUrl;
+        }
 
-        const loadAvatar = async () => {
-            if (!profileImage) return;
-            
-            try {
-                const { data: blob, error } = await supabase.storage
-                    .from('profile_img')
-                    .download(profileImage);
-                    
-                if (error) throw error;
-                
-                if (blob && isMounted) {
-                    objectUrl = URL.createObjectURL(blob);
-                    setAvatarUrl(objectUrl);
-                }
-            } catch (err) {
-                // Silently fail to fallback if image missing/restricted
-            }
-        };
-
-        loadAvatar();
-
-        return () => {
-            isMounted = false;
-            if (objectUrl) {
-                URL.revokeObjectURL(objectUrl);
-            }
-        };
-    }, [profileImage]);
-
-    if (avatarUrl) {
-        return (
-            <img 
-                src={avatarUrl} 
-                alt={name || 'Avatar'} 
-                className={`object-cover ${className}`} 
-            />
-        );
+        if (imageUrl) {
+            return (
+                <img 
+                    src={imageUrl} 
+                    alt={name || 'Avatar'} 
+                    className={`object-cover ${className}`} 
+                    onError={() => setHasError(true)}
+                />
+            );
+        }
     }
 
     return (

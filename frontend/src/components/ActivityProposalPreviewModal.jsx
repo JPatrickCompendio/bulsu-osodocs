@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { X, Printer, Edit3 } from 'lucide-react';
 import JoditEditor from 'jodit-react';
 import HEADER_LOGO_IMG from '../assets/headerLOGO.png';
+import { calculateProposalDuration } from '../utils/submissionLogUtils';
 
 const renderSignatureBlocksHtml = (proposalDetails, user, orgName) => {
   const allPeople = [];
@@ -237,7 +238,7 @@ const ActivityProposalPreviewModal = ({
 
           <div class="form-row">
             <div class="form-label">Duration:</div>
-            <div class="form-line">${proposalDetails.is_indefinite_end_time ? 'INDEFINITE' : formatDuration(Math.round(parseFloat(proposalDetails.duration || 0) * 60))}</div>
+            <div class="form-line">${calculateProposalDuration(proposalDetails)}</div>
           </div>
 
           <div class="form-row">

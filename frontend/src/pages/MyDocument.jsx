@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
 import * as subService from '../services/submissionService';
-import { filterTimelineLogsForVersion, parseObjectivesList } from '../utils/submissionLogUtils';
+import { filterTimelineLogsForVersion, parseObjectivesList, calculateProposalDuration } from '../utils/submissionLogUtils';
 import SubmissionTimeline from '../components/SubmissionTimeline';
 import { apiFetch } from '../config/api';
 import {
@@ -2160,6 +2160,10 @@ export const MyDocuments = () => {
                   </span>
                 </div>
                 <div className="flex gap-2">
+                  <span className="font-bold min-w-[200px]">Duration:</span>
+                  <span>{calculateProposalDuration(selectedDoc.proposalDetails || selectedDoc.raw?.activity_proposal_details || { schedules: selectedDoc.schedules, duration: selectedDoc.duration, is_indefinite_end_time: selectedDoc.is_indefinite_end_time })}</span>
+                </div>
+                <div className="flex gap-2">
                   <span className="font-bold min-w-[200px]">Number of Students Involved:</span>
                   <span>{selectedDoc.students || '—'}</span>
                 </div>
@@ -2375,12 +2379,12 @@ export const MyDocuments = () => {
                                 <Paperclip size={20} />
                               </div>
                               <div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <p className={`${textColor} font-semibold text-sm`}>{fileName}</p>
+                                <div className="mb-1 flex flex-wrap items-center gap-2">
                                   <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${badgeStyle}`}>
                                     {isOsas ? 'OSAS Requirement' : 'LOCAL Requirement'}
                                   </span>
                                 </div>
+                                <p className={`${textColor} font-semibold text-sm`}>{fileName}</p>
                                 <p className={`${subtitleColor} text-[10px] uppercase font-bold mt-0.5`}>
                                   {isForwardedPhase ? (isOsas ? '✓ Forwarded to Main Campus' : '✓ Retained Locally') : 'Attached Document'}
                                 </p>
@@ -3364,6 +3368,10 @@ export const MyDocuments = () => {
                 </span>
               </div>
               <div className="flex gap-2">
+                <span className="font-bold min-w-[200px]">Duration:</span>
+                <span>{calculateProposalDuration(selectedDoc.proposalDetails || selectedDoc.raw?.activity_proposal_details || { schedules: selectedDoc.schedules, duration: selectedDoc.duration, is_indefinite_end_time: selectedDoc.is_indefinite_end_time })}</span>
+              </div>
+              <div className="flex gap-2">
                 <span className="font-bold min-w-[200px]">Number of Students:</span>
                 <span>{selectedDoc.students}</span>
               </div>
@@ -3854,7 +3862,8 @@ export const MyDocuments = () => {
             }
           }
 
-          const allFilesApproved = submissionAttachments.length > 0 && submissionAttachments.every((file) => {
+          const currentAttachments = attachments || selectedDoc?.attachments || currentVersion?.submission_attachments || [];
+          const allFilesApproved = currentAttachments.length > 0 && currentAttachments.every((file) => {
             if (locallyReturned[file.id]) return false;
             const fileLog = (timelineLogs || []).find((l) => l.attachment_id === file.id || (l.comment && l.comment.includes(file.file_name)));
             const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
@@ -3866,10 +3875,10 @@ export const MyDocuments = () => {
             );
           });
 
-          if (selectedDoc?.category === 'Pending Hard Copy' || selectedDoc?.category === 'To Forward' || (selectedDoc?.raw?.status || selectedDoc?.status || '').toLowerCase().includes('forward')) {
+          if (buttons.length === 0 && (selectedDoc?.category === 'Pending Hard Copy' || selectedDoc?.category === 'To Forward' || (selectedDoc?.raw?.status || selectedDoc?.status || '').toLowerCase().includes('forward'))) {
             buttons.push(
               <button
-                key="verify-approve"
+                key="forward-verify-approve"
                 onClick={() => {
                   setDecisionType('approve');
                   setReturnComments('');
@@ -3882,7 +3891,7 @@ export const MyDocuments = () => {
                 <span>Verify & Approve</span>
               </button>,
               <button
-                key="return"
+                key="forward-return"
                 onClick={() => {
                   setDecisionType('return');
                   setReturnComments('');
@@ -3898,7 +3907,7 @@ export const MyDocuments = () => {
                 <span>Return</span>
               </button>,
               <button
-                key="disapprove"
+                key="forward-disapprove"
                 onClick={() => {
                   setDecisionType('disapprove');
                   setReturnComments('');
@@ -3913,7 +3922,7 @@ export const MyDocuments = () => {
           } else if (selectedDoc?.category === 'Final In-Campus review' || selectedDoc?.category === 'Dean Review' || selectedDoc?.category === 'SDS Review' || selectedDoc?.category === 'Main Campus Review') {
             buttons.push(
               <button
-                key="approve"
+                key="review-approve"
                 onClick={() => {
                   setDecisionType('approve');
                   setReturnComments('');
@@ -3926,7 +3935,7 @@ export const MyDocuments = () => {
                 <span>Approve</span>
               </button>,
               <button
-                key="return"
+                key="review-return"
                 onClick={() => {
                   setDecisionType('return');
                   setReturnComments('');
@@ -3942,7 +3951,7 @@ export const MyDocuments = () => {
                 <span>Return</span>
               </button>,
               <button
-                key="disapprove"
+                key="review-disapprove"
                 onClick={() => {
                   setDecisionType('disapprove');
                   setReturnComments('');

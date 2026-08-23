@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { transitionSubmission } from '../services/submissionService';
 import SubmissionTimeline from '../components/SubmissionTimeline';
-import { parseObjectivesList } from '../utils/submissionLogUtils';
+import { parseObjectivesList, calculateProposalDuration } from '../utils/submissionLogUtils';
 import PageHeader from '../components/PageHeader';
 import { useToast } from '../hooks/useToast';
 import { 
@@ -1093,6 +1093,10 @@ export const Inbox = () => {
               </span>
             </div>
             <div className="flex gap-2">
+              <span className="font-bold min-w-[200px]">Duration:</span>
+              <span>{calculateProposalDuration(selectedDoc.proposalDetails || selectedDoc.raw?.activity_proposal_details || { schedules: selectedDoc.schedules, duration: selectedDoc.duration, is_indefinite_end_time: selectedDoc.is_indefinite_end_time })}</span>
+            </div>
+            <div className="flex gap-2">
               <span className="font-bold min-w-[200px]">Number of Students Involved:</span>
               <span>{selectedDoc.students || '—'}</span>
             </div>
@@ -1318,12 +1322,12 @@ export const Inbox = () => {
                           <Paperclip size={20} />
                         </div>
                         <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className={`${textColor} font-semibold text-sm`}>{fileName}</p>
+                          <div className="mb-1 flex flex-wrap items-center gap-2">
                             <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${badgeStyle}`}>
                               {isOsas ? 'OSAS Requirement' : 'LOCAL Requirement'}
                             </span>
                           </div>
+                          <p className={`${textColor} font-semibold text-sm`}>{fileName}</p>
                           <p className={`${subtitleColor} text-[10px] uppercase font-bold mt-0.5`}>
                             {isForwardedPhase ? (isOsas ? '✓ Forwarded to Main Campus' : '✓ Retained Locally') : 'Attached Document'}
                           </p>

@@ -689,21 +689,23 @@ const DocumentTypeSettings = () => {
                           <FileText size={20} />
                         </div>
                         <div>
-                          <p className="font-black text-gray-800 flex flex-wrap items-center gap-2">
-                            {req.title}
-                            <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
-                              (req.requirement_scope || 'OSAS') === 'OSAS'
-                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                                : 'bg-slate-100/90 text-slate-500 border border-slate-200'
-                            }`}>
-                              {(req.requirement_scope || 'OSAS') === 'OSAS' ? 'OSAS Requirement' : 'LOCAL Requirement'}
-                            </span>
-                            {(req.is_optional === true || String(req.is_optional) === 'true') && (
-                              <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                                Optional
+                          <div className="flex flex-col items-start gap-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                                (req.requirement_scope || 'OSAS') === 'OSAS'
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                  : 'bg-slate-100/90 text-slate-500 border border-slate-200'
+                              }`}>
+                                {(req.requirement_scope || 'OSAS') === 'OSAS' ? 'OSAS Requirement' : 'LOCAL Requirement'}
                               </span>
-                            )}
-                          </p>
+                              {(req.is_optional === true || String(req.is_optional) === 'true') && (
+                                <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                                  Optional
+                                </span>
+                              )}
+                            </div>
+                            <p className="font-black text-gray-800">{req.title}</p>
+                          </div>
                           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1">
                             {req.referenceCode || 'GENERAL'}
                           </p>
