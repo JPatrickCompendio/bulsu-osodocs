@@ -1,26 +1,63 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
-const Avatar = ({ profileImage, name, className = '', fallbackClassName = '' }) => {
+const Avatar = ({ profileImage, profileImg, name, className = '', fallbackClassName = '' }) => {
+    const [resolvedUrl, setResolvedUrl] = useState(null);
     const [hasError, setHasError] = useState(false);
+    const rawImage = profileImage || profileImg;
 
-    if (profileImage && !hasError) {
-        let imageUrl = profileImage;
-        if (!profileImage.startsWith('http')) {
-            const { data } = supabase.storage.from('profile_img').getPublicUrl(profileImage);
-            imageUrl = data?.publicUrl;
+    useEffect(() => {
+        let isMounted = true;
+        setHasError(false);
+
+        if (!rawImage) {
+            setResolvedUrl(null);
+            return;
         }
 
-        if (imageUrl) {
-            return (
-                <img 
-                    src={imageUrl} 
-                    alt={name || 'Avatar'} 
-                    className={`object-cover ${className}`} 
-                    onError={() => setHasError(true)}
-                />
-            );
+        if (typeof rawImage === 'string' && (rawImage.startsWith('http') || rawImage.startsWith('data:'))) {
+            setResolvedUrl(rawImage);
+            return;
         }
+
+        const cleanPath = String(rawImage).replace(/^(profile_img\/|profile_image\/|avatars\/)/, '');
+
+        const fetchUrl = async () => {
+            try {
+                const { data: signedData } = await supabase.storage
+                    .from('profile_img')
+                    .createSignedUrl(cleanPath, 86400);
+
+                if (signedData?.signedUrl && isMounted) {
+                    setResolvedUrl(`${signedData.signedUrl}&t=${Date.now()}`);
+                    return;
+                }
+            } catch (e) {
+                console.warn('Signed avatar fetch error:', e);
+            }
+
+            const { data } = supabase.storage.from('profile_img').getPublicUrl(cleanPath);
+            if (data?.publicUrl && isMounted) {
+                setResolvedUrl(`${data.publicUrl}?t=${Date.now()}`);
+            }
+        };
+
+        fetchUrl();
+
+        return () => {
+            isMounted = false;
+        };
+    }, [rawImage]);
+
+    if (resolvedUrl && !hasError) {
+        return (
+            <img 
+                src={resolvedUrl} 
+                alt={name || 'Avatar'} 
+                className={`object-cover ${className}`} 
+                onError={() => setHasError(true)}
+            />
+        );
     }
 
     return (

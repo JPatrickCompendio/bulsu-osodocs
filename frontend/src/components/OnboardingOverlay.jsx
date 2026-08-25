@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
 import { Camera, Loader2, ArrowRight, CheckCircle, AlertCircle, Building2, Lock, Key } from 'lucide-react';
+import Avatar from './Avatar';
 
 export default function OnboardingOverlay() {
   const { user, refreshUser } = useAuth();
@@ -256,11 +257,12 @@ export default function OnboardingOverlay() {
               <div className="flex flex-col items-center">
                 <div className="relative group">
                   <div className="w-28 h-28 rounded-full bg-gray-100 border-4 border-white shadow-lg flex items-center justify-center text-gray-400 text-3xl font-black relative overflow-hidden">
-                    {avatarUrl ? (
-                      <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" />
-                    ) : (
-                      user?.full_name?.charAt(0).toUpperCase() || 'O'
-                    )}
+                    <Avatar 
+                      profileImage={avatarUrl || user?.profile_image} 
+                      name={user?.full_name || 'O'} 
+                      className="w-full h-full object-cover" 
+                      fallbackClassName="bg-gray-100 text-gray-400 text-3xl font-black"
+                    />
                     <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center cursor-pointer backdrop-blur-[2px]">
                       <input 
                         type="file" 

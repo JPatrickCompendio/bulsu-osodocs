@@ -23,6 +23,7 @@ import {
   Phone
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
+import Avatar from '../components/Avatar';
 
 const MyProfile = () => {
   const { user, refreshUser } = useAuth();
@@ -96,7 +97,7 @@ const MyProfile = () => {
       const { error: uploadError } = await supabase.storage
         .from('profile_img')
         .upload(filePath, file, {
-          cacheControl: '3600',
+          cacheControl: '0',
           upsert: true
         });
 
@@ -251,15 +252,12 @@ const MyProfile = () => {
           {/* Avatar Card */}
           <div className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm text-center relative overflow-hidden group">
             <div className="w-32 h-32 mx-auto rounded-full bg-primary-green border-4 border-white shadow-xl flex items-center justify-center text-white text-4xl font-black relative overflow-hidden mb-6">
-              {user.avatarUrl ? (
-                <img 
-                  src={user.avatarUrl} 
-                  alt="Profile" 
-                  className="w-full h-full object-cover" 
-                />
-              ) : (
-                user.full_name?.charAt(0).toUpperCase() || user.username?.charAt(0).toUpperCase() || '?'
-              )}
+              <Avatar 
+                profileImage={user.avatarUrl || user.profile_image} 
+                name={user.full_name || user.username} 
+                className="w-full h-full object-cover" 
+                fallbackClassName="bg-primary-green text-white text-4xl font-black"
+              />
               
               {/* Overlay for upload */}
               <label className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer backdrop-blur-sm">

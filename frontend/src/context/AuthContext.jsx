@@ -144,6 +144,28 @@ export const AuthProvider = ({ children }) => {
         };
     }, [user?.id, user?.status]);
 
+    const resolveAvatarUrl = async (imagePath) => {
+        if (!imagePath) return null;
+        if (imagePath.startsWith('http') || imagePath.startsWith('data:')) {
+            return imagePath;
+        }
+        const cleanPath = imagePath.replace(/^(profile_img\/|profile_image\/|avatars\/)/, '');
+        try {
+            const { data: signedData } = await supabase.storage
+                .from('profile_img')
+                .createSignedUrl(cleanPath, 86400);
+
+            if (signedData?.signedUrl) {
+                return `${signedData.signedUrl}&t=${Date.now()}`;
+            }
+        } catch (err) {
+            console.warn('Signed avatar fetch error:', err);
+        }
+
+        const { data: pubData } = supabase.storage.from('profile_img').getPublicUrl(cleanPath);
+        return pubData?.publicUrl ? `${pubData.publicUrl}?t=${Date.now()}` : null;
+    };
+
     const fetchProfile = async (authUser) => {
         try {
             const { data: profile, error } = await supabase
@@ -153,15 +175,7 @@ export const AuthProvider = ({ children }) => {
                 .maybeSingle();
 
             if (!error && profile) {
-                let avatarUrl = null;
-                if (profile.profile_image) {
-                    if (profile.profile_image.startsWith('http')) {
-                        avatarUrl = profile.profile_image;
-                    } else {
-                        const { data: pubData } = supabase.storage.from('profile_img').getPublicUrl(profile.profile_image);
-                        avatarUrl = pubData?.publicUrl || null;
-                    }
-                }
+                const avatarUrl = await resolveAvatarUrl(profile.profile_image);
                 setUser((prev) => {
                     return {
                         ...prev,
@@ -198,15 +212,7 @@ export const AuthProvider = ({ children }) => {
 
             if (profileError) throw new Error(profileError.message);
 
-            let avatarUrl = null;
-            if (profile.profile_image) {
-                if (profile.profile_image.startsWith('http')) {
-                    avatarUrl = profile.profile_image;
-                } else {
-                    const { data: pubData } = supabase.storage.from('profile_img').getPublicUrl(profile.profile_image);
-                    avatarUrl = pubData?.publicUrl || null;
-                }
-            }
+            const avatarUrl = await resolveAvatarUrl(profile.profile_image);
 
             setUser((prev) => {
                 if (prev?.avatarUrl && prev.avatarUrl !== avatarUrl) {

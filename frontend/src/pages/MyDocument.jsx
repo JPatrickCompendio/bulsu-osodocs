@@ -33,7 +33,7 @@ import { useToast } from '../hooks/useToast';
 
 const getStatusColor = (status) => {
   const s = (status || '').toLowerCase().trim();
-  if (s.includes('pending hard copy') || s.includes('pending hardcopy') || s.includes('to forward') || s.includes('hardcopy submission') || s.includes('hardcopy')) {
+  if (s.includes('pending hard copy') || s.includes('pending hardcopy') || s.includes('to forward') || s.includes('hardcopy submission') || s.includes('hard copy submission') || s.includes('hardcopy')) {
     return '#db2777';
   }
   if (s.includes('chairman') || s.includes('vice chairman') || s.includes('oso staff review') || s.includes('oso staff') || s.includes('pending')) {
@@ -57,7 +57,7 @@ const getStatusColor = (status) => {
   if (s === 'approved') {
     return '#105220';
   }
-  if (s.includes('ready for retrieval')) {
+  if (s.includes('ready for retrieval') || s.includes('for retrieval') || s.includes('ready_for_retrieval')) {
     return '#9333ea';
   }
   if (s.includes('disapproved') || s.includes('rejected')) {
@@ -171,12 +171,12 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy, subtypesMap =
 
   let category = 'All';
   if (subStatus === 'returned') category = 'Returned';
-  else if (subStatus === 'to forward') category = user?.role === 'org-president' ? 'OSO Staff review' : 'Pending Hard Copy';
+  else if (subStatus === 'to forward') category = user?.role === 'org-president' ? 'Hard Copy Submission' : 'Pending Hard Copy';
   else if (subStatus === 'submitted' || subStatus === 'pending') category = 'OSO Staff review';
   else if (subStatus.includes('sds')) category = 'SDS Review';
   else if (subStatus.includes('dean approved') || subStatus.includes('dean review') || subStatus.includes('external approved')) category = 'Final In-Campus review';
   else if (subStatus.includes('main campus review') || subStatus.includes('external review') || subStatus.includes('vice chairman approved')) category = 'Main Campus Review';
-  else if (subStatus.includes('ready for retrieval')) category = 'Approved';
+  else if (subStatus.includes('ready for retrieval') || subStatus.includes('document retrieval') || subStatus.includes('document retrieved') || subStatus.includes('retriev')) category = 'For Retrieval';
   else if (subStatus.includes('waiting for accomplishment report')) category = 'Approved';
   else if (subStatus === 'approved') category = 'Approved';
   else if (subStatus === 'completed') category = 'Completed';
@@ -186,7 +186,8 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy, subtypesMap =
     else if (wpNorm === 'dean review' || wpNorm === 'external approved') category = 'Final In-Campus review';
     else if (wpNorm === 'main campus review' || wpNorm === 'external review') category = 'Main Campus Review';
     else if (wpNorm === 'chairman review') category = 'Chairman Review';
-    else if (ra === 'ready-for-hardcopy') category = user?.role === 'org-president' ? 'OSO Staff review' : 'Pending Hard Copy';
+    else if (ra === 'ready-for-hardcopy') category = user?.role === 'org-president' ? 'Hard Copy Submission' : 'Pending Hard Copy';
+    else if (ra === 'ready-for-retrieval' || ra === 'document-retrieved' || ra === 'retrieval-confirmed') category = 'For Retrieval';
     else if (ra === 'approved') category = 'Approved';
     else if (ra === 'returned') category = 'Returned';
   }
@@ -1581,7 +1582,7 @@ export const MyDocuments = () => {
     if (subStatus === 'returned') {
       category = 'Returned';
     } else if (subStatus === 'to forward') {
-      category = user?.role === 'org-president' ? 'OSO Staff review' : 'Pending Hard Copy';
+      category = user?.role === 'org-president' ? 'Hard Copy Submission' : 'Pending Hard Copy';
     } else if (subStatus === 'submitted' || subStatus === 'pending') {
       category = 'OSO Staff review';
     } else if (subStatus.includes('sds')) {
@@ -1592,8 +1593,8 @@ export const MyDocuments = () => {
       category = 'Final In-Campus review';
     } else if (subStatus.includes('main campus review') || subStatus.includes('external review') || subStatus.includes('vice chairman approved')) {
       category = 'Main Campus Review';
-    } else if (subStatus.includes('ready for retrieval')) {
-      category = 'Approved';
+    } else if (subStatus.includes('ready for retrieval') || subStatus.includes('document retrieval') || subStatus.includes('document retrieved') || subStatus.includes('retriev')) {
+      category = 'For Retrieval';
     } else if (subStatus.includes('waiting for accomplishment report')) {
       category = 'Approved';
     } else if (subStatus === 'approved') {
@@ -1608,7 +1609,8 @@ export const MyDocuments = () => {
       else if (wpNorm === 'dean review' || wpNorm === 'external approved') category = 'Final In-Campus review';
       else if (wpNorm === 'main campus review' || wpNorm === 'external review') category = 'Main Campus Review';
       else if (wpNorm === 'chairman review') category = 'Chairman Review';
-      else if (ra === 'ready-for-hardcopy') category = user?.role === 'org-president' ? 'OSO Staff review' : 'Pending Hard Copy';
+      else if (ra === 'ready-for-hardcopy') category = user?.role === 'org-president' ? 'Hard Copy Submission' : 'Pending Hard Copy';
+      else if (ra === 'ready-for-retrieval' || ra === 'document-retrieved' || ra === 'retrieval-confirmed') category = 'For Retrieval';
       else if (ra === 'approved') category = 'Approved';
       else if (ra === 'returned') category = 'Returned';
     }
@@ -1644,7 +1646,11 @@ export const MyDocuments = () => {
           ? (user?.role === 'org-president' ? 'HARDCOPY SUBMISSION' : 'PENDING HARD COPY')
           : (submission.status === 'dean review'
             ? 'FINAL IN-CAMPUS REVIEW'
-            : (submission.status ? submission.status.toUpperCase() : 'PENDING'))),
+            : (submission.status === 'ready for retrieval'
+              ? 'READY FOR RETRIEVAL'
+              : (submission.status === 'document retrieved'
+                ? 'DOCUMENT RETRIEVED'
+                : (submission.status ? submission.status.toUpperCase() : 'PENDING'))))),
       lastAction: lastActionDate,
       category,
 
@@ -1703,9 +1709,11 @@ export const MyDocuments = () => {
   const tabs = [
     { name: 'All', count: visibleDocs.length },
     ...(user?.role === 'org-president' ? [{ name: 'OSO Staff review', count: countByTab('OSO Staff review') }] : []),
+    ...(user?.role === 'org-president' ? [{ name: 'Hard Copy Submission', count: countByTab('Hard Copy Submission') }] : []),
     ...(user?.role !== 'admin' ? [{ name: 'SDS Review', count: countByTab('SDS Review') }] : []),
     { name: 'Final In-Campus review', count: countByTab('Final In-Campus review') },
     { name: 'Main Campus Review', count: countByTab('Main Campus Review') },
+    ...(user?.role === 'org-president' || user?.role === 'admin' ? [{ name: 'For Retrieval', count: countByTab('For Retrieval') }] : []),
     { name: 'Approved', count: countByTab('Approved') },
     ...(user?.role !== 'org-president' && user?.role !== 'admin' && user?.role !== 'chairman' ? [{ name: 'Completed', count: countByTab('Completed') }] : []),
     ...(user?.role === 'admin' ? [{ name: 'Pending Hard Copy', count: countByTab('Pending Hard Copy') }] : []),

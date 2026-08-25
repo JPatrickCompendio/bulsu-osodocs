@@ -14,6 +14,7 @@ import {
 } from '../utils/workflowNotificationUtils';
 import SchoolYearCalendarModal from './SchoolYearCalendarModal';
 import OnboardingOverlay from './OnboardingOverlay';
+import Avatar from './Avatar';
 
 function formatHeadlineTitle(sub, activityTitle = '', maxTitleLength = 40) {
   if (activityTitle && activityTitle.trim()) {
@@ -535,7 +536,7 @@ const Header = () => {
 
   return (
     <>
-      <header className="h-16 bg-white border-b border-gray-100 flex items-center justify-between px-8 sticky top-0 z-30 shadow-sm">
+      <header className={`h-16 bg-white border-b border-gray-100 flex items-center justify-between px-8 sticky top-0 shadow-sm transition-all ${showUserDropdown ? 'z-[999999]' : 'z-30'}`}>
         <div className="flex items-center gap-2 text-gray-700 relative group cursor-pointer" onClick={() => setIsCalendarModalOpen(true)}>
           <Calendar size={20} />
           <span className="text-sm font-bold hover:text-primary-green transition-colors">{activeSy ? ` ${activeSy.name}` : 'Loading S.Y...'}</span>
@@ -571,7 +572,7 @@ const Header = () => {
 
           <div className="h-8 w-[1px] bg-gray-100"></div>
 
-          <div className="flex items-center gap-3 relative">
+          <div className="flex items-center gap-3 relative z-[99999]">
             {(() => {
               const isOrgPres = user?.role === 'org-president';
               const navTitle = isOrgPres && user?.org_name ? user.org_name : (user?.full_name || user?.username || 'User');
@@ -588,22 +589,21 @@ const Header = () => {
                       <p className="text-sm font-bold text-gray-800 truncate max-w-[200px]">{navTitle}</p>
                       <p className="text-[10px] text-gray-400 font-semibold truncate max-w-[200px]">{navSubtitle}</p>
                     </div>
-                    <div className="w-10 h-10 rounded-full bg-primary-green flex items-center justify-center text-white font-bold border-2 border-white shadow-sm overflow-hidden shrink-0">
-                      {user?.avatarUrl ? (
-                        <img src={user.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
-                      ) : (
-                        avatarInitial
-                      )}
-                    </div>
+                    <Avatar
+                      profileImage={user?.avatarUrl || user?.profile_image}
+                      name={navTitle}
+                      className="w-10 h-10 rounded-full border-2 border-white shadow-sm shrink-0"
+                      fallbackClassName="bg-primary-green text-white font-bold"
+                    />
                   </button>
 
                   {showUserDropdown && (
                     <>
                       <div
-                        className="fixed inset-0 z-40"
+                        className="fixed inset-0 z-[999998]"
                         onClick={() => setShowUserDropdown(false)}
                       />
-                      <div className="absolute top-full right-0 mt-2 w-60 bg-white rounded-xl shadow-lg border border-gray-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
+                      <div className="absolute top-full right-0 mt-2 w-60 bg-white rounded-xl shadow-2xl border border-gray-100 z-[999999] overflow-hidden animate-in fade-in slide-in-from-top-2">
                         <div className="p-4 border-b border-gray-100">
                           <p className="text-sm font-bold text-gray-800 truncate">{navTitle}</p>
                           <p className="text-xs text-gray-500 font-medium truncate">{navSubtitle}</p>
@@ -1028,7 +1028,7 @@ const DashboardLayout = () => {
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
-        <main className="flex-1 overflow-y-auto p-8 relative">
+        <main className="flex-1 overflow-y-auto p-8 relative z-0">
           <PageTransition>
             <div className="max-w-7xl mx-auto">
               <Outlet />

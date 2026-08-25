@@ -2408,7 +2408,7 @@ async function handleAdminDashboard() {
     'oso staff review': 0,
     'chairman and vice chairman review': 0,
     'sds coordinator review': 0,
-    'dean review': 0,
+    'final in-campus review': 0,
     'main campus review': 0,
     approved: 0,
     disapproved: 0,
@@ -2426,7 +2426,7 @@ async function handleAdminDashboard() {
       else if (s.status === 'sds approved' || s.status === 'chairman approved') {
         displayStatus = 'chairman and vice chairman review';
       } else if (s.status === 'vice chairman approved') displayStatus = 'main campus review';
-      else if (s.status === 'external approved') displayStatus = 'dean review';
+      else if (s.status === 'external approved') displayStatus = 'final in-campus review';
       else if (s.status === 'dean approved') displayStatus = 'approved';
       else if (s.status === 'returned') displayStatus = 'returned';
       else if (s.status === 'completed') displayStatus = 'completed';
@@ -2993,7 +2993,7 @@ async function handleOrgDashboard(url: URL) {
     'oso staff review': 0,
     'chairman and vice chairman review': 0,
     'sds coordinator review': 0,
-    'dean review': 0,
+    'final in-campus review': 0,
     'main campus review': 0,
     approved: 0,
     disapproved: 0,
@@ -3009,7 +3009,7 @@ async function handleOrgDashboard(url: URL) {
       else if (s.status === 'oso approved') displayStatus = 'sds coordinator review';
       else if (s.status === 'sds approved' || s.status === 'chairman approved') displayStatus = 'chairman and vice chairman review';
       else if (s.status === 'vice chairman approved') displayStatus = 'main campus review';
-      else if (s.status === 'external approved') displayStatus = 'dean review';
+      else if (s.status === 'external approved') displayStatus = 'final in-campus review';
       else if (s.status === 'dean approved') displayStatus = 'approved';
       else if (s.status === 'returned') displayStatus = 'returned';
       else if (s.status === 'completed') displayStatus = 'completed';

@@ -1,6 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { X, Calendar as CalendarIcon, List, FileDown, ChevronLeft, ChevronRight, Clock, MapPin } from 'lucide-react';
+import { 
+  X, 
+  Calendar as CalendarIcon, 
+  List, 
+  FileDown, 
+  ChevronLeft, 
+  ChevronRight, 
+  Clock, 
+  Lock, 
+  ShieldAlert, 
+  Info, 
+  CheckCircle2, 
+  AlertTriangle,
+  Tag,
+  Sparkles
+} from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import GlobalLoader from './GlobalLoader';
@@ -12,6 +27,7 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
   const [semesters, setSemesters] = useState([]);
   const [selectedSemesterId, setSelectedSemesterId] = useState('all');
   const [loading, setLoading] = useState(true);
+  const [selectedDayDetails, setSelectedDayDetails] = useState(null);
 
   useEffect(() => {
     fetchActivities();
@@ -72,7 +88,7 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
               date: new Date(ev.start_date),
               endDate: ev.end_date ? new Date(ev.end_date) : null,
               duration: 0,
-              isBlocked: ev.event_type === 'blocked_activity',
+              isBlocked: ev.event_type === 'blocked_activity' || ev.event_type === 'blocked' || ev.description === 'BLOCKS_ACTIVITY',
               eventType: ev.event_type,
               semesterId: ev.semester_id,
               semesterName: semMatch?.name || null,
@@ -110,6 +126,10 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
   };
 
+  const goToToday = () => {
+    setCurrentDate(new Date());
+  };
+
   const generateReport = () => {
     const doc = new jsPDF();
     const syTitle = activeSy ? activeSy.name : 'School Year';
@@ -131,14 +151,14 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
       head: [['Date', 'Activity Title', 'Organization', 'Time']],
       body: tableData,
       theme: 'grid',
-      headStyles: { fillColor: [4, 120, 87] }, // primary green
+      headStyles: { fillColor: [7, 60, 45] },
       styles: { fontSize: 9 }
     });
 
     doc.save(`Activity_Report_${syTitle.replace(/[^a-z0-9]/gi, '_')}.pdf`);
   };
 
-  // Calendar Grid Logic
+  // Calendar Grid Calculations
   const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
   const getFirstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
 
@@ -150,24 +170,26 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
     const days = [];
     const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-    // Headers
+    // Weekday Headers
     const headers = weekDays.map(day => (
-      <div key={`header-${day}`} className="font-bold text-center text-sm py-2 text-gray-500 border-b border-gray-100">
+      <div key={`header-${day}`} className="font-extrabold text-center text-[11px] uppercase tracking-wider py-2.5 text-gray-500 bg-gray-50/80 border-b border-gray-200/80">
         {day}
       </div>
     ));
 
-    // Empty slots before first day
+    // Empty slots before 1st of month
     for (let i = 0; i < firstDay; i++) {
-      days.push(<div key={`empty-${i}`} className="min-h-[100px] border-b border-r border-gray-50 bg-gray-50/50 p-2"></div>);
+      days.push(
+        <div key={`empty-prev-${i}`} className="min-h-[105px] border-b border-r border-gray-100 bg-gray-50/30 p-2"></div>
+      );
     }
 
     // Days with events
     for (let d = 1; d <= daysInMonth; d++) {
       const currentDayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), d);
-      
       const currentDayMs = currentDayDate.getTime();
-      
+
+      // Find events occurring on this date
       const dayEvents = activities.filter(act => {
         if (act.eventType === 'submission_window') return false;
         if (selectedSemesterId !== 'all' && act.semesterId && act.semesterId !== selectedSemesterId) return false;
@@ -179,37 +201,93 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
         return currentDayMs >= startMs && currentDayMs <= endMs;
       });
 
+      const blockedEvents = dayEvents.filter(ev => ev.isBlocked);
+      const hasBlockedEvent = blockedEvents.length > 0;
       const isToday = new Date().toDateString() === currentDayDate.toDateString();
 
+      const blockedTitle = hasBlockedEvent
+        ? `This date cannot be chosen for activity event (${blockedEvents.map(e => e.title).join(', ')})`
+        : undefined;
+
       days.push(
-        <div key={d} className={`min-h-[100px] border-b border-r border-gray-100 p-2 transition-colors hover:bg-gray-50 ${isToday ? 'bg-green-50/30' : ''}`}>
-          <div className="flex justify-between items-start mb-1">
-            <span className={`text-sm font-semibold w-7 h-7 flex items-center justify-center rounded-full ${isToday ? 'bg-primary-green text-white shadow-sm' : 'text-gray-700'}`}>
-              {d}
-            </span>
-            {dayEvents.length > 0 && (
-              <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-md">
-                {dayEvents.length}
+        <div 
+          key={d}
+          onClick={() => {
+            if (dayEvents.length > 0) {
+              setSelectedDayDetails({ date: currentDayDate, events: dayEvents, isBlocked: hasBlockedEvent });
+            }
+          }}
+          title={blockedTitle}
+          className={`min-h-[105px] border-b border-r border-gray-100 p-2 transition-all relative flex flex-col justify-between group ${
+            hasBlockedEvent 
+              ? 'bg-rose-50/40 hover:bg-rose-100/50 border-rose-100/70 cursor-pointer' 
+              : isToday 
+                ? 'bg-emerald-50/20 hover:bg-gray-50/80 cursor-pointer' 
+                : dayEvents.length > 0 ? 'hover:bg-gray-50/90 cursor-pointer' : 'hover:bg-gray-50/40'
+          }`}
+        >
+          {/* Day Number Row */}
+          <div>
+            <div className="flex justify-between items-center mb-1.5">
+              <span className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full transition-all ${
+                isToday 
+                  ? 'bg-primary-green text-white font-extrabold shadow-sm ring-2 ring-emerald-500/20' 
+                  : hasBlockedEvent
+                    ? 'text-rose-700 font-extrabold'
+                    : 'text-gray-700'
+              }`}>
+                {d}
               </span>
-            )}
-          </div>
-          <div className="space-y-1.5 mt-2">
-            {dayEvents.slice(0, 3).map((ev, idx) => (
-              <div key={idx} className="bg-white border border-gray-200 rounded-md p-1.5 text-xs shadow-sm hover:border-primary-green hover:shadow-md transition-all cursor-default group">
-                <div className="font-bold text-gray-800 truncate group-hover:text-primary-green transition-colors" title={ev.title}>{ev.title}</div>
-                <div className="text-[10px] text-gray-500 font-medium truncate flex items-center gap-1 mt-0.5">
-                  <div className="w-1.5 h-1.5 rounded-full bg-primary-green/60"></div>
-                  {ev.org}
+
+              {hasBlockedEvent && (
+                <span className="flex items-center gap-1 text-[10px] font-black text-rose-700 bg-rose-100/80 px-1.5 py-0.5 rounded-full border border-rose-200/80" title={blockedTitle}>
+                  <Lock size={10} className="text-rose-600" />
+                  <span>BLOCKED</span>
+                </span>
+              )}
+            </div>
+
+            {/* Display Events (Max 2 visible for clean spacing) */}
+            <div className="space-y-1.5">
+              {dayEvents.slice(0, 2).map((ev, idx) => (
+                <div 
+                  key={idx} 
+                  title={ev.isBlocked ? `This date cannot be chosen for activity event (${ev.title})` : ev.title}
+                  className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-all truncate flex items-center gap-1.5 border shadow-2xs ${
+                    ev.isBlocked 
+                      ? 'bg-rose-100/90 text-rose-900 border-rose-200/80 hover:bg-rose-200/90' 
+                      : 'bg-sky-50 text-sky-900 border-sky-200/80 hover:border-sky-300'
+                  }`}
+                >
+                  {ev.isBlocked ? (
+                    <ShieldAlert size={12} className="text-rose-600 shrink-0" />
+                  ) : (
+                    <div className="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0"></div>
+                  )}
+                  <span className="truncate">{ev.title}</span>
                 </div>
-              </div>
-            ))}
-            {dayEvents.length > 3 && (
-              <div className="text-[10px] text-gray-400 font-medium pl-1">
-                +{dayEvents.length - 3} more
-              </div>
-            )}
+              ))}
+            </div>
           </div>
+
+          {/* More items overflow badge */}
+          {dayEvents.length > 2 && (
+            <div className="mt-1 flex items-center justify-between text-[10px] font-extrabold text-gray-500 group-hover:text-gray-800">
+              <span className="px-1.5 py-0.5 bg-gray-100 rounded-md border border-gray-200/60">
+                +{dayEvents.length - 2} more
+              </span>
+            </div>
+          )}
         </div>
+      );
+    }
+
+    // Trailing empty slots to complete final week row cleanly
+    const totalSlots = firstDay + daysInMonth;
+    const trailingSlots = (7 - (totalSlots % 7)) % 7;
+    for (let i = 0; i < trailingSlots; i++) {
+      days.push(
+        <div key={`empty-next-${i}`} className="min-h-[105px] border-b border-r border-gray-100 bg-gray-50/30 p-2"></div>
       );
     }
 
@@ -227,45 +305,53 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
 
     return (
       <div className="space-y-4">
+        {/* Open Submission Windows Toolbar */}
         {openWindows.length > 0 && (
-          <div className="w-full flex items-center gap-3 overflow-x-auto pb-2 custom-scrollbar">
-            <span className="text-xs font-black text-gray-500 uppercase tracking-widest whitespace-nowrap shrink-0">
-              Open Submission Windows
-            </span>
-            {openWindows.map((sw, idx) => {
-              const winStart = sw.date.toDateString();
-              const winEnd = sw.endDate ? sw.endDate.toDateString() : winStart;
-              const isEntireSy = (syStart === winStart) && (syEnd === winEnd);
+          <div className="bg-emerald-50/40 border border-emerald-100 rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
+            <div className="flex items-center gap-2 text-emerald-900 shrink-0">
+              <Sparkles size={16} className="text-emerald-600 animate-pulse" />
+              <span className="text-xs font-black uppercase tracking-wider">
+                Active Submission Windows
+              </span>
+            </div>
 
-              const matchingSem = semesters.find(sem => {
-                const sStart = sem.start_date ? new Date(sem.start_date).toDateString() : null;
-                const sEnd = sem.end_date ? new Date(sem.end_date).toDateString() : null;
-                return sStart === winStart && sEnd === winEnd;
-              });
+            <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar max-w-full pb-0.5">
+              {openWindows.map((sw, idx) => {
+                const winStart = sw.date.toDateString();
+                const winEnd = sw.endDate ? sw.endDate.toDateString() : winStart;
+                const isEntireSy = (syStart === winStart) && (syEnd === winEnd);
 
-              const now = new Date();
-              const startStr = sw.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: sw.date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
-              const endStr = sw.endDate ? sw.endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: sw.endDate.getFullYear() !== sw.date.getFullYear() ? 'numeric' : undefined }) : '';
-              
-              let dateDisplay = endStr ? `${startStr} – ${endStr}` : startStr;
-              if (isEntireSy) dateDisplay = 'Entire School Year';
-              else if (matchingSem) dateDisplay = `Entire ${matchingSem.name}`;
-              else if (sw.semesterName) dateDisplay += ` (${sw.semesterName})`;
+                const matchingSem = semesters.find(sem => {
+                  const sStart = sem.start_date ? new Date(sem.start_date).toDateString() : null;
+                  const sEnd = sem.end_date ? new Date(sem.end_date).toDateString() : null;
+                  return sStart === winStart && sEnd === winEnd;
+                });
 
-              return (
-                <div key={idx} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-full shadow-sm shrink-0">
-                  <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.4)]"></div>
-                  <span className="text-xs font-black text-gray-800">{sw.docTypeName || sw.title}</span>
-                  <span className="text-[10px] font-bold text-gray-400">•</span>
-                  <span className="text-[10px] font-bold text-gray-500">{dateDisplay}</span>
-                </div>
-              );
-            })}
+                const now = new Date();
+                const startStr = sw.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: sw.date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+                const endStr = sw.endDate ? sw.endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: sw.endDate.getFullYear() !== sw.date.getFullYear() ? 'numeric' : undefined }) : '';
+                
+                let dateDisplay = endStr ? `${startStr} – ${endStr}` : startStr;
+                if (isEntireSy) dateDisplay = 'Entire School Year';
+                else if (matchingSem) dateDisplay = `Entire ${matchingSem.name}`;
+                else if (sw.semesterName) dateDisplay += ` (${sw.semesterName})`;
+
+                return (
+                  <div key={idx} className="flex items-center gap-2 px-3 py-1 bg-white border border-emerald-200 rounded-full shadow-2xs shrink-0 text-xs font-bold">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]"></div>
+                    <span className="text-gray-800 font-extrabold">{sw.docTypeName || sw.title}</span>
+                    <span className="text-gray-300">•</span>
+                    <span className="text-emerald-700 text-[11px] font-medium">{dateDisplay}</span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="grid grid-cols-7 bg-gray-50/80">
+        {/* Calendar Main Grid Container */}
+        <div className="bg-white rounded-2xl shadow-xs border border-gray-200 overflow-hidden">
+          <div className="grid grid-cols-7 border-b border-gray-200">
             {headers}
           </div>
           <div className="grid grid-cols-7 border-l border-t border-gray-100">
@@ -281,47 +367,56 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
 
     if (filteredList.length === 0) {
       return (
-        <div className="flex flex-col items-center justify-center p-12 bg-white rounded-xl border border-gray-200 border-dashed">
+        <div className="flex flex-col items-center justify-center p-12 bg-white rounded-2xl border border-gray-200 border-dashed">
           <CalendarIcon size={48} className="text-gray-300 mb-4" />
-          <h3 className="text-lg font-bold text-gray-700">No activities found</h3>
-          <p className="text-sm text-gray-500 mt-1">There are no activities for this selection.</p>
+          <h3 className="text-lg font-bold text-gray-700">No activities scheduled</h3>
+          <p className="text-sm text-gray-400 mt-1">There are no academic events for the selected filter.</p>
         </div>
       );
     }
 
     return (
-      <div className="space-y-4">
+      <div className="space-y-3">
         {filteredList.map((ev, idx) => (
-          <div key={idx} className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-primary-green/30 transition-all group flex gap-5">
-            <div className="flex flex-col items-center justify-center min-w-[70px] px-4 py-2 bg-green-50 rounded-lg border border-green-100 shrink-0">
-              <span className="text-sm font-bold text-primary-green uppercase tracking-wider">{ev.date.toLocaleString('en-US', { month: 'short' })}</span>
-              <span className="text-2xl font-black text-gray-800">{ev.date.getDate()}</span>
-            </div>
-            <div className="flex-1 min-w-0 py-1">
-              <div className="flex justify-between items-start gap-4">
-                <div>
-                  <h4 className="text-base font-bold text-gray-900 group-hover:text-primary-green transition-colors leading-tight mb-1">{ev.title}</h4>
-                  <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-gray-100 text-gray-600 text-xs font-bold uppercase tracking-wider">
-                    {ev.org}
-                  </span>
-                </div>
+          <div key={idx} className={`bg-white p-5 rounded-2xl border shadow-2xs hover:shadow-md transition-all flex items-center justify-between gap-5 ${
+            ev.isBlocked ? 'border-rose-200/90 bg-rose-50/20' : 'border-gray-100 hover:border-emerald-200'
+          }`}>
+            <div className="flex items-center gap-4 min-w-0">
+              <div className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center shrink-0 border ${
+                ev.isBlocked ? 'bg-rose-100 text-rose-800 border-rose-200' : 'bg-emerald-50 text-emerald-800 border-emerald-100'
+              }`}>
+                <span className="text-[10px] font-extrabold uppercase">{ev.date.toLocaleString('en-US', { month: 'short' })}</span>
+                <span className="text-lg font-black leading-none">{ev.date.getDate()}</span>
               </div>
-              <div className="flex flex-col gap-1.5 mt-3 text-sm text-gray-500 font-medium">
-                <div className="flex items-center gap-1.5">
-                  <CalendarIcon size={16} className="text-gray-400" />
-                  {ev.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                  {ev.endDate && ev.endDate.toDateString() !== ev.date.toDateString() && ` - ${ev.endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`}
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Clock size={16} className="text-gray-400" />
-                  {ev.duration === 0 ? 'All Day' : (
-                    <>
-                      {ev.date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                      {ev.endDate && ` - ${ev.endDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`}
-                    </>
+              <div className="truncate">
+                <div className="flex items-center gap-2 mb-1">
+                  {ev.isBlocked ? (
+                    <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[10px] font-black uppercase tracking-wider flex items-center gap-1 border border-rose-200">
+                      <Lock size={10} /> Blocked Activity Date
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-black uppercase tracking-wider border border-blue-100">
+                      Academic Event
+                    </span>
+                  )}
+                  {ev.semesterName && (
+                    <span className="text-[10px] text-gray-400 font-bold uppercase">• {ev.semesterName}</span>
                   )}
                 </div>
+                <h4 className="text-base font-extrabold text-gray-800 truncate">{ev.title}</h4>
               </div>
+            </div>
+
+            <div className="text-right shrink-0">
+              <div className="text-xs font-bold text-gray-600 flex items-center gap-1.5 justify-end">
+                <Clock size={14} className="text-gray-400" />
+                <span>{ev.duration === 0 ? 'All Day' : ev.date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
+              {ev.endDate && (
+                <div className="text-[11px] font-medium text-gray-400 mt-0.5">
+                  until {ev.endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -330,40 +425,38 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6" onClick={onClose}>
-      <div className="bg-[#f8fafc] rounded-2xl shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 sm:p-6" onClick={onClose}>
+      <div className="bg-[#f8fafc] rounded-3xl shadow-2xl w-full max-w-6xl h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-gray-100" onClick={e => e.stopPropagation()}>
         
         {/* Header */}
-        <div className="bg-white px-6 py-5 border-b border-gray-100 flex items-center justify-between shrink-0 sticky top-0 z-10">
-          <div>
-            <div className="flex items-center gap-3 mb-1">
-              <div className="w-10 h-10 bg-green-100 text-primary-green rounded-xl flex items-center justify-center shadow-sm">
-                <CalendarIcon size={20} />
-              </div>
-              <div>
-                <h2 className="text-xl font-bold text-gray-900">School Year Calendar</h2>
-                <p className="text-sm font-medium text-gray-500">
-                  {activeSy ? (
-                    <>
-                      {activeSy.name} (
-                      {new Date(activeSy.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      {' - '}
-                      {new Date(activeSy.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      )
-                    </>
-                  ) : 'Loading...'}
-                </p>
-              </div>
+        <div className="bg-white px-8 py-5 border-b border-gray-100 flex items-center justify-between shrink-0 sticky top-0 z-10">
+          <div className="flex items-center gap-4">
+            <div className="w-11 h-11 bg-primary-green/10 text-primary-green rounded-2xl flex items-center justify-center shadow-2xs shrink-0">
+              <CalendarIcon size={22} />
+            </div>
+            <div>
+              <h2 className="text-xl font-black text-gray-900 tracking-tight">School Year Calendar</h2>
+              <p className="text-xs font-bold text-gray-400 mt-0.5">
+                {activeSy ? (
+                  <>
+                    {activeSy.name} (
+                    {new Date(activeSy.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    {' - '}
+                    {new Date(activeSy.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    )
+                  </>
+                ) : 'Loading...'}
+              </p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
             <button
               onClick={generateReport}
-              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 hover:border-primary-green hover:bg-green-50 hover:text-primary-green text-gray-700 text-sm font-bold rounded-xl transition-all shadow-sm"
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 hover:border-primary-green hover:bg-emerald-50 hover:text-primary-green text-gray-700 text-xs font-bold rounded-xl transition-all shadow-2xs"
             >
               <FileDown size={16} />
-              <span className="hidden sm:inline">Export Report</span>
+              <span className="hidden sm:inline">Export PDF Report</span>
             </button>
             <div className="h-6 w-[1px] bg-gray-200 mx-1"></div>
             <button
@@ -375,21 +468,23 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
           </div>
         </div>
 
-        {/* Controls */}
-        <div className="px-6 py-4 bg-white border-b border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0 shadow-sm z-0 relative">
-          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-            <div className="flex bg-gray-100 p-1 rounded-xl w-full sm:w-auto">
+        {/* Unified Control Toolbar & Legend Bar */}
+        <div className="px-8 py-3.5 bg-white border-b border-gray-100 flex flex-wrap items-center justify-between gap-4 shrink-0 shadow-2xs z-0 relative">
+          
+          {/* Left Controls: View Switcher & Semester Filter */}
+          <div className="flex items-center gap-3">
+            <div className="flex bg-gray-100 p-1 rounded-xl">
               <button
                 onClick={() => setView('calendar')}
-                className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2 rounded-lg text-sm font-bold transition-all ${view === 'calendar' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-extrabold transition-all ${view === 'calendar' ? 'bg-white text-gray-900 shadow-2xs' : 'text-gray-500 hover:text-gray-700'}`}
               >
-                <CalendarIcon size={16} /> Calendar
+                <CalendarIcon size={14} /> Calendar
               </button>
               <button
                 onClick={() => setView('list')}
-                className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2 rounded-lg text-sm font-bold transition-all ${view === 'list' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-extrabold transition-all ${view === 'list' ? 'bg-white text-gray-900 shadow-2xs' : 'text-gray-500 hover:text-gray-700'}`}
               >
-                <List size={16} /> List
+                <List size={14} /> List
               </button>
             </div>
 
@@ -418,22 +513,46 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
             )}
           </div>
 
+          {/* Center Month Navigator */}
           {view === 'calendar' && (
-            <div className="flex items-center gap-4 bg-white border border-gray-200 rounded-xl p-1 shadow-sm">
-              <button onClick={prevMonth} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors">
-                <ChevronLeft size={18} />
+            <div className="flex items-center gap-2 bg-gray-50 border border-gray-200/80 rounded-xl p-1 shadow-2xs">
+              <button onClick={prevMonth} className="p-1 hover:bg-white rounded-lg text-gray-600 transition-colors shadow-2xs">
+                <ChevronLeft size={16} />
               </button>
-              <span className="min-w-[140px] text-center font-bold text-gray-800 text-sm">
+              <span className="min-w-[130px] text-center font-extrabold text-gray-800 text-xs tracking-tight">
                 {monthName}
               </span>
-              <button onClick={nextMonth} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors">
-                <ChevronRight size={18} />
+              <button onClick={nextMonth} className="p-1 hover:bg-white rounded-lg text-gray-600 transition-colors shadow-2xs">
+                <ChevronRight size={16} />
+              </button>
+              <button 
+                onClick={goToToday}
+                className="ml-1 px-2.5 py-1 bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-[10px] font-extrabold rounded-lg transition-all"
+              >
+                Today
               </button>
             </div>
           )}
+
+          {/* Right Compact Legend Indicators */}
+          <div className="flex items-center gap-3 text-[11px] font-bold text-gray-600">
+            <div className="flex items-center gap-1.5 bg-rose-50 text-rose-800 px-2.5 py-1 rounded-md border border-rose-200/80">
+              <div className="w-2 h-2 rounded-full bg-rose-600"></div>
+              <span>Blocked Date</span>
+            </div>
+            <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-800 px-2.5 py-1 rounded-md border border-emerald-200/80">
+              <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+              <span>Open Window</span>
+            </div>
+            <div className="flex items-center gap-1.5 bg-sky-50 text-sky-800 px-2.5 py-1 rounded-md border border-sky-200/80">
+              <div className="w-2 h-2 rounded-full bg-sky-500"></div>
+              <span>Academic Event</span>
+            </div>
+          </div>
+
         </div>
 
-        {/* Content Area */}
+        {/* Content View Container */}
         <div className="flex-1 overflow-y-auto p-6 bg-gray-50/50">
           {loading ? (
             <div className="h-full flex items-center justify-center">
@@ -447,6 +566,76 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
         </div>
         
       </div>
+
+      {/* Selected Day Event Detail Modal */}
+      {selectedDayDetails && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-[100000] flex items-center justify-center p-4" onClick={() => setSelectedDayDetails(null)}>
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-100 animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+            <div className={`p-6 text-white flex items-center justify-between ${
+              selectedDayDetails.isBlocked ? 'bg-gradient-to-r from-rose-600 to-red-500' : 'bg-gradient-to-r from-emerald-600 to-green-500'
+            }`}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
+                  {selectedDayDetails.isBlocked ? <Lock size={20} /> : <CalendarIcon size={20} />}
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base leading-tight">
+                    {selectedDayDetails.date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                  </h3>
+                  <p className="text-white/80 text-xs font-semibold mt-0.5">
+                    {selectedDayDetails.isBlocked ? 'Blocked Date (Activity Prohibited)' : 'Scheduled Activities'}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setSelectedDayDetails(null)} className="p-1 hover:bg-white/20 rounded-full transition-colors text-white">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-3 max-h-[60vh] overflow-y-auto">
+              {selectedDayDetails.isBlocked && (
+                <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-3">
+                  <ShieldAlert className="text-rose-600 shrink-0 mt-0.5" size={18} />
+                  <p className="text-xs text-rose-800 font-medium leading-relaxed">
+                    This date cannot be chosen for activity proposals as it is designated as a prohibited/blocked activity window.
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                {selectedDayDetails.events.map((ev, idx) => (
+                  <div key={idx} className="p-4 bg-gray-50 border border-gray-200/80 rounded-2xl space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md ${
+                        ev.isBlocked ? 'bg-rose-100 text-rose-800 border border-rose-200' : 'bg-sky-100 text-sky-800 border border-sky-200'
+                      }`}>
+                        {ev.isBlocked ? 'BLOCKED EVENT' : 'ACADEMIC EVENT'}
+                      </span>
+                      <span className="text-xs font-bold text-gray-500">{ev.org}</span>
+                    </div>
+                    <h4 className="font-extrabold text-gray-900 text-sm pt-1">{ev.title}</h4>
+                    {ev.endDate && (
+                      <p className="text-xs text-gray-400 font-medium">
+                        Duration: {ev.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {ev.endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => setSelectedDayDetails(null)}
+                className="px-5 py-2 bg-gray-800 hover:bg-black text-white text-xs font-bold rounded-xl transition-all"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

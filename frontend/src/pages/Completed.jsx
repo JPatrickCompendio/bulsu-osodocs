@@ -91,17 +91,17 @@ const FilterDropdown = ({ label, value, options, onChange, isOpen, onToggle, act
       </div>
     )}
   </div>
-);
-
-const Completed = () => {
+);const Completed = () => {
   const { user } = useAuth();
   const location = useLocation();
   const [loading, setLoading] = React.useState(true);
   const [selectedSubmissionId, setSelectedSubmissionId] = React.useState(null);
   const [completedDocs, setCompletedDocs] = React.useState([]);
   const [unreadDocIds, setUnreadDocIds] = React.useState([]);
+  const [allSchoolYears, setAllSchoolYears] = React.useState([]);
   const [fetchError, setFetchError] = React.useState(null);
   const [filterDocType, setFilterDocType] = React.useState('all');
+  const [filterSchoolYear, setFilterSchoolYear] = React.useState('all');
   const [filterSemester, setFilterSemester] = React.useState('all');
   const [filterDateRange, setFilterDateRange] = React.useState('all');
   const [sortBy, setSortBy] = React.useState('recent');
@@ -180,8 +180,6 @@ const Completed = () => {
     }
   }, [location.state]);
 
-
-
   React.useEffect(() => {
     const handleClickOutside = () => setOpenFilter(null);
     document.addEventListener('click', handleClickOutside);
@@ -206,15 +204,26 @@ const Completed = () => {
         setLoading(true);
         setFetchError(null);
 
+        // Fetch school years list
+        const { data: syData } = await supabase
+          .from('school_years')
+          .select('*')
+          .order('start_date', { ascending: false });
+
+        setAllSchoolYears(syData || []);
+
         let query = supabase
           .from('submissions')
           .select(`
             id,
             tracking_number,
             updated_at,
+            created_at,
             status,
             subtype_id,
+            school_year_id,
             current_version_id,
+            school_years ( id, name, start_date, end_date ),
             document_subtypes ( name ),
             users ( org_name, abbreviation ),
             documentType ( name ),
@@ -268,6 +277,22 @@ const Completed = () => {
             });
             const semester = getSemesterFromDate(details?.target_date || completedAt);
 
+            // Infer/resolve School Year name
+            let schoolYear = sub.school_years?.name;
+            if (!schoolYear && completedAt) {
+              const compDate = new Date(completedAt);
+              const syMatch = (syData || []).find((sy) => {
+                const s = new Date(sy.start_date);
+                const e = new Date(sy.end_date);
+                return compDate >= s && compDate <= e;
+              });
+              if (syMatch) schoolYear = syMatch.name;
+            }
+            if (!schoolYear && completedAt) {
+              const yr = new Date(completedAt).getFullYear();
+              schoolYear = `S.Y. ${yr}-${yr + 1}`;
+            }
+
             let proposalType = '-';
 
             if (isActivityProposal) {
@@ -291,6 +316,7 @@ const Completed = () => {
               completedDate,
               completedAt,
               semester,
+              schoolYear: schoolYear || 'S.Y. 2025-2026',
               statusLabel: statusMeta.label,
               statusBadgeClass: statusMeta.badgeClass,
               raw: sub
@@ -317,6 +343,13 @@ const Completed = () => {
     return [{ value: 'all', label: 'All types' }, ...types.map((t) => ({ value: t, label: t }))];
   }, [completedDocs]);
 
+  const schoolYearOptions = React.useMemo(() => {
+    const yearsFromDocs = completedDocs.map((d) => d.schoolYear).filter(Boolean);
+    const yearsFromDb = allSchoolYears.map((sy) => sy.name);
+    const uniqueYears = [...new Set([...yearsFromDocs, ...yearsFromDb])].sort().reverse();
+    return [{ value: 'all', label: 'All school years' }, ...uniqueYears.map((y) => ({ value: y, label: y }))];
+  }, [completedDocs, allSchoolYears]);
+
   const semesterOptions = React.useMemo(() => {
     const semesters = [...new Set(completedDocs.map((d) => d.semester).filter(Boolean))].sort();
     return [{ value: 'all', label: 'All semesters' }, ...semesters.map((s) => ({ value: s, label: s }))];
@@ -342,6 +375,9 @@ const Completed = () => {
     if (filterDocType !== 'all') {
       list = list.filter((d) => d.type === filterDocType);
     }
+    if (filterSchoolYear !== 'all') {
+      list = list.filter((d) => d.schoolYear === filterSchoolYear);
+    }
     if (filterSemester !== 'all') {
       list = list.filter((d) => d.semester === filterSemester);
     }
@@ -363,7 +399,7 @@ const Completed = () => {
     });
 
     return list;
-  }, [completedDocs, filterDocType, filterSemester, filterDateRange, sortBy]);
+  }, [completedDocs, filterDocType, filterSchoolYear, filterSemester, filterDateRange, sortBy]);
 
   const toggleFilter = (e, name) => {
     e.stopPropagation();
@@ -405,6 +441,18 @@ const Completed = () => {
             }}
             isOpen={openFilter === 'type'}
             onToggle={(e) => toggleFilter(e, 'type')}
+          />
+          <FilterDropdown
+            label="School Year"
+            value={filterSchoolYear}
+            activeWhen={filterSchoolYear !== 'all'}
+            options={schoolYearOptions}
+            onChange={(v) => {
+              setFilterSchoolYear(v);
+              setOpenFilter(null);
+            }}
+            isOpen={openFilter === 'schoolYear'}
+            onToggle={(e) => toggleFilter(e, 'schoolYear')}
           />
           <FilterDropdown
             label="Semester"

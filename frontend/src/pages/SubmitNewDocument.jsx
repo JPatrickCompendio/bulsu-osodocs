@@ -2032,7 +2032,7 @@ const SubmitNewDocument = () => {
               {isProposal && (
                 <div className="space-y-8">
                   {/* Stepper UI - Sticky to stay visible when scrolling */}
-                  <div className="sticky top-[-20px] z-30 bg-white px-6 py-3 rounded-2xl shadow-md border border-gray-100 flex items-center justify-between overflow-hidden">
+                  <div className="sticky top-[-20px] z-10 bg-white px-6 py-3 rounded-2xl shadow-md border border-gray-100 flex items-center justify-between overflow-hidden">
                     <div className="absolute top-1/2 left-0 w-full h-1 bg-gray-100 -translate-y-1/2 z-0"></div>
                     <div className="absolute top-1/2 left-0 h-1 bg-primary-green -translate-y-1/2 z-0 transition-all duration-500 ease-in-out" style={{ width: proposalStep === 1 ? '15%' : proposalStep === 2 ? '50%' : '85%' }}></div>
 

@@ -555,10 +555,18 @@ const formatStatus = (s, viewerRole = 'org-president') => {
 };
 
 const formatBreakdownLabel = (status) => {
-  if (status === 'to forward') return 'Pending Hard Copy';
-  if (status === 'submitted' || status === 'oso staff review') return 'OSO Staff Review';
-  if (status === 'main campus review' || status === 'external review') return 'Main Campus Review';
-  return status;
+  if (!status) return '';
+  const s = status.toLowerCase();
+  if (s === 'to forward') return 'Pending Hard Copy';
+  if (s === 'submitted' || s === 'oso staff review') return 'Oso Staff Review';
+  if (s === 'sds coordinator review' || s === 'sds review') return 'Sds Coordinator Review';
+  if (s === 'dean review' || s === 'dean_review' || s === 'final in-campus review' || s === 'final in campus review') return 'Final In-Campus Review';
+  if (s === 'main campus review' || s === 'external review') return 'Main Campus Review';
+  if (s === 'approved') return 'Approved';
+  if (s === 'disapproved') return 'Disapproved';
+  if (s === 'returned') return 'Returned';
+  if (s === 'completed') return 'Completed';
+  return status.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 };
 
 const formatDate = (dateString) => {
@@ -705,8 +713,8 @@ const AdminDashboardView = () => {
 
           <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-10">
             <div>
-              <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-2 drop-shadow-md uppercase">Admin Dashboard</h1>
-              <p className="text-gray-200 font-bold text-lg drop-shadow-sm">System Overview and Analytics</p>
+              <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-2 drop-shadow-md uppercase">ADMINISTRATIVE DASHBOARD</h1>
+              <p className="text-gray-200 font-bold text-lg drop-shadow-sm">Document Workflow and Processing Overview</p>
             </div>
             <div className="flex flex-wrap gap-3">
               <button
@@ -872,17 +880,17 @@ const AdminDashboardView = () => {
             <div className="p-6 flex-1 space-y-4">
               {Object.entries(
                   Object.entries(stats.statusBreakdown || {}).reduce((acc, [status, count]) => {
-                    const label = formatBreakdownLabel(status).toLowerCase();
+                    const label = formatBreakdownLabel(status);
                     acc[label] = (acc[label] || 0) + count;
                     return acc;
                   }, {})
                 )
-                .filter(([status]) => !status.toLowerCase().includes('chairman') && !status.toLowerCase().includes('vice chairman'))
-                .map(([status, count]) => (
-                  <div key={status} className="flex items-center justify-between">
+                .filter(([label]) => !label.toLowerCase().includes('chairman') && !label.toLowerCase().includes('vice chairman'))
+                .map(([label, count]) => (
+                  <div key={label} className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getStatusColor(status) }} />
-                      <span className="text-sm font-bold text-gray-600 capitalize">{status}</span>
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getStatusColor(label) }} />
+                      <span className="text-sm font-bold text-gray-600">{label}</span>
                     </div>
                     <span className="font-black text-gray-800 bg-gray-50 px-3 py-1 rounded-lg border border-gray-100">{count}</span>
                   </div>
@@ -1147,8 +1155,8 @@ const ChairmanDashboardView = ({ role }) => {
 
           <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-10">
             <div>
-              <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-2 drop-shadow-md uppercase">{roleLabel} Dashboard</h1>
-              <p className="text-gray-200 font-bold text-lg drop-shadow-sm">System Overview and Analytics</p>
+              <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-2 drop-shadow-md uppercase">OSO STAFF DASHBOARD</h1>
+              <p className="text-gray-200 font-bold text-lg drop-shadow-sm">Document Review and Processing Overview</p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <button
@@ -1297,20 +1305,17 @@ const ChairmanDashboardView = ({ role }) => {
               <div className="p-6 flex-1 space-y-4">
                 {Object.entries(
                     Object.entries(stats.statusBreakdown || {}).reduce((acc, [status, count]) => {
-                      const label = formatBreakdownLabel(status).toLowerCase();
+                      const label = formatBreakdownLabel(status);
                       acc[label] = (acc[label] || 0) + count;
                       return acc;
                     }, {})
                   )
-                  .filter(([status]) => {
-                    const s = status.toLowerCase();
-                    return !s.includes('chairman review');
-                  })
-                  .map(([status, count]) => (
-                    <div key={status} className="flex items-center justify-between">
+                  .filter(([label]) => !label.toLowerCase().includes('chairman'))
+                  .map(([label, count]) => (
+                    <div key={label} className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getStatusColor(status) }} />
-                        <span className="text-sm font-bold text-gray-600 capitalize">{status}</span>
+                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getStatusColor(label) }} />
+                        <span className="text-sm font-bold text-gray-600">{label}</span>
                       </div>
                       <span className="font-black text-gray-800 bg-gray-50 px-3 py-1 rounded-lg border border-gray-100">{count}</span>
                     </div>
@@ -1607,8 +1612,10 @@ const OrgDashboardView = () => {
 
           <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-10">
             <div>
-              <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-2 drop-shadow-md uppercase">ORG PRES DASHBOARD</h1>
-              <p className="text-gray-200 font-bold text-lg drop-shadow-sm">System Overview and Analytics</p>
+              <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-2 drop-shadow-md uppercase">
+                {(user?.abbreviation || user?.org_name || 'ORG').toUpperCase()} DASHBOARD
+              </h1>
+              <p className="text-gray-200 font-bold text-lg drop-shadow-sm">Document Submission Status and Progress Overview</p>
             </div>
             <div className="flex flex-wrap gap-3">
               <button
