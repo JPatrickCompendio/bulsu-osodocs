@@ -1874,102 +1874,10 @@ export const Inbox = () => {
           </div>
         </div>
         
-        <div className="relative">
-          <button 
-            onClick={() => setIsFilterOpen(!isFilterOpen)}
-            className={`flex items-center gap-2 px-5 py-2 rounded-xl transition-all font-semibold text-sm ${
-              isFilterOpen ? 'bg-primary-green text-white shadow-md' : 'bg-white border border-gray-200 text-gray-700 hover:border-primary-green'
-            }`}
-          >
-            <Filter size={16} />
-            <span>Filter {filterType !== 'All' && `: ${filterType}`}</span>
-            <ChevronDown size={16} className={`transition-transform duration-500 ${isFilterOpen ? 'rotate-180' : ''}`} />
-          </button>
-
-          {/* Filter Dropdown */}
-          {isFilterOpen && (
-            <div className="absolute right-0 mt-3 w-64 bg-white rounded-2xl shadow-xl border border-gray-100 z-50 p-2 animate-in zoom-in-95 duration-200 text-gray-800">
-              <div className="px-4 py-2 border-b border-gray-50 mb-1">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Filter Options</p>
-              </div>
-              {[
-                { label: 'All Documents', value: 'All' },
-                { label: 'Pending', value: 'Pending' },
-                { label: 'Approved', value: 'Approved' },
-                { label: 'Rejected', value: 'Rejected' }
-              ].map((item, idx) => (
-                <button
-                  key={item.value}
-                  onClick={() => { setFilterType(item.value); setIsFilterOpen(false); }}
-                  className={`w-full text-left px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
-                    filterType === item.value ? 'bg-green-50 text-primary-green' : 'text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-      </div>
-
-      {/* Bulk Action Bar */}
-      <div className="bg-white border border-gray-100 rounded-2xl px-6 py-3.5 flex items-center justify-between shadow-sm mb-4 text-gray-800">
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-3">
-            <input 
-              type="checkbox" 
-              checked={filteredData.length > 0 && selectedDocs.length === filteredData.length}
-              onChange={toggleSelectAll}
-              className="w-5 h-5 rounded border-gray-300 text-primary-green focus:ring-primary-green cursor-pointer transition-all shadow-sm" 
-            />
-            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Select All</span>
-          </div>
-          
-          <div className="h-6 w-[1px] bg-gray-100"></div>
-
-          <div className="flex items-center gap-1">
-            {!isOsoStaff && (
-              <button 
-                onClick={handleArchive}
-                disabled={isActionsDisabled || viewMode === 'archive'}
-                className="flex items-center gap-2 px-4 py-2 text-gray-400 hover:text-primary-green hover:bg-green-50 rounded-xl transition-all disabled:opacity-20 disabled:hover:bg-transparent group"
-              >
-                <Archive size={18} />
-                <span className="text-sm font-semibold">Archive</span>
-              </button>
-            )}
-            {!isOsoStaff && (
-              <button 
-                onClick={handleDelete}
-                disabled={isActionsDisabled}
-                className="flex items-center gap-2 px-4 py-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all disabled:opacity-20 disabled:hover:bg-transparent group"
-              >
-                <Trash2 size={18} />
-                <span className="text-sm font-semibold">Delete</span>
-              </button>
-            )}
-            <button 
-              disabled={isActionsDisabled}
-              className="flex items-center gap-2 px-4 py-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-xl transition-all disabled:opacity-20 disabled:hover:bg-transparent group"
-            >
-              <Mail size={18} />
-              <span className="text-sm font-semibold">Mark as read</span>
-            </button>
-          </div>
-        </div>
-        
-        <div className="text-xs font-semibold uppercase tracking-wider py-1.5 px-4 bg-gray-50 text-gray-400 rounded-lg border border-gray-100">
-          {selectedDocs.length > 0 ? (
-            <span className="text-primary-green">{selectedDocs.length} Selected</span>
-          ) : (
-            <>
-              <span className="text-secondary-gold font-bold">{filteredData.filter(d => d.status === 'Pending' || d.status === 'OSO Staff Review' || d.status === 'SDS coordinator review').length} Pending</span>
-              <span className="text-gray-300 mx-2">•</span>
-              <span>{filteredData.length} Total</span>
-            </>
-          )}
+        <div className="text-xs font-semibold uppercase tracking-wider py-2 px-4 bg-gray-50 text-gray-400 rounded-xl border border-gray-100">
+          <span className="text-secondary-gold font-bold">{filteredData.filter(d => d.status === 'Pending' || d.status === 'OSO Staff Review' || d.status === 'SDS coordinator review').length} Pending</span>
+          <span className="text-gray-300 mx-2">•</span>
+          <span>{filteredData.length} Total</span>
         </div>
       </div>
 
@@ -1985,7 +1893,6 @@ export const Inbox = () => {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-[#073c2d] text-white">
-                  <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider text-center w-20">Select</th>
                   <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Document Details</th>
                   <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Sender</th>
                   <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider text-center">Type</th>
@@ -1998,18 +1905,10 @@ export const Inbox = () => {
                   <tr 
                     key={item.id} 
                     className={`group transition-all duration-300 cursor-pointer ${
-                      selectedDocs.includes(item.id) ? 'bg-green-50/50' : item.isNew ? 'bg-red-50/20' : 'bg-transparent'
+                      item.isNew ? 'bg-red-50/20' : 'bg-transparent'
                     } hover:bg-gray-50/50`}
                     onClick={() => { logDocumentViewed(item); setSelectedDoc(item); }}
                   >
-                    <td className="px-6 py-5 text-center" onClick={(e) => e.stopPropagation()}>
-                      <input 
-                        type="checkbox" 
-                        checked={selectedDocs.includes(item.id)}
-                        onChange={() => toggleSelectDoc(item.id)}
-                        className="w-4 h-4 rounded border-gray-200 text-primary-green focus:ring-primary-green cursor-pointer transition-transform" 
-                      />
-                    </td>
                     <td className="px-6 py-5">
                       <div className="flex items-center gap-3">
                         {item.isNew && (
