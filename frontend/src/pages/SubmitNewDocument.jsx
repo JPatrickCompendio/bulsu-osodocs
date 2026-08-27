@@ -343,6 +343,47 @@ const SubmitNewDocument = () => {
   const [pendingNavPath, setPendingNavPath] = useState(null);
   const location = useLocation();
 
+  const ensureArrayOfStrings = (val) => {
+    if (!val) return [];
+    let res = val;
+
+    if (typeof res === 'string') {
+      const trimmed = res.trim();
+      if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+        try {
+          res = JSON.parse(trimmed);
+        } catch (e) {
+          res = [trimmed];
+        }
+      } else if (trimmed.includes(',')) {
+        res = trimmed.split(',').map((s) => s.trim()).filter(Boolean);
+      } else if (trimmed) {
+        res = [trimmed];
+      } else {
+        res = [];
+      }
+    }
+
+    if (Array.isArray(res)) {
+      const isShredded = res.length > 1 && res.every((x) => typeof x === 'string' && x.length <= 1);
+      if (isShredded) {
+        const joined = res.join('');
+        if (joined.startsWith('[') && joined.endsWith(']')) {
+          try {
+            const parsed = JSON.parse(joined);
+            if (Array.isArray(parsed)) return parsed.map((s) => String(s).trim()).filter(Boolean);
+          } catch (e) {
+            // ignore
+          }
+        }
+        return [joined.replace(/^[\["'\s]+|[\]"'\s]+$/g, '').trim()].filter(Boolean);
+      }
+      return res.map((s) => String(s).trim()).filter(Boolean);
+    }
+
+    return [];
+  };
+
   const clearDraftField = (fieldName) => {
     setDraftLoadedFields(prev => {
       if (!prev.has(fieldName)) return prev;
@@ -504,11 +545,12 @@ const SubmitNewDocument = () => {
       }
     }
 
+    const safeObjs = ensureArrayOfStrings(objectives);
     if (!String(number_of_students || '').trim()) return false;
     if (!target_audience?.trim()) return false;
     if (!nature_of_activity?.trim()) return false;
-    if (!objectives || objectives.length === 0) return false;
-    if (objectives.includes('Others') && !others_objective?.trim()) return false;
+    if (safeObjs.length === 0) return false;
+    if (safeObjs.includes('Others') && !others_objective?.trim()) return false;
     if (!satisfaction_goal_1?.trim()) return false;
     return true;
   }, [isProposal, proposalDetails]);
@@ -532,7 +574,7 @@ const SubmitNewDocument = () => {
       </div>
     `;
 
-    const getObjectiveChecked = (val) => proposalDetails.objectives?.includes(val);
+    const getObjectiveChecked = (val) => ensureArrayOfStrings(proposalDetails.objectives).includes(val);
 
     const formatTime = (t) => {
       if (!t || t === 'TBD') return 'TBD';
@@ -874,6 +916,7 @@ const SubmitNewDocument = () => {
         finalFormObject = {
           ...defaultForm,
           ...details,
+          objectives: ensureArrayOfStrings(details.objectives),
           schedules: scheds.length > 0 ? scheds : (details.target_date ? details.target_date.split(',').map(d => ({
             activity_date: d.trim(),
             start_time: details.target_time || '',
@@ -1058,6 +1101,7 @@ const SubmitNewDocument = () => {
           setProposalDetails({
             ...defaultForm,
             ...details,
+            objectives: ensureArrayOfStrings(details.objectives),
             schedules: scheds.length > 0 ? scheds : (details.target_date ? details.target_date.split(',').map(d => ({
               activity_date: d.trim(),
               start_time: details.target_time || '',
@@ -1367,6 +1411,9 @@ const SubmitNewDocument = () => {
         if (refreshUser) {
           await refreshUser();
         }
+        window.dispatchEvent(new CustomEvent('inbox-updated'));
+        window.dispatchEvent(new CustomEvent('document-status-changed'));
+        window.dispatchEvent(new CustomEvent('submission-submitted'));
         showToast('Document Resubmitted Successfully!');
         isSuccessSubmit = true;
         setTimeout(() => navigate('/my-documents', { state: { highlightedId: submissionId } }), 500);
@@ -1440,6 +1487,9 @@ const SubmitNewDocument = () => {
         if (refreshUser) {
           await refreshUser();
         }
+        window.dispatchEvent(new CustomEvent('inbox-updated'));
+        window.dispatchEvent(new CustomEvent('document-status-changed'));
+        window.dispatchEvent(new CustomEvent('submission-submitted'));
         showToast('Document Registered Successfully!');
         isSuccessSubmit = true;
         setTimeout(() => navigate('/my-documents', { state: { highlightedId: submissionId } }), 500);
@@ -1582,7 +1632,7 @@ const SubmitNewDocument = () => {
 
   const toggleArrayField = (field, value) => {
     setProposalDetails(prev => {
-      const current = prev[field];
+      const current = ensureArrayOfStrings(prev[field]);
       if (current.includes(value)) {
         return { ...prev, [field]: current.filter(item => item !== value) };
       } else {
@@ -2428,54 +2478,65 @@ const SubmitNewDocument = () => {
                                 'Organizational Program Management',
                                 'Values Enrichment',
                                 'Skills Enhancement'
-                              ].map(opt => (
-                                <label key={opt} className="flex items-center gap-3 cursor-pointer group">
-                                  <div className={`w-5 h-5 rounded flex items-center justify-center border-2 shrink-0 ${proposalDetails.objectives.includes(opt) ? 'bg-primary-green border-primary-green text-white' : 'border-gray-300 group-hover:border-primary-green'}`}>
-                                    {proposalDetails.objectives.includes(opt) && <Check size={14} strokeWidth={3} />}
+                              ].map(opt => {
+                                const currentObjs = ensureArrayOfStrings(proposalDetails.objectives);
+                                const isChecked = currentObjs.includes(opt);
+                                return (
+                                  <label key={opt} className="flex items-center gap-3 cursor-pointer group">
+                                    <div className={`w-5 h-5 rounded flex items-center justify-center border-2 shrink-0 ${isChecked ? 'bg-primary-green border-primary-green text-white' : 'border-gray-300 group-hover:border-primary-green'}`}>
+                                      {isChecked && <Check size={14} strokeWidth={3} />}
+                                    </div>
+                                    <span className="text-sm font-bold text-gray-600 leading-tight">{opt}</span>
+                                    <input 
+                                      type="checkbox" 
+                                      className="hidden" 
+                                      checked={isChecked} 
+                                      onChange={() => {
+                                        toggleArrayField('objectives', opt);
+                                        clearDraftField('objectives');
+                                      }} 
+                                    />
+                                  </label>
+                                );
+                              })}
+                              {(() => {
+                                const currentObjs = ensureArrayOfStrings(proposalDetails.objectives);
+                                const isOthersChecked = currentObjs.includes('Others');
+                                return (
+                                  <div className="flex items-center gap-3 col-span-1 md:col-span-2">
+                                    <label className="flex items-center gap-3 cursor-pointer group shrink-0">
+                                      <div className={`w-5 h-5 rounded flex items-center justify-center border-2 ${isOthersChecked ? 'bg-primary-green border-primary-green text-white' : 'border-gray-300 group-hover:border-primary-green'}`}>
+                                        {isOthersChecked && <Check size={14} strokeWidth={3} />}
+                                      </div>
+                                      <span className="text-sm font-bold text-gray-600">Others:</span>
+                                      <input 
+                                        type="checkbox" 
+                                        className="hidden" 
+                                        checked={isOthersChecked} 
+                                        onChange={() => {
+                                          toggleArrayField('objectives', 'Others');
+                                          clearDraftField('objectives');
+                                        }} 
+                                      />
+                                    </label>
+                                    <input 
+                                      type="text" 
+                                      className={`flex-1 px-4 py-2 border-b-2 font-bold text-sm outline-none transition-all ${
+                                        draftLoadedFields.has('others_objective')
+                                          ? 'bg-amber-50/70 border-amber-200 text-gray-800'
+                                          : 'bg-gray-50 border-gray-200 focus:border-primary-green'
+                                      }`} 
+                                      value={proposalDetails.others_objective || ''} 
+                                      onChange={e => {
+                                        setProposalDetails({ ...proposalDetails, others_objective: e.target.value });
+                                        clearDraftField('others_objective');
+                                      }} 
+                                      placeholder="Specify other objective..."
+                                      disabled={!isOthersChecked} 
+                                    />
                                   </div>
-                                  <span className="text-sm font-bold text-gray-600 leading-tight">{opt}</span>
-                                  <input 
-                                    type="checkbox" 
-                                    className="hidden" 
-                                    checked={proposalDetails.objectives.includes(opt)} 
-                                    onChange={() => {
-                                      toggleArrayField('objectives', opt);
-                                      clearDraftField('objectives');
-                                    }} 
-                                  />
-                                </label>
-                              ))}
-                              <div className="flex items-center gap-3 col-span-1 md:col-span-2">
-                                <label className="flex items-center gap-3 cursor-pointer group shrink-0">
-                                  <div className={`w-5 h-5 rounded flex items-center justify-center border-2 ${proposalDetails.objectives.includes('Others') ? 'bg-primary-green border-primary-green text-white' : 'border-gray-300 group-hover:border-primary-green'}`}>
-                                    {proposalDetails.objectives.includes('Others') && <Check size={14} strokeWidth={3} />}
-                                  </div>
-                                  <span className="text-sm font-bold text-gray-600">Others:</span>
-                                  <input 
-                                    type="checkbox" 
-                                    className="hidden" 
-                                    checked={proposalDetails.objectives.includes('Others')} 
-                                    onChange={() => {
-                                      toggleArrayField('objectives', 'Others');
-                                      clearDraftField('objectives');
-                                    }} 
-                                  />
-                                </label>
-                                <input 
-                                  type="text" 
-                                  className={`flex-1 px-4 py-2 border-b-2 font-bold text-sm outline-none transition-all ${
-                                    draftLoadedFields.has('others_objective')
-                                      ? 'bg-amber-50/70 border-amber-200 text-gray-800'
-                                      : 'bg-gray-50 border-gray-200 focus:border-primary-green'
-                                  }`} 
-                                  value={proposalDetails.others_objective} 
-                                  onChange={e => {
-                                    setProposalDetails({ ...proposalDetails, others_objective: e.target.value });
-                                    clearDraftField('others_objective');
-                                  }} 
-                                  disabled={!proposalDetails.objectives.includes('Others')} 
-                                />
-                              </div>
+                                );
+                              })()}
                             </div>
                           </div>
                         </div>

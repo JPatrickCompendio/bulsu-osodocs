@@ -336,6 +336,29 @@ const FilterDropdown = ({ label, value, options, onChange, isOpen, onToggle, act
     };
 
     fetchCompleted();
+
+    const handleRefresh = () => fetchCompleted();
+
+    window.addEventListener('completed-updated', handleRefresh);
+    window.addEventListener('document-status-changed', handleRefresh);
+    window.addEventListener('inbox-updated', handleRefresh);
+
+    const channelId = `completed_realtime_${user?.id}_${Math.random().toString(36).substring(2, 9)}`;
+    const channel = supabase.channel(channelId)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'submissions' }, () => {
+        handleRefresh();
+      })
+      .on('broadcast', { event: 'inbox-update' }, () => {
+        handleRefresh();
+      })
+      .subscribe();
+
+    return () => {
+      window.removeEventListener('completed-updated', handleRefresh);
+      window.removeEventListener('document-status-changed', handleRefresh);
+      window.removeEventListener('inbox-updated', handleRefresh);
+      supabase.removeChannel(channel);
+    };
   }, [user?.id, isOrgPresident]);
 
   const docTypeOptions = React.useMemo(() => {

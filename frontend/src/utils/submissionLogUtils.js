@@ -447,12 +447,31 @@ export const parseObjectivesList = (objectives) => {
       items = items.split('\n').map((s) => s.trim()).filter(Boolean);
     } else if (items.includes(',')) {
       items = items.split(',').map((s) => s.trim()).filter(Boolean);
-    } else {
+    } else if (items.trim()) {
       items = [items.trim()];
+    } else {
+      items = [];
     }
   }
 
   if (Array.isArray(items)) {
+    // Detect and auto-repair arrays that were corrupted into single characters e.g. ['[', '"', 'O', 'r', ...]
+    const isShredded = items.length > 1 && items.every((x) => typeof x === 'string' && x.length <= 1);
+    if (isShredded) {
+      const joined = items.join('');
+      if (joined.startsWith('[') && joined.endsWith(']')) {
+        try {
+          const parsed = JSON.parse(joined);
+          if (Array.isArray(parsed)) {
+            return parsed.map((s) => String(s || '').replace(/^[•\-\*\s]+/, '').trim()).filter(Boolean);
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+      return [joined.replace(/^[\["'\s]+|[\]"'\s]+$/g, '').trim()].filter(Boolean);
+    }
+
     return items
       .map((item) => String(item || '').replace(/^[•\-\*\s]+/, '').trim())
       .filter(Boolean);

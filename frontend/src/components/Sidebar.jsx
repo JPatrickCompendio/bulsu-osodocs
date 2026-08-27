@@ -30,22 +30,49 @@ const Sidebar = () => {
     
     const fetchInboxCount = async () => {
       try {
+        const normRole = String(user.role || '').toLowerCase().trim();
+        const isAdmin = normRole === 'admin' || normRole.includes('sds');
+        const isStaff = normRole === 'chairman' || normRole === 'vice-chairman' || normRole === 'oso-staff' || normRole === 'oso staff';
+
         let statusFilters = [];
-        if (user.role === 'admin') {
-          statusFilters = ['sds coordinator review', 'SDS coordinator review', 'SDS Coordinator Review', 'oso approved', 'OSO Approved'];
-        } else if (user.role === 'chairman' || user.role === 'vice-chairman') {
-          statusFilters = ['submitted', 'pending', 'oso staff review', 'OSO Staff Review'];
+        if (isAdmin) {
+          statusFilters = ['sds coordinator review', 'SDS coordinator review', 'SDS Coordinator Review', 'oso approved', 'OSO Approved', 'OSO approved'];
+        } else if (isStaff) {
+          statusFilters = ['submitted', 'pending', 'oso staff review', 'OSO Staff Review', 'Submitted', 'Pending'];
         }
         
-        if (statusFilters.length === 0) return;
+        if (statusFilters.length === 0) {
+          if (isMounted) setInboxCount(0);
+          return;
+        }
 
-        const { count, error } = await supabase
-          .from('submissions')
-          .select('id', { count: 'exact', head: true })
-          .in('status', statusFilters);
-          
-        if (!error && isMounted) {
-          setInboxCount(count || 0);
+        if (isAdmin) {
+          // Join submission_logs to exclude submissions already approved by admin/SDS
+          const { data, error } = await supabase
+            .from('submissions')
+            .select('id, status, submission_logs(workflow_phase, action_type, review_action)')
+            .in('status', statusFilters);
+
+          if (!error && isMounted) {
+            const count = (data || []).filter(sub => {
+              const logs = sub.submission_logs || [];
+              const hasApproved = logs.some(l => 
+                String(l.workflow_phase || '').toLowerCase().includes('sds') && 
+                (String(l.action_type || '').toLowerCase() === 'approved' || String(l.review_action || '').toLowerCase() === 'approved')
+              );
+              return !hasApproved;
+            }).length;
+            setInboxCount(count);
+          }
+        } else {
+          const { count, error } = await supabase
+            .from('submissions')
+            .select('id', { count: 'exact', head: true })
+            .in('status', statusFilters);
+            
+          if (!error && isMounted) {
+            setInboxCount(count || 0);
+          }
         }
       } catch (err) {
         console.error('Error fetching inbox count:', err);
@@ -54,8 +81,9 @@ const Sidebar = () => {
 
     const fetchCompletedCount = async () => {
       try {
-        if (!['admin', 'chairman', 'vice-chairman'].includes(user.role)) {
-          setCompletedCount(0);
+        const normRole = String(user.role || '').toLowerCase().trim();
+        if (!['admin', 'chairman', 'vice-chairman', 'sds-coordinator', 'oso-staff'].some(r => normRole.includes(r))) {
+          if (isMounted) setCompletedCount(0);
           return;
         }
 
@@ -79,14 +107,15 @@ const Sidebar = () => {
 
     const fetchMyDocsCount = async () => {
       try {
-        if (user.role !== 'org-president') {
-          setMyDocsCount(0);
+        const normRole = String(user.role || '').toLowerCase().trim();
+        if (normRole !== 'org-president') {
+          if (isMounted) setMyDocsCount(0);
           return;
         }
 
         const { data, error } = await supabase
           .from('submissions')
-          .select('id, status, submission_logs(created_at, action_type)')
+          .select('id, status, updated_at, submission_logs(created_at, action_type)')
           .eq('user_id', user.id);
 
         if (!error && isMounted) {
@@ -122,16 +151,28 @@ const Sidebar = () => {
     const handleInboxUpdate = () => fetchInboxCount();
     const handleCompletedUpdate = () => fetchCompletedCount();
     const handleMyDocsUpdate = () => fetchMyDocsCount();
+    const handleGlobalStatusChange = () => {
+      fetchInboxCount();
+      fetchCompletedCount();
+      fetchMyDocsCount();
+    };
 
     window.addEventListener('inbox-updated', handleInboxUpdate);
     window.addEventListener('completed-updated', handleCompletedUpdate);
     window.addEventListener('my-docs-updated', handleMyDocsUpdate);
+    window.addEventListener('document-status-changed', handleGlobalStatusChange);
+    window.addEventListener('submission-submitted', handleGlobalStatusChange);
     
-    const channel = supabase.channel('submissions_changes')
+    const channelId = `sidebar_realtime_${user.id}_${Math.random().toString(36).substring(2, 9)}`;
+    const channel = supabase.channel(channelId)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'submissions' }, () => {
-        fetchInboxCount();
-        fetchCompletedCount();
-        fetchMyDocsCount();
+        handleGlobalStatusChange();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'submission_logs' }, () => {
+        handleGlobalStatusChange();
+      })
+      .on('broadcast', { event: 'inbox-update' }, () => {
+        handleGlobalStatusChange();
       })
       .subscribe();
 
@@ -140,6 +181,8 @@ const Sidebar = () => {
       window.removeEventListener('inbox-updated', handleInboxUpdate);
       window.removeEventListener('completed-updated', handleCompletedUpdate);
       window.removeEventListener('my-docs-updated', handleMyDocsUpdate);
+      window.removeEventListener('document-status-changed', handleGlobalStatusChange);
+      window.removeEventListener('submission-submitted', handleGlobalStatusChange);
       supabase.removeChannel(channel);
     };
   }, [user]);

@@ -26,7 +26,8 @@ import {
   Lock,
   LogOut,
   FolderOpen,
-  Pencil
+  Pencil,
+  Trash2
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { useToast } from '../hooks/useToast';
@@ -284,6 +285,29 @@ export const MyDocuments = () => {
       setShowSuspendedModal(true);
     } else {
       navigate(`/submit?submissionId=${selectedDoc.id}`);
+    }
+  };
+
+  const [isDeleteDraftModalOpen, setIsDeleteDraftModalOpen] = React.useState(false);
+  const [isDeletingDraft, setIsDeletingDraft] = React.useState(false);
+
+  const handleDeleteDraft = async () => {
+    if (!selectedDoc?.id) return;
+    try {
+      setIsDeletingDraft(true);
+      await subService.deleteDraftSubmission(selectedDoc.id);
+      showToast('Draft document deleted successfully', 'success');
+      setIsDeleteDraftModalOpen(false);
+      setSelectedDoc(null);
+      await fetchHandledLogs();
+      window.dispatchEvent(new CustomEvent('my-docs-updated'));
+      window.dispatchEvent(new CustomEvent('inbox-updated'));
+      window.dispatchEvent(new CustomEvent('document-status-changed'));
+    } catch (err) {
+      console.error('Error deleting draft:', err);
+      showToast(err.message || 'Failed to delete draft document', 'error');
+    } finally {
+      setIsDeletingDraft(false);
     }
   };
 
@@ -1445,8 +1469,48 @@ export const MyDocuments = () => {
     }
   };
 
+  const selectedDocIdRef = React.useRef(selectedDoc?.id);
   React.useEffect(() => {
+    selectedDocIdRef.current = selectedDoc?.id;
+  }, [selectedDoc?.id]);
+
+  React.useEffect(() => {
+    if (!user?.id) return;
+
     fetchHandledLogs();
+
+    const handleRefresh = () => {
+      fetchHandledLogs();
+      if (selectedDocIdRef.current) {
+        refreshSelectedDoc(selectedDocIdRef.current);
+      }
+    };
+
+    window.addEventListener('my-docs-updated', handleRefresh);
+    window.addEventListener('document-status-changed', handleRefresh);
+    window.addEventListener('inbox-updated', handleRefresh);
+    window.addEventListener('submission-submitted', handleRefresh);
+
+    const channelId = `mydocs_realtime_${user.id}_${Math.random().toString(36).substring(2, 9)}`;
+    const channel = supabase.channel(channelId)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'submissions' }, () => {
+        handleRefresh();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'submission_logs' }, () => {
+        handleRefresh();
+      })
+      .on('broadcast', { event: 'inbox-update' }, () => {
+        handleRefresh();
+      })
+      .subscribe();
+
+    return () => {
+      window.removeEventListener('my-docs-updated', handleRefresh);
+      window.removeEventListener('document-status-changed', handleRefresh);
+      window.removeEventListener('inbox-updated', handleRefresh);
+      window.removeEventListener('submission-submitted', handleRefresh);
+      supabase.removeChannel(channel);
+    };
   }, [user]);
 
   React.useEffect(() => {
@@ -1776,6 +1840,56 @@ export const MyDocuments = () => {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderDeleteDraftModal = () => {
+    if (!isDeleteDraftModalOpen) return null;
+    return (
+      <div className="fixed inset-0 bg-slate-900/75 backdrop-blur-md z-[999999] flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl p-8 max-w-md w-full text-center shadow-2xl relative animate-in zoom-in-95 duration-200 text-gray-800">
+          <button
+            onClick={() => setIsDeleteDraftModalOpen(false)}
+            disabled={isDeletingDraft}
+            className="absolute top-5 right-5 text-gray-400 hover:text-gray-600 p-1.5 rounded-full hover:bg-gray-100 transition-all"
+          >
+            <X size={20} />
+          </button>
+          <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-5 border border-red-100">
+            <Trash2 size={28} />
+          </div>
+          <h3 className="text-xl font-bold text-gray-800 mb-2">Delete Draft Document</h3>
+          <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+            Are you sure you want to delete this draft? This action cannot be undone and will permanently remove the document from your account and database.
+          </p>
+          
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => setIsDeleteDraftModalOpen(false)}
+              disabled={isDeletingDraft}
+              className="flex-1 px-4 py-3 border border-gray-200 text-gray-600 font-bold rounded-xl hover:bg-gray-50 transition-all text-sm disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteDraft}
+              disabled={isDeletingDraft}
+              className="flex-1 px-4 py-3 bg-red-600 text-white font-bold rounded-xl shadow-lg shadow-red-600/20 hover:bg-red-700 transition-all text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {isDeletingDraft ? (
+                <span>Deleting...</span>
+              ) : (
+                <>
+                  <Trash2 size={16} />
+                  <span>Delete Draft</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
       </div>
@@ -2590,13 +2704,23 @@ export const MyDocuments = () => {
                 </div>
               </div>
 
-              {(user?.role === 'org-president' && selectedDoc.status === 'DRAFT') && (
-                <button
-                  onClick={handleContinueClick}
-                  className="w-full px-5 py-3.5 bg-primary-green text-white rounded-xl text-sm font-semibold hover:bg-green-600 transition-all shadow-sm"
-                >
-                  Continue Submission
-                </button>
+              {(user?.role === 'org-president' && String(selectedDoc.status || '').toUpperCase() === 'DRAFT') && (
+                <div className="flex flex-col gap-2.5 w-full mt-3">
+                  <button
+                    onClick={handleContinueClick}
+                    className="w-full px-5 py-3.5 bg-primary-green text-white rounded-xl text-sm font-semibold hover:bg-green-600 transition-all shadow-sm flex items-center justify-center gap-2"
+                  >
+                    <FileText size={16} />
+                    <span>Continue Submission</span>
+                  </button>
+                  <button
+                    onClick={() => setIsDeleteDraftModalOpen(true)}
+                    className="w-full px-5 py-3 bg-red-50 text-red-600 border border-red-200 rounded-xl text-sm font-semibold hover:bg-red-100 hover:text-red-700 transition-all shadow-sm flex items-center justify-center gap-2"
+                  >
+                    <Trash2 size={16} />
+                    <span>Delete Draft</span>
+                  </button>
+                </div>
               )}
 
               {isReturnedStatus && (
@@ -3237,6 +3361,7 @@ export const MyDocuments = () => {
             );
           })()}
           {renderDeliveryProofModal()}
+          {renderDeleteDraftModal()}
         </div>
       );
     }
@@ -4616,6 +4741,7 @@ export const MyDocuments = () => {
           );
         })()}
         {renderDeliveryProofModal()}
+        {renderDeleteDraftModal()}
       </div>
     );
   }
@@ -4762,6 +4888,7 @@ export const MyDocuments = () => {
       </div>
 
       {renderDeliveryProofModal()}
+      {renderDeleteDraftModal()}
 
       <ToastComponent />
     </div>

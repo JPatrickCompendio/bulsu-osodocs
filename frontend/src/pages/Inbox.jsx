@@ -734,6 +734,36 @@ export const Inbox = () => {
   }, [subtypesMap]);
 
   React.useEffect(() => {
+    if (!user?.id) return;
+
+    const handleRefresh = () => fetchSubmissions();
+
+    window.addEventListener('inbox-updated', handleRefresh);
+    window.addEventListener('submission-submitted', handleRefresh);
+    window.addEventListener('document-status-changed', handleRefresh);
+
+    const channelId = `inbox_realtime_${user.id}_${Math.random().toString(36).substring(2, 9)}`;
+    const channel = supabase.channel(channelId)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'submissions' }, () => {
+        handleRefresh();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'submission_logs' }, () => {
+        handleRefresh();
+      })
+      .on('broadcast', { event: 'inbox-update' }, () => {
+        handleRefresh();
+      })
+      .subscribe();
+
+    return () => {
+      window.removeEventListener('inbox-updated', handleRefresh);
+      window.removeEventListener('submission-submitted', handleRefresh);
+      window.removeEventListener('document-status-changed', handleRefresh);
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
+
+  React.useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
     const queryTargetId = searchParams.get('submissionId') || searchParams.get('id');
     const targetId = location.state?.submissionId || location.state?.highlightedId || queryTargetId;
@@ -781,6 +811,8 @@ export const Inbox = () => {
       await fetchSubmissions();
       setSelectedDoc(null);
       window.dispatchEvent(new CustomEvent('inbox-updated'));
+      window.dispatchEvent(new CustomEvent('document-status-changed'));
+      window.dispatchEvent(new CustomEvent('completed-updated'));
       showToast('Submission approved successfully!');
       navigate('/my-documents', { state: { highlightedId: selectedDoc.id } });
     } catch (err) {
@@ -815,6 +847,8 @@ export const Inbox = () => {
       await fetchSubmissions();
       setSelectedDoc(null);
       window.dispatchEvent(new CustomEvent('inbox-updated'));
+      window.dispatchEvent(new CustomEvent('document-status-changed'));
+      window.dispatchEvent(new CustomEvent('completed-updated'));
       showToast('Submission returned for edits successfully!');
       navigate('/my-documents', { state: { highlightedId: selectedDoc.id } });
     } catch (err) {
@@ -842,6 +876,8 @@ export const Inbox = () => {
       await fetchSubmissions();
       setSelectedDoc(null);
       window.dispatchEvent(new CustomEvent('inbox-updated'));
+      window.dispatchEvent(new CustomEvent('document-status-changed'));
+      window.dispatchEvent(new CustomEvent('completed-updated'));
       showToast('Submission disapproved.');
       navigate('/my-documents', { state: { highlightedId: selectedDoc.id } });
     } catch (err) {

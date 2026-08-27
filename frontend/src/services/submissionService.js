@@ -611,3 +611,34 @@ export const copyApprovedAttachments = async (oldVersionId, newVersionId, return
 
   }
 };
+
+export const deleteDraftSubmission = async (submissionId) => {
+  if (!submissionId) return;
+
+  const { data: versions } = await supabase
+    .from('submission_versions')
+    .select('id, activity_proposal_details(id)')
+    .eq('submission_id', submissionId);
+
+  if (versions && versions.length > 0) {
+    const versionIds = versions.map(v => v.id);
+    const detailIds = versions.flatMap(v => (v.activity_proposal_details || []).map(d => d.id)).filter(Boolean);
+
+    if (detailIds.length > 0) {
+      await supabase.from('activity_schedules').delete().in('proposal_detail_id', detailIds);
+    }
+    await supabase.from('activity_proposal_details').delete().in('submission_version_id', versionIds);
+    await supabase.from('submission_attachments').delete().in('submission_version_id', versionIds);
+    await supabase.from('submission_versions').delete().eq('submission_id', submissionId);
+  }
+
+  await supabase.from('submission_logs').delete().eq('submission_id', submissionId);
+
+  const { error } = await supabase
+    .from('submissions')
+    .delete()
+    .eq('id', submissionId);
+
+  if (error) throw error;
+  return true;
+};

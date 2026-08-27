@@ -93,6 +93,25 @@ function getAnnouncementAudiences(role: string, orgName = '') {
   return Array.from(new Set(audiences));
 }
 
+async function getDefaultAdminUserId(supabase: ReturnType<typeof getAdminClient>): Promise<string | null> {
+  const { data: adminUser } = await supabase
+    .from('users')
+    .select('id')
+    .eq('role', 'admin')
+    .limit(1)
+    .maybeSingle();
+
+  if (adminUser?.id) return adminUser.id;
+
+  const { data: fallbackUser } = await supabase
+    .from('users')
+    .select('id')
+    .limit(1)
+    .maybeSingle();
+
+  return fallbackUser?.id || null;
+}
+
 async function syncSubmissionWindowAnnouncements(supabase: ReturnType<typeof getAdminClient>) {
   try {
     const { data: activeSy } = await supabase.from('school_years').select('id').eq('is_active', true).maybeSingle();
@@ -105,6 +124,8 @@ async function syncSubmissionWindowAnnouncements(supabase: ReturnType<typeof get
       .eq('event_type', 'submission_window');
 
     if (!windows || windows.length === 0) return;
+
+    const adminUserId = await getDefaultAdminUserId(supabase);
 
     const now = new Date();
     const oneDayMs = 24 * 60 * 60 * 1000;
@@ -133,6 +154,7 @@ async function syncSubmissionWindowAnnouncements(supabase: ReturnType<typeof get
             content: openContent,
             target_audience: 'all-orgs',
             is_active: true,
+            created_by: adminUserId,
             created_at: w.created_at || new Date().toISOString(),
             updated_at: new Date().toISOString(),
           }]);
@@ -157,6 +179,7 @@ async function syncSubmissionWindowAnnouncements(supabase: ReturnType<typeof get
               content: closingContent,
               target_audience: 'all-orgs',
               is_active: true,
+              created_by: adminUserId,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             }]);
@@ -865,10 +888,15 @@ async function handleGetAnnouncements() {
 
 async function handlePostAnnouncements(body: Record<string, unknown>) {
   const supabase = getAdminClient();
-  const { title, content, target_audience, is_active, created_by } = body as Record<string, unknown>;
+  let { title, content, target_audience, is_active, created_by } = body as Record<string, unknown>;
 
   if (!title || !content || !target_audience) {
     return jsonResponse({ error: 'Title, content, and target_audience are required' }, 400);
+  }
+
+  const isUuid = (str: unknown) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+  if (!isUuid(created_by)) {
+    created_by = await getDefaultAdminUserId(supabase);
   }
 
   const { data, error } = await supabase
@@ -1983,7 +2011,7 @@ async function handlePostAcademicEvents(body: Record<string, unknown>) {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
-      if (created_by) annObj.created_by = created_by;
+      annObj.created_by = created_by || await getDefaultAdminUserId(supabase);
 
       const { error: annErr } = await supabase.from('announcements').insert([annObj]);
       if (annErr) console.error('Failed to create opening window announcement:', annErr);
@@ -2038,11 +2066,13 @@ async function handlePutAcademicEvents(id: string, body: Record<string, unknown>
         .maybeSingle();
 
       if (!existingAnn) {
+        const annCreatedBy = (body.created_by as string) || await getDefaultAdminUserId(supabase);
         const annObj: Record<string, unknown> = {
           title: announceTitle,
           content: announceContent,
           target_audience: 'all-orgs',
           is_active: true,
+          created_by: annCreatedBy,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
