@@ -182,7 +182,9 @@ const phaseMatchers = {
   hardcopy_verification: (log) => {
     const type = norm(log?.action_type);
     const text = logText(log);
-    return type === 'ready for hardcopy' || type === 'ready_for_hardcopy' || text.includes('ready for hardcopy');
+    if (type === 'ready for hardcopy' || type === 'ready_for_hardcopy' || text.includes('ready for hardcopy')) return true;
+    if (text.includes('hard copy verified') || text.includes('hardcopy verified')) return true;
+    return false;
   },
   approved_dean: (log) =>
     norm(log?.action_type) === 'approved' &&
@@ -234,10 +236,14 @@ const STATUS_TO_NEXT_PHASE = {
   returned: 'resubmitted',
   'sds coordinator review': 'approved_sds',
   'to forward': 'hardcopy_verification',
+  'pending hard copy': 'hardcopy_verification',
+  'pending hardcopy': 'hardcopy_verification',
+  'hardcopy submission': 'hardcopy_verification',
   'dean review': 'approved_dean',
   'dean approved': 'forwarded_external',
   'main campus review': 'approved_external',
   approved: 'ready_for_retrieval',
+  'ready for retrieval': 'document_retrieved',
   'ready for retrieval': 'document_retrieved',
   'waiting for accomplishment report': 'accomplishment_report'
 };
@@ -271,15 +277,15 @@ const PENDING_PHASE_TEMPLATES = {
   approved_sds: {
     action_type: 'approved',
     workflow_phase: 'sds-review',
-    description: 'Approved by SDS Coordinator',
-    users: { full_name: 'Teresita delacruz', role: 'admin' },
-    displayName: 'Teresita delacruz',
-    displayRole: 'admin'
+    description: 'Awaiting review and approval by SDS Coordinator.',
+    users: { full_name: 'Pending SDS Review', role: 'admin' },
+    displayName: 'SDS Coordinator (Admin)',
+    displayRole: 'ADMIN'
   },
   hardcopy_verification: {
     action_type: 'ready_for_hardcopy',
     workflow_phase: 'sds-review',
-    description: 'Awaiting physical hardcopy verification and approval by SDS Coordinator / Admin.',
+    description: 'Awaiting physical hardcopy verification and approval by SDS Coordinator / Admin.\n\nTake note: Please print all required document attachments and secure the necessary physical wet signatures from OSO Staff before submitting the hard copy for physical verification.',
     users: { full_name: 'Pending Hardcopy Verification', role: 'admin' },
     displayName: 'SDS Coordinator (Admin)',
     displayRole: 'ADMIN'
@@ -345,7 +351,16 @@ const isTerminalStatus = (status) => {
 export const appendPendingTimelinePhase = (realLogs, { submissionStatus, isViewingLatestVersion = true } = {}) => {
   if (!isViewingLatestVersion || !realLogs) return realLogs || [];
 
-  const status = norm(submissionStatus);
+  const hasHardcopyVerifiedLog = (realLogs || []).some(log => {
+    const text = logText(log);
+    return text.includes('hard copy verified') || text.includes('hardcopy verified');
+  });
+
+  let status = norm(submissionStatus);
+  if ((status === 'to forward' || status === 'pending hard copy' || status === 'pending hardcopy' || status === 'hardcopy submission') && hasHardcopyVerifiedLog) {
+    status = 'ready for retrieval';
+  }
+
   if (isTerminalStatus(status)) return realLogs;
 
   const phaseId = STATUS_TO_NEXT_PHASE[status];

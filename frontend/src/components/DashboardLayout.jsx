@@ -843,9 +843,14 @@ const Header = () => {
                             </div>
 
                             {/* Line 3: Message content */}
-                            <p className="text-xs text-gray-600 line-clamp-2 leading-relaxed">
-                              {displayMessage}
-                            </p>
+                            <div className="text-xs text-gray-600 leading-relaxed space-y-1">
+                              <p className="line-clamp-2">{displayMessage}</p>
+                              {(user?.role === 'org-president' && (displayMessage.toLowerCase().includes('approved by sds') || (displayMessage.toLowerCase().includes('sds') && displayMessage.toLowerCase().includes('approved')))) && (
+                                <p className="text-[11px] text-amber-700 font-medium leading-normal mt-1">
+                                  Take note: Print attachments &amp; secure OSO Staff wet signatures before hard copy submission.
+                                </p>
+                              )}
+                            </div>
 
                             {/* Line 4: Action Button */}
                             {!isAnnouncement && (notif.source?.submissions || notif.source?.submission_id) && (

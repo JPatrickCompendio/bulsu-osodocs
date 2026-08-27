@@ -3180,7 +3180,7 @@ export function stageToDbStatus(stage: WorkflowStageKey): string {
     case 'SIGNATORIES': return 'to forward';
     case 'FINAL_LOCAL_CAMPUS_REVIEW': return 'dean review';
     case 'MAIN_CAMPUS_REVIEW': return 'main campus review';
-    case 'DOCUMENT_RETRIEVAL': return 'approved';
+    case 'DOCUMENT_RETRIEVAL': return 'ready for retrieval';
     case 'ACCOMPLISHMENT_REPORT': return 'waiting for accomplishment report';
     case 'COMPLETED': return 'completed';
     case 'RETURNED': return 'returned';
@@ -3233,7 +3233,7 @@ export const WORKFLOW_CONFIGS: Record<string, {
       DRAFT: { submit: 'OSO_REVIEW' },
       OSO_REVIEW: { approve: 'SDS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
       SDS_REVIEW: { approve: 'HARDCOPY_SUBMISSION', return: 'RETURNED', disapprove: 'DISAPPROVED' },
-      HARDCOPY_SUBMISSION: { approve: 'HARDCOPY_SUBMISSION', ready_for_retrieval: 'HARDCOPY_SUBMISSION', document_retrieved: 'HARDCOPY_SUBMISSION', confirm_retrieval: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'FINAL_LOCAL_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      HARDCOPY_SUBMISSION: { approve: 'DOCUMENT_RETRIEVAL', ready_for_retrieval: 'DOCUMENT_RETRIEVAL', document_retrieved: 'DOCUMENT_RETRIEVAL', confirm_retrieval: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'FINAL_LOCAL_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
       FINAL_LOCAL_CAMPUS_REVIEW: { approve: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'MAIN_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
       MAIN_CAMPUS_REVIEW: { approve: 'DOCUMENT_RETRIEVAL', ready_for_retrieval: 'DOCUMENT_RETRIEVAL', forward: 'DOCUMENT_RETRIEVAL', return: 'RETURNED', disapprove: 'DISAPPROVED' },
       DOCUMENT_RETRIEVAL: { ready_for_retrieval: 'DOCUMENT_RETRIEVAL', document_retrieved: 'DOCUMENT_RETRIEVAL', confirm_retrieval: 'ACCOMPLISHMENT_REPORT', approve: 'ACCOMPLISHMENT_REPORT', return: 'RETURNED' },
@@ -3287,7 +3287,7 @@ export const WORKFLOW_CONFIGS: Record<string, {
       DRAFT: { submit: 'OSO_REVIEW' },
       OSO_REVIEW: { approve: 'SDS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
       SDS_REVIEW: { approve: 'HARDCOPY_SUBMISSION', return: 'RETURNED', disapprove: 'DISAPPROVED' },
-      HARDCOPY_SUBMISSION: { approve: 'HARDCOPY_SUBMISSION', ready_for_retrieval: 'HARDCOPY_SUBMISSION', document_retrieved: 'HARDCOPY_SUBMISSION', confirm_retrieval: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'FINAL_LOCAL_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      HARDCOPY_SUBMISSION: { approve: 'DOCUMENT_RETRIEVAL', ready_for_retrieval: 'DOCUMENT_RETRIEVAL', document_retrieved: 'DOCUMENT_RETRIEVAL', confirm_retrieval: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'FINAL_LOCAL_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
       FINAL_LOCAL_CAMPUS_REVIEW: { approve: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'MAIN_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
       // Year-End COMPLETES immediately after Main Campus approval
       MAIN_CAMPUS_REVIEW: { approve: 'COMPLETED', return: 'RETURNED', disapprove: 'DISAPPROVED' },
@@ -3318,7 +3318,7 @@ export const WORKFLOW_CONFIGS: Record<string, {
       DRAFT: { submit: 'OSO_REVIEW' },
       OSO_REVIEW: { approve: 'SDS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
       SDS_REVIEW: { approve: 'HARDCOPY_SUBMISSION', return: 'RETURNED', disapprove: 'DISAPPROVED' },
-      HARDCOPY_SUBMISSION: { approve: 'HARDCOPY_SUBMISSION', ready_for_retrieval: 'HARDCOPY_SUBMISSION', document_retrieved: 'HARDCOPY_SUBMISSION', confirm_retrieval: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'FINAL_LOCAL_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      HARDCOPY_SUBMISSION: { approve: 'DOCUMENT_RETRIEVAL', ready_for_retrieval: 'DOCUMENT_RETRIEVAL', document_retrieved: 'DOCUMENT_RETRIEVAL', confirm_retrieval: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'FINAL_LOCAL_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
       FINAL_LOCAL_CAMPUS_REVIEW: { approve: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'MAIN_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
       // Renewal COMPLETES immediately after Main Campus approval
       MAIN_CAMPUS_REVIEW: { approve: 'COMPLETED', return: 'RETURNED', disapprove: 'DISAPPROVED' },
@@ -3392,7 +3392,9 @@ export function generateDescriptiveLogMessage(
       case 'OSO_REVIEW':
         return `Approved by OSO Staff`;
       case 'SDS_REVIEW':
-        return `Approved by SDS Coordinator`;
+        return comment && comment.trim()
+          ? `Approved by SDS Coordinator\n\nRemarks: "${comment.trim()}"`
+          : `Approved by SDS Coordinator`;
       case 'HARDCOPY_SUBMISSION':
         return `Hard copy verified and approved by ${roleTitle}`;
       case 'FINAL_LOCAL_CAMPUS_REVIEW':

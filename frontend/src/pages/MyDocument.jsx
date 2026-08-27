@@ -982,7 +982,7 @@ export const MyDocuments = () => {
             users (org_name, abbreviation, student_no, full_name, role),
             documentType (name),
             document_subtypes (name),
-            submission_logs (created_at, action_type),
+            submission_logs (created_at, action_type, review_action, description, comment),
             submission_versions!submission_id (
               *,
               activity_proposal_details (*, activity_schedules (*)),
@@ -1034,6 +1034,7 @@ export const MyDocuments = () => {
             users (org_name, abbreviation, student_no),
             documentType (name),
             document_subtypes (name),
+            submission_logs (created_at, action_type, review_action, description, comment),
             submission_versions!submission_id (
               *,
               activity_proposal_details (*, activity_schedules (*)),
@@ -1055,6 +1056,7 @@ export const MyDocuments = () => {
               users (org_name, abbreviation, student_no),
               documentType (name),
               document_subtypes (name),
+              submission_logs (created_at, action_type, review_action, description, comment),
               submission_versions!submission_id (
                 *,
                 activity_proposal_details (*, activity_schedules (*)),
@@ -1571,21 +1573,22 @@ export const MyDocuments = () => {
 
   // Group by submission_id to keep only the latest log entry per submission
   const uniqueSubmissionsMap = {};
-  logsData.forEach(log => {
+  (logsData || []).forEach(log => {
     if (!log.submissions) return;
     const subId = log.submission_id;
-    // Since records are fetched ordered by created_at DESC, the first log we see is already the latest!
     if (!uniqueSubmissionsMap[subId]) {
       uniqueSubmissionsMap[subId] = {
         latestLog: log,
-        submission: log.submissions
+        submission: log.submissions,
+        allLogs: []
       };
     }
+    uniqueSubmissionsMap[subId].allLogs.push(log);
   });
 
   const uniqueSubmissionsList = Object.values(uniqueSubmissionsMap);
   // Map submissions to visual format
-  const mappedDocs = uniqueSubmissionsList.map(({ latestLog, submission }) => {
+  const mappedDocs = uniqueSubmissionsList.map(({ latestLog, submission, allLogs }) => {
     const docTypeName = submission.documentType?.name || 'Document';
     const isActivityProposal = docTypeName.toLowerCase() === 'activity proposal' || docTypeName.toLowerCase() === 'activity-proposal';
 
@@ -1638,7 +1641,22 @@ export const MyDocuments = () => {
         .replace(/[_-]/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
-    const subStatus = normalizeText(submission.status);
+    const subLogs = [
+      ...(Array.isArray(submission.submission_logs) ? submission.submission_logs : []),
+      ...(allLogs || []),
+      ...(logsData || []).filter(l => String(l.submission_id || l.submissionId || l.submissions?.id) === String(submission.id))
+    ];
+    const hasHardcopyVerifiedLog = (subLogs || []).some(log => {
+      const text = [log.action_type, log.review_action, log.description, log.comment].map(s => String(s || '').toLowerCase()).join(' ');
+      return text.includes('hard copy verified') || text.includes('hardcopy verified');
+    });
+
+    let rawStatus = normalizeText(submission.status);
+    if ((rawStatus === 'to forward' || rawStatus === 'pending hard copy' || rawStatus === 'pending hardcopy' || rawStatus === 'hardcopy submission') && hasHardcopyVerifiedLog) {
+      rawStatus = 'ready for retrieval';
+    }
+
+    const subStatus = rawStatus;
     const wpNorm = normalizeText(wp);
 
     // STATUS-FIRST mapping (authoritative): prevents stale workflow_phase values
@@ -1704,15 +1722,15 @@ export const MyDocuments = () => {
       sender: senderAbbr,
       type: docTypeName,
       submittedDate,
-      status: submission.status === 'submitted'
+      status: subStatus === 'submitted'
         ? 'OSO STAFF REVIEW'
-        : (submission.status === 'to forward'
+        : (subStatus === 'to forward'
           ? (user?.role === 'org-president' ? 'HARDCOPY SUBMISSION' : 'PENDING HARD COPY')
-          : (submission.status === 'dean review'
+          : (subStatus === 'dean review'
             ? 'FINAL IN-CAMPUS REVIEW'
-            : (submission.status === 'ready for retrieval'
+            : (subStatus === 'ready for retrieval'
               ? 'READY FOR RETRIEVAL'
-              : (submission.status === 'document retrieved'
+              : (subStatus === 'document retrieved'
                 ? 'DOCUMENT RETRIEVED'
                 : (submission.status ? submission.status.toUpperCase() : 'PENDING'))))),
       lastAction: lastActionDate,
@@ -1947,26 +1965,40 @@ export const MyDocuments = () => {
       return wp === 'sds review' || wp === 'hardcopy submission';
     });
 
-    const isSdsApprovedLog = sdsPhaseLogs.some(l => {
+    const isSdsHardcopyApprovedLog = (timelineLogs || []).some(l => {
+      const desc = String(l.description || '').toLowerCase();
       const at = String(l.action_type || '').toLowerCase();
-      const ra = String(l.review_action || '').toLowerCase();
-      return at === 'approved' || ra === 'approved';
+      return (
+        desc.includes('hard copy verified') ||
+        desc.includes('hardcopy verified') ||
+        at === 'ready_for_hardcopy'
+      );
     });
 
-    const isSdsReadyForRetrievalLog =
+    const isSdsApprovedLog = isSdsHardcopyApprovedLog;
+
+    const isSdsReadyForRetrievalLog = (timelineLogs || []).some(l => {
+      const at = String(l.action_type || '').toLowerCase();
+      const ra = String(l.review_action || '').toLowerCase();
+      const desc = String(l.description || '').toLowerCase().trim();
+      return (
+        at === 'ready_for_retrieval' ||
+        ra === 'ready_for_retrieval' ||
+        ra === 'ready-for-retrieval' ||
+        desc.includes('ready for retrieval') ||
+        desc.includes('marked ready for retrieval')
+      );
+    });
+
+    const hasHardcopyVerifiedInTimeline = (timelineLogs || []).some(l => {
+      const text = [l.action_type, l.review_action, l.description, l.comment].map(s => String(s || '').toLowerCase()).join(' ');
+      return text.includes('hard copy verified') || text.includes('hardcopy verified');
+    });
+
+    const isEffectiveReadyForRetrieval =
       docStatusLower === 'ready for retrieval' ||
-      (timelineLogs || []).some(l => {
-        const at = String(l.action_type || '').toLowerCase();
-        const ra = String(l.review_action || '').toLowerCase();
-        const desc = String(l.description || '').toLowerCase().trim();
-        return (
-          at === 'ready_for_retrieval' ||
-          ra === 'ready_for_retrieval' ||
-          ra === 'ready-for-retrieval' ||
-          desc.includes('ready for retrieval') ||
-          desc.includes('marked ready for retrieval')
-        );
-      });
+      docStatusLower === 'ready_for_retrieval' ||
+      ( (docStatusLower === 'to forward' || docStatusLower.includes('hardcopy') || docStatusLower.includes('forward')) && hasHardcopyVerifiedInTimeline );
 
     const sameRole = (r1, r2) => {
       const a = String(r1 || '').toLowerCase().replace(/[^a-z]/g, '');
@@ -2022,20 +2054,18 @@ export const MyDocuments = () => {
       return at === 'confirm_retrieval' || ra === 'confirm_retrieval' || ra === 'confirm-retrieval' || desc.includes('retrieval confirmed') || desc.includes('confirmed retrieval');
     });
 
-    const isMainReadyForRetrievalLog =
-      docStatusLower === 'ready for retrieval' ||
-      mainCampusLogs.some(l => {
-        const at = String(l.action_type || '').toLowerCase();
-        const ra = String(l.review_action || '').toLowerCase();
-        const desc = String(l.description || '').toLowerCase().trim();
-        return (
-          at === 'ready_for_retrieval' ||
-          ra === 'ready_for_retrieval' ||
-          ra === 'ready-for-retrieval' ||
-          desc.includes('ready for retrieval') ||
-          desc.includes('marked ready for retrieval')
-        );
-      });
+    const isMainReadyForRetrievalLog = (timelineLogs || []).some(l => {
+      const at = String(l.action_type || '').toLowerCase();
+      const ra = String(l.review_action || '').toLowerCase();
+      const desc = String(l.description || '').toLowerCase().trim();
+      return (
+        at === 'ready_for_retrieval' ||
+        ra === 'ready_for_retrieval' ||
+        ra === 'ready-for-retrieval' ||
+        desc.includes('ready for retrieval') ||
+        desc.includes('marked ready for retrieval')
+      );
+    });
 
     const mainRetrievalLog = mainCampusLogs.find(l => {
       const at = String(l.action_type || '').toLowerCase();
@@ -2662,9 +2692,9 @@ export const MyDocuments = () => {
                     <span className="text-gray-500 inline-flex items-center gap-1.5"><AlertCircle size={14} /> Status</span>
                     <span
                       className="px-3 py-1 rounded-full text-[11px] font-semibold uppercase text-white"
-                      style={{ backgroundColor: getStatusColor(docStatusLower === 'waiting for accomplishment report' ? 'approved' : selectedDoc.status) }}
+                      style={{ backgroundColor: getStatusColor(isEffectiveReadyForRetrieval ? 'ready for retrieval' : (docStatusLower === 'waiting for accomplishment report' ? 'approved' : selectedDoc.status)) }}
                     >
-                      {docStatusLower === 'waiting for accomplishment report' ? 'approved' : selectedDoc.status}
+                      {isEffectiveReadyForRetrieval ? 'FOR RETRIEVAL' : (docStatusLower === 'waiting for accomplishment report' ? 'APPROVED' : selectedDoc.status)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
@@ -2735,7 +2765,7 @@ export const MyDocuments = () => {
 
               {/* SDS Stage Retrieval Buttons */}
               {isSdsStage && (
-                !isSdsApprovedLog ? (
+                !isSdsHardcopyApprovedLog ? (
                   (user?.role === 'admin' || user?.role === 'oso-staff' || user?.role === 'sds-coordinator') ? (
                     <div className="flex flex-col gap-2 mt-2 w-full">
                       <button
@@ -3428,7 +3458,7 @@ export const MyDocuments = () => {
           {[
             { label: 'ORGANIZATION', value: selectedDoc.fullOrgName || selectedDoc.raw?.users?.org_name || selectedDoc.sender || '-', icon: <User size={18} /> },
             { label: 'TYPE', value: `${selectedDoc.type}`, icon: <FileText size={18} />, color: 'text-blue-500' },
-            { label: 'STATUS', value: (['ready for retrieval', 'waiting for accomplishment report', 'approved'].includes(selectedDoc.status?.toLowerCase())) ? 'APPROVED' : selectedDoc.status, icon: <Clock size={18} />, badge: true },
+            { label: 'STATUS', value: (isEffectiveReadyForRetrieval || selectedDoc.status === 'READY FOR RETRIEVAL' || selectedDoc.category === 'For Retrieval') ? 'FOR RETRIEVAL' : ((['ready for retrieval', 'waiting for accomplishment report', 'approved'].includes(selectedDoc.status?.toLowerCase())) ? 'APPROVED' : selectedDoc.status), icon: <Clock size={18} />, badge: true },
             { label: 'LAST ACTION', value: selectedDoc.lastAction || selectedDoc.submittedDate, icon: <Calendar size={18} /> }
           ].map((card, idx) => (
             <div key={idx} className="bg-gray-100 p-6 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
@@ -3944,10 +3974,10 @@ export const MyDocuments = () => {
                 <span>Sent to main campus</span>
               </button>
             );
-          } else if (isApprovedDoc || docStatusLower === 'document retrieval' || docStatusLower === 'ready for retrieval' || docStatusLower === 'document_retrieval') {
-            if (!isMainConfirmedRetrievalLog) {
-              if (!isMainReadyForRetrievalLog) {
-                if (userRoleNorm === 'admin') {
+          } else if (isApprovedDoc || docStatusLower === 'document retrieval' || docStatusLower === 'ready for retrieval' || docStatusLower === 'document_retrieval' || isSdsHardcopyApprovedLog) {
+            if (!isMainConfirmedRetrievalLog && !isSdsConfirmedRetrievalLog) {
+              if (!isMainReadyForRetrievalLog && !isSdsReadyForRetrievalLog) {
+                if (userRoleNorm === 'admin' || userRoleNorm === 'oso-staff' || userRoleNorm === 'sds-coordinator') {
                   buttons.push(
                     <button
                       key="main-ready"
@@ -3964,7 +3994,7 @@ export const MyDocuments = () => {
                     </button>
                   );
                 }
-              } else if (!mainRetrievalLog) {
+              } else if (!mainRetrievalLog && !sdsRetrievalLog) {
                 buttons.push(
                   <button
                     key="main-retrieved"
@@ -4016,7 +4046,7 @@ export const MyDocuments = () => {
             );
           });
 
-          if (!isDeanApprovedDoc && buttons.length === 0 && (selectedDoc?.category === 'Pending Hard Copy' || selectedDoc?.category === 'To Forward' || (selectedDoc?.raw?.status || selectedDoc?.status || '').toLowerCase().includes('forward'))) {
+          if (!isDeanApprovedDoc && buttons.length === 0 && !isSdsHardcopyApprovedLog && docStatusLower !== 'ready for retrieval' && (selectedDoc?.category === 'Pending Hard Copy' || selectedDoc?.category === 'To Forward' || (selectedDoc?.raw?.status || selectedDoc?.status || '').toLowerCase().includes('forward'))) {
             buttons.push(
               <button
                 key="forward-verify-approve"
@@ -4862,14 +4892,20 @@ export const MyDocuments = () => {
                       {doc.submittedDate}
                     </td>
                     <td className="px-6 py-5 text-center">
-                      <span
-                        style={{
-                          backgroundColor: getStatusColor((['ready for retrieval', 'waiting for accomplishment report'].includes(doc.status?.toLowerCase())) ? 'approved' : doc.status)
-                        }}
-                        className="px-4 py-1.5 rounded-full text-[10px] font-bold shadow-sm inline-block min-w-[120px] transition-all uppercase text-white"
-                      >
-                        {(['ready for retrieval', 'waiting for accomplishment report'].includes(doc.status?.toLowerCase())) ? 'APPROVED' : doc.status}
-                      </span>
+                      {(() => {
+                        const isForRetrievalCat = doc.category === 'For Retrieval' || doc.status === 'READY FOR RETRIEVAL';
+                        const displayTableStatus = isForRetrievalCat ? 'FOR RETRIEVAL' : ((['ready for retrieval', 'waiting for accomplishment report'].includes(doc.status?.toLowerCase())) ? 'APPROVED' : doc.status);
+                        return (
+                          <span
+                            style={{
+                              backgroundColor: getStatusColor(isForRetrievalCat ? 'ready for retrieval' : displayTableStatus)
+                            }}
+                            className="px-4 py-1.5 rounded-full text-[10px] font-bold shadow-sm inline-block min-w-[120px] transition-all uppercase text-white"
+                          >
+                            {displayTableStatus}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-6 py-5 text-right text-sm text-gray-500 font-medium">{doc.lastAction}</td>
                   </tr>
