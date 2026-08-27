@@ -9,6 +9,24 @@
 @theme {
   --color-primary-green: var(--primary-green);
   --color-secondary-gold: var(--secondary-gold);
+
+  --color-forest-50: #f0f6f3;
+  --color-forest-100: #d7e8df;
+  --color-forest-200: #a9cebd;
+  --color-forest-300: #6faa91;
+  --color-forest-400: #3d8265;
+  --color-forest-500: #1f6349;
+  --color-forest-600: #155039;
+  --color-forest-700: #0f3d2e;
+  --color-forest-800: #0b2f23;
+  --color-forest-900: #071f17;
+
+  --color-gold-100: #fdf3d8;
+  --color-gold-200: #f8e2a4;
+  --color-gold-300: #f2cd68;
+  --color-gold-400: #e8b430;
+  --color-gold-500: #c8951c;
+  --color-gold-600: #9a7013;
 }
 
 @keyframes shine {

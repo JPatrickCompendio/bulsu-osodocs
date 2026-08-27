@@ -2591,16 +2591,19 @@ const SubmitNewDocument = () => {
                           <div className={`space-y-2 ${showValidationHighlights && isFieldSkipped('number_of_students') ? 'skipped-field-highlight' : ''}`}>
                             <div className="flex items-center justify-between">
                               <label className="text-xs font-black text-gray-600 uppercase">Number of Student Involved <span className="text-red-500">*</span></label>
-                              {showValidationHighlights && isFieldSkipped('number_of_students') ? (
+                              {showValidationHighlights && isFieldSkipped('number_of_students') && (
                                 <span className="text-[10px] font-black text-red-600 bg-red-100 border border-red-200 px-2 py-0.5 rounded-full uppercase flex items-center gap-1">
                                   <AlertCircle size={10} /> Field Required
                                 </span>
-                              ) : proposalDetails.target_audience === 'Members only' && user?.no_member && (
-                                <span className="text-[11px] font-bold text-primary-green bg-green-50 border border-green-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                                  <Users size={12} /> Auto-filled from Org Profile ({user.no_member} members)
-                                </span>
                               )}
                             </div>
+                            {proposalDetails.target_audience === 'Members only' && user?.no_member && (
+                              <div className="pt-0.5">
+                                <span className="text-[11px] font-bold text-primary-green bg-green-50 border border-green-200 px-2.5 py-1 rounded-full inline-flex items-center gap-1.5">
+                                  <Users size={12} /> Auto-filled from Org Profile ({user.no_member} members)
+                                </span>
+                              </div>
+                            )}
                             <input 
                               type="text" 
                               required 
