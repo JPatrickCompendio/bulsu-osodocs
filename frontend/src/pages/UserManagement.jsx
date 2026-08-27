@@ -411,6 +411,17 @@ const UserManagement = () => {
     e.preventDefault();
     setIsSaving(true);
 
+    if (formData.joined_date) {
+      const selectedDate = new Date(formData.joined_date);
+      const today = new Date();
+      today.setHours(23, 59, 59, 999);
+      if (selectedDate > today) {
+        showToast('Organization formation date cannot be in the future.');
+        setIsSaving(false);
+        return;
+      }
+    }
+
     const payload = {
       full_name: formData.full_name,
       role: formData.role,
@@ -1336,6 +1347,7 @@ const UserManagement = () => {
                       <input
                         type="date"
                         required
+                        max={new Date().toISOString().split('T')[0]}
                         className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-green text-gray-800"
                         value={formData.joined_date}
                         onChange={(e) => setFormData({ ...formData, joined_date: e.target.value })}

@@ -2593,7 +2593,7 @@ async function handleAdminDashboard() {
     return false;
   });
 
-  const { data: allSubmissions } = await supabase
+  const { data: allSubmissionsForStats } = await supabase
     .from('submissions')
     .select('id, document_type_id, status, document_types:document_type_id(name)');
 
@@ -2610,8 +2610,8 @@ async function handleAdminDashboard() {
     const returnsCount = validReturnLogs ? validReturnLogs.length : 0;
     revisionsThisMonth = Math.max(versionsCount, returnsCount);
   }
-  if (revisionsThisMonth === 0 && allSubmissions) {
-    const returnedCount = allSubmissions.filter((s: any) => s.status === 'returned').length;
+  if (revisionsThisMonth === 0 && allSubmissionsForStats) {
+    const returnedCount = allSubmissionsForStats.filter((s: any) => s.status === 'returned').length;
     if (returnedCount > 0) revisionsThisMonth = returnedCount;
   }
 
@@ -2622,9 +2622,9 @@ async function handleAdminDashboard() {
     'Renewal': 0,
   };
 
-  if (allSubmissions && allSubmissions.length > 0) {
+  if (allSubmissionsForStats && allSubmissionsForStats.length > 0) {
     const docTypeStats: Record<string, { totalRevisions: number; docCount: number }> = {};
-    allSubmissions.forEach((sub: any) => {
+    allSubmissionsForStats.forEach((sub: any) => {
       const typeName = sub.document_types?.name || 'Activity Proposal';
       if (!docTypeStats[typeName]) {
         docTypeStats[typeName] = { totalRevisions: 0, docCount: 0 };
@@ -2634,7 +2634,7 @@ async function handleAdminDashboard() {
 
     if (recentVersions) {
       recentVersions.forEach((v: any) => {
-        const sub: any = allSubmissions.find((s: any) => s.id === v.submission_id);
+        const sub: any = allSubmissionsForStats.find((s: any) => s.id === v.submission_id);
         const typeName = sub?.document_types?.name || 'Activity Proposal';
         if (!docTypeStats[typeName]) {
           docTypeStats[typeName] = { totalRevisions: 0, docCount: 0 };
@@ -2645,7 +2645,7 @@ async function handleAdminDashboard() {
 
     if (validReturnLogs) {
       validReturnLogs.forEach((l: any) => {
-        const sub: any = allSubmissions.find((s: any) => s.id === l.submission_id);
+        const sub: any = allSubmissionsForStats.find((s: any) => s.id === l.submission_id);
         if (sub) {
           const typeName = sub.document_types?.name || 'Activity Proposal';
           if (!docTypeStats[typeName]) {
@@ -2656,7 +2656,7 @@ async function handleAdminDashboard() {
       });
     }
 
-    allSubmissions.forEach((sub: any) => {
+    allSubmissionsForStats.forEach((sub: any) => {
       if (sub.status === 'returned') {
         const typeName = sub.document_types?.name || 'Activity Proposal';
         if (docTypeStats[typeName] && docTypeStats[typeName].totalRevisions === 0) {
@@ -2815,6 +2815,10 @@ async function handleOrgDashboard(url: URL) {
       title: docTitle,
       type: (doc.documentType as Record<string, unknown>)?.name || 'Unknown',
       status: doc.status,
+      lastUpdate: logsBySubId[doc.id]?.created_at || doc.created_at,
+    };
+  });
+
   const totalFinished = completedCount + disapprovedCount;
   const successRate = totalFinished > 0 ? Math.round((completedCount / totalFinished) * 100) : 100;
 

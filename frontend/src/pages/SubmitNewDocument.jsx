@@ -428,6 +428,15 @@ const SubmitNewDocument = () => {
   };
 
   useEffect(() => {
+    if (proposalDetails.target_audience === 'Members only' && !proposalDetails.number_of_students && user?.no_member) {
+      setProposalDetails(prev => ({
+        ...prev,
+        number_of_students: String(user.no_member)
+      }));
+    }
+  }, [proposalDetails.target_audience, user?.no_member]);
+
+  useEffect(() => {
     window.__hasUnsavedChanges = hasUnsavedChanges;
     return () => {
       window.__hasUnsavedChanges = false;
@@ -2395,7 +2404,14 @@ const SubmitNewDocument = () => {
                             )}
                           </div>
                           <div className="space-y-2">
-                            <label className="text-xs font-black text-gray-600 uppercase">Number of Student Involved <span className="text-red-500">*</span></label>
+                            <div className="flex items-center justify-between">
+                              <label className="text-xs font-black text-gray-600 uppercase">Number of Student Involved <span className="text-red-500">*</span></label>
+                              {proposalDetails.target_audience === 'Members only' && user?.no_member && (
+                                <span className="text-[11px] font-bold text-primary-green bg-green-50 border border-green-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                                  <Users size={12} /> Auto-filled from Org Profile ({user.no_member} members)
+                                </span>
+                              )}
+                            </div>
                             <input 
                               type="text" 
                               required 
@@ -2432,7 +2448,12 @@ const SubmitNewDocument = () => {
                                     className="hidden" 
                                     checked={proposalDetails.target_audience === opt} 
                                     onChange={() => {
-                                      setProposalDetails({ ...proposalDetails, target_audience: opt });
+                                      const nextDetails = { ...proposalDetails, target_audience: opt };
+                                      if (opt === 'Members only' && user?.no_member) {
+                                        nextDetails.number_of_students = String(user.no_member);
+                                        clearDraftField('number_of_students');
+                                      }
+                                      setProposalDetails(nextDetails);
                                       clearDraftField('target_audience');
                                     }} 
                                   />
