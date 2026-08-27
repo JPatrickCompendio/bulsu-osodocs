@@ -18,6 +18,7 @@ import DEFAULT_HEADER_IMG from '../assets/HEADER.png';
 import DEFAULT_FOOTER_IMG from '../assets/FOOTER.png';
 import HEADER_LOGO_IMG from '../assets/headerLOGO.png';
 import ActivityProposalPreviewModal from '../components/ActivityProposalPreviewModal';
+import CustomDatePicker from '../components/CustomDatePicker';
 import { calculateProposalDuration } from '../utils/submissionLogUtils';
 
 const formatDateLocal = (d) => {
@@ -286,6 +287,7 @@ const SubmitNewDocument = () => {
   const [headerBase64, setHeaderBase64] = useState('');
   const [footerBase64, setFooterBase64] = useState('');
   const [blockedDateModal, setBlockedDateModal] = useState(null);
+  const [validationErrorModal, setValidationErrorModal] = useState(null);
 
   const getBase64 = (src) => new Promise((resolve) => {
     const img = new Image();
@@ -481,13 +483,17 @@ const SubmitNewDocument = () => {
     if (checkVal < minAllowedStr) {
       let formattedDateStr = checkVal;
       try {
-        formattedDateStr = new Date(checkVal).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        const parts = checkVal.split('-');
+        if (parts.length === 3) {
+          const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+          formattedDateStr = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        }
       } catch (e) {}
 
       setBlockedDateModal({
         date: formattedDateStr,
         title: "Current Work Week Restriction",
-        reason: "Activities must be scheduled in advance and cannot be set within the current work week."
+        reason: `${formattedDateStr} is unavailable. Activities must be scheduled in advance and cannot be set within the current work week.`
       });
       return false;
     }
@@ -504,7 +510,11 @@ const SubmitNewDocument = () => {
     if (matchingEvent) {
       let formattedDateStr = checkVal;
       try {
-        formattedDateStr = new Date(checkVal).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        const parts = checkVal.split('-');
+        if (parts.length === 3) {
+          const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+          formattedDateStr = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        }
       } catch (e) {}
 
       let rawTitle = matchingEvent.title || matchingEvent.event_name || 'Academic Calendar Event';
@@ -514,7 +524,9 @@ const SubmitNewDocument = () => {
 
       let rawReason = matchingEvent.description || matchingEvent.reason || '';
       if (!rawReason || rawReason.trim() === '' || rawReason.toUpperCase().includes('BLOCKS_ACTIVITY') || rawReason.includes('_')) {
-        rawReason = 'This date is blocked because student activities are not allowed during this event.';
+        rawReason = `${formattedDateStr} is blocked because of ${rawTitle}.`;
+      } else if (!rawReason.includes(rawTitle)) {
+        rawReason = `${formattedDateStr} is blocked because of ${rawTitle}. (${rawReason})`;
       }
 
       setBlockedDateModal({
@@ -563,6 +575,142 @@ const SubmitNewDocument = () => {
     if (!satisfaction_goal_1?.trim()) return false;
     return true;
   }, [isProposal, proposalDetails]);
+
+  const [showValidationHighlights, setShowValidationHighlights] = useState(false);
+
+  const isFieldSkipped = (key) => {
+    const {
+      activity_title, contact_number, target_venue, schedules,
+      number_of_students, target_audience, nature_of_activity, objectives,
+      others_objective, satisfaction_goal_1
+    } = proposalDetails;
+
+    if (key === 'activity_title') return !activity_title?.trim();
+    if (key === 'contact_number') return !contact_number?.trim() || !/^09\d{9}$/.test(contact_number.trim());
+    if (key === 'target_venue') return !target_venue?.trim();
+    if (key === 'number_of_students') return !String(number_of_students || '').trim();
+    if (key === 'target_audience') return !target_audience?.trim();
+    if (key === 'nature_of_activity') return !nature_of_activity?.trim();
+    if (key === 'objectives') {
+      const safeObjs = ensureArrayOfStrings(objectives);
+      if (safeObjs.length === 0) return true;
+      if (safeObjs.includes('Others') && !others_objective?.trim()) return true;
+      return false;
+    }
+    if (key === 'satisfaction_goal_1') return !satisfaction_goal_1?.trim();
+    if (key === 'schedules') {
+      if (!schedules || schedules.length === 0) return true;
+      for (const sched of schedules) {
+        if (!sched.activity_date) return true;
+        if (scheduleMode === 'range') {
+          if (!sched.end_date) return true;
+        } else {
+          if (!sched.start_time) return true;
+          if (!sched.is_indefinite && !sched.end_time) return true;
+        }
+      }
+      return false;
+    }
+    return false;
+  };
+
+  const validateStep1Detailed = () => {
+    const missing = [];
+    const {
+      activity_title, contact_number, target_venue, schedules,
+      number_of_students, target_audience, nature_of_activity, objectives,
+      others_objective, satisfaction_goal_1
+    } = proposalDetails;
+
+    if (!activity_title?.trim()) {
+      missing.push({ field: 'Activity Title', message: 'Please enter the title of the activity.' });
+    }
+
+    if (!contact_number?.trim()) {
+      missing.push({ field: 'Contact Number', message: 'Please enter an 11-digit mobile contact number (e.g., 09123456789).' });
+    } else if (!/^09\d{9}$/.test(contact_number.trim())) {
+      missing.push({ field: 'Contact Number', message: 'Contact number must be an 11-digit number starting with 09 (e.g., 09123456789).' });
+    }
+
+    if (!target_venue?.trim()) {
+      missing.push({ field: 'Target Venue', message: 'Please enter the target venue for the activity.' });
+    }
+
+    if (!schedules || schedules.length === 0) {
+      missing.push({ field: 'Activity Schedule', message: 'At least one activity schedule date must be set.' });
+    } else {
+      schedules.forEach((sched, idx) => {
+        const schedLabel = schedules.length > 1 ? `Schedule #${idx + 1}` : 'Activity Schedule';
+        if (!sched.activity_date) {
+          missing.push({ field: `${schedLabel} Date`, message: 'Please select an activity date.' });
+        }
+        if (scheduleMode === 'range') {
+          if (!sched.end_date) {
+            missing.push({ field: `${schedLabel} End Date`, message: 'Please select an end date for the date range.' });
+          }
+        } else {
+          if (!sched.start_time) {
+            missing.push({ field: `${schedLabel} Start Time`, message: 'Please specify the start time (including hour, minute, and AM/PM).' });
+          }
+          if (!sched.is_indefinite) {
+            if (!sched.end_time) {
+              missing.push({ field: `${schedLabel} End Time`, message: 'Please specify the end time (including hour, minute, and AM/PM) or select "Indefinite".' });
+            } else if (sched.start_time && sched.end_time) {
+              const start = new Date(`1970-01-01T${sched.start_time}`);
+              const end = new Date(`1970-01-01T${sched.end_time}`);
+              if (end <= start) {
+                missing.push({ field: `${schedLabel} Time Range`, message: 'End time must be later than start time.' });
+              }
+            }
+          }
+        }
+      });
+    }
+
+    if (!String(number_of_students || '').trim()) {
+      missing.push({ field: 'Number of Students Involved', message: 'Please enter the expected number of participants.' });
+    }
+
+    if (!target_audience?.trim()) {
+      missing.push({ field: 'Target Audience', message: 'Please select a target audience (e.g., Members only, BulSUans only, Open to public).' });
+    }
+
+    if (!nature_of_activity?.trim()) {
+      missing.push({ field: 'Nature of Activity', message: 'Please select the nature of activity (Co-Curricular or Extra-Curricular).' });
+    }
+
+    const safeObjs = ensureArrayOfStrings(objectives);
+    if (safeObjs.length === 0) {
+      missing.push({ field: 'Objectives of the Activity', message: 'Please select at least one objective for the activity.' });
+    } else if (safeObjs.includes('Others') && !others_objective?.trim()) {
+      missing.push({ field: 'Other Objective Specification', message: 'You selected "Others" under Objectives. Please specify the objective.' });
+    }
+
+    if (!satisfaction_goal_1?.trim()) {
+      missing.push({ field: 'Needs and Goals (Item #1)', message: 'Please describe how this activity satisfies organizational needs/goals in Item #1.' });
+    }
+
+    return missing;
+  };
+
+  const handleNextFromStep1 = () => {
+    const missing = validateStep1Detailed();
+    if (missing.length > 0) {
+      setShowValidationHighlights(true);
+      if (typeof showToast === 'function') {
+        showToast('Please fill in all highlighted required fields before proceeding.', 'error');
+      }
+      setTimeout(() => {
+        const firstSkipped = document.querySelector('.skipped-field-highlight');
+        if (firstSkipped) {
+          firstSkipped.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+      return;
+    }
+    setShowValidationHighlights(false);
+    setProposalStep(2);
+  };
 
   const handlePrintActivityProposal = () => {
     const printIframe = document.createElement('iframe');
@@ -2139,15 +2287,24 @@ const SubmitNewDocument = () => {
                             <label className="text-xs font-black text-gray-600 uppercase">Activity Number</label>
                             <input type="text" className="w-full px-4 py-3 bg-gray-100 text-gray-500 border-b-2 border-gray-200 font-bold text-sm outline-none" value={proposalDetails.activity_number} readOnly />
                           </div>
-                          <div className="space-y-2 md:col-span-2">
-                            <label className="text-xs font-black text-gray-600 uppercase">Activity Title <span className="text-red-500">*</span></label>
+                          <div className={`space-y-2 md:col-span-2 ${showValidationHighlights && isFieldSkipped('activity_title') ? 'skipped-field-highlight' : ''}`}>
+                            <div className="flex items-center justify-between">
+                              <label className="text-xs font-black text-gray-600 uppercase">Activity Title <span className="text-red-500">*</span></label>
+                              {showValidationHighlights && isFieldSkipped('activity_title') && (
+                                <span className="text-[10px] font-black text-red-600 bg-red-100 border border-red-200 px-2 py-0.5 rounded-full uppercase flex items-center gap-1">
+                                  <AlertCircle size={10} /> Field Required
+                                </span>
+                              )}
+                            </div>
                             <input 
                               type="text" 
                               required 
-                              className={`w-full px-4 py-3 border-b-2 font-bold text-sm outline-none transition-all ${
-                                draftLoadedFields.has('activity_title')
-                                  ? 'bg-amber-50/70 border-amber-200 text-gray-800'
-                                  : 'bg-gray-50 border-gray-200 focus:border-primary-green text-gray-800'
+                              className={`w-full px-4 py-3 border-2 font-bold text-sm outline-none transition-all rounded-xl ${
+                                showValidationHighlights && isFieldSkipped('activity_title')
+                                  ? 'border-red-500 bg-red-50/70 text-red-900 ring-2 ring-red-400/30'
+                                  : draftLoadedFields.has('activity_title')
+                                    ? 'bg-amber-50/70 border-amber-200 text-gray-800'
+                                    : 'bg-gray-50 border-gray-200 focus:border-primary-green text-gray-800'
                               }`} 
                               value={proposalDetails.activity_title} 
                               onChange={e => {
@@ -2164,17 +2321,26 @@ const SubmitNewDocument = () => {
                             <label className="text-xs font-black text-gray-600 uppercase">Student ID No. <span className="text-red-500">*</span></label>
                             <input type="text" required className="w-full px-4 py-3 bg-gray-100 border-b-2 border-gray-200 text-gray-500 font-bold text-sm outline-none cursor-not-allowed" value={proposalDetails.student_id_no} readOnly />
                           </div>
-                          <div className="space-y-2 md:col-span-2">
-                            <label className="text-xs font-black text-gray-600 uppercase">Contact Number of Person-In-Charge <span className="text-red-500">*</span></label>
+                          <div className={`space-y-2 md:col-span-2 ${showValidationHighlights && isFieldSkipped('contact_number') ? 'skipped-field-highlight' : ''}`}>
+                            <div className="flex items-center justify-between">
+                              <label className="text-xs font-black text-gray-600 uppercase">Contact Number of Person-In-Charge <span className="text-red-500">*</span></label>
+                              {showValidationHighlights && isFieldSkipped('contact_number') && (
+                                <span className="text-[10px] font-black text-red-600 bg-red-100 border border-red-200 px-2 py-0.5 rounded-full uppercase flex items-center gap-1">
+                                  <AlertCircle size={10} /> 11-Digit Number Required (09...)
+                                </span>
+                              )}
+                            </div>
                             <input 
                               type="text" 
                               required 
                               maxLength={11} 
                               pattern="^09\d{9}$" 
-                              className={`w-full px-4 py-3 border-b-2 font-bold text-sm outline-none transition-all ${
-                                draftLoadedFields.has('contact_number')
-                                  ? 'bg-amber-50/70 border-amber-200 text-gray-800'
-                                  : 'bg-gray-50 border-gray-200 focus:border-primary-green text-gray-800'
+                              className={`w-full px-4 py-3 border-2 font-bold text-sm outline-none transition-all rounded-xl ${
+                                showValidationHighlights && isFieldSkipped('contact_number')
+                                  ? 'border-red-500 bg-red-50/70 text-red-900 ring-2 ring-red-400/30'
+                                  : draftLoadedFields.has('contact_number')
+                                    ? 'bg-amber-50/70 border-amber-200 text-gray-800'
+                                    : 'bg-gray-50 border-gray-200 focus:border-primary-green text-gray-800'
                               }`} 
                               value={proposalDetails.contact_number} 
                               onChange={e => {
@@ -2183,15 +2349,24 @@ const SubmitNewDocument = () => {
                               }} 
                             />
                           </div>
-                          <div className="space-y-2 md:col-span-2">
-                            <label className="text-xs font-black text-gray-600 uppercase">Target Venue <span className="text-red-500">*</span></label>
+                          <div className={`space-y-2 md:col-span-2 ${showValidationHighlights && isFieldSkipped('target_venue') ? 'skipped-field-highlight' : ''}`}>
+                            <div className="flex items-center justify-between">
+                              <label className="text-xs font-black text-gray-600 uppercase">Target Venue <span className="text-red-500">*</span></label>
+                              {showValidationHighlights && isFieldSkipped('target_venue') && (
+                                <span className="text-[10px] font-black text-red-600 bg-red-100 border border-red-200 px-2 py-0.5 rounded-full uppercase flex items-center gap-1">
+                                  <AlertCircle size={10} /> Field Required
+                                </span>
+                              )}
+                            </div>
                             <input 
                               type="text" 
                               required 
-                              className={`w-full px-4 py-3 border-b-2 font-bold text-sm outline-none transition-all ${
-                                draftLoadedFields.has('target_venue')
-                                  ? 'bg-amber-50/70 border-amber-200 text-gray-800'
-                                  : 'bg-gray-50 border-gray-200 focus:border-primary-green text-gray-800'
+                              className={`w-full px-4 py-3 border-2 font-bold text-sm outline-none transition-all rounded-xl ${
+                                showValidationHighlights && isFieldSkipped('target_venue')
+                                  ? 'border-red-500 bg-red-50/70 text-red-900 ring-2 ring-red-400/30'
+                                  : draftLoadedFields.has('target_venue')
+                                    ? 'bg-amber-50/70 border-amber-200 text-gray-800'
+                                    : 'bg-gray-50 border-gray-200 focus:border-primary-green text-gray-800'
                               }`} 
                               value={proposalDetails.target_venue} 
                               onChange={e => {
@@ -2202,9 +2377,20 @@ const SubmitNewDocument = () => {
                           </div>
 
                           {/* Schedules */}
-                          <div className="space-y-4 md:col-span-2">
+                          <div className={`space-y-4 md:col-span-2 p-4 rounded-xl border-2 transition-all ${
+                            showValidationHighlights && isFieldSkipped('schedules')
+                              ? 'border-red-500 bg-red-50/40 ring-2 ring-red-400/30 skipped-field-highlight'
+                              : 'border-transparent'
+                          }`}>
                             <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-gray-100 pb-4 gap-4">
-                              <label className="text-xs font-black text-gray-600 uppercase">Activity Schedules <span className="text-red-500">*</span></label>
+                              <div className="flex items-center gap-2">
+                                <label className="text-xs font-black text-gray-600 uppercase">Activity Schedules <span className="text-red-500">*</span></label>
+                                {showValidationHighlights && isFieldSkipped('schedules') && (
+                                  <span className="text-[10px] font-black text-red-600 bg-red-100 border border-red-200 px-2 py-0.5 rounded-full uppercase flex items-center gap-1">
+                                    <AlertCircle size={10} /> Schedule Incomplete
+                                  </span>
+                                )}
+                              </div>
 
                               <div className="flex bg-gray-100 p-1 rounded-xl">
                                 {['single', 'range'].map(mode => (
@@ -2227,6 +2413,8 @@ const SubmitNewDocument = () => {
                               </div>
                             </div>
 
+
+
                             {proposalDetails.schedules.length === 0 ? (
                               <div className="text-center py-6 bg-gray-50 rounded-xl border border-dashed border-gray-200">
                                 <p className="text-xs font-bold text-gray-400 uppercase">No schedules added yet.</p>
@@ -2239,16 +2427,15 @@ const SubmitNewDocument = () => {
                                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                         <div className="space-y-1">
                                           <label htmlFor={`sched-start-date-${idx}`} className="text-[10px] font-bold text-gray-400 uppercase">Start Date</label>
-                                          <input
+                                          <CustomDatePicker
                                             id={`sched-start-date-${idx}`}
                                             name={`sched_start_date_${idx}`}
-                                            type="date"
                                             required
                                             min={getMinAllowedDate()}
-                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary-green font-bold text-xs outline-none"
+                                            blockedEvents={blockedEvents}
+                                            onBlockedDateClick={(dateStr) => validateDateSelection(dateStr)}
                                             value={sched.activity_date}
-                                            onChange={e => {
-                                              const val = e.target.value;
+                                            onChange={val => {
                                               if (!validateDateSelection(val)) return;
                                               const newScheds = [...proposalDetails.schedules];
                                               newScheds[idx].activity_date = val;
@@ -2258,16 +2445,15 @@ const SubmitNewDocument = () => {
                                         </div>
                                         <div className="space-y-1">
                                           <label htmlFor={`sched-end-date-${idx}`} className="text-[10px] font-bold text-gray-400 uppercase">End Date</label>
-                                          <input
+                                          <CustomDatePicker
                                             id={`sched-end-date-${idx}`}
                                             name={`sched_end_date_${idx}`}
-                                            type="date"
                                             required
                                             min={sched.activity_date || getMinAllowedDate()}
-                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary-green font-bold text-xs outline-none"
+                                            blockedEvents={blockedEvents}
+                                            onBlockedDateClick={(dateStr) => validateDateSelection(dateStr)}
                                             value={sched.end_date || ''}
-                                            onChange={e => {
-                                              const val = e.target.value;
+                                            onChange={val => {
                                               if (!validateDateSelection(val)) return;
                                               const newScheds = [...proposalDetails.schedules];
                                               newScheds[idx].end_date = val;
@@ -2295,16 +2481,15 @@ const SubmitNewDocument = () => {
                                       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                         <div className="space-y-1">
                                           <label htmlFor={`sched-single-date-${idx}`} className="text-[10px] font-bold text-gray-400 uppercase">Date</label>
-                                          <input
+                                          <CustomDatePicker
                                             id={`sched-single-date-${idx}`}
                                             name={`sched_single_date_${idx}`}
-                                            type="date"
                                             required
                                             min={getMinAllowedDate()}
-                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary-green font-bold text-xs outline-none"
+                                            blockedEvents={blockedEvents}
+                                            onBlockedDateClick={(dateStr) => validateDateSelection(dateStr)}
                                             value={sched.activity_date}
-                                            onChange={e => {
-                                              const val = e.target.value;
+                                            onChange={val => {
                                               if (!validateDateSelection(val)) return;
                                               const newScheds = [...proposalDetails.schedules];
                                               newScheds[idx].activity_date = val;
@@ -2403,10 +2588,14 @@ const SubmitNewDocument = () => {
                               </div>
                             )}
                           </div>
-                          <div className="space-y-2">
+                          <div className={`space-y-2 ${showValidationHighlights && isFieldSkipped('number_of_students') ? 'skipped-field-highlight' : ''}`}>
                             <div className="flex items-center justify-between">
                               <label className="text-xs font-black text-gray-600 uppercase">Number of Student Involved <span className="text-red-500">*</span></label>
-                              {proposalDetails.target_audience === 'Members only' && user?.no_member && (
+                              {showValidationHighlights && isFieldSkipped('number_of_students') ? (
+                                <span className="text-[10px] font-black text-red-600 bg-red-100 border border-red-200 px-2 py-0.5 rounded-full uppercase flex items-center gap-1">
+                                  <AlertCircle size={10} /> Field Required
+                                </span>
+                              ) : proposalDetails.target_audience === 'Members only' && user?.no_member && (
                                 <span className="text-[11px] font-bold text-primary-green bg-green-50 border border-green-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
                                   <Users size={12} /> Auto-filled from Org Profile ({user.no_member} members)
                                 </span>
@@ -2415,10 +2604,12 @@ const SubmitNewDocument = () => {
                             <input 
                               type="text" 
                               required 
-                              className={`w-full px-4 py-3 border-b-2 font-bold text-sm outline-none transition-all ${
-                                draftLoadedFields.has('number_of_students')
-                                  ? 'bg-amber-50/70 border-amber-200 text-gray-800'
-                                  : 'bg-gray-50 border-gray-200 focus:border-primary-green text-gray-800'
+                              className={`w-full px-4 py-3 border-2 font-bold text-sm outline-none transition-all rounded-xl ${
+                                showValidationHighlights && isFieldSkipped('number_of_students')
+                                  ? 'border-red-500 bg-red-50/70 text-red-900 ring-2 ring-red-400/30'
+                                  : draftLoadedFields.has('number_of_students')
+                                    ? 'bg-amber-50/70 border-amber-200 text-gray-800'
+                                    : 'bg-gray-50 border-gray-200 focus:border-primary-green text-gray-800'
                               }`} 
                               value={proposalDetails.number_of_students} 
                               onChange={e => {
@@ -2431,11 +2622,20 @@ const SubmitNewDocument = () => {
 
                         {/* Checkboxes Section */}
                         <div className="pt-6 border-t border-gray-100 space-y-6">
-                          <div className="space-y-3">
-                            <label className="text-xs font-black text-gray-800 uppercase">Target Audience/Participants:</label>
-                            <div className={`flex flex-wrap gap-8 p-3 rounded-xl transition-all ${
-                              draftLoadedFields.has('target_audience') ? 'bg-amber-50/60 border border-amber-200/60' : ''
-                            }`}>
+                          <div className={`space-y-3 p-3.5 rounded-xl border-2 transition-all ${
+                            showValidationHighlights && isFieldSkipped('target_audience')
+                              ? 'border-red-500 bg-red-50/40 ring-2 ring-red-400/30 skipped-field-highlight'
+                              : draftLoadedFields.has('target_audience') ? 'bg-amber-50/60 border-amber-200/60' : 'border-transparent'
+                          }`}>
+                            <div className="flex items-center justify-between">
+                              <label className="text-xs font-black text-gray-800 uppercase">Target Audience/Participants <span className="text-red-500">*</span></label>
+                              {showValidationHighlights && isFieldSkipped('target_audience') && (
+                                <span className="text-[10px] font-black text-red-600 bg-red-100 border border-red-200 px-2 py-0.5 rounded-full uppercase flex items-center gap-1">
+                                  <AlertCircle size={10} /> Option Required
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-8 p-1">
                               {['Members only', 'BulSUans only', 'Open to the public'].map(opt => (
                                 <label key={opt} className="flex items-center gap-3 cursor-pointer group">
                                   <div className={`w-5 h-5 rounded-full flex items-center justify-center border-2 ${proposalDetails.target_audience === opt ? 'border-primary-green' : 'border-gray-300 group-hover:border-primary-green'}`}>
@@ -2462,11 +2662,20 @@ const SubmitNewDocument = () => {
                             </div>
                           </div>
 
-                          <div className="space-y-3">
-                            <label className="text-xs font-black text-gray-800 uppercase">Nature of Activity:</label>
-                            <div className={`flex flex-wrap gap-8 p-3 rounded-xl transition-all ${
-                              draftLoadedFields.has('nature_of_activity') ? 'bg-amber-50/60 border border-amber-200/60' : ''
-                            }`}>
+                          <div className={`space-y-3 p-3.5 rounded-xl border-2 transition-all ${
+                            showValidationHighlights && isFieldSkipped('nature_of_activity')
+                              ? 'border-red-500 bg-red-50/40 ring-2 ring-red-400/30 skipped-field-highlight'
+                              : draftLoadedFields.has('nature_of_activity') ? 'bg-amber-50/60 border-amber-200/60' : 'border-transparent'
+                          }`}>
+                            <div className="flex items-center justify-between">
+                              <label className="text-xs font-black text-gray-800 uppercase">Nature of Activity <span className="text-red-500">*</span></label>
+                              {showValidationHighlights && isFieldSkipped('nature_of_activity') && (
+                                <span className="text-[10px] font-black text-red-600 bg-red-100 border border-red-200 px-2 py-0.5 rounded-full uppercase flex items-center gap-1">
+                                  <AlertCircle size={10} /> Option Required
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-8 p-1">
                               {['Co-Curricular', 'Extra-Curricular'].map(opt => (
                                 <label key={opt} className="flex items-center gap-3 cursor-pointer group">
                                   <div className={`w-5 h-5 rounded-full flex items-center justify-center border-2 ${proposalDetails.nature_of_activity === opt ? 'border-primary-green' : 'border-gray-300 group-hover:border-primary-green'}`}>
@@ -2488,11 +2697,20 @@ const SubmitNewDocument = () => {
                             </div>
                           </div>
 
-                          <div className="space-y-4">
-                            <label className="text-xs font-black text-gray-800 uppercase">Objectives of the Activity:</label>
-                            <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 p-3 rounded-xl transition-all ${
-                              draftLoadedFields.has('objectives') ? 'bg-amber-50/60 border border-amber-200/60' : ''
-                            }`}>
+                          <div className={`space-y-4 p-3.5 rounded-xl border-2 transition-all ${
+                            showValidationHighlights && isFieldSkipped('objectives')
+                              ? 'border-red-500 bg-red-50/40 ring-2 ring-red-400/30 skipped-field-highlight'
+                              : draftLoadedFields.has('objectives') ? 'bg-amber-50/60 border-amber-200/60' : 'border-transparent'
+                          }`}>
+                            <div className="flex items-center justify-between">
+                              <label className="text-xs font-black text-gray-800 uppercase">Objectives of the Activity <span className="text-red-500">*</span></label>
+                              {showValidationHighlights && isFieldSkipped('objectives') && (
+                                <span className="text-[10px] font-black text-red-600 bg-red-100 border border-red-200 px-2 py-0.5 rounded-full uppercase flex items-center gap-1">
+                                  <AlertCircle size={10} /> At least 1 objective required
+                                </span>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-1">
                               {[
                                 'Leadership Development and Formation',
                                 'Membership Development and Formation',
@@ -2529,7 +2747,7 @@ const SubmitNewDocument = () => {
                                       <div className={`w-5 h-5 rounded flex items-center justify-center border-2 ${isOthersChecked ? 'bg-primary-green border-primary-green text-white' : 'border-gray-300 group-hover:border-primary-green'}`}>
                                         {isOthersChecked && <Check size={14} strokeWidth={3} />}
                                       </div>
-                                      <span className="text-sm font-bold text-gray-600">Others:</span>
+                                      <span className="text-sm font-bold text-gray-600">Others</span>
                                       <input 
                                         type="checkbox" 
                                         className="hidden" 
@@ -2542,10 +2760,12 @@ const SubmitNewDocument = () => {
                                     </label>
                                     <input 
                                       type="text" 
-                                      className={`flex-1 px-4 py-2 border-b-2 font-bold text-sm outline-none transition-all ${
-                                        draftLoadedFields.has('others_objective')
-                                          ? 'bg-amber-50/70 border-amber-200 text-gray-800'
-                                          : 'bg-gray-50 border-gray-200 focus:border-primary-green'
+                                      className={`flex-1 px-4 py-2 border-2 font-bold text-sm outline-none transition-all rounded-xl ${
+                                        showValidationHighlights && isOthersChecked && !proposalDetails.others_objective?.trim()
+                                          ? 'border-red-500 bg-red-50/70 text-red-900 ring-2 ring-red-400/30'
+                                          : draftLoadedFields.has('others_objective')
+                                            ? 'bg-amber-50/70 border-amber-200 text-gray-800'
+                                            : 'bg-gray-50 border-gray-200 focus:border-primary-green'
                                       }`} 
                                       value={proposalDetails.others_objective || ''} 
                                       onChange={e => {
@@ -2564,31 +2784,42 @@ const SubmitNewDocument = () => {
 
                         {/* Needs and Goals */}
                         <div className="pt-6 border-t border-gray-100 space-y-4">
-                          <label className="text-xs font-bold text-gray-600 italic">
-                            Describe how this activity will satisfy the needs of the organization and how it will help the organization achieve its goals:
-                          </label>
+                          <div className="flex items-center justify-between gap-4">
+                            <label className="text-xs font-bold text-gray-600 italic">
+                              Describe how this activity will satisfy the needs of the organization and how it will help the organization achieve its goals <span className="text-red-500">*</span>
+                            </label>
+                            {showValidationHighlights && isFieldSkipped('satisfaction_goal_1') && (
+                              <span className="text-[10px] font-black text-red-600 bg-red-100 border border-red-200 px-2 py-0.5 rounded-full uppercase flex items-center gap-1 shrink-0">
+                                <AlertCircle size={10} /> Field Required
+                              </span>
+                            )}
+                          </div>
                           <div className="space-y-3">
-                            <div className="flex items-start gap-4">
-                              <span className="font-bold text-gray-600 mt-2">1.</span>
-                              <input 
-                                type="text" 
-                                className={`flex-1 px-4 py-2 border-b-2 font-bold text-sm outline-none transition-all ${
-                                  draftLoadedFields.has('satisfaction_goal_1')
-                                    ? 'bg-amber-50/70 border-amber-200 text-gray-800'
-                                    : 'bg-gray-50 border-gray-200 focus:border-primary-green'
-                                }`} 
-                                value={proposalDetails.satisfaction_goal_1} 
-                                onChange={e => {
-                                  const val = e.target.value;
-                                  setProposalDetails(prev => ({
-                                    ...prev,
-                                    satisfaction_goal_1: val,
-                                    satisfaction_goal_2: val ? prev.satisfaction_goal_2 : '',
-                                    satisfaction_goal_3: val ? prev.satisfaction_goal_3 : ''
-                                  }));
-                                  clearDraftField('satisfaction_goal_1');
-                                }} 
-                              />
+                            <div className={`space-y-1 ${showValidationHighlights && isFieldSkipped('satisfaction_goal_1') ? 'skipped-field-highlight' : ''}`}>
+                              <div className="flex items-start gap-4">
+                                <span className="font-bold text-gray-600 mt-2">1.</span>
+                                <input 
+                                  type="text" 
+                                  className={`flex-1 px-4 py-2 border-2 font-bold text-sm outline-none transition-all rounded-xl ${
+                                    showValidationHighlights && isFieldSkipped('satisfaction_goal_1')
+                                      ? 'border-red-500 bg-red-50/70 text-red-900 ring-2 ring-red-400/30'
+                                      : draftLoadedFields.has('satisfaction_goal_1')
+                                        ? 'bg-amber-50/70 border-amber-200 text-gray-800'
+                                        : 'bg-gray-50 border-gray-200 focus:border-primary-green'
+                                  }`} 
+                                  value={proposalDetails.satisfaction_goal_1} 
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    setProposalDetails(prev => ({
+                                      ...prev,
+                                      satisfaction_goal_1: val,
+                                      satisfaction_goal_2: val ? prev.satisfaction_goal_2 : '',
+                                      satisfaction_goal_3: val ? prev.satisfaction_goal_3 : ''
+                                    }));
+                                    clearDraftField('satisfaction_goal_1');
+                                  }} 
+                                />
+                              </div>
                             </div>
                             <div className="flex items-start gap-4">
                               <span className="font-bold text-gray-600 mt-2">2.</span>
@@ -2635,7 +2866,7 @@ const SubmitNewDocument = () => {
                         {/* Partners & Sponsors */}
                         <div className="pt-6 border-t border-gray-100 space-y-4">
                           <div className="space-y-2">
-                            <label className="text-xs font-black text-gray-600 uppercase">Name of Partners (if any):</label>
+                            <label className="text-xs font-black text-gray-600 uppercase">Name of Partners (if any)</label>
                             <input 
                               type="text" 
                               className={`w-full px-4 py-3 border-b-2 font-bold text-sm outline-none transition-all ${
@@ -2651,7 +2882,7 @@ const SubmitNewDocument = () => {
                             />
                           </div>
                           <div className="space-y-2">
-                            <label className="text-xs font-black text-gray-600 uppercase">Name of Sponsors (if any):</label>
+                            <label className="text-xs font-black text-gray-600 uppercase">Name of Sponsors (if any)</label>
                             <input 
                               type="text" 
                               className={`w-full px-4 py-3 border-b-2 font-bold text-sm outline-none transition-all ${
@@ -2792,15 +3023,13 @@ const SubmitNewDocument = () => {
                     {proposalStep === 1 && (
                       <button
                         type="button"
-                        onClick={() => setProposalStep(2)}
-                        disabled={!isActivityProposalFormComplete || (isReturnedDocument && is02F1Returned && !hasFormChanges)}
+                        onClick={handleNextFromStep1}
+                        disabled={isReturnedDocument && is02F1Returned && !hasFormChanges}
                         className="px-8 py-2.5 bg-primary-green text-white font-black rounded-lg hover:bg-green-700 hover:scale-105 active:scale-95 transition-all shadow-md shadow-green-600/20 flex items-center gap-2 text-[11px] uppercase disabled:opacity-50 tracking-widest"
                         title={
                           isReturnedDocument && is02F1Returned && !hasFormChanges
                             ? "Make changes to the form content before proceeding"
-                            : !isActivityProposalFormComplete
-                              ? "Please fill all required fields to continue"
-                              : "Proceed to next step"
+                            : "Click to validate and proceed to next step"
                         }
                       >
                         Next Step <ChevronRight size={14} />
@@ -3028,26 +3257,69 @@ const SubmitNewDocument = () => {
             <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-red-500 via-amber-500 to-red-500"></div>
 
             <div className="w-14 h-14 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center mb-5 mx-auto border border-red-100 shadow-inner">
-              <AlertCircle size={28} />
+              <Calendar size={28} />
             </div>
 
             <h3 className="text-xl font-extrabold text-center text-gray-900 tracking-tight">Date Unavailable</h3>
             <p className="text-center font-semibold text-gray-500 text-xs mt-1 uppercase tracking-wider">{blockedDateModal.date}</p>
 
             <div className="my-6 bg-red-50/60 border border-red-100 rounded-2xl p-5 text-center space-y-2">
-              <p className="text-sm font-bold text-red-900">
-                Event: {blockedDateModal.title}
+              <p className="text-sm font-bold text-red-900 leading-relaxed">
+                {blockedDateModal.date} is blocked because of <span className="underline font-black">{blockedDateModal.title}</span>.
               </p>
-              <p className="text-xs text-red-700 leading-relaxed font-medium">
-                {blockedDateModal.reason}
-              </p>
+              {blockedDateModal.reason && blockedDateModal.reason !== `${blockedDateModal.date} is blocked because of ${blockedDateModal.title}.` && (
+                <p className="text-xs text-red-700 leading-relaxed font-medium">
+                  {blockedDateModal.reason}
+                </p>
+              )}
             </div>
 
             <button
+              type="button"
               onClick={() => setBlockedDateModal(null)}
               className="w-full py-3.5 bg-gray-900 hover:bg-gray-800 text-white font-bold rounded-xl text-xs uppercase tracking-widest transition-all shadow-md active:scale-95"
             >
               Understood
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Validation Guidance Error Modal */}
+      {validationErrorModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-[2rem] w-full max-w-lg p-8 flex flex-col shadow-2xl animate-in zoom-in-95 duration-200 text-gray-800 relative overflow-hidden border border-gray-100">
+            <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-amber-500 via-red-500 to-amber-500"></div>
+
+            <div className="w-14 h-14 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mb-4 mx-auto border border-amber-100 shadow-inner">
+              <AlertCircle size={28} />
+            </div>
+
+            <h3 className="text-xl font-extrabold text-center text-gray-900 tracking-tight">Unable to Continue</h3>
+            <p className="text-center font-bold text-gray-500 text-xs mt-1 uppercase tracking-wider">Please complete the following required fields:</p>
+
+            <div className="my-6 max-h-60 overflow-y-auto space-y-2.5 pr-1">
+              {validationErrorModal.missingFields.map((err, idx) => (
+                <div key={idx} className="bg-red-50/70 border border-red-100 rounded-xl p-3 flex items-start gap-3">
+                  <span className="w-2 h-2 rounded-full bg-red-500 shrink-0 mt-1.5" />
+                  <div>
+                    <p className="text-xs font-black text-red-900 uppercase tracking-wider">{err.field}</p>
+                    <p className="text-xs text-red-700 font-medium mt-0.5">{err.message}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <p className="text-[11px] font-bold text-gray-400 text-center mb-6">
+              💡 Please review all fields marked with a red asterisk (<span className="text-red-500">*</span>).
+            </p>
+
+            <button
+              type="button"
+              onClick={() => setValidationErrorModal(null)}
+              className="w-full py-3.5 bg-primary-green hover:bg-green-700 text-white font-black rounded-xl text-xs uppercase tracking-widest transition-all shadow-md active:scale-95"
+            >
+              Understood, I'll Fix These
             </button>
           </div>
         </div>
