@@ -542,35 +542,38 @@ const FilterDropdown = ({ label, value, options, onChange, isOpen, onToggle, act
               : 'No documents match the selected filters.'}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[800px]">
+          <div>
+            <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-[#073c2d] text-white">
-                  <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Document</th>
-                  <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Sender</th>
-                  <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider text-center">Type</th>
-                  <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Date Completed</th>
-                  <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider text-center">Status</th>
-                  <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider text-right">Action</th>
+                  <th className="px-3 sm:px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Document</th>
+                  <th className="hidden sm:table-cell px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Sender</th>
+                  <th className="hidden md:table-cell px-6 py-4 font-semibold text-[11px] uppercase tracking-wider text-center">Type</th>
+                  <th className="hidden lg:table-cell px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Date Completed</th>
+                  <th className="px-3 sm:px-6 py-4 font-semibold text-[11px] uppercase tracking-wider text-center">Status</th>
+                  <th className="px-3 sm:px-6 py-4 font-semibold text-[11px] uppercase tracking-wider text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {filteredDocs.map((doc) => (
                   <tr key={doc.id} className={`group transition-all duration-300 hover:bg-gray-50/50 ${unreadDocIds.includes(doc.id) ? 'unread-glow' : ''}`}>
                     <td
-                      className="px-6 py-5 cursor-pointer"
+                      className="px-3 sm:px-6 py-4 sm:py-5 cursor-pointer"
                       onClick={() => {
                         markAsRead(doc.id);
                         setSelectedSubmissionId(doc.id);
                       }}
                     >
-                      <p className="font-semibold text-gray-800 uppercase text-sm leading-tight group-hover:text-primary-green transition-colors">
+                      <p 
+                        className="font-semibold text-gray-800 uppercase text-xs sm:text-sm leading-tight group-hover:text-primary-green transition-colors line-clamp-2 max-w-[180px] min-[400px]:max-w-[240px] sm:max-w-sm md:max-w-md lg:max-w-lg"
+                        title={doc.title}
+                      >
                         {doc.title}
                       </p>
-                      <p className="text-[10px] text-gray-400 font-mono mt-0.5 tracking-tighter uppercase">{doc.ref}</p>
+                      <p className="text-[10px] text-gray-400 font-mono mt-0.5 tracking-tighter uppercase truncate">{doc.ref}</p>
                     </td>
-                    <td className="px-6 py-5 text-sm font-medium text-gray-600 uppercase tracking-tight">{doc.sender}</td>
-                    <td className="px-6 py-5 text-center">
+                    <td className="hidden sm:table-cell px-6 py-5 text-sm font-medium text-gray-600 uppercase tracking-tight">{doc.sender}</td>
+                    <td className="hidden md:table-cell px-6 py-5 text-center">
                       <span className="inline-block px-4 py-1 border border-gray-100 text-gray-500 text-[10px] font-semibold rounded-lg bg-white shadow-sm group-hover:border-primary-green/20 group-hover:text-primary-green transition-all uppercase">
                         {doc.type}
                       </span>
@@ -580,8 +583,8 @@ const FilterDropdown = ({ label, value, options, onChange, isOpen, onToggle, act
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-5 text-sm text-gray-500 font-medium">{doc.completedDate}</td>
-                    <td className="px-6 py-5 text-center">
+                    <td className="hidden lg:table-cell px-6 py-5 text-sm text-gray-500 font-medium">{doc.completedDate}</td>
+                    <td className="px-3 sm:px-6 py-4 sm:py-5 text-center">
                       <span
                         className={`px-4 py-1.5 rounded-full text-[10px] font-bold shadow-sm inline-block min-w-[110px] uppercase text-white ${doc.statusBadgeClass}`}
                       >

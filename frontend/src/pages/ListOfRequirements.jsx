@@ -444,39 +444,60 @@ const ListOfRequirements = () => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 w-full sm:w-auto">
                 {/* NEW: Dynamic Subcategory Toggle */}
                 {selectedType && docSubtypes[selectedType.id] && docSubtypes[selectedType.id].length > 0 && (
-                  <div className="flex bg-white p-1.5 rounded-xl shadow-sm border border-gray-100">
-                    {docSubtypes[selectedType.id].map((st) => (
-                      <button
-                        key={st.id}
-                        onClick={() => {
-                          setSubTypeObj(st);
-                          setSubType(st.name);
+                  <>
+                    <div className="hidden sm:flex bg-white p-1.5 rounded-xl shadow-sm border border-gray-100">
+                      {docSubtypes[selectedType.id].map((st) => (
+                        <button
+                          key={st.id}
+                          onClick={() => {
+                            setSubTypeObj(st);
+                            setSubType(st.name);
+                          }}
+                          className={`px-6 py-2.5 rounded-lg text-xs font-black transition-all duration-300 uppercase tracking-widest ${subTypeObj?.id === st.id
+                            ? 'bg-primary-green text-white shadow-md'
+                            : 'text-gray-500 hover:bg-gray-50'
+                            }`}
+                        >
+                          {st.name}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="block sm:hidden w-full">
+                      <select
+                        value={subTypeObj?.id || ''}
+                        onChange={(e) => {
+                          const found = docSubtypes[selectedType.id].find(s => s.id === e.target.value);
+                          if (found) {
+                            setSubTypeObj(found);
+                            setSubType(found.name);
+                          }
                         }}
-                        className={`px-6 py-2.5 rounded-lg text-xs font-black transition-all duration-300 uppercase tracking-widest ${subTypeObj?.id === st.id
-                          ? 'bg-primary-green text-white shadow-md'
-                          : 'text-gray-500 hover:bg-gray-50'
-                          }`}
+                        className="w-full bg-white border border-gray-200 text-primary-green font-bold text-xs rounded-xl p-3 shadow-sm outline-none focus:ring-2 focus:ring-primary-green/20 cursor-pointer"
                       >
-                        {st.name}
-                      </button>
-                    ))}
-                  </div>
+                        {docSubtypes[selectedType.id].map((st) => (
+                          <option key={st.id} value={st.id}>
+                            {st.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
                 )}
               </div>
             </div>
 
-            <div className="overflow-x-auto pb-48">
+            <div className="pb-48">
               <table className="w-full text-left">
                 <thead>
                   <tr className="bg-[#073c2d] text-white border-b-2 border-[#073c2d]">
-                    <th className="px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] w-1/4 text-white">Title of Requirement</th>
-                    <th className="px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] text-white">Code</th>
-                    <th className="px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] w-1/3 text-white">Description</th>
-                    <th className="px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] text-white">Attachment</th>
-                    <th className="px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] text-right text-white">Action</th>
+                    <th className="px-3 sm:px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] text-white">Title of Requirement</th>
+                    <th className="hidden sm:table-cell px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] text-white">Code</th>
+                    <th className="hidden lg:table-cell px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] text-white">Description</th>
+                    <th className="hidden md:table-cell px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] text-white">Attachment</th>
+                    <th className="px-3 sm:px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] text-right text-white">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y-2 divide-gray-50">
@@ -487,10 +508,10 @@ const ListOfRequirements = () => {
                         id={`requirement-row-${req.id}`}
                         className={`hover:bg-gray-50/20 transition-all group ${highlightReqId === req.id ? 'bg-primary-green/10 ring-2 ring-primary-green/30 ring-inset' : ''}`}
                       >
-                        <td className="px-6 py-4">
+                        <td className="px-3 sm:px-6 py-4">
                           <div className="flex flex-col items-start gap-1">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className={`px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full ${
+                              <span className={`px-2 py-0.5 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider rounded-full ${
                                 (req.requirement_scope || 'OSAS') === 'OSAS'
                                   ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                                   : 'bg-slate-100/90 text-slate-500 border border-slate-200'
@@ -498,23 +519,23 @@ const ListOfRequirements = () => {
                                 {(req.requirement_scope || 'OSAS') === 'OSAS' ? 'OSAS Requirement' : 'LOCAL Requirement'}
                               </span>
                               {(req.is_optional === true || String(req.is_optional) === 'true') && (
-                                <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 text-[10px] font-black uppercase rounded shadow-sm">
+                                <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 text-[9px] sm:text-[10px] font-black uppercase rounded shadow-sm">
                                   Optional
                                 </span>
                               )}
                             </div>
-                            <span className="font-semibold text-base text-gray-800">{req.title}</span>
+                            <span className="font-semibold text-sm sm:text-base text-gray-800 leading-tight">{req.title}</span>
                           </div>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="hidden sm:table-cell px-6 py-4">
                           <span className="px-3 py-1.5 bg-gray-100 text-gray-500 rounded-lg text-[10px] font-black tracking-widest border border-gray-200/50">
                             {req.referenceCode || 'GENERAL'}
                           </span>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="hidden lg:table-cell px-6 py-4">
                           <p className="text-gray-400 font-bold text-xs leading-relaxed line-clamp-2">{req.description || 'No special instructions provided.'}</p>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="hidden md:table-cell px-6 py-4">
                           {req.file_url ? (
                             <div className="flex items-center gap-3">
                               <div className="flex items-center gap-2 text-primary-green">
@@ -528,7 +549,7 @@ const ListOfRequirements = () => {
                             <span className="font-black text-xs text-gray-400 uppercase">None</span>
                           )}
                         </td>
-                        <td className="px-6 py-4 relative">
+                        <td className="px-3 sm:px-6 py-4 relative">
                           <div className="flex justify-end relative">
                             {/* Direct Preview Button */}
                             <button
@@ -608,50 +629,63 @@ const ListOfRequirements = () => {
 
       {/* PDF Preview Modal Overlay */}
       {previewFile && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[120] flex items-center justify-center p-4 animate-in fade-in duration-300">
-          <div className="bg-white rounded-3xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300">
+        <div 
+          onClick={() => setPreviewFile(null)}
+          className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[999] flex items-center justify-center p-2.5 sm:p-4 animate-in fade-in duration-300"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl sm:rounded-3xl w-[95vw] sm:max-w-5xl h-[88vh] sm:h-[85vh] flex flex-col overflow-hidden shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300 my-auto"
+          >
             {/* Header */}
-            <div className="bg-gray-50 border-b border-gray-100 px-8 py-5 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
-                  <Paperclip size={20} />
+            <div className="bg-gray-50 border-b border-gray-100 px-4 sm:px-8 py-3.5 sm:py-5 flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 shrink-0">
+                  <Paperclip size={18} className="sm:w-5 sm:h-5" />
                 </div>
-                <div>
-                  <h3 className="font-bold text-gray-800 text-lg">{previewFile.title}</h3>
-                  <p className="text-gray-400 text-xs font-medium max-w-sm truncate" title={previewFile.url.split('/').pop()}>File: {previewFile.url.split('/').pop()}</p>
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-bold text-gray-800 text-sm sm:text-lg truncate max-w-[200px] sm:max-w-md" title={previewFile.title}>
+                    {previewFile.title}
+                  </h3>
+                  <p className="text-gray-400 text-[10px] sm:text-xs font-medium max-w-[180px] sm:max-w-sm truncate" title={previewFile.url?.split('/').pop()}>
+                    File: {previewFile.url?.split('/').pop()}
+                  </p>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setPreviewFile(null)}
-                className="p-2.5 hover:bg-gray-200 rounded-full transition-colors text-gray-400 hover:text-gray-800"
+                className="p-2 sm:p-2.5 bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-900 rounded-full transition-all shrink-0 cursor-pointer shadow-xs"
+                aria-label="Close preview"
               >
                 <X size={20} />
               </button>
             </div>
 
             {/* Body */}
-            <div className="flex-1 flex flex-col overflow-hidden bg-gray-100 p-6">
-              <div className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-200/50 relative">
+            <div className="flex-1 flex flex-col overflow-hidden bg-gray-100 p-2.5 sm:p-6">
+              <div className="flex-1 bg-white rounded-xl sm:rounded-2xl overflow-hidden shadow-sm border border-gray-200/50 relative">
                 {previewFile.url?.toLowerCase().includes('.pdf') ? (
                   <iframe
                     src={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=Fit` : null}
-                    className="w-full h-full border-0 rounded-2xl"
+                    className="w-full h-full border-0 rounded-xl sm:rounded-2xl"
                     title="PDF Preview"
                   />
                 ) : previewFile.url?.toLowerCase().includes('.docx') ? (
                   <iframe
                     src={filePreviewUrl ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(filePreviewUrl)}` : null}
-                    className="w-full h-full border-0 rounded-2xl"
+                    className="w-full h-full border-0 rounded-xl sm:rounded-2xl"
                     title="Word Preview"
                   />
                 ) : (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
-                    <FileText size={48} className="text-gray-300 mb-4 animate-bounce" />
-                    <h4 className="font-bold text-gray-700 mb-1">Preview is not supported for this file type</h4>
-                    <p className="text-gray-400 text-xs max-w-xs mb-4">You can download it to view locally on your device.</p>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center p-4 sm:p-6 text-center">
+                    <FileText size={40} className="text-gray-300 mb-3 animate-bounce sm:w-12 sm:h-12" />
+                    <h4 className="font-bold text-gray-700 text-xs sm:text-sm mb-1">Preview is not supported for this file type</h4>
+                    <p className="text-gray-400 text-[11px] sm:text-xs max-w-xs mb-4">You can download it to view locally on your device.</p>
                     <button
-                      onClick={() => handleDownload(previewFile.url, `${previewFile.title}${previewFile.url.toLowerCase().endsWith('.docx') ? '.docx' : '.pdf'}`)}
-                      className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-md inline-flex items-center gap-2"
+                      type="button"
+                      onClick={() => handleDownload(previewFile.url, `${previewFile.title}${previewFile.url?.toLowerCase().endsWith('.docx') ? '.docx' : '.pdf'}`)}
+                      className="bg-indigo-600 text-white px-5 sm:px-6 py-2 sm:py-2.5 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-md inline-flex items-center gap-2"
                     >
                       <Download size={16} /> Download Template
                     </button>

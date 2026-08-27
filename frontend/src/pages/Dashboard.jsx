@@ -782,15 +782,15 @@ const AdminDashboardView = () => {
             <h2 className="text-lg font-black text-gray-800 uppercase">Active Documents Overview</h2>
             <p className="text-xs font-bold text-gray-400">All documents currently under review</p>
           </div>
-          <div className="overflow-x-auto">
+          <div>
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50/50">
-                  <th className="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-wider">Document Title</th>
-                  <th className="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-wider">Organization</th>
-                  <th className="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-wider">Type</th>
-                  <th className="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-4"></th>
+                  <th className="px-3 sm:px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-wider">Document Title</th>
+                  <th className="hidden sm:table-cell px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-wider">Organization</th>
+                  <th className="hidden md:table-cell px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-wider">Type</th>
+                  <th className="px-3 sm:px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-wider">Status</th>
+                  <th className="hidden sm:table-cell px-6 py-4"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -835,23 +835,23 @@ const AdminDashboardView = () => {
                         }`}
                         onClick={handleRowClick}
                       >
-                        <td className="px-6 py-4">
-                          <div className="font-bold text-sm text-gray-800 line-clamp-2 max-w-xs" title={docTitle}>{docTitle}</div>
+                        <td className="px-3 sm:px-6 py-4">
+                          <div className="font-bold text-xs sm:text-sm text-gray-800 line-clamp-2 max-w-xs" title={docTitle}>{docTitle}</div>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="hidden sm:table-cell px-6 py-4">
                           <div className="font-bold text-sm text-gray-600 line-clamp-2 max-w-[150px]" title={doc.users?.org_name}>{doc.users?.org_name || 'N/A'}</div>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="hidden md:table-cell px-6 py-4">
                           <span className="px-3 py-1 text-[10px] font-black uppercase rounded-full border" style={{ color: typeColor, borderColor: typeColor, backgroundColor: `${typeColor}10` }}>
                             {doc.documentType?.name || 'Unknown'}
                           </span>
                         </td>
-                        <td className="px-6 py-4">
-                          <span className="inline-block text-center w-[220px] truncate px-3 py-1 text-[10px] font-black uppercase rounded-full" style={{ backgroundColor: getStatusColor(statusName), color: '#fff' }} title={statusName}>
+                        <td className="px-3 sm:px-6 py-4">
+                          <span className="inline-block text-center w-auto max-w-[140px] sm:max-w-[220px] truncate px-2.5 sm:px-3 py-1 text-[9px] sm:text-[10px] font-black uppercase rounded-full" style={{ backgroundColor: getStatusColor(statusName), color: '#fff' }} title={statusName}>
                             {statusName}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-right">
+                        <td className="hidden sm:table-cell px-6 py-4 text-right">
                           {isOsoStaffReview ? (
                             <div className="p-2 text-amber-500 inline-flex items-center justify-center" title="Under OSO Staff Review - Not yet accessible by Admin">
                               <Clock size={20} />
@@ -1226,15 +1226,15 @@ const ChairmanDashboardView = ({ role }) => {
               <p className="text-xs font-bold text-gray-400">All documents currently under review</p>
             </div>
           </div>
-          <div className="overflow-x-auto">
+          <div>
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50/50">
-                  <th className="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-wider">Document Title</th>
-                  <th className="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-wider">Organization</th>
-                  <th className="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-wider">Type</th>
-                  <th className="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-4"></th>
+                  <th className="px-3 sm:px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-wider">Document Title</th>
+                  <th className="hidden sm:table-cell px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-wider">Organization</th>
+                  <th className="hidden md:table-cell px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-wider">Type</th>
+                  <th className="px-3 sm:px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-wider">Status</th>
+                  <th className="hidden sm:table-cell px-6 py-4"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -1265,23 +1265,23 @@ const ChairmanDashboardView = ({ role }) => {
 
                     return (
                       <tr key={doc.id} className="hover:bg-gray-50/50 transition-colors group cursor-pointer" onClick={handleRowClick}>
-                        <td className="px-6 py-4">
-                          <div className="font-bold text-sm text-gray-800 line-clamp-2 max-w-xs" title={docTitle}>{docTitle}</div>
+                        <td className="px-3 sm:px-6 py-4">
+                          <div className="font-bold text-xs sm:text-sm text-gray-800 line-clamp-2 max-w-xs" title={docTitle}>{docTitle}</div>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="hidden sm:table-cell px-6 py-4">
                           <div className="font-bold text-sm text-gray-600 line-clamp-2 max-w-[150px]" title={doc.users?.org_name}>{doc.users?.org_name || 'N/A'}</div>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="hidden md:table-cell px-6 py-4">
                           <span className="px-3 py-1 text-[10px] font-black uppercase rounded-full border" style={{ color: typeColor, borderColor: typeColor, backgroundColor: `${typeColor}10` }}>
                             {doc.documentType?.name || 'Unknown'}
                           </span>
                         </td>
-                        <td className="px-6 py-4">
-                          <span className="inline-block text-center w-[220px] truncate px-3 py-1 text-[10px] font-black uppercase rounded-full" style={{ backgroundColor: getStatusColor(statusName), color: '#fff' }} title={statusName}>
+                        <td className="px-3 sm:px-6 py-4">
+                          <span className="inline-block text-center w-auto max-w-[140px] sm:max-w-[220px] truncate px-2.5 sm:px-3 py-1 text-[9px] sm:text-[10px] font-black uppercase rounded-full" style={{ backgroundColor: getStatusColor(statusName), color: '#fff' }} title={statusName}>
                             {statusName}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-right">
+                        <td className="hidden sm:table-cell px-6 py-4 text-right">
                           <button onClick={(e) => { e.stopPropagation(); handleRowClick(); }} className="p-2 text-gray-400 hover:text-primary-green transition-colors rounded-lg hover:bg-green-50">
                             <ChevronRight size={20} />
                           </button>
@@ -1655,13 +1655,13 @@ const OrgDashboardView = () => {
               <h2 className="text-lg font-black text-gray-800 uppercase tracking-tight">Documents Under Review</h2>
               <p className="text-xs font-bold text-gray-400 mt-1">Track your active submissions</p>
             </div>
-            <div className="flex-1 overflow-x-auto">
+            <div className="flex-1">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-gray-50/50">
-                    <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-wider">Document Info</th>
-                    <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-wider">Latest Activity Log</th>
-                    <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-wider text-right">Status</th>
+                    <th className="px-3 sm:px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-wider">Document Info</th>
+                    <th className="hidden sm:table-cell px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-wider">Latest Activity Log</th>
+                    <th className="px-3 sm:px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-wider text-right">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
@@ -1685,13 +1685,13 @@ const OrgDashboardView = () => {
 
                       return (
                         <tr key={doc.id} className="hover:bg-gray-50/50 transition-colors cursor-pointer" onClick={() => navigate(`/my-documents?submissionId=${doc.id}`)}>
-                          <td className="px-6 py-4">
-                            <p className="font-bold text-sm text-gray-800 line-clamp-1" title={docTitle}>{docTitle}</p>
+                          <td className="px-3 sm:px-6 py-4">
+                            <p className="font-bold text-xs sm:text-sm text-gray-800 line-clamp-1" title={docTitle}>{docTitle}</p>
                             <span className="inline-block mt-1 px-2 py-0.5 text-[9px] font-black uppercase rounded border" style={{ color: typeColor, borderColor: typeColor, backgroundColor: `${typeColor}10` }}>
                               {doc.type}
                             </span>
                           </td>
-                          <td className="px-6 py-4">
+                          <td className="hidden sm:table-cell px-6 py-4">
                             {doc.latestLog ? (
                               <div>
                                 <p className="text-xs font-semibold text-gray-600 line-clamp-2">{doc.latestLog.description || doc.latestLog.comment || 'Status updated'}</p>
@@ -1701,8 +1701,8 @@ const OrgDashboardView = () => {
                               <p className="text-xs italic text-gray-400">No logs yet</p>
                             )}
                           </td>
-                          <td className="px-6 py-4 text-right">
-                            <span className="inline-block text-center w-[220px] truncate px-3 py-1 text-[10px] font-black uppercase rounded-full" style={{ backgroundColor: getStatusColor(statusName), color: '#fff' }} title={statusName}>
+                          <td className="px-3 sm:px-6 py-4 text-right">
+                            <span className="inline-block text-center w-auto max-w-[120px] sm:max-w-[220px] truncate px-2.5 sm:px-3 py-1 text-[9px] sm:text-[10px] font-black uppercase rounded-full" style={{ backgroundColor: getStatusColor(statusName), color: '#fff' }} title={statusName}>
                               {statusName}
                             </span>
                           </td>

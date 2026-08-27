@@ -11,12 +11,13 @@ import {
   LogOut,
   Megaphone,
   Settings,
-  User
+  User,
+  X
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
 
-const Sidebar = () => {
+const Sidebar = ({ isOpen, onClose }) => {
   const { user, logout } = useAuth();
   const [showLogoutConfirm, setShowLogoutConfirm] = React.useState(false);
   const [inboxCount, setInboxCount] = React.useState(0);
@@ -115,28 +116,16 @@ const Sidebar = () => {
 
         const { data, error } = await supabase
           .from('submissions')
-          .select('id, status, updated_at, submission_logs(created_at, action_type)')
+          .select('id, status')
           .eq('user_id', user.id);
 
         if (!error && isMounted) {
-          const activeList = (data || []).filter(sub => {
+          const returnedList = (data || []).filter(sub => {
             const s = String(sub.status || '').toLowerCase();
-            return s !== 'draft' && s !== 'completed' && !s.includes('disapproved') && s !== 'rejected';
+            return s === 'returned';
           });
-          const viewedObj = JSON.parse(localStorage.getItem(`my_docs_viewed_${user.id}`) || '{}');
-          const unreadCount = activeList.filter(sub => {
-             const logs = (sub.submission_logs || []).filter(l => l.action_type !== 'viewed');
-             if (logs.length === 0) {
-               // Fallback to updated_at if no meaningful logs
-               const lastViewed = viewedObj[sub.id];
-               return !lastViewed || new Date(sub.updated_at || new Date()) > new Date(lastViewed);
-             }
-             
-             // Get the latest log date excluding 'viewed' actions
-             const latestLogDate = new Date(Math.max(...logs.map(l => new Date(l.created_at))));
-             const lastViewed = viewedObj[sub.id];
-             return !lastViewed || latestLogDate > new Date(lastViewed);
-          }).length;
+          const readIds = JSON.parse(localStorage.getItem('mydocs_returned_read_ids') || '[]');
+          const unreadCount = returnedList.filter(sub => !readIds.includes(sub.id)).length;
           setMyDocsCount(unreadCount);
         }
       } catch (err) {
@@ -224,21 +213,34 @@ const Sidebar = () => {
   const roleKey = user?.role;
   const currentMenu = menuItems[roleKey] || [];
 
-  return (
-    <div className="w-64 h-screen bg-[#073c2d] text-white flex flex-col shadow-xl">
-      <div className="p-6 flex items-center gap-3 border-b border-white/10">
-        <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center p-1">
-           <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
+  const sidebarContent = (
+    <div className="w-64 h-full bg-[#073c2d] text-white flex flex-col shadow-xl border-r border-emerald-900/40">
+      <div className="p-6 flex items-center justify-between border-b border-white/10">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center p-1 shadow-sm">
+            <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
+          </div>
+          <span className="text-xl font-bold tracking-wider text-secondary-gold">OSODOCS</span>
         </div>
-        <span className="text-xl font-bold tracking-wider text-secondary-gold">OSODOCS</span>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="md:hidden p-1.5 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+            aria-label="Close menu"
+          >
+            <X size={20} />
+          </button>
+        )}
       </div>
 
-      <nav className="flex-1 mt-6 px-4 space-y-2">
+      <nav className="flex-1 mt-6 px-4 space-y-2 overflow-y-auto">
         {currentMenu.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
             onClick={(e) => {
+              if (onClose) onClose();
               window.dispatchEvent(new CustomEvent('sidebar-nav-click', { detail: { path: item.path } }));
               if (window.__hasUnsavedChanges) {
                 e.preventDefault();
@@ -255,7 +257,7 @@ const Sidebar = () => {
           >
             <div className="flex items-center gap-3">
               {item.icon}
-              <span className="font-medium">{item.name}</span>
+              <span className="font-medium text-sm">{item.name}</span>
             </div>
             {item.name === 'Inbox' && inboxCount > 0 && (
               <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm">
@@ -276,7 +278,7 @@ const Sidebar = () => {
         ))}
       </nav>
 
-      <div className="p-4 border-t border-white/10">
+      <div className="p-4 border-t border-white/10 shrink-0">
         <button
           onClick={() => setShowLogoutConfirm(true)}
           className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-white/80 hover:bg-red-500/20 hover:text-red-400 transition-colors"
@@ -318,6 +320,28 @@ const Sidebar = () => {
         </div>
       )}
     </div>
+  );
+
+  return (
+    <>
+      {/* Desktop Fixed Sidebar */}
+      <aside className="hidden md:flex md:w-64 md:shrink-0 h-screen sticky top-0">
+        {sidebarContent}
+      </aside>
+
+      {/* Mobile Drawer Overlay */}
+      {isOpen && (
+        <div className="fixed inset-0 z-[100] md:hidden flex">
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+            onClick={onClose}
+          />
+          <div className="relative z-10 w-64 h-full flex-1 max-w-xs shadow-2xl animate-in slide-in-from-left duration-200">
+            {sidebarContent}
+          </div>
+        </div>
+      )}
+    </>
   );
 };
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
-import { Bell, Search, X, Check, CheckCircle2, Megaphone, FileText, ChevronRight, Paperclip, ExternalLink, Image as ImageIcon, ShieldAlert, AlertTriangle, Lock, Clock, LogOut, User as UserIcon, Calendar } from 'lucide-react';
+import { Bell, Search, X, Check, CheckCircle2, Megaphone, FileText, ChevronRight, Paperclip, ExternalLink, Image as ImageIcon, ShieldAlert, AlertTriangle, Lock, Clock, LogOut, User as UserIcon, Calendar, Menu } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiClient, apiUrl } from '../config/apiClient';
 import { supabase } from '../supabaseClient';
@@ -151,7 +151,7 @@ function isWorkflowLogRelevantForRole(role, log, submission) {
   return false;
 }
 
-const Header = () => {
+const Header = ({ onToggleMobileMenu }) => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState([]);
@@ -536,25 +536,35 @@ const Header = () => {
 
   return (
     <>
-      <header className={`h-16 bg-white border-b border-gray-100 flex items-center justify-between px-8 sticky top-0 shadow-sm transition-all ${showUserDropdown ? 'z-[999999]' : 'z-30'}`}>
-        <div className="flex items-center gap-2 text-gray-700 relative group cursor-pointer" onClick={() => setIsCalendarModalOpen(true)}>
-          <Calendar size={20} />
-          <span className="text-sm font-bold hover:text-primary-green transition-colors">{activeSy ? ` ${activeSy.name}` : 'Loading S.Y...'}</span>
-          
-          {activeSy && (
-            <div className="absolute top-full left-0 mt-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 bg-white text-gray-800 rounded-lg p-4 shadow-xl border border-gray-100 z-50 min-w-[250px]">
-              <p className="text-xs font-bold text-gray-400 uppercase mb-2">Academic Dates</p>
-              <div className="flex justify-between items-center text-sm font-semibold mb-2">
-                <span className="text-green-600">{new Date(activeSy.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                <span className="text-gray-300">-</span>
-                <span className="text-red-500">{new Date(activeSy.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+      <header className={`h-16 bg-white border-b border-gray-100 flex items-center justify-between px-4 sm:px-8 sticky top-0 shadow-sm transition-all ${showUserDropdown ? 'z-[999999]' : 'z-30'}`}>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onToggleMobileMenu}
+            className="md:hidden p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-colors shrink-0"
+            aria-label="Open mobile menu"
+          >
+            <Menu size={22} />
+          </button>
+          <div className="flex items-center gap-2 text-gray-700 relative group cursor-pointer" onClick={() => setIsCalendarModalOpen(true)}>
+            <Calendar size={20} className="shrink-0" />
+            <span className="text-xs sm:text-sm font-bold hover:text-primary-green transition-colors truncate max-w-[140px] sm:max-w-none">{activeSy ? ` ${activeSy.name}` : 'Loading S.Y...'}</span>
+            
+            {activeSy && (
+              <div className="absolute top-full left-0 mt-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 bg-white text-gray-800 rounded-lg p-4 shadow-xl border border-gray-100 z-50 min-w-[250px]">
+                <p className="text-xs font-bold text-gray-400 uppercase mb-2">Academic Dates</p>
+                <div className="flex justify-between items-center text-sm font-semibold mb-2">
+                  <span className="text-green-600">{new Date(activeSy.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                  <span className="text-gray-300">-</span>
+                  <span className="text-red-500">{new Date(activeSy.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                </div>
+                <div className="text-xs text-primary-green font-bold text-center mt-3 pt-3 border-t border-gray-50 flex items-center justify-center gap-1">
+                  <Calendar size={12} />
+                  Click to view Calendar Events
+                </div>
               </div>
-              <div className="text-xs text-primary-green font-bold text-center mt-3 pt-3 border-t border-gray-50 flex items-center justify-center gap-1">
-                <Calendar size={12} />
-                Click to view Calendar Events
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-6">
@@ -990,6 +1000,7 @@ const DashboardLayout = () => {
   const [showSuspendedModal, setShowSuspendedModal] = useState(false);
   const [showReactivatedModal, setShowReactivatedModal] = useState(false);
   const [adminEmail, setAdminEmail] = useState('');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
   const isSuspended = user?.status?.startsWith('Suspended') && user?.role === 'org-president';
   const prevStatusRef = useRef(user?.status);
@@ -1030,10 +1041,10 @@ const DashboardLayout = () => {
 
   return (
     <div className="flex h-screen bg-[#f8fafc]">
-      <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Header />
-        <main className="flex-1 overflow-y-auto p-8 relative z-0">
+      <Sidebar isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <Header onToggleMobileMenu={() => setIsMobileMenuOpen(true)} />
+        <main className="flex-1 overflow-y-auto p-3.5 sm:p-6 md:p-8 relative z-0">
           <PageTransition>
             <div className="max-w-7xl mx-auto">
               <Outlet />

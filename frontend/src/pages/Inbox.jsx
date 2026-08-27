@@ -1046,15 +1046,15 @@ export const Inbox = () => {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10 text-gray-800">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-10 text-gray-800">
           {[
             { label: 'ORGANIZATION', value: selectedDoc.raw?.users?.org_name || details?.organization_name || selectedDoc.org || '-', icon: <User size={18} /> },
             { label: 'TYPE', value: `${selectedDoc.type} ${selectedDoc.proposal_type && selectedDoc.proposal_type !== '-' ? `(${selectedDoc.proposal_type})` : ''}`, icon: <FileText size={18} />, color: 'text-blue-500' },
             { label: 'STATUS', value: selectedDoc.status, icon: <Clock size={18} />, badge: true },
             { label: 'RECEIVED AT', value: selectedDoc.time, icon: <Calendar size={18} /> }
           ].map((card, idx) => (
-            <div key={idx} className="bg-gray-100 p-6 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">
+            <div key={idx} className="bg-gray-100 p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 sm:mb-3">
                 {card.icon}
                 <span>{card.label}</span>
               </div>
@@ -1064,42 +1064,44 @@ export const Inbox = () => {
                     backgroundColor: `${getStatusColor(card.value)}1a`,
                     color: getStatusColor(card.value)
                   }}
-                  className="px-4 py-1.5 rounded-lg text-[10px] font-bold shadow-sm uppercase inline-block"
+                  className="px-3 sm:px-4 py-1 sm:py-1.5 rounded-lg text-[10px] font-bold shadow-sm uppercase inline-block"
                 >
                   {card.value}
                 </span>
               ) : (
-                <p className={`font-bold text-gray-800 ${card.color || ''}`}>{card.value}</p>
+                <p className={`font-bold text-xs sm:text-sm text-gray-800 ${card.color || ''}`}>{card.value}</p>
               )}
             </div>
           ))}
         </div>
-
         {/* Content Section */}
         {isActivityProposal && (
-        <div className="bg-white rounded-[2.5rem] p-10 shadow-sm border border-gray-100 mb-8 text-gray-800">
-          <h2 className="text-xl font-bold text-gray-800 mb-8">{selectedDoc.type} Form Details</h2>
-          <div className="text-center mb-10">
-            <h3 className="text-lg font-bold text-gray-800">
+        <div className="bg-white rounded-2xl sm:rounded-[2.5rem] p-3.5 sm:p-8 md:p-10 shadow-sm border border-gray-100 mb-6 sm:mb-8 text-gray-800">
+          <h2 className="text-base sm:text-xl font-bold text-gray-800 mb-4 sm:mb-8">{selectedDoc.type} Form Details</h2>
+          <div className="text-center mb-6 sm:mb-10">
+            <h3 
+              className="text-sm sm:text-lg font-bold text-gray-800 break-all line-clamp-2 max-w-3xl mx-auto"
+              title={isActivityProposal ? (selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title) : `${selectedDoc.org || selectedDoc.sender} ${documentTypeName} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
+            >
               Document Title: {isActivityProposal ? (selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title) : `${selectedDoc.org || selectedDoc.sender} ${documentTypeName} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
             </h3>
           </div>
 
-          <div className="space-y-4 text-gray-700 max-w-4xl">
-            <div className="flex gap-2">
-              <span className="font-bold min-w-[200px]">Person In-Charge:</span>
-              <span>{selectedDoc.pic || '—'}</span>
+          <div className="space-y-3 sm:space-y-4 text-xs sm:text-sm text-gray-700 max-w-4xl">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+              <span className="font-bold sm:min-w-[200px] shrink-0">Person In-Charge:</span>
+              <span className="break-all">{selectedDoc.pic || '—'}</span>
             </div>
-            <div className="flex gap-2">
-              <span className="font-bold min-w-[200px]">Student ID No.:</span>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+              <span className="font-bold sm:min-w-[200px] shrink-0">Student ID No.:</span>
               <span>{selectedDoc.studentId || '—'}</span>
             </div>
-            <div className="flex gap-2">
-              <span className="font-bold min-w-[200px]">Contact Number of Person-in-Charge:</span>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+              <span className="font-bold sm:min-w-[200px] shrink-0">Contact Number of Person-in-Charge:</span>
               <span>{selectedDoc.contact || '—'}</span>
             </div>
-            <div className="flex gap-2">
-              <span className="font-bold min-w-[200px]">Target Date and Time:</span>
+            <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-2">
+              <span className="font-bold sm:min-w-[200px] shrink-0">Target Date and Time:</span>
               <span>
                 {selectedDoc.schedules && selectedDoc.schedules.length > 0 ? (
                   selectedDoc.schedules.map((s, idx) => {
@@ -1130,57 +1132,50 @@ export const Inbox = () => {
                 )}
               </span>
             </div>
-            <div className="flex gap-2">
-              <span className="font-bold min-w-[200px]">Duration:</span>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+              <span className="font-bold sm:min-w-[200px] shrink-0">Duration:</span>
               <span>{calculateProposalDuration(selectedDoc.proposalDetails || selectedDoc.raw?.activity_proposal_details || { schedules: selectedDoc.schedules, duration: selectedDoc.duration, is_indefinite_end_time: selectedDoc.is_indefinite_end_time })}</span>
             </div>
-            <div className="flex gap-2">
-              <span className="font-bold min-w-[200px]">Number of Students Involved:</span>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+              <span className="font-bold sm:min-w-[200px] shrink-0">Number of Students Involved:</span>
               <span>{selectedDoc.students || '—'}</span>
             </div>
-            <div className="flex gap-2">
-              <span className="font-bold min-w-[200px]">Nature of Activity:</span>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+              <span className="font-bold sm:min-w-[200px] shrink-0">Nature of Activity:</span>
               <span>{selectedDoc.nature || '—'}</span>
             </div>
 
-            <div className="mt-8">
-              <p className="font-bold mb-3">Objectives of the Activity:</p>
-              <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100">
+            <div className="mt-6 sm:mt-8">
+              <p className="font-bold text-xs sm:text-sm mb-2">Objectives of the Activity:</p>
+              <div className="bg-gray-50 p-4 sm:p-6 rounded-2xl border border-gray-100">
                 {(() => {
                   const objList = parseObjectivesList(selectedDoc.objectives);
                   if (objList.length > 0) {
                     return (
-                      <ul className="list-disc pl-5 space-y-1 text-sm text-gray-700 font-medium">
+                      <ul className="list-disc pl-5 space-y-1 text-xs sm:text-sm text-gray-700 font-medium">
                         {objList.map((obj, i) => <li key={i}>{obj}</li>)}
                       </ul>
                     );
                   }
-                  return (
-                    <ul className="list-disc pl-5 space-y-1 text-sm text-gray-500 font-medium">
-                      <li>Leadership Development and Formation</li>
-                      <li>Membership Development and Formation</li>
-                      <li>Organizational Program Management</li>
-                      <li>Values Enrichment</li>
-                      <li>Technical Skills Development and Industry Exposure</li>
-                    </ul>
-                  );
+                  return <p className="text-gray-700 text-xs sm:text-sm leading-relaxed">{selectedDoc.objectives || '-'}</p>;
                 })()}
               </div>
             </div>
 
-            <div className="mt-6">
-              <p className="font-bold mb-2">Target Audience / Participants: <span className="font-normal text-sm">BulSUans Only</span></p>
+            <div>
+              <p className="font-bold text-xs sm:text-sm mb-1">
+                Target Audience / Participants: <span className="font-normal">BulSUans Only</span>
+              </p>
             </div>
 
-            {/* Satisfaction Goals section - Numbered list if dynamic goals exist */}
             {isActivityProposal && (
-              <div className="mt-8">
-                <p className="font-bold mb-4 text-sm leading-relaxed">
+              <div className="mt-6 sm:mt-8">
+                <p className="font-bold text-xs sm:text-sm mb-2">
                   Describe how this activity will satisfy the needs of the organization and how it will help the organization achieve its goals:
                 </p>
-                <div className="bg-gray-50 p-6 rounded-2xl text-sm leading-relaxed text-gray-600 border border-gray-100 italic">
+                <div className="bg-gray-50 p-4 sm:p-6 rounded-2xl text-xs sm:text-sm leading-relaxed text-gray-600 border border-gray-100 italic">
                   {selectedDoc.satisfy_goals && selectedDoc.satisfy_goals.length > 0 ? (
-                    <ol className="list-decimal pl-5 space-y-2">
+                    <ol className="list-decimal pl-5 space-y-1.5">
                       {selectedDoc.satisfy_goals.map((goal, idx) => (
                         <li key={idx} className="font-medium">{goal}</li>
                       ))}
@@ -1194,17 +1189,17 @@ export const Inbox = () => {
 
             {/* Partners and Sponsors Cards */}
             {isActivityProposal && (selectedDoc.partners || selectedDoc.sponsors) && (
-              <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="mt-6 sm:mt-8 grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                 {selectedDoc.partners && (
-                  <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100 shadow-sm">
-                    <p className="font-bold text-gray-800 mb-2 uppercase tracking-wider text-xs">Partners</p>
-                    <p className="text-gray-600 text-sm leading-relaxed">{selectedDoc.partners}</p>
+                  <div className="bg-gray-50 p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm">
+                    <p className="font-bold text-gray-800 mb-2 uppercase tracking-wider text-[10px] sm:text-xs">Partners</p>
+                    <p className="text-gray-600 text-xs sm:text-sm leading-relaxed">{selectedDoc.partners}</p>
                   </div>
                 )}
                 {selectedDoc.sponsors && (
-                  <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100 shadow-sm">
-                    <p className="font-bold text-gray-800 mb-2 uppercase tracking-wider text-xs">Sponsors</p>
-                    <p className="text-gray-600 text-sm leading-relaxed">{selectedDoc.sponsors}</p>
+                  <div className="bg-gray-50 p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm">
+                    <p className="font-bold text-gray-800 mb-2 uppercase tracking-wider text-[10px] sm:text-xs">Sponsors</p>
+                    <p className="text-gray-600 text-xs sm:text-sm leading-relaxed">{selectedDoc.sponsors}</p>
                   </div>
                 )}
               </div>
@@ -1214,56 +1209,69 @@ export const Inbox = () => {
         )}
 
         {/* Attached Files Section - Collapsible with Live Data */}
-        <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 mb-10 transition-all duration-500">
+        <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 mb-6 sm:mb-10 transition-all duration-500">
           <button 
             onClick={() => setIsFilesOpen(!isFilesOpen)}
-            className="w-full bg-[#525252] text-white px-8 py-4 flex items-center justify-between hover:brightness-110 transition-all outline-none"
+            className="w-full bg-[#525252] text-white px-4 sm:px-8 py-3.5 sm:py-4 flex items-center justify-between hover:brightness-110 transition-all outline-none"
           >
             <div className="flex items-center gap-3">
-              <Paperclip size={20} className="text-white opacity-80" />
+              <Paperclip size={18} className="text-white opacity-80 sm:w-5 sm:h-5" />
               <span className="text-xs font-bold uppercase tracking-widest">Attached File</span>
             </div>
-            <ChevronDown size={20} className={`transition-transform duration-500 ${isFilesOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown size={18} className={`transition-transform duration-500 ${isFilesOpen ? 'rotate-180' : ''}`} />
           </button>
           
           {isFilesOpen && (
-            <div className="p-6 space-y-3 animate-in slide-in-from-top-4 duration-500">
+            <div className="p-3.5 sm:p-6 space-y-3 animate-in slide-in-from-top-4 duration-500">
               {selectedDoc.attachments && selectedDoc.attachments.length > 0 && (
-                <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 mb-3">
-                  <button
-                    type="button"
-                    onClick={() => setDocDetailTabFilter('all')}
-                    className={`px-3 py-1.5 rounded-lg transition-all ${
-                      docDetailTabFilter === 'all'
-                        ? 'bg-emerald-600 text-white shadow-xs font-black'
-                        : 'text-gray-600 hover:text-gray-800'
-                    }`}
-                  >
-                    All ({selectedDoc.attachments.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDocDetailTabFilter('osas')}
-                    className={`px-3 py-1.5 rounded-lg transition-all ${
-                      docDetailTabFilter === 'osas'
-                        ? 'bg-emerald-600 text-white shadow-xs font-black'
-                        : 'text-gray-600 hover:text-gray-800'
-                    }`}
-                  >
-                    OSAS Requirements ({selectedDoc.attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') === 'OSAS').length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDocDetailTabFilter('local')}
-                    className={`px-3 py-1.5 rounded-lg transition-all ${
-                      docDetailTabFilter === 'local'
-                        ? 'bg-emerald-600 text-white shadow-xs font-black'
-                        : 'text-gray-600 hover:text-gray-800'
-                    }`}
-                  >
-                    LOCAL Requirements ({selectedDoc.attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') !== 'OSAS').length})
-                  </button>
-                </div>
+                <>
+                  <div className="hidden sm:flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 mb-3">
+                    <button
+                      type="button"
+                      onClick={() => setDocDetailTabFilter('all')}
+                      className={`px-3 py-1.5 rounded-lg transition-all ${
+                        docDetailTabFilter === 'all'
+                          ? 'bg-emerald-600 text-white shadow-xs font-black'
+                          : 'text-gray-600 hover:text-gray-800'
+                      }`}
+                    >
+                      All ({selectedDoc.attachments.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDocDetailTabFilter('osas')}
+                      className={`px-3 py-1.5 rounded-lg transition-all ${
+                        docDetailTabFilter === 'osas'
+                          ? 'bg-emerald-600 text-white shadow-xs font-black'
+                          : 'text-gray-600 hover:text-gray-800'
+                      }`}
+                    >
+                      OSAS Requirements ({selectedDoc.attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') === 'OSAS').length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDocDetailTabFilter('local')}
+                      className={`px-3 py-1.5 rounded-lg transition-all ${
+                        docDetailTabFilter === 'local'
+                          ? 'bg-emerald-600 text-white shadow-xs font-black'
+                          : 'text-gray-600 hover:text-gray-800'
+                      }`}
+                    >
+                      LOCAL Requirements ({selectedDoc.attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') !== 'OSAS').length})
+                    </button>
+                  </div>
+                  <div className="block sm:hidden w-full mb-3">
+                    <select
+                      value={docDetailTabFilter}
+                      onChange={(e) => setDocDetailTabFilter(e.target.value)}
+                      className="w-full bg-white border border-gray-200 text-emerald-700 font-bold text-xs rounded-xl p-2.5 shadow-sm outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer"
+                    >
+                      <option value="all">All ({selectedDoc.attachments.length})</option>
+                      <option value="osas">OSAS Requirements ({selectedDoc.attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') === 'OSAS').length})</option>
+                      <option value="local">LOCAL Requirements ({selectedDoc.attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') !== 'OSAS').length})</option>
+                    </select>
+                  </div>
+                </>
               )}
 
               {selectedDoc.attachments && selectedDoc.attachments.length > 0 ? (
@@ -1353,47 +1361,49 @@ export const Inbox = () => {
                         setReviewAction('');
                         setReviewComments('');
                       }}
-                      className={`${containerBg} rounded-xl p-4 flex items-center justify-between group hover:brightness-110 transition-all cursor-pointer`}
+                      className={`${containerBg} rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 group hover:brightness-110 transition-all cursor-pointer overflow-hidden`}
                     >
-                      <div className="flex items-center gap-4">
-                        <div className={`w-10 h-10 ${iconStyle} rounded-lg flex items-center justify-center`}>
-                          <Paperclip size={20} />
+                      <div className="flex items-start sm:items-center gap-2.5 sm:gap-4 min-w-0 flex-1 w-full sm:w-auto">
+                        <div className={`w-9 h-9 sm:w-10 sm:h-10 ${iconStyle} rounded-lg flex items-center justify-center shrink-0 mt-0.5 sm:mt-0`}>
+                          <Paperclip size={18} />
                         </div>
-                        <div>
-                          <div className="mb-1 flex flex-wrap items-center gap-2">
-                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${badgeStyle}`}>
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-1 flex flex-wrap items-center gap-1.5 sm:gap-2">
+                            <span className={`text-[8px] sm:text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${badgeStyle}`}>
                               {isOsas ? 'OSAS Requirement' : 'LOCAL Requirement'}
                             </span>
                           </div>
-                          <p className={`${textColor} font-semibold text-sm`}>{fileName}</p>
-                          <p className={`${subtitleColor} text-[10px] uppercase font-bold mt-0.5`}>
+                          <p className={`${textColor} font-semibold text-xs sm:text-sm break-all line-clamp-2 max-w-full sm:max-w-md`} title={fileName}>{fileName}</p>
+                          <p className={`${subtitleColor} text-[9px] sm:text-[10px] uppercase font-bold mt-0.5`}>
                             {isForwardedPhase ? (isOsas ? '✓ Forwarded to Main Campus' : '✓ Retained Locally') : 'Attached Document'}
                           </p>
                           {returnedForDisplay && (locallyReturned[file.id]?.comment || fileLog?.comment) && (
-                            <p className="mt-1 text-xs italic font-medium opacity-90 max-w-lg">
+                            <p className="mt-1 text-[11px] sm:text-xs italic font-medium opacity-90 max-w-lg">
                               {(fileLog?.users?.full_name || fileLog?.users?.role || user?.role || 'Reviewer')}'s Comment: "{locallyReturned[file.id]?.comment || fileLog?.comment}"
                             </p>
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 pointer-events-auto md:pointer-events-none md:group-hover:pointer-events-auto transition-all">
+                      <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
                         <button 
+                          type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             setPreviewFile(file);
                             setReviewAction('');
                             setReviewComments('');
                           }}
-                          className="bg-secondary-gold text-white px-6 py-2 rounded-lg text-xs font-bold hover:brightness-110 transition-all shadow-lg inline-block text-center"
+                          className="bg-secondary-gold text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-bold hover:brightness-110 transition-all shadow-md text-center shrink-0"
                         >
                           view
                         </button>
                         <button 
+                          type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             handleDownload(file.file_url, fileName);
                           }}
-                          className="bg-secondary-gold text-white px-6 py-2 rounded-lg text-xs font-bold hover:brightness-110 transition-all shadow-lg inline-block text-center"
+                          className="bg-secondary-gold text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-bold hover:brightness-110 transition-all shadow-md text-center shrink-0"
                         >
                           Download
                         </button>
@@ -1858,7 +1868,7 @@ export const Inbox = () => {
   return (
     <div className="animate-in fade-in slide-in-from-bottom-6 duration-1000 text-gray-800">
       {/* Page Header */}
-      <div className="flex items-end justify-between mb-8 border-b border-gray-100 pb-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between mb-6 sm:mb-8 border-b border-gray-100 pb-4 sm:pb-6 gap-4">
         <PageHeader 
           title="Inbox" 
           subtitle="Review and manage your institutional documents" 
@@ -1867,16 +1877,16 @@ export const Inbox = () => {
         />
 
         {!isOsoStaff && (
-          <div className="flex p-1 bg-gray-100/50 rounded-xl border border-gray-100">
+          <div className="flex p-1 bg-gray-100/50 rounded-xl border border-gray-100 self-start sm:self-auto shrink-0">
             <button 
               onClick={() => { setViewMode('inbox'); setSelectedDocs([]); }}
-              className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${viewMode === 'inbox' ? 'bg-white text-primary-green shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              className={`px-4 sm:px-5 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all ${viewMode === 'inbox' ? 'bg-white text-primary-green shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
             >
               All Messages
             </button>
             <button 
               onClick={() => { setViewMode('archive'); setSelectedDocs([]); }}
-              className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${viewMode === 'archive' ? 'bg-white text-primary-green shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              className={`px-4 sm:px-5 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all ${viewMode === 'archive' ? 'bg-white text-primary-green shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
             >
               Archive
             </button>
@@ -1885,18 +1895,18 @@ export const Inbox = () => {
       </div>
 
       {/* Top Header Bar */}
-      <div className="flex items-center justify-between mb-6 gap-4">
-        <div className="flex items-center gap-4 flex-1">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between mb-6 gap-3 sm:gap-4">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 w-full">
           <button 
             onClick={fetchSubmissions}
-            className="flex items-center gap-2 text-gray-400 hover:text-primary-green transition-all font-medium group text-sm"
+            className="flex items-center gap-2 text-gray-400 hover:text-primary-green transition-all font-medium group text-sm self-start sm:self-auto shrink-0"
           >
             <RefreshCcw size={16} className="group-hover:rotate-180 transition-transform duration-700" />
             <span>Sync List</span>
           </button>
           
           {/* Search Box */}
-          <div className="relative w-80">
+          <div className="relative w-full sm:w-80">
             <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400 pointer-events-none">
               <Search size={16} />
             </span>
@@ -1910,7 +1920,7 @@ export const Inbox = () => {
           </div>
         </div>
         
-        <div className="text-xs font-semibold uppercase tracking-wider py-2 px-4 bg-gray-50 text-gray-400 rounded-xl border border-gray-100">
+        <div className="text-xs font-semibold uppercase tracking-wider py-2 px-3 sm:px-4 bg-gray-50 text-gray-400 rounded-xl border border-gray-100 self-start sm:self-auto shrink-0">
           <span className="text-secondary-gold font-bold">{filteredData.filter(d => d.status === 'Pending' || d.status === 'OSO Staff Review' || d.status === 'SDS coordinator review').length} Pending</span>
           <span className="text-gray-300 mx-2">•</span>
           <span>{filteredData.length} Total</span>
@@ -1919,7 +1929,7 @@ export const Inbox = () => {
 
       {/* Table Container */}
       <div className="bg-white border border-gray-100 rounded-3xl overflow-hidden shadow-sm mb-10 text-gray-800">
-        <div className="overflow-x-auto">
+        <div>
           {loading && currentData.length === 0 ? (
             <div className="flex flex-col items-center justify-center min-h-[300px] gap-4">
               <div className="w-12 h-12 border-4 border-primary-green border-t-transparent rounded-full animate-spin"></div>
@@ -1929,11 +1939,11 @@ export const Inbox = () => {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-[#073c2d] text-white">
-                  <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Document Details</th>
-                  <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Sender</th>
-                  <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider text-center">Type</th>
-                  <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Received At</th>
-                  <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider text-center">Status</th>
+                  <th className="px-3 sm:px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Document Details</th>
+                  <th className="hidden sm:table-cell px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Sender</th>
+                  <th className="hidden md:table-cell px-6 py-4 font-semibold text-[11px] uppercase tracking-wider text-center">Type</th>
+                  <th className="hidden lg:table-cell px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Received At</th>
+                  <th className="px-3 sm:px-6 py-4 font-semibold text-[11px] uppercase tracking-wider text-center">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -1945,29 +1955,37 @@ export const Inbox = () => {
                     } hover:bg-gray-50/50`}
                     onClick={() => { logDocumentViewed(item); setSelectedDoc(item); }}
                   >
-                    <td className="px-6 py-5">
-                      <div className="flex items-center gap-3">
+                    <td className="px-3 sm:px-6 py-4 sm:py-5">
+                      <div className="flex items-center gap-2 sm:gap-3">
                         {item.isNew && (
                           <div className="relative flex-shrink-0">
                             <div className="w-2.5 h-2.5 bg-amber-500 rounded-full shadow-sm"></div>
                             <div className="absolute inset-0 w-2.5 h-2.5 bg-amber-500 rounded-full animate-ping opacity-75"></div>
                           </div>
                         )}
-                        <div>
-                          <p className="font-semibold text-gray-800 group-hover:text-primary-green transition-colors uppercase text-sm">
-                            {item.isActivityProposal ? item.title : `${item.org} ${item.type} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
-                          </p>
-                          <p className="text-[10px] text-gray-400 font-mono mt-0.5 tracking-tighter uppercase">{item.ref}</p>
+                        <div className="min-w-0 flex-1">
+                          {(() => {
+                            const fullTitle = item.isActivityProposal ? item.title : `${item.org} ${item.type} ${activeSy ? activeSy.name : ''}`.toUpperCase();
+                            return (
+                              <p 
+                                className="font-semibold text-gray-800 group-hover:text-primary-green transition-colors uppercase text-xs sm:text-sm leading-tight line-clamp-2 max-w-[180px] min-[400px]:max-w-[240px] sm:max-w-sm md:max-w-md lg:max-w-lg"
+                                title={fullTitle}
+                              >
+                                {fullTitle}
+                              </p>
+                            );
+                          })()}
+                          <p className="text-[10px] text-gray-400 font-mono mt-0.5 tracking-tighter uppercase truncate">{item.ref}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-5">
+                    <td className="hidden sm:table-cell px-6 py-5">
                       <div>
                         <p className="text-sm font-semibold text-gray-800 uppercase tracking-tight">{item.org}</p>
                         <p className="text-[10px] text-gray-400 font-medium tracking-tight">By: {item.submitter_name}</p>
                       </div>
                     </td>
-                    <td className="px-6 py-5 text-center">
+                    <td className="hidden md:table-cell px-6 py-5 text-center">
                       <span className="inline-block px-4 py-1 border border-gray-100 text-gray-500 text-[10px] font-semibold rounded-lg bg-white shadow-sm group-hover:border-primary-green/20 group-hover:text-primary-green transition-all uppercase">
                         {item.type}
                       </span>
@@ -1977,15 +1995,15 @@ export const Inbox = () => {
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-5 text-sm text-gray-500 font-medium">
+                    <td className="hidden lg:table-cell px-6 py-5 text-sm text-gray-500 font-medium">
                       {item.time}
                     </td>
-                    <td className="px-6 py-5 text-center">
+                    <td className="px-3 sm:px-6 py-4 sm:py-5 text-center">
                       <span 
                         style={{
                           backgroundColor: getStatusColor(item.status)
                         }}
-                        className="px-4 py-1.5 rounded-full text-[10px] font-bold shadow-sm inline-block min-w-[120px] transition-all uppercase text-white"
+                        className="px-2.5 sm:px-4 py-1.5 rounded-full text-[9px] sm:text-[10px] font-bold shadow-sm inline-block min-w-[90px] sm:min-w-[120px] transition-all uppercase text-white"
                       >
                         {item.status}
                       </span>

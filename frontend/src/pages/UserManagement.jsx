@@ -1052,39 +1052,39 @@ const UserManagement = () => {
                 <p>Loading users from Supabase...</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <div>
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-[#073c2d] text-white border-b border-[#073c2d]">
-                      <th className="px-6 py-4 font-semibold text-white text-sm">User Details</th>
-                      <th className="px-6 py-4 font-semibold text-white text-sm">Role</th>
-                      <th className="px-6 py-4 font-semibold text-white text-sm">Adviser</th>
-                      <th className="px-6 py-4 font-semibold text-white text-sm text-center">Members</th>
-                      <th className="px-6 py-4 font-semibold text-white text-sm">Status</th>
-                      <th className="px-6 py-4 font-semibold text-white text-sm">Joined</th>
-                      <th className="px-6 py-4 font-semibold text-white text-sm text-right">Actions</th>
+                      <th className="px-3 sm:px-6 py-4 font-semibold text-white text-xs sm:text-sm">User Details</th>
+                      <th className="hidden sm:table-cell px-6 py-4 font-semibold text-white text-sm">Role</th>
+                      <th className="hidden md:table-cell px-6 py-4 font-semibold text-white text-sm">Adviser</th>
+                      <th className="hidden lg:table-cell px-6 py-4 font-semibold text-white text-sm text-center">Members</th>
+                      <th className="px-3 sm:px-6 py-4 font-semibold text-white text-xs sm:text-sm">Status</th>
+                      <th className="hidden lg:table-cell px-6 py-4 font-semibold text-white text-sm">Joined</th>
+                      <th className="px-3 sm:px-6 py-4 font-semibold text-white text-xs sm:text-sm text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {filteredUsers.length > 0 ? filteredUsers.map((user) => (
                       <tr key={user.id} className="hover:bg-gray-50/80 transition-colors group cursor-pointer" onClick={() => handleProfileClick(user)}>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
+                        <td className="px-3 sm:px-6 py-4">
+                          <div className="flex items-center gap-2 sm:gap-3">
                             <Avatar
                               profileImage={user.profile_image}
                               name={user.role === 'org-president' ? (user.org_name || user.full_name) : user.full_name}
-                              className="w-10 h-10 rounded-full shadow-sm"
+                              className="w-8 h-8 sm:w-10 sm:h-10 rounded-full shadow-sm shrink-0"
                               fallbackClassName={`text-white ${user.role === 'org-president' ? 'bg-secondary-gold text-primary-green' : 'bg-primary-green'}`}
                             />
                             <div className="min-w-0">
                               <div 
-                                className="font-semibold text-gray-800 truncate max-w-[180px]" 
+                                className="font-semibold text-gray-800 truncate max-w-[120px] sm:max-w-[180px] text-xs sm:text-sm" 
                                 title={user.role === 'org-president' ? (user.org_name || user.full_name) : user.full_name}
                               >
                                 {user.role === 'org-president' ? (user.org_name || user.full_name) : user.full_name}
                               </div>
                               <div 
-                                className="text-[10px] text-gray-400 font-mono truncate max-w-[180px]"
+                                className="text-[10px] text-gray-400 font-mono truncate max-w-[120px] sm:max-w-[180px]"
                                 title={user.role === 'org-president' ? user.full_name : ''}
                               >
                                 {user.role === 'org-president' ? (
@@ -1094,51 +1094,51 @@ const UserManagement = () => {
                                 )}
                               </div>
                               {user.contact_no && (
-                                <div className="text-[11px] text-gray-500 font-medium mt-0.5 flex items-center gap-1 truncate max-w-[180px]">
+                                <div className="text-[11px] text-gray-500 font-medium mt-0.5 flex items-center gap-1 truncate max-w-[120px] sm:max-w-[180px]">
                                   <span>📞 {user.contact_no}</span>
                                 </div>
                               )}
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="hidden sm:table-cell px-6 py-4">
                           <span className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-orange-100 text-orange-700">
                             {user.role}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-600 max-w-[150px] truncate" title={user.adviser_name || ''}>
+                        <td className="hidden md:table-cell px-6 py-4 text-sm text-gray-600 max-w-[150px] truncate" title={user.adviser_name || ''}>
                           {user.adviser_name || <span className="text-gray-300">—</span>}
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-600 text-center font-mono">
+                        <td className="hidden lg:table-cell px-6 py-4 text-sm text-gray-600 text-center font-mono">
                           {user.no_member || <span className="text-gray-300">—</span>}
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-3 sm:px-6 py-4">
                           <div className="flex items-center gap-1.5">
                             <div className={`w-1.5 h-1.5 rounded-full ${user.status?.startsWith('Suspended') ? 'bg-red-500' :
                               user.status === 'Inactive' ? 'bg-gray-400' : 'bg-green-500'
                               }`}></div>
-                            <span className="text-sm text-gray-600">
+                            <span className="text-xs sm:text-sm text-gray-600">
                               {user.status?.startsWith('Suspended') ? 'Suspended' : (user.status || 'Active')}
                             </span>
                           </div>
                         </td>
-                        <td className="px-6 py-4 text-gray-400 text-xs">
+                        <td className="hidden lg:table-cell px-6 py-4 text-gray-400 text-xs">
                           {formatDetailDate(user.joined_date || user.created_at)}
                         </td>
-                        <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex justify-end gap-2">
+                        <td className="px-3 sm:px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex justify-end gap-1.5 sm:gap-2">
                             <button
                               onClick={() => handleEditClick(user)}
-                              className="p-2 text-gray-400 hover:text-blue-600 transition-colors bg-gray-50 rounded-lg hover:bg-blue-50"
+                              className="p-1.5 sm:p-2 text-gray-400 hover:text-blue-600 transition-colors bg-gray-50 rounded-lg hover:bg-blue-50"
                             >
-                              <Pencil size={16} />
+                              <Pencil size={14} className="sm:w-4 sm:h-4" />
                             </button>
                             {user.role !== 'admin' && (
                               <button
                                 onClick={() => handleDeleteClick(user)}
-                                className="p-2 text-gray-400 hover:text-red-600 transition-colors bg-gray-50 rounded-lg hover:bg-red-50"
+                                className="p-1.5 sm:p-2 text-gray-400 hover:text-red-600 transition-colors bg-gray-50 rounded-lg hover:bg-red-50"
                               >
-                                <Trash2 size={16} />
+                                <Trash2 size={14} className="sm:w-4 sm:h-4" />
                               </button>
                             )}
                           </div>

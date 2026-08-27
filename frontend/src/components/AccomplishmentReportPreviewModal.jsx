@@ -384,44 +384,59 @@ const AccomplishmentReportPreviewModal = ({
 
   return (
     <div
-      className="fixed inset-0 bg-slate-900/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm"
+      className="fixed inset-0 bg-slate-900/85 z-[999999] flex flex-col items-center justify-start pt-2 sm:pt-4 pb-2 sm:pb-4 px-2 sm:px-4 backdrop-blur-md overflow-hidden"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-white rounded-3xl max-w-[1000px] w-full h-[95vh] shadow-2xl border border-gray-100 overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+      {/* ALWAYS VISIBLE FLOATING SOLID RED CLOSE BUTTON */}
+      <button
+        onClick={onClose}
+        className="fixed top-2 right-2 sm:top-4 sm:right-4 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white p-3 rounded-full shadow-2xl z-[1000000] transition-all hover:scale-110 flex items-center justify-center cursor-pointer border-2 border-white"
+        title="Close modal"
+        aria-label="Close modal"
+      >
+        <X size={24} className="stroke-[3]" />
+      </button>
 
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 flex-none bg-white z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
-              <Edit3 size={20} />
+      <div className="bg-white rounded-2xl sm:rounded-3xl max-w-[1000px] w-full h-[96vh] sm:h-[95vh] shadow-2xl border border-gray-100 overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+
+        {/* Sticky Header Bar */}
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-3 sm:px-6 py-2.5 sm:py-4 flex items-center justify-between gap-2 shrink-0 z-50 w-full shadow-xs">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center shrink-0">
+              <Edit3 size={16} className="sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <h3 className="text-lg font-bold text-gray-800">Advanced Document Editor</h3>
-              <p className="text-xs font-medium text-gray-500">Hover over Header/Footer to change images</p>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-xs sm:text-lg font-bold text-gray-800 truncate">Accomplishment Report</h3>
+              <p className="text-[10px] sm:text-xs font-medium text-gray-500 hidden sm:block">Hover over Header/Footer to change images</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={handlePrint} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-sm hover:shadow-md">
-              <Printer size={16} />
-              Print / Save as PDF
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={handlePrint} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl text-[11px] sm:text-sm font-bold transition-all shadow-md">
+              <Printer size={15} />
+              <span>Print / Save as PDF</span>
             </button>
-            <button onClick={onClose} className="rounded-full p-2 text-gray-400 hover:bg-gray-100 transition-colors ml-2">
-              <X size={20} />
+            <button 
+              onClick={onClose} 
+              className="flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl text-[11px] sm:text-sm font-black transition-all shadow-md shrink-0 cursor-pointer" 
+              title="Close modal"
+            >
+              <X size={18} className="stroke-[3]" />
+              <span>CLOSE</span>
             </button>
           </div>
         </div>
 
         {/* Editor Area Wrapper */}
-        <div className="flex-1 w-full bg-gray-200 overflow-y-auto p-4 md:p-8 custom-scrollbar">
+        <div className="flex-1 w-full bg-gray-200 overflow-auto p-2 sm:p-4 md:p-8 custom-scrollbar">
 
           <input type="file" ref={headerInputRef} accept="image/*" className="hidden" onChange={e => handleImageUpload(e, 'header')} />
           <input type="file" ref={footerInputRef} accept="image/*" className="hidden" onChange={e => handleImageUpload(e, 'footer')} />
 
           {/* Paper Container */}
           <div
-            className="max-w-[794px] mx-auto min-h-[1123px] flex flex-col relative bg-white"
+            className="w-[794px] max-w-full sm:max-w-[794px] shrink-0 mx-auto min-h-[1123px] flex flex-col relative bg-white"
             style={{
               boxShadow: '0 0 20px rgba(0,0,0,0.15)'
             }}

@@ -171,12 +171,12 @@ const SubmissionTimeline = ({
   return (
     <>
     <div className={className}>
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h4 className="text-sm font-bold text-gray-800 uppercase tracking-wider">{title}</h4>
-          <p className="text-xs text-gray-400 mt-1">{subtitle}</p>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-8">
+        <div className="min-w-0 flex-1">
+          <h4 className="text-sm font-bold text-gray-800 uppercase tracking-wider truncate max-w-sm sm:max-w-md" title={title}>{title}</h4>
+          <p className="text-xs text-gray-400 mt-1 truncate max-w-sm sm:max-w-md" title={subtitle}>{subtitle}</p>
         </div>
-        <span className="px-3 py-1 bg-white border border-gray-200 text-gray-400 text-[10px] font-bold rounded-lg uppercase tracking-wider shadow-sm">
+        <span className="px-3 py-1 bg-white border border-gray-200 text-gray-400 text-[10px] font-bold rounded-lg uppercase tracking-wider shadow-sm shrink-0">
           {historyCount} History Logs
         </span>
       </div>
@@ -245,23 +245,29 @@ const SubmissionTimeline = ({
                 </div>
 
                 <div
-                  className={`rounded-2xl p-5 border shadow-sm transition-shadow ${
+                  className={`rounded-2xl p-4 sm:p-5 border shadow-sm transition-shadow overflow-hidden ${
                     isPending
                       ? 'bg-slate-50/80 border-dashed border-slate-300'
                       : 'bg-white border-gray-200 hover:shadow-md'
                   }`}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                    <div className="flex items-center gap-3">
-                      <span className={`text-sm font-bold ${isPending ? 'text-slate-500' : 'text-gray-800'}`}>
+                    <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                      <span 
+                        className={`text-xs sm:text-sm font-bold truncate max-w-[150px] sm:max-w-[260px] md:max-w-md ${isPending ? 'text-slate-500' : 'text-gray-800'}`}
+                        title={actor.name}
+                      >
                         {actor.name}
                       </span>
-                      <span className="px-2 py-0.5 bg-gray-100 text-gray-400 text-[10px] font-bold rounded uppercase tracking-wider">
+                      <span 
+                        className="px-2 py-0.5 bg-gray-100 text-gray-400 text-[9px] sm:text-[10px] font-bold rounded uppercase tracking-wider shrink-0 truncate max-w-[120px] sm:max-w-none"
+                        title={actor.role}
+                      >
                         {actor.role}
                       </span>
                     </div>
                     <span
-                      className={`text-[10px] font-semibold ${
+                      className={`text-[9px] sm:text-[10px] font-semibold shrink-0 ${
                         isPending ? 'text-slate-400 uppercase tracking-wider' : 'text-gray-400'
                       }`}
                     >
@@ -270,12 +276,12 @@ const SubmissionTimeline = ({
                   </div>
 
                   <div className="flex flex-wrap gap-2 mb-3">
-                    <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase ${badgeClass}`}>
+                    <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase shrink-0 ${badgeClass}`}>
                       {isPending ? 'pending' : formatLogActionLabel(log)}
                     </span>
 
                     {log.attachment_id && (
-                      <span className="px-2 py-0.5 bg-slate-50 border border-slate-100 text-slate-500 text-[10px] font-bold rounded uppercase flex items-center gap-1">
+                      <span className="px-2 py-0.5 bg-slate-50 border border-slate-100 text-slate-500 text-[10px] font-bold rounded uppercase flex items-center gap-1 shrink-0">
                         <Paperclip size={10} /> Attachment
                       </span>
                     )}
@@ -286,7 +292,7 @@ const SubmissionTimeline = ({
                       <button
                         type="button"
                         onClick={() => handleOpenProof(log)}
-                        className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700 hover:bg-emerald-100"
+                        className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700 hover:bg-emerald-100 shrink-0"
                       >
                         <Eye size={12} /> View proof
                       </button>
@@ -294,7 +300,7 @@ const SubmissionTimeline = ({
                       <button
                         type="button"
                         onClick={onViewDeliveryProof}
-                        className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700 hover:bg-emerald-100"
+                        className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700 hover:bg-emerald-100 shrink-0"
                       >
                         <Eye size={12} /> View Proof of Delivery
                       </button>
@@ -305,7 +311,7 @@ const SubmissionTimeline = ({
 
                   {visibleComment ? (
                     <div
-                      className={`rounded-xl p-4 text-xs font-medium border italic leading-relaxed whitespace-pre-line ${
+                      className={`mt-3 rounded-xl p-3 sm:p-4 text-xs font-medium border italic leading-relaxed whitespace-pre-line break-words max-h-60 overflow-y-auto ${
                         isPending
                           ? 'bg-white/60 text-slate-500 border-slate-200'
                           : 'bg-gray-50 text-gray-600 border-gray-100'

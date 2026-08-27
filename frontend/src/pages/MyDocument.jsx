@@ -1125,7 +1125,11 @@ export const MyDocuments = () => {
     if (!selectedDoc?.id) return;
 
     const channel = supabase
-      .channel(`doc-updates-${selectedDoc.id}`)
+      .channel(`doc-updates-${selectedDoc.id}`, {
+        config: {
+          broadcast: { self: true }
+        }
+      })
       .on(
         'postgres_changes',
         {
@@ -1146,6 +1150,13 @@ export const MyDocuments = () => {
           table: 'submissions',
           filter: `id=eq.${selectedDoc.id}`
         },
+        () => {
+          refreshSelectedDoc(selectedDoc.id);
+        }
+      )
+      .on(
+        'broadcast',
+        { event: 'retrieval_status_changed' },
         () => {
           refreshSelectedDoc(selectedDoc.id);
         }
@@ -1398,6 +1409,16 @@ export const MyDocuments = () => {
       showToast('Document marked as retrieved!');
       await refreshSelectedDoc(selectedDoc.id);
       await fetchTimelineLogs(selectedDoc.id);
+      window.dispatchEvent(new CustomEvent('document-status-changed'));
+
+      try {
+        const channel = supabase.channel(`doc-updates-${selectedDoc.id}`);
+        await channel.send({
+          type: 'broadcast',
+          event: 'retrieval_status_changed',
+          payload: { submissionId: selectedDoc.id, action: 'document_retrieved' }
+        });
+      } catch (_) {}
     } catch (err) {
       console.error('Error marking document retrieved:', err);
       showToast(err.message || 'Failed to mark as retrieved.');
@@ -1415,6 +1436,17 @@ export const MyDocuments = () => {
 
       showToast('Retrieval confirmed!');
       await fetchTimelineLogs(selectedDoc.id);
+      window.dispatchEvent(new CustomEvent('document-status-changed'));
+
+      try {
+        const channel = supabase.channel(`doc-updates-${selectedDoc.id}`);
+        await channel.send({
+          type: 'broadcast',
+          event: 'retrieval_status_changed',
+          payload: { submissionId: selectedDoc.id, action: 'confirm_retrieval' }
+        });
+      } catch (_) {}
+
       setSelectedDoc(null);
       await fetchHandledLogs();
     } catch (err) {
@@ -2250,45 +2282,45 @@ export const MyDocuments = () => {
             <ChevronLeft size={16} />
             <span>Back to Documents</span>
           </button>
-
-          <div className="mb-8 rounded-[2rem] border border-gray-100 bg-gradient-to-br from-white to-gray-50/60 px-8 py-7 shadow-sm">
-            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-5">
+          <div className="mb-6 sm:mb-8 rounded-2xl sm:rounded-[2rem] border border-gray-100 bg-gradient-to-br from-white to-gray-50/60 px-4 sm:px-8 py-4 sm:py-7 shadow-sm">
+            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 sm:gap-5">
               <div>
-                <p className="text-[11px] font-mono uppercase tracking-widest text-gray-400">
+                <p className="text-[10px] sm:text-[11px] font-mono uppercase tracking-widest text-gray-400">
                   {selectedDoc.ref}
                 </p>
-                <h1 className="mt-1 text-2xl md:text-3xl font-extrabold tracking-tight text-gray-900">
+                <h1 
+                  className="mt-1 text-lg sm:text-2xl md:text-3xl font-extrabold tracking-tight text-gray-900 break-all line-clamp-2 max-w-3xl"
+                  title={isActivityProposal ? docTitle : `${selectedDoc.sender} ${selectedDoc.type} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
+                >
                   {isActivityProposal ? docTitle : `${selectedDoc.sender} ${selectedDoc.type} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
                 </h1>
                 {isActivityProposal && (
-                  <p className="mt-2 text-sm font-semibold text-gray-500">Activity Proposal Form</p>
+                  <p className="mt-1 sm:mt-2 text-xs sm:text-sm font-semibold text-gray-500">Activity Proposal Form</p>
                 )}
               </div>
-
-              {/* Removed redundant status/date pill row (already in Document Details). */}
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2.3fr)_minmax(0,1fr)] gap-8 items-start">
-            <div className={isActivityProposal ? "bg-white rounded-[2.5rem] shadow-sm border border-gray-100 p-10 space-y-7" : "space-y-7"}>
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2.3fr)_minmax(0,1fr)] gap-6 sm:gap-8 items-start">
+            <div className={isActivityProposal ? "bg-white rounded-2xl sm:rounded-[2.5rem] shadow-sm border border-gray-100 p-3.5 sm:p-8 md:p-10 space-y-5 sm:space-y-7 text-gray-800" : "space-y-5 sm:space-y-7 text-gray-800"}>
 
               {isActivityProposal && (
                 <>
-                  <div className="space-y-4 text-gray-700 max-w-4xl">
-                <div className="flex gap-2">
-                  <span className="font-bold min-w-[200px]">Person In-Charge:</span>
-                  <span>{selectedDoc.pic || '—'}</span>
+                  <div className="space-y-3 sm:space-y-4 text-xs sm:text-sm text-gray-700 max-w-4xl">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                  <span className="font-bold sm:min-w-[200px] shrink-0">Person In-Charge:</span>
+                  <span className="break-all">{selectedDoc.pic || '—'}</span>
                 </div>
-                <div className="flex gap-2">
-                  <span className="font-bold min-w-[200px]">Student ID No.:</span>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                  <span className="font-bold sm:min-w-[200px] shrink-0">Student ID No.:</span>
                   <span>{selectedDoc.studentId || '—'}</span>
                 </div>
-                <div className="flex gap-2">
-                  <span className="font-bold min-w-[200px]">Contact Number of Person-in-Charge:</span>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                  <span className="font-bold sm:min-w-[200px] shrink-0">Contact Number of Person-in-Charge:</span>
                   <span>{selectedDoc.contact || '—'}</span>
                 </div>
-                <div className="flex gap-2">
-                  <span className="font-bold min-w-[200px]">Target Date and Time:</span>
+                <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-2">
+                  <span className="font-bold sm:min-w-[200px] shrink-0">Target Date and Time:</span>
                   <span>
                     {selectedDoc.schedules && selectedDoc.schedules.length > 0 ? (
                       selectedDoc.schedules.map((s, idx) => {
@@ -2319,16 +2351,16 @@ export const MyDocuments = () => {
                     )}
                   </span>
                 </div>
-                <div className="flex gap-2">
-                  <span className="font-bold min-w-[200px]">Duration:</span>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                  <span className="font-bold sm:min-w-[200px] shrink-0">Duration:</span>
                   <span>{calculateProposalDuration(selectedDoc.proposalDetails || selectedDoc.raw?.activity_proposal_details || { schedules: selectedDoc.schedules, duration: selectedDoc.duration, is_indefinite_end_time: selectedDoc.is_indefinite_end_time })}</span>
                 </div>
-                <div className="flex gap-2">
-                  <span className="font-bold min-w-[200px]">Number of Students Involved:</span>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                  <span className="font-bold sm:min-w-[200px] shrink-0">Number of Students Involved:</span>
                   <span>{selectedDoc.students || '—'}</span>
                 </div>
-                <div className="flex gap-2">
-                  <span className="font-bold min-w-[200px]">Nature of Activity:</span>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                  <span className="font-bold sm:min-w-[200px] shrink-0">Nature of Activity:</span>
                   <span>{selectedDoc.nature || '—'}</span>
                 </div>
               </div>
@@ -2336,36 +2368,36 @@ export const MyDocuments = () => {
               <div className="mt-6 space-y-4">
                 {isActivityProposal && (
                   <div>
-                    <p className="font-bold text-sm mb-2">Objectives of the Activity:</p>
-                    <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100">
+                    <p className="font-bold text-xs sm:text-sm mb-2">Objectives of the Activity:</p>
+                    <div className="bg-gray-50 p-4 sm:p-6 rounded-2xl border border-gray-100">
                       {(() => {
                         const objList = parseObjectivesList(selectedDoc.objectives);
                         if (objList.length > 0) {
                           return (
-                            <ul className="list-disc pl-5 space-y-1 text-sm text-gray-700 font-medium">
+                            <ul className="list-disc pl-5 space-y-1 text-xs sm:text-sm text-gray-700 font-medium">
                               {objList.map((obj, i) => <li key={i}>{obj}</li>)}
                             </ul>
                           );
                         }
-                        return <p className="text-gray-700 text-sm leading-relaxed">{selectedDoc.objectives || '-'}</p>;
+                        return <p className="text-gray-700 text-xs sm:text-sm leading-relaxed">{selectedDoc.objectives || '-'}</p>;
                       })()}
                     </div>
                   </div>
                 )}
 
                 <div>
-                  <p className="font-bold text-sm mb-1">
+                  <p className="font-bold text-xs sm:text-sm mb-1">
                     Target Audience / Participants: <span className="font-normal">BulSUans Only</span>
                   </p>
                 </div>
 
                 <div>
-                  <p className="font-bold text-sm mb-2">
+                  <p className="font-bold text-xs sm:text-sm mb-2">
                     Describe how this activity will satisfy the needs of the organization and how it will help the organization achieve its goals:
                   </p>
-                  <div className="bg-gray-50 p-6 rounded-2xl text-sm leading-relaxed text-gray-700 border border-gray-100">
+                  <div className="bg-gray-50 p-4 sm:p-6 rounded-2xl text-xs sm:text-sm leading-relaxed text-gray-700 border border-gray-100">
                     {isActivityProposal && selectedDoc.satisfy_goals && selectedDoc.satisfy_goals.length > 0 ? (
-                      <ol className="list-decimal pl-5 space-y-2">
+                      <ol className="list-decimal pl-5 space-y-1.5">
                         {selectedDoc.satisfy_goals.map((goal, idx) => (
                           <li key={idx}>{goal}</li>
                         ))}
@@ -2381,57 +2413,70 @@ export const MyDocuments = () => {
               </>
               )}
 
-              {/* Attached Files Section - Collapsible with Live Data (same design as old) */}
-              <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 mb-10 transition-all duration-500">
+              {/* Attached Files Section - Collapsible with Live Data */}
+              <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 mb-6 sm:mb-10 transition-all duration-500">
                 <button
                   onClick={() => setIsFilesOpen(!isFilesOpen)}
-                  className="w-full bg-[#525252] text-white px-8 py-4 flex items-center justify-between hover:brightness-110 transition-all outline-none"
+                  className="w-full bg-[#525252] text-white px-4 sm:px-8 py-3.5 sm:py-4 flex items-center justify-between hover:brightness-110 transition-all outline-none"
                 >
                   <div className="flex items-center gap-3">
-                    <Paperclip size={20} className="text-white opacity-80" />
+                    <Paperclip size={18} className="text-white opacity-80 sm:w-5 sm:h-5" />
                     <span className="text-xs font-bold uppercase tracking-widest">Attached File</span>
                   </div>
-                  <ChevronDown size={20} className={`transition-transform duration-500 ${isFilesOpen ? 'rotate-180' : ''}`} />
+                  <ChevronDown size={18} className={`transition-transform duration-500 ${isFilesOpen ? 'rotate-180' : ''}`} />
                 </button>
 
                 {isFilesOpen && (
-                  <div className="p-6 space-y-3 animate-in slide-in-from-top-4 duration-500">
+                  <div className="p-3.5 sm:p-6 space-y-3 animate-in slide-in-from-top-4 duration-500">
                     {attachments && attachments.length > 0 && (
-                      <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 mb-3">
-                        <button
-                          type="button"
-                          onClick={() => setDocDetailTabFilter('all')}
-                          className={`px-3 py-1.5 rounded-lg transition-all ${
-                            docDetailTabFilter === 'all'
-                              ? 'bg-emerald-600 text-white shadow-xs font-black'
-                              : 'text-gray-600 hover:text-gray-800'
-                          }`}
-                        >
-                          All ({attachments.length})
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDocDetailTabFilter('osas')}
-                          className={`px-3 py-1.5 rounded-lg transition-all ${
-                            docDetailTabFilter === 'osas'
-                              ? 'bg-emerald-600 text-white shadow-xs font-black'
-                              : 'text-gray-600 hover:text-gray-800'
-                          }`}
-                        >
-                          OSAS Requirements ({attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') === 'OSAS').length})
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDocDetailTabFilter('local')}
-                          className={`px-3 py-1.5 rounded-lg transition-all ${
-                            docDetailTabFilter === 'local'
-                              ? 'bg-emerald-600 text-white shadow-xs font-black'
-                              : 'text-gray-600 hover:text-gray-800'
-                          }`}
-                        >
-                          LOCAL Requirements ({attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') !== 'OSAS').length})
-                        </button>
-                      </div>
+                      <>
+                        <div className="hidden sm:flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 mb-3">
+                          <button
+                            type="button"
+                            onClick={() => setDocDetailTabFilter('all')}
+                            className={`px-3 py-1.5 rounded-lg transition-all ${
+                              docDetailTabFilter === 'all'
+                                ? 'bg-emerald-600 text-white shadow-xs font-black'
+                                : 'text-gray-600 hover:text-gray-800'
+                            }`}
+                          >
+                            All ({attachments.length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDocDetailTabFilter('osas')}
+                            className={`px-3 py-1.5 rounded-lg transition-all ${
+                              docDetailTabFilter === 'osas'
+                                ? 'bg-emerald-600 text-white shadow-xs font-black'
+                                : 'text-gray-600 hover:text-gray-800'
+                            }`}
+                          >
+                            OSAS Requirements ({attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') === 'OSAS').length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDocDetailTabFilter('local')}
+                            className={`px-3 py-1.5 rounded-lg transition-all ${
+                              docDetailTabFilter === 'local'
+                                ? 'bg-emerald-600 text-white shadow-xs font-black'
+                                : 'text-gray-600 hover:text-gray-800'
+                            }`}
+                          >
+                            LOCAL Requirements ({attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') !== 'OSAS').length})
+                          </button>
+                        </div>
+                        <div className="block sm:hidden w-full mb-3">
+                          <select
+                            value={docDetailTabFilter}
+                            onChange={(e) => setDocDetailTabFilter(e.target.value)}
+                            className="w-full bg-white border border-gray-200 text-emerald-700 font-bold text-xs rounded-xl p-2.5 shadow-sm outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer"
+                          >
+                            <option value="all">All ({attachments.length})</option>
+                            <option value="osas">OSAS Requirements ({attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') === 'OSAS').length})</option>
+                            <option value="local">LOCAL Requirements ({attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') !== 'OSAS').length})</option>
+                          </select>
+                        </div>
+                      </>
                     )}
 
                     {attachments && attachments.length > 0 ? (
@@ -2464,10 +2509,11 @@ export const MyDocuments = () => {
                         const isUnchangedApproved = isResubmittedVersion && existedInPreviousVersion && !isModifiedInResubmission;
 
                         const viewingLatestVersion = currentVersion?.id === selectedDoc.raw?.current_version_id;
-                        const docStatus = (viewingLatestVersion
-                          ? (selectedDoc.raw?.status || selectedDoc.status || '')
-                          : (currentVersion?.status || selectedDoc.raw?.status || selectedDoc.status || '')
-                        ).toLowerCase();
+                        const docStatus = String(
+                          viewingLatestVersion
+                            ? (selectedDoc.raw?.status || selectedDoc.status || '')
+                            : (currentVersion?.status || selectedDoc.raw?.status || selectedDoc.status || '')
+                          ).toLowerCase();
                         const isChairmanStage = docStatus === 'submitted' || docStatus === 'oso staff review' || docStatus === 'pending' || docStatus === 'returned';
                         const historicalChairmanVersion = !viewingLatestVersion && isChairmanStage;
 
@@ -2532,47 +2578,49 @@ export const MyDocuments = () => {
                               setReviewAction('');
                               setReviewComments('');
                             }}
-                            className={`${containerBg} rounded-xl p-4 flex items-center justify-between group hover:brightness-110 transition-all cursor-pointer`}
+                            className={`${containerBg} rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 group hover:brightness-110 transition-all cursor-pointer overflow-hidden`}
                           >
-                            <div className="flex items-center gap-4">
-                              <div className={`w-10 h-10 ${iconStyle} rounded-lg flex items-center justify-center shrink-0`}>
-                                <Paperclip size={20} />
+                            <div className="flex items-start sm:items-center gap-2.5 sm:gap-4 min-w-0 flex-1 w-full sm:w-auto">
+                              <div className={`w-9 h-9 sm:w-10 sm:h-10 ${iconStyle} rounded-lg flex items-center justify-center shrink-0 mt-0.5 sm:mt-0`}>
+                                <Paperclip size={18} />
                               </div>
-                              <div>
-                                <div className="mb-1 flex flex-wrap items-center gap-2">
-                                  <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${badgeStyle}`}>
+                              <div className="min-w-0 flex-1">
+                                <div className="mb-1 flex flex-wrap items-center gap-1.5 sm:gap-2">
+                                  <span className={`text-[8px] sm:text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${badgeStyle}`}>
                                     {isOsas ? 'OSAS Requirement' : 'LOCAL Requirement'}
                                   </span>
                                 </div>
-                                <p className={`${textColor} font-semibold text-sm`}>{fileName}</p>
-                                <p className={`${subtitleColor} text-[10px] uppercase font-bold mt-0.5`}>
+                                <p className={`${textColor} font-semibold text-xs sm:text-sm break-all line-clamp-2 max-w-full sm:max-w-md`} title={fileName}>{fileName}</p>
+                                <p className={`${subtitleColor} text-[9px] sm:text-[10px] uppercase font-bold mt-0.5`}>
                                   {isForwardedPhase ? (isOsas ? '✓ Forwarded to Main Campus' : '✓ Retained Locally') : 'Attached Document'}
                                 </p>
                                 {returnedForDisplay && fileLog?.comment && (
-                                  <p className="mt-1 text-xs italic font-medium opacity-90 max-w-lg">
+                                  <p className="mt-1 text-[11px] sm:text-xs italic font-medium opacity-90 max-w-lg">
                                     {(fileLog?.users?.full_name || fileLog?.users?.role || 'Reviewer')}'s Comment: "{fileLog.comment}"
                                   </p>
                                 )}
                               </div>
                             </div>
-                            <div className="flex items-center gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 pointer-events-auto md:pointer-events-none md:group-hover:pointer-events-auto transition-all">
+                            <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
                               <button
+                                type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setPreviewFile(file);
                                   setReviewAction('');
                                   setReviewComments('');
                                 }}
-                                className="bg-secondary-gold text-white px-6 py-2 rounded-lg text-xs font-bold hover:brightness-110 transition-all shadow-lg inline-block text-center"
+                                className="bg-secondary-gold text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-bold hover:brightness-110 transition-all shadow-md text-center shrink-0"
                               >
                                 view
                               </button>
                               <button
+                                type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleDownload(file.file_url, fileName);
                                 }}
-                                className="bg-secondary-gold text-white px-6 py-2 rounded-lg text-xs font-bold hover:brightness-110 transition-all shadow-lg inline-block text-center"
+                                className="bg-secondary-gold text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-bold hover:brightness-110 transition-all shadow-md text-center shrink-0"
                               >
                                 Download
                               </button>
@@ -2954,19 +3002,32 @@ export const MyDocuments = () => {
           )}
 
           {isAccomReportModalOpen && (
-            <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
-              <div className="bg-white rounded-3xl w-full max-w-2xl p-8 flex flex-col shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300 max-h-[80vh]">
-                <div className="flex items-center justify-between mb-6 border-b border-gray-100 pb-4">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-green-50 text-green-600 rounded-2xl flex items-center justify-center">
-                      <CheckCircle size={24} />
+            <div 
+              className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[100] flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-300"
+              onClick={(e) => { if (e.target === e.currentTarget) setIsAccomReportModalOpen(false); }}
+            >
+              {/* ALWAYS VISIBLE FLOATING RED CLOSE BUTTON */}
+              <button
+                onClick={() => setIsAccomReportModalOpen(false)}
+                className="fixed top-3 right-3 sm:top-5 sm:right-5 bg-red-600 hover:bg-red-700 text-white p-2.5 sm:p-3 rounded-full shadow-2xl z-[100001] transition-all hover:scale-110 flex items-center justify-center cursor-pointer border-2 border-white"
+                title="Close modal"
+                aria-label="Close modal"
+              >
+                <X size={22} className="stroke-[3]" />
+              </button>
+
+              <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-2xl p-4 sm:p-8 flex flex-col shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300 max-h-[90vh] sm:max-h-[80vh]">
+                <div className="flex items-center justify-between mb-4 sm:mb-6 border-b border-gray-100 pb-3 sm:pb-4">
+                  <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-green-50 text-green-600 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0">
+                      <CheckCircle size={22} className="sm:w-6 sm:h-6" />
                     </div>
-                    <div>
-                      <h3 className="font-bold text-gray-800 text-lg">Accomplishment Report Template</h3>
-                      <p className="text-gray-500 text-sm">Fill out the form below to generate your report</p>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-bold text-gray-800 text-sm sm:text-lg truncate">Accomplishment Report Template</h3>
+                      <p className="text-gray-500 text-xs sm:text-sm truncate">Fill out the form below to generate your report</p>
                     </div>
                   </div>
-                  <button onClick={() => setIsAccomReportModalOpen(false)} className="text-gray-400 hover:text-gray-800 p-2">
+                  <button onClick={() => setIsAccomReportModalOpen(false)} className="text-gray-400 hover:text-gray-800 p-2 shrink-0">
                     <X size={20} />
                   </button>
                 </div>
@@ -3410,15 +3471,18 @@ export const MyDocuments = () => {
               <ChevronLeft size={24} />
             </button>
             <div>
-              <h1 className="text-3xl font-bold text-gray-800 tracking-tight flex items-center gap-3">
+              <h1 
+                className="text-xl sm:text-3xl font-bold text-gray-800 tracking-tight flex flex-wrap items-center gap-2 sm:gap-3 break-all line-clamp-2 max-w-4xl"
+                title={selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title}
+              >
                 {selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title}
                 {allVersions.length > 0 && (
-                  <span className="px-3 py-1 bg-gray-100 text-gray-500 text-sm font-bold rounded-lg uppercase tracking-widest">
+                  <span className="px-2.5 sm:px-3 py-0.5 sm:py-1 bg-gray-100 text-gray-500 text-xs sm:text-sm font-bold rounded-lg uppercase tracking-widest shrink-0">
                     V{currentVersion?.version_number}
                   </span>
                 )}
               </h1>
-              <p className="text-gray-400 font-mono text-sm mt-1">{selectedDoc.ref}</p>
+              <p className="text-gray-400 font-mono text-xs sm:text-sm mt-1">{selectedDoc.ref}</p>
             </div>
           </div>
 
@@ -3454,15 +3518,15 @@ export const MyDocuments = () => {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10 text-gray-800">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-10 text-gray-800">
           {[
             { label: 'ORGANIZATION', value: selectedDoc.fullOrgName || selectedDoc.raw?.users?.org_name || selectedDoc.sender || '-', icon: <User size={18} /> },
             { label: 'TYPE', value: `${selectedDoc.type}`, icon: <FileText size={18} />, color: 'text-blue-500' },
             { label: 'STATUS', value: (isEffectiveReadyForRetrieval || selectedDoc.status === 'READY FOR RETRIEVAL' || selectedDoc.category === 'For Retrieval') ? 'FOR RETRIEVAL' : ((['ready for retrieval', 'waiting for accomplishment report', 'approved'].includes(selectedDoc.status?.toLowerCase())) ? 'APPROVED' : selectedDoc.status), icon: <Clock size={18} />, badge: true },
             { label: 'LAST ACTION', value: selectedDoc.lastAction || selectedDoc.submittedDate, icon: <Calendar size={18} /> }
           ].map((card, idx) => (
-            <div key={idx} className="bg-gray-100 p-6 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">
+            <div key={idx} className="bg-gray-100 p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 sm:mb-3">
                 {card.icon}
                 <span>{card.label}</span>
               </div>
@@ -3472,12 +3536,12 @@ export const MyDocuments = () => {
                     backgroundColor: `${getStatusColor(card.value)}1a`,
                     color: getStatusColor(card.value)
                   }}
-                  className="px-4 py-1.5 rounded-lg text-[10px] font-bold shadow-sm uppercase inline-block"
+                  className="px-3 sm:px-4 py-1 sm:py-1.5 rounded-lg text-[10px] font-bold shadow-sm uppercase inline-block"
                 >
                   {card.value}
                 </span>
               ) : (
-                <p className={`font-bold text-gray-800 ${card.color || ''}`}>{card.value}</p>
+                <p className={`font-bold text-xs sm:text-sm text-gray-800 ${card.color || ''}`}>{card.value}</p>
               )}
             </div>
           ))}
@@ -3485,29 +3549,32 @@ export const MyDocuments = () => {
 
         {/* Form Details Content card */}
         {isActivityProposal && (
-          <div className="bg-white rounded-[2.5rem] p-10 shadow-sm border border-gray-100 mb-8 text-gray-800">
-            <h2 className="text-xl font-bold text-gray-800 mb-8">{selectedDoc.type} Form Details</h2>
-            <div className="text-center mb-10">
-              <h3 className="text-lg font-bold text-gray-800">
+          <div className="bg-white rounded-2xl sm:rounded-[2.5rem] p-3.5 sm:p-8 md:p-10 shadow-sm border border-gray-100 mb-6 sm:mb-8 text-gray-800">
+            <h2 className="text-base sm:text-xl font-bold text-gray-800 mb-4 sm:mb-8">{selectedDoc.type} Form Details</h2>
+            <div className="text-center mb-6 sm:mb-10">
+              <h3 
+                className="text-sm sm:text-lg font-bold text-gray-800 break-all line-clamp-2 max-w-3xl mx-auto"
+                title={isActivityProposal ? (selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title) : `${selectedDoc.sender} ${selectedDoc.type} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
+              >
                 Document Title: {isActivityProposal ? (selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title) : `${selectedDoc.sender} ${selectedDoc.type} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
               </h3>
             </div>
 
-            <div className="space-y-4 text-gray-700 max-w-4xl">
-              <div className="flex gap-2">
-                <span className="font-bold min-w-[200px]">Person In-Charge:</span>
-                <span>{selectedDoc.pic}</span>
+            <div className="space-y-3 sm:space-y-4 text-xs sm:text-sm text-gray-700 max-w-4xl">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                <span className="font-bold sm:min-w-[200px] shrink-0">Person In-Charge:</span>
+                <span className="break-all">{selectedDoc.pic}</span>
               </div>
-              <div className="flex gap-2">
-                <span className="font-bold min-w-[200px]">Student ID No.:</span>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                <span className="font-bold sm:min-w-[200px] shrink-0">Student ID No.:</span>
                 <span>{selectedDoc.studentId}</span>
               </div>
-              <div className="flex gap-2">
-                <span className="font-bold min-w-[200px]">Contact Number:</span>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                <span className="font-bold sm:min-w-[200px] shrink-0">Contact Number:</span>
                 <span>{selectedDoc.contact}</span>
               </div>
-              <div className="flex gap-2">
-                <span className="font-bold min-w-[200px]">Target Date and Time:</span>
+              <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-2">
+                <span className="font-bold sm:min-w-[200px] shrink-0">Target Date and Time:</span>
                 <span>
                   {Array.isArray(selectedDoc.schedules) && selectedDoc.schedules.length > 0 ? (
                     selectedDoc.schedules.map((s, idx) => {
@@ -3538,33 +3605,33 @@ export const MyDocuments = () => {
                   )}
                 </span>
               </div>
-              <div className="flex gap-2">
-                <span className="font-bold min-w-[200px]">Duration:</span>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                <span className="font-bold sm:min-w-[200px] shrink-0">Duration:</span>
                 <span>{calculateProposalDuration(selectedDoc.proposalDetails || selectedDoc.raw?.activity_proposal_details || { schedules: selectedDoc.schedules, duration: selectedDoc.duration, is_indefinite_end_time: selectedDoc.is_indefinite_end_time })}</span>
               </div>
-              <div className="flex gap-2">
-                <span className="font-bold min-w-[200px]">Number of Students:</span>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                <span className="font-bold sm:min-w-[200px] shrink-0">Number of Students:</span>
                 <span>{selectedDoc.students}</span>
               </div>
-              <div className="flex gap-2">
-                <span className="font-bold min-w-[200px]">Nature of Activity:</span>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                <span className="font-bold sm:min-w-[200px] shrink-0">Nature of Activity:</span>
                 <span>{selectedDoc.nature}</span>
               </div>
 
-              <div className="mt-8">
-                <p className="font-bold mb-3">Objectives of the Activity:</p>
-                <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100">
+              <div className="mt-6 sm:mt-8">
+                <p className="font-bold mb-2 sm:mb-3">Objectives of the Activity:</p>
+                <div className="bg-gray-50 p-4 sm:p-6 rounded-2xl border border-gray-100">
                   {(() => {
                     const objList = parseObjectivesList(selectedDoc.objectives);
                     if (objList.length > 0) {
                       return (
-                        <ul className="list-disc pl-5 space-y-1 text-sm text-gray-700 font-medium">
+                        <ul className="list-disc pl-5 space-y-1 text-xs sm:text-sm text-gray-700 font-medium">
                           {objList.map((obj, i) => <li key={i}>{obj}</li>)}
                         </ul>
                       );
                     }
                     return (
-                      <ul className="list-disc pl-5 space-y-1 text-sm text-gray-500 font-medium">
+                      <ul className="list-disc pl-5 space-y-1 text-xs sm:text-sm text-gray-500 font-medium">
                         <li>Leadership Development and Formation</li>
                         <li>Membership Development and Formation</li>
                         <li>Organizational Program Management</li>
@@ -3576,101 +3643,91 @@ export const MyDocuments = () => {
                 </div>
               </div>
 
-              <div className="mt-6">
-                <p className="font-bold mb-2">Target Audience / Participants: <span className="font-normal text-sm">BulSUans Only</span></p>
+              <div className="mt-4 sm:mt-6">
+                <p className="font-bold mb-2">Target Audience / Participants: <span className="font-normal text-xs sm:text-sm">BulSUans Only</span></p>
               </div>
 
               {isActivityProposal && (selectedDoc.satisfy_goals && selectedDoc.satisfy_goals.length > 0) ? (
-                <div className="mt-8">
-                  <p className="font-bold mb-4 text-sm leading-relaxed">
+                <div className="mt-6 sm:mt-8">
+                  <p className="font-bold mb-3 text-xs sm:text-sm leading-relaxed">
                     Describe how this activity will satisfy the needs of the organization and how it will help the organization achieve its goals:
                   </p>
-                  <div className="bg-gray-50 p-6 rounded-2xl text-sm leading-relaxed text-gray-600 border border-gray-100 italic">
-                    <ol className="list-decimal pl-5 space-y-2">
-                      {selectedDoc.satisfy_goals.map((goal, idx) => (
-                        <li key={idx} className="font-medium">{goal}</li>
-                      ))}
+                  <div className="bg-gray-50 p-4 sm:p-6 rounded-2xl text-xs sm:text-sm leading-relaxed text-gray-600 border border-gray-100 italic">
+                    <ol className="list-decimal pl-5 space-y-1.5">
+                      {selectedDoc.satisfy_goals.map((g, i) => <li key={i}>{g}</li>)}
                     </ol>
                   </div>
                 </div>
-              ) : (
-                <span className="text-gray-400 italic">No goals provided.</span>
-              )}
-
-              {isActivityProposal && (selectedDoc.sponsors_partners && selectedDoc.sponsors_partners.length > 0) && (
-                <div className="mt-8">
-                  <p className="font-bold mb-3">List of Sponsors / Partners:</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {selectedDoc.sponsors_partners.map((partner, idx) => (
-                      <div key={idx} className="bg-gray-50 rounded-2xl p-4 border border-gray-100 hover:border-primary-green/20 transition-all flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-primary-green/10 flex items-center justify-center text-primary-green font-bold text-xs">
-                          {idx + 1}
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">Partner Agency</p>
-                          <p className="text-sm font-bold text-gray-800">{partner}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+              ) : null}
             </div>
           </div>
         )}
 
 
         {/* Attached Files Section - Collapsible with Live Data */}
-        <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 mb-10 transition-all duration-500">
+        <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 mb-6 sm:mb-10 transition-all duration-500">
           <button
             onClick={() => setIsFilesOpen(!isFilesOpen)}
-            className="w-full bg-[#525252] text-white px-8 py-4 flex items-center justify-between hover:brightness-110 transition-all outline-none"
+            className="w-full bg-[#525252] text-white px-4 sm:px-8 py-3.5 sm:py-4 flex items-center justify-between hover:brightness-110 transition-all outline-none"
           >
             <div className="flex items-center gap-3">
-              <Paperclip size={20} className="text-white opacity-80" />
+              <Paperclip size={18} className="text-white opacity-80 sm:w-5 sm:h-5" />
               <span className="text-xs font-bold uppercase tracking-widest">Attached File</span>
             </div>
-            <ChevronDown size={20} className={`transition-transform duration-500 ${isFilesOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown size={18} className={`transition-transform duration-500 ${isFilesOpen ? 'rotate-180' : ''}`} />
           </button>
 
           {isFilesOpen && (
-            <div className="p-6 space-y-3 animate-in slide-in-from-top-4 duration-500">
+            <div className="p-3.5 sm:p-6 space-y-3 animate-in slide-in-from-top-4 duration-500">
               {attachments && attachments.length > 0 && (
-                <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 mb-3">
-                  <button
-                    type="button"
-                    onClick={() => setDocDetailTabFilter('all')}
-                    className={`px-3 py-1.5 rounded-lg transition-all ${
-                      docDetailTabFilter === 'all'
-                        ? 'bg-emerald-600 text-white shadow-xs font-black'
-                        : 'text-gray-600 hover:text-gray-800'
-                    }`}
-                  >
-                    All ({attachments.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDocDetailTabFilter('osas')}
-                    className={`px-3 py-1.5 rounded-lg transition-all ${
-                      docDetailTabFilter === 'osas'
-                        ? 'bg-emerald-600 text-white shadow-xs font-black'
-                        : 'text-gray-600 hover:text-gray-800'
-                    }`}
-                  >
-                    OSAS Requirements ({attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') === 'OSAS').length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDocDetailTabFilter('local')}
-                    className={`px-3 py-1.5 rounded-lg transition-all ${
-                      docDetailTabFilter === 'local'
-                        ? 'bg-emerald-600 text-white shadow-xs font-black'
-                        : 'text-gray-600 hover:text-gray-800'
-                    }`}
-                  >
-                    LOCAL Requirements ({attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') !== 'OSAS').length})
-                  </button>
-                </div>
+                <>
+                  <div className="hidden sm:flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 mb-3">
+                    <button
+                      type="button"
+                      onClick={() => setDocDetailTabFilter('all')}
+                      className={`px-3 py-1.5 rounded-lg transition-all ${
+                        docDetailTabFilter === 'all'
+                          ? 'bg-emerald-600 text-white shadow-xs font-black'
+                          : 'text-gray-600 hover:text-gray-800'
+                      }`}
+                    >
+                      All ({attachments.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDocDetailTabFilter('osas')}
+                      className={`px-3 py-1.5 rounded-lg transition-all ${
+                        docDetailTabFilter === 'osas'
+                          ? 'bg-emerald-600 text-white shadow-xs font-black'
+                          : 'text-gray-600 hover:text-gray-800'
+                      }`}
+                    >
+                      OSAS Requirements ({attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') === 'OSAS').length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDocDetailTabFilter('local')}
+                      className={`px-3 py-1.5 rounded-lg transition-all ${
+                        docDetailTabFilter === 'local'
+                          ? 'bg-emerald-600 text-white shadow-xs font-black'
+                          : 'text-gray-600 hover:text-gray-800'
+                      }`}
+                    >
+                      LOCAL Requirements ({attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') !== 'OSAS').length})
+                    </button>
+                  </div>
+                  <div className="block sm:hidden w-full mb-3">
+                    <select
+                      value={docDetailTabFilter}
+                      onChange={(e) => setDocDetailTabFilter(e.target.value)}
+                      className="w-full bg-white border border-gray-200 text-emerald-700 font-bold text-xs rounded-xl p-2.5 shadow-sm outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer"
+                    >
+                      <option value="all">All ({attachments.length})</option>
+                      <option value="osas">OSAS Requirements ({attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') === 'OSAS').length})</option>
+                      <option value="local">LOCAL Requirements ({attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') !== 'OSAS').length})</option>
+                    </select>
+                  </div>
+                </>
               )}
 
               {attachments && attachments.length > 0 ? (
@@ -3749,30 +3806,30 @@ export const MyDocuments = () => {
                         setReviewAction('');
                         setReviewComments('');
                       }}
-                      className={`${containerBg} rounded-xl p-4 flex items-center justify-between group hover:brightness-110 transition-all cursor-pointer`}
+                      className={`${containerBg} rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 group hover:brightness-110 transition-all cursor-pointer overflow-hidden`}
                     >
-                      <div className="flex items-center gap-4">
-                        <div className={`w-10 h-10 ${iconStyle} rounded-lg flex items-center justify-center shrink-0`}>
-                          <Paperclip size={20} />
+                      <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1 w-full sm:w-auto">
+                        <div className={`w-9 h-9 sm:w-10 sm:h-10 ${iconStyle} rounded-lg flex items-center justify-center shrink-0`}>
+                          <Paperclip size={18} />
                         </div>
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className={`${textColor} font-semibold text-sm`}>{fileName}</p>
-                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${badgeStyle}`}>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                            <p className={`${textColor} font-semibold text-xs sm:text-sm break-all line-clamp-2 max-w-full sm:max-w-md`} title={fileName}>{fileName}</p>
+                            <span className={`text-[8px] sm:text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${badgeStyle}`}>
                               {isOsas ? 'OSAS Requirement' : 'LOCAL Requirement'}
                             </span>
                           </div>
-                          <p className={`${subtitleColor} text-[10px] uppercase font-bold mt-0.5`}>
+                          <p className={`${subtitleColor} text-[9px] sm:text-[10px] uppercase font-bold mt-0.5`}>
                             {isForwardedItem ? '✓ Forwarded to Main Campus' : 'Attached Document'}
                           </p>
                           {returnedForDisplay && (locallyReturned[file.id]?.comment || fileLog?.comment) && (
-                            <p className="mt-1 text-xs italic font-medium opacity-90 max-w-lg">
+                            <p className="mt-1 text-[11px] sm:text-xs italic font-medium opacity-90 max-w-lg">
                               {(fileLog?.users?.full_name || fileLog?.users?.role || user?.role || 'Reviewer')}'s Comment: "{locallyReturned[file.id]?.comment || fileLog?.comment}"
                             </p>
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 pointer-events-auto md:pointer-events-none md:group-hover:pointer-events-auto transition-all">
+                      <div className="flex items-center gap-2 mt-1 sm:mt-0 shrink-0 w-full sm:w-auto justify-end opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -3780,7 +3837,7 @@ export const MyDocuments = () => {
                             setReviewAction('');
                             setReviewComments('');
                           }}
-                          className="bg-secondary-gold text-white px-6 py-2 rounded-lg text-xs font-bold hover:brightness-110 transition-all shadow-lg inline-block text-center"
+                          className="bg-secondary-gold text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-bold hover:brightness-110 transition-all shadow-md text-center shrink-0"
                         >
                           view
                         </button>
@@ -3789,7 +3846,7 @@ export const MyDocuments = () => {
                             e.stopPropagation();
                             handleDownload(file.file_url, fileName);
                           }}
-                          className="bg-secondary-gold text-white px-6 py-2 rounded-lg text-xs font-bold hover:brightness-110 transition-all shadow-lg inline-block text-center"
+                          className="bg-secondary-gold text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-bold hover:brightness-110 transition-all shadow-md text-center shrink-0"
                         >
                           Download
                         </button>
@@ -3831,8 +3888,8 @@ export const MyDocuments = () => {
 
         {/* Action buttons (Chairman / Vice Chairman - Bottom of the page) */}
         {isChairmanLikeReviewer(user?.role) && !disableVersionActions && selectedDoc?.category === 'Returned' && (
-          <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100]">
-            <div className="bg-white/80 backdrop-blur-2xl px-10 py-5 rounded-[2rem] border border-white/50 shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex items-center gap-6 animate-in slide-in-from-bottom-12 duration-1000">
+          <div className="fixed bottom-4 sm:bottom-10 left-1/2 -translate-x-1/2 z-[100] w-[92vw] sm:w-auto">
+            <div className="bg-white/90 backdrop-blur-2xl px-4 sm:px-10 py-3 sm:py-5 rounded-2xl sm:rounded-[2rem] border border-white/50 shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex items-center justify-center gap-3 sm:gap-6 animate-in slide-in-from-bottom-12 duration-1000">
               <button
                 onClick={() => {
                   setDecisionType('disapprove');
@@ -3840,7 +3897,7 @@ export const MyDocuments = () => {
                   setIsReturnModalOpen(true);
                 }}
                 disabled={disableVersionActions}
-                className="flex items-center justify-center gap-3 px-8 py-3.5 bg-red-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-lg shadow-red-600/20 uppercase tracking-widest animate-in"
+                className="flex items-center justify-center gap-2 sm:gap-3 px-4 sm:px-8 py-2.5 sm:py-3.5 bg-red-600 text-white text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-lg shadow-red-600/20 uppercase tracking-wider sm:tracking-widest animate-in"
               >
                 <X size={16} />
                 <span>Disapprove</span>
@@ -3871,9 +3928,9 @@ export const MyDocuments = () => {
                       setReturnComments('');
                       setIsReturnModalOpen(true);
                     }}
-                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-green-700 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-widest"
+                    className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-green-700 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-tight sm:tracking-widest shrink-0"
                   >
-                    <CheckCircle size={16} />
+                    <CheckCircle size={15} />
                     <span>Verify & Approve Hard Copy</span>
                   </button>,
                   <button
@@ -3883,9 +3940,9 @@ export const MyDocuments = () => {
                       setReturnComments('');
                       setIsReturnModalOpen(true);
                     }}
-                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-amber-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-amber-600/20 uppercase tracking-widest"
+                    className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-amber-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-amber-600/20 uppercase tracking-tight sm:tracking-widest shrink-0"
                   >
-                    <RotateCcw size={16} />
+                    <RotateCcw size={15} />
                     <span>Return</span>
                   </button>,
                   <button
@@ -3895,9 +3952,9 @@ export const MyDocuments = () => {
                       setReturnComments('');
                       setIsReturnModalOpen(true);
                     }}
-                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-red-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-red-600/20 uppercase tracking-widest"
+                    className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-red-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-red-600/20 uppercase tracking-tight sm:tracking-widest shrink-0"
                   >
-                    <X size={16} />
+                    <X size={15} />
                     <span>Disapprove</span>
                   </button>
                 );
@@ -3914,9 +3971,9 @@ export const MyDocuments = () => {
                         setExternalProofFile(null);
                         setIsReturnModalOpen(true);
                       }}
-                      className="flex items-center justify-center gap-3 px-8 py-3.5 bg-purple-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-widest"
+                      className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-purple-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-tight sm:tracking-widest shrink-0"
                     >
-                      <CheckCircle size={16} />
+                      <CheckCircle size={15} />
                       <span>Ready for retrieval</span>
                     </button>
                   );
@@ -3927,9 +3984,9 @@ export const MyDocuments = () => {
                     key="sds-retrieved"
                     onClick={() => handleDocumentRetrieved('Document retrieved')}
                     disabled={loading}
-                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-green-700 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-widest disabled:opacity-50"
+                    className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-green-700 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-tight sm:tracking-widest disabled:opacity-50 shrink-0"
                   >
-                    <CheckCircle size={16} />
+                    <CheckCircle size={15} />
                     <span>Document Retrieved</span>
                   </button>
                 );
@@ -3938,9 +3995,9 @@ export const MyDocuments = () => {
                   <button
                     key="sds-awaiting"
                     disabled
-                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-purple-600/50 text-white text-xs font-bold rounded-2xl cursor-not-allowed shadow-lg shadow-purple-600/10 uppercase tracking-widest"
+                    className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-purple-600/50 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl cursor-not-allowed shadow-lg shadow-purple-600/10 uppercase tracking-tight sm:tracking-widest shrink-0"
                   >
-                    <CheckCircle size={16} />
+                    <CheckCircle size={15} />
                     <span>Awaiting retrieval confirmation</span>
                   </button>
                 );
@@ -3950,9 +4007,9 @@ export const MyDocuments = () => {
                     key="sds-confirm"
                     onClick={() => handleConfirmRetrieval(userRoleNorm === 'org-president' ? 'Retrieval confirmed by Organization President' : 'Retrieval confirmed by SDS Coordinator')}
                     disabled={loading}
-                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-purple-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-widest disabled:opacity-50"
+                    className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-purple-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-tight sm:tracking-widest disabled:opacity-50 shrink-0"
                   >
-                    <CheckCircle size={16} />
+                    <CheckCircle size={15} />
                     <span>Confirm Document Retrieval</span>
                   </button>
                 );
@@ -3968,13 +4025,15 @@ export const MyDocuments = () => {
                   setExternalProofFile(null);
                   setIsReturnModalOpen(true);
                 }}
-                className="flex items-center justify-center gap-3 px-8 py-3.5 bg-blue-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-blue-600/20 uppercase tracking-widest"
+                className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-blue-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-blue-600/20 uppercase tracking-tight sm:tracking-widest shrink-0"
               >
-                <ArrowUpRight size={16} />
+                <ArrowUpRight size={15} />
                 <span>Sent to main campus</span>
               </button>
             );
           } else if (isApprovedDoc || docStatusLower === 'document retrieval' || docStatusLower === 'ready for retrieval' || docStatusLower === 'document_retrieval' || isSdsHardcopyApprovedLog) {
+            const activeRetrievalLog = mainRetrievalLog || sdsRetrievalLog;
+            const activeIsFirstRetriever = mainRetrievalLog ? isFirstRetriever : isFirstSdsRetriever;
             if (!isMainConfirmedRetrievalLog && !isSdsConfirmedRetrievalLog) {
               if (!isMainReadyForRetrievalLog && !isSdsReadyForRetrievalLog) {
                 if (userRoleNorm === 'admin' || userRoleNorm === 'oso-staff' || userRoleNorm === 'sds-coordinator') {
@@ -3987,45 +4046,45 @@ export const MyDocuments = () => {
                         setExternalProofFile(null);
                         setIsReturnModalOpen(true);
                       }}
-                      className="flex items-center justify-center gap-3 px-8 py-3.5 bg-purple-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-widest"
+                      className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-purple-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-tight sm:tracking-widest shrink-0"
                     >
-                      <CheckCircle size={16} />
+                      <CheckCircle size={15} />
                       <span>Ready for retrieval</span>
                     </button>
                   );
                 }
-              } else if (!mainRetrievalLog && !sdsRetrievalLog) {
+              } else if (!activeRetrievalLog) {
                 buttons.push(
                   <button
                     key="main-retrieved"
                     onClick={() => handleDocumentRetrieved('Document retrieved')}
                     disabled={loading}
-                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-green-700 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-widest disabled:opacity-50"
+                    className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-green-700 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-tight sm:tracking-widest disabled:opacity-50 shrink-0"
                   >
-                    <CheckCircle size={16} />
+                    <CheckCircle size={15} />
                     <span>Document Retrieved</span>
                   </button>
                 );
-              } else if (mainRetrievalLog && isFirstRetriever) {
+              } else if (activeRetrievalLog && activeIsFirstRetriever) {
                 buttons.push(
                   <button
                     key="main-awaiting"
                     disabled
-                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-purple-600/50 text-white text-xs font-bold rounded-2xl cursor-not-allowed shadow-lg shadow-purple-600/10 uppercase tracking-widest"
+                    className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-purple-600/50 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl cursor-not-allowed shadow-lg shadow-purple-600/10 uppercase tracking-tight sm:tracking-widest shrink-0"
                   >
-                    <CheckCircle size={16} />
+                    <CheckCircle size={15} />
                     <span>Awaiting retrieval confirmation</span>
                   </button>
                 );
-              } else if (mainRetrievalLog && !isFirstRetriever) {
+              } else if (activeRetrievalLog && !activeIsFirstRetriever) {
                 buttons.push(
                   <button
                     key="main-confirm"
-                    onClick={() => handleConfirmRetrieval(userRoleNorm === 'org-president' ? 'Retrieval confirmed by Organization President' : 'Retrieval confirmed by Admin')}
+                    onClick={() => handleConfirmRetrieval(userRoleNorm === 'org-president' ? 'Retrieval confirmed by Organization President' : 'Retrieval confirmed by SDS Coordinator')}
                     disabled={loading}
-                    className="flex items-center justify-center gap-3 px-8 py-3.5 bg-purple-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-widest disabled:opacity-50"
+                    className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-purple-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-tight sm:tracking-widest disabled:opacity-50 shrink-0"
                   >
-                    <CheckCircle size={16} />
+                    <CheckCircle size={15} />
                     <span>Confirm Document Retrieval</span>
                   </button>
                 );
@@ -4056,9 +4115,9 @@ export const MyDocuments = () => {
                   setIsReturnModalOpen(true);
                 }}
                 disabled={hasBlockingReturnedAttachments || hasLocallyReturnedAttachments}
-                className="flex items-center justify-center gap-3 px-8 py-3.5 bg-green-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-lg shadow-green-600/20 uppercase tracking-widest"
+                className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-green-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-lg shadow-green-600/20 uppercase tracking-tight sm:tracking-widest shrink-0"
               >
-                <CheckCircle size={16} />
+                <CheckCircle size={15} />
                 <span>Verify & Approve</span>
               </button>,
               <button
@@ -4070,11 +4129,11 @@ export const MyDocuments = () => {
                 }}
                 disabled={allFilesApproved}
                 title={allFilesApproved ? "All attachments are approved. Click Approve to proceed." : ""}
-                className={`flex items-center justify-center gap-3 px-8 py-3.5 bg-amber-500 text-white text-xs font-bold rounded-2xl transition-all shadow-lg shadow-amber-500/20 uppercase tracking-widest ${
+                className={`flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-amber-500 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl transition-all shadow-lg shadow-amber-500/20 uppercase tracking-tight sm:tracking-widest shrink-0 ${
                   allFilesApproved ? 'opacity-40 cursor-not-allowed' : 'hover:scale-105 active:scale-95'
                 }`}
               >
-                <RotateCcw size={16} />
+                <RotateCcw size={15} />
                 <span>Return</span>
               </button>,
               <button
@@ -4084,9 +4143,9 @@ export const MyDocuments = () => {
                   setReturnComments('');
                   setIsReturnModalOpen(true);
                 }}
-                className="flex items-center justify-center gap-3 px-8 py-3.5 bg-red-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-red-600/20 uppercase tracking-widest"
+                className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-red-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-red-600/20 uppercase tracking-tight sm:tracking-widest shrink-0"
               >
-                <X size={16} />
+                <X size={15} />
                 <span>Disapprove</span>
               </button>
             );
@@ -4100,9 +4159,9 @@ export const MyDocuments = () => {
                   setIsReturnModalOpen(true);
                 }}
                 disabled={hasBlockingReturnedAttachments || hasLocallyReturnedAttachments}
-                className="flex items-center justify-center gap-3 px-8 py-3.5 bg-green-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-lg shadow-green-600/20 uppercase tracking-widest"
+                className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-green-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-lg shadow-green-600/20 uppercase tracking-tight sm:tracking-widest shrink-0"
               >
-                <CheckCircle size={16} />
+                <CheckCircle size={15} />
                 <span>Approve</span>
               </button>,
               <button
@@ -4114,11 +4173,11 @@ export const MyDocuments = () => {
                 }}
                 disabled={allFilesApproved}
                 title={allFilesApproved ? "All attachments are approved. Click Approve to proceed." : ""}
-                className={`flex items-center justify-center gap-3 px-8 py-3.5 bg-amber-500 text-white text-xs font-bold rounded-2xl transition-all shadow-lg shadow-amber-500/20 uppercase tracking-widest ${
+                className={`flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-amber-500 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl transition-all shadow-lg shadow-amber-500/20 uppercase tracking-tight sm:tracking-widest shrink-0 ${
                   allFilesApproved ? 'opacity-40 cursor-not-allowed' : 'hover:scale-105 active:scale-95'
                 }`}
               >
-                <RotateCcw size={16} />
+                <RotateCcw size={15} />
                 <span>Return</span>
               </button>,
               <button
@@ -4128,9 +4187,9 @@ export const MyDocuments = () => {
                   setReturnComments('');
                   setIsReturnModalOpen(true);
                 }}
-                className="flex items-center justify-center gap-3 px-8 py-3.5 bg-red-600 text-white text-xs font-bold rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-red-600/20 uppercase tracking-widest"
+                className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-red-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-red-600/20 uppercase tracking-tight sm:tracking-widest shrink-0"
               >
-                <X size={16} />
+                <X size={15} />
                 <span>Disapprove</span>
               </button>
             );
@@ -4139,8 +4198,8 @@ export const MyDocuments = () => {
           if (buttons.length === 0) return null;
 
           return (
-            <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50">
-              <div className="bg-white/80 backdrop-blur-2xl px-8 py-4 rounded-[2rem] border border-white/50 shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex items-center gap-4 animate-in slide-in-from-bottom-12 duration-1000">
+            <div className="fixed bottom-3 sm:bottom-10 left-1/2 -translate-x-1/2 z-50 w-[95vw] max-w-2xl sm:w-auto">
+              <div className="bg-white/90 backdrop-blur-2xl px-2.5 sm:px-8 py-2.5 sm:py-4 rounded-2xl sm:rounded-[2rem] border border-white/50 shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex flex-wrap sm:flex-nowrap items-center justify-center gap-1.5 sm:gap-4 animate-in slide-in-from-bottom-12 duration-1000">
                 {buttons}
               </div>
             </div>
@@ -4779,7 +4838,7 @@ export const MyDocuments = () => {
   return (
     <div className="animate-in fade-in slide-in-from-bottom-6 duration-1000">
       {/* Page Header - Matching Inbox */}
-      <div className="flex items-end justify-between mb-8 border-b border-gray-100 pb-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between mb-6 sm:mb-8 border-b border-gray-100 pb-4 sm:pb-6 gap-4">
         <PageHeader 
           title="My Documents" 
           subtitle="Track your handled and reviewed document status" 
@@ -4787,15 +4846,15 @@ export const MyDocuments = () => {
           iconColor="blue" 
         />
 
-        <div className="flex items-center gap-3">
-          <div className="flex p-1 bg-gray-100/50 rounded-xl border border-gray-100">
-            <div className="relative flex items-center">
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="flex p-1 bg-gray-100/50 rounded-xl border border-gray-100 w-full sm:w-auto">
+            <div className="relative flex items-center w-full sm:w-auto">
               <input
                 type="text"
                 placeholder="Search documents..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-transparent pl-8 pr-4 py-2 text-sm outline-none w-64 text-gray-600 font-medium"
+                className="bg-transparent pl-8 pr-4 py-2 text-sm outline-none w-full sm:w-64 text-gray-600 font-medium"
               />
               <Search className="absolute left-2 text-gray-400" size={16} />
             </div>
@@ -4805,7 +4864,8 @@ export const MyDocuments = () => {
 
       {/* Tabs */}
       <div className="flex items-center justify-between mb-6">
-        <div className="flex p-1 bg-gray-50 rounded-2xl border border-gray-100 shadow-inner overflow-x-auto no-scrollbar">
+        {/* Desktop Tabs */}
+        <div className="hidden md:flex p-1 bg-gray-50 rounded-2xl border border-gray-100 shadow-inner">
           {tabs.map((tab) => (
             <button
               key={tab.name}
@@ -4823,11 +4883,26 @@ export const MyDocuments = () => {
             </button>
           ))}
         </div>
+
+        {/* Mobile Select Dropdown */}
+        <div className="block md:hidden w-full">
+          <select
+            value={activeTab}
+            onChange={(e) => setActiveTab(e.target.value)}
+            className="w-full bg-white border border-gray-200 text-primary-green font-bold text-xs rounded-xl p-3 shadow-sm outline-none focus:ring-2 focus:ring-primary-green/20 cursor-pointer"
+          >
+            {tabs.map((tab) => (
+              <option key={tab.name} value={tab.name}>
+                {tab.name} ({tab.count})
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Table Container */}
       <div className="bg-white border border-gray-100 rounded-3xl overflow-hidden shadow-sm mb-10">
-        <div className="overflow-x-auto">
+        <div>
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20 text-gray-400">
               <Clock size={36} className="animate-spin mb-4 text-primary-green" />
@@ -4837,12 +4912,12 @@ export const MyDocuments = () => {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-[#073c2d] text-white">
-                  <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Document Details</th>
-                  <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Sender</th>
-                  <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider text-center">Category</th>
-                  <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Submitted</th>
-                  <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider text-center">Status</th>
-                  <th className="px-6 py-4 font-semibold text-[11px] uppercase tracking-wider text-right">Last Action</th>
+                  <th className="px-3 sm:px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Document Details</th>
+                  <th className="hidden sm:table-cell px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Sender</th>
+                  <th className="hidden md:table-cell px-6 py-4 font-semibold text-[11px] uppercase tracking-wider text-center">Category</th>
+                  <th className="hidden lg:table-cell px-6 py-4 font-semibold text-[11px] uppercase tracking-wider">Submitted</th>
+                  <th className="px-3 sm:px-6 py-4 font-semibold text-[11px] uppercase tracking-wider text-center">Status</th>
+                  <th className="hidden lg:table-cell px-6 py-4 font-semibold text-[11px] uppercase tracking-wider text-right">Last Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -4854,7 +4929,7 @@ export const MyDocuments = () => {
                     className={`group transition-all duration-300 hover:bg-gray-50/50 ${doc.id === highlightedDocId ? 'newly-added-glow' : ''} ${isUnread ? 'unread-glow' : ''}`}
                   >
                     <td
-                      className="px-6 py-5 cursor-pointer"
+                      className="px-3 sm:px-6 py-4 sm:py-5 cursor-pointer"
                       onClick={() => {
                         setSelectedDoc(doc);
                         if (user?.role === 'org-president') {
@@ -4865,20 +4940,28 @@ export const MyDocuments = () => {
                         }
                       }}
                     >
-                      <div className="flex items-center gap-3">
-                        <FileText className="text-secondary-gold opacity-50" size={20} />
-                        <div>
-                          <p className="font-semibold text-gray-800 group-hover:text-primary-green transition-colors uppercase text-sm leading-tight">
-                            {doc.isActivityProposal ? doc.title : `${doc.sender} ${doc.type} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
-                          </p>
-                          <p className="text-[10px] text-gray-400 font-mono mt-0.5 tracking-tighter uppercase">{doc.ref}</p>
+                      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                        <FileText className="text-secondary-gold opacity-50 shrink-0" size={18} />
+                        <div className="min-w-0 flex-1">
+                          {(() => {
+                            const fullTitle = doc.isActivityProposal ? doc.title : `${doc.sender} ${doc.type} ${activeSy ? activeSy.name : ''}`.toUpperCase();
+                            return (
+                              <p 
+                                className="font-semibold text-gray-800 group-hover:text-primary-green transition-colors uppercase text-xs sm:text-sm leading-tight line-clamp-2 max-w-[180px] min-[400px]:max-w-[240px] sm:max-w-sm md:max-w-md lg:max-w-lg"
+                                title={fullTitle}
+                              >
+                                {fullTitle}
+                              </p>
+                            );
+                          })()}
+                          <p className="text-[10px] text-gray-400 font-mono mt-0.5 tracking-tighter uppercase truncate">{doc.ref}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-5">
+                    <td className="hidden sm:table-cell px-6 py-5">
                       <span className="text-sm font-medium text-gray-600 uppercase tracking-tight">{doc.sender}</span>
                     </td>
-                    <td className="px-6 py-5 text-center">
+                    <td className="hidden md:table-cell px-6 py-5 text-center">
                       <span className="inline-block px-4 py-1 border border-gray-100 text-gray-500 text-[10px] font-semibold rounded-lg bg-white shadow-sm group-hover:border-primary-green/20 group-hover:text-primary-green transition-all uppercase">
                         {doc.type}
                       </span>
@@ -4888,10 +4971,10 @@ export const MyDocuments = () => {
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-5 text-sm text-gray-500 font-medium">
+                    <td className="hidden lg:table-cell px-6 py-5 text-sm text-gray-500 font-medium">
                       {doc.submittedDate}
                     </td>
-                    <td className="px-6 py-5 text-center">
+                    <td className="px-3 sm:px-6 py-4 sm:py-5 text-center">
                       {(() => {
                         const isForRetrievalCat = doc.category === 'For Retrieval' || doc.status === 'READY FOR RETRIEVAL';
                         const displayTableStatus = isForRetrievalCat ? 'FOR RETRIEVAL' : ((['ready for retrieval', 'waiting for accomplishment report'].includes(doc.status?.toLowerCase())) ? 'APPROVED' : doc.status);
@@ -4900,14 +4983,14 @@ export const MyDocuments = () => {
                             style={{
                               backgroundColor: getStatusColor(isForRetrievalCat ? 'ready for retrieval' : displayTableStatus)
                             }}
-                            className="px-4 py-1.5 rounded-full text-[10px] font-bold shadow-sm inline-block min-w-[120px] transition-all uppercase text-white"
+                            className="px-2.5 sm:px-4 py-1.5 rounded-full text-[9px] sm:text-[10px] font-bold shadow-sm inline-block min-w-[90px] sm:min-w-[120px] transition-all uppercase text-white"
                           >
                             {displayTableStatus}
                           </span>
                         );
                       })()}
                     </td>
-                    <td className="px-6 py-5 text-right text-sm text-gray-500 font-medium">{doc.lastAction}</td>
+                    <td className="hidden lg:table-cell px-6 py-5 text-right text-sm text-gray-500 font-medium">{doc.lastAction}</td>
                   </tr>
                   );
                 })}

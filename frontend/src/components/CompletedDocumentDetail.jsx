@@ -467,7 +467,7 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
         ))}
       </div>
 
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-8 md:p-10 space-y-8">
+      <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-3.5 sm:p-6 md:p-10 space-y-6 sm:space-y-8">
         {isActivityProposal && (
           <div>
             <h2 className="text-lg font-bold text-gray-800 mb-2">Activity Proposal Form</h2>
@@ -579,7 +579,7 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
           <button
             type="button"
             onClick={() => setIsFilesOpen(!isFilesOpen)}
-            className={`w-full text-white px-6 py-4 flex items-center justify-between hover:brightness-110 transition-all ${isDisapproved ? 'bg-red-800' : 'bg-[#3d5c45]'}`}
+            className={`w-full text-white px-4 sm:px-6 py-3.5 sm:py-4 flex items-center justify-between hover:brightness-110 transition-all ${isDisapproved ? 'bg-red-800' : 'bg-[#3d5c45]'}`}
           >
             <div className="flex items-center gap-3">
               <Paperclip size={18} />
@@ -588,43 +588,56 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
             <ChevronDown size={18} className={`transition-transform ${isFilesOpen ? 'rotate-180' : ''}`} />
           </button>
           {isFilesOpen && (
-            <div className="p-4 space-y-3 bg-white">
+            <div className="p-3 sm:p-4 space-y-3 bg-white">
               {fileAttachments.length > 0 && (
-                <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 mb-2">
-                  <button
-                    type="button"
-                    onClick={() => setScopeTab('all')}
-                    className={`px-3 py-1.5 rounded-lg transition-all ${
-                      scopeTab === 'all'
-                        ? 'bg-emerald-600 text-white shadow-xs font-black'
-                        : 'text-gray-600 hover:text-gray-800'
-                    }`}
-                  >
-                    All ({fileAttachments.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setScopeTab('osas')}
-                    className={`px-3 py-1.5 rounded-lg transition-all ${
-                      scopeTab === 'osas'
-                        ? 'bg-emerald-600 text-white shadow-xs font-black'
-                        : 'text-gray-600 hover:text-gray-800'
-                    }`}
-                  >
-                    OSAS Requirements ({fileAttachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') === 'OSAS').length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setScopeTab('local')}
-                    className={`px-3 py-1.5 rounded-lg transition-all ${
-                      scopeTab === 'local'
-                        ? 'bg-emerald-600 text-white shadow-xs font-black'
-                        : 'text-gray-600 hover:text-gray-800'
-                    }`}
-                  >
-                    LOCAL Requirements ({fileAttachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') !== 'OSAS').length})
-                  </button>
-                </div>
+                <>
+                  <div className="hidden sm:flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => setScopeTab('all')}
+                      className={`px-3 py-1.5 rounded-lg transition-all ${
+                        scopeTab === 'all'
+                          ? 'bg-emerald-600 text-white shadow-xs font-black'
+                          : 'text-gray-600 hover:text-gray-800'
+                      }`}
+                    >
+                      All ({fileAttachments.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setScopeTab('osas')}
+                      className={`px-3 py-1.5 rounded-lg transition-all ${
+                        scopeTab === 'osas'
+                          ? 'bg-emerald-600 text-white shadow-xs font-black'
+                          : 'text-gray-600 hover:text-gray-800'
+                      }`}
+                    >
+                      OSAS Requirements ({fileAttachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') === 'OSAS').length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setScopeTab('local')}
+                      className={`px-3 py-1.5 rounded-lg transition-all ${
+                        scopeTab === 'local'
+                          ? 'bg-emerald-600 text-white shadow-xs font-black'
+                          : 'text-gray-600 hover:text-gray-800'
+                      }`}
+                    >
+                      LOCAL Requirements ({fileAttachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') !== 'OSAS').length})
+                    </button>
+                  </div>
+                  <div className="block sm:hidden w-full mb-3">
+                    <select
+                      value={scopeTab}
+                      onChange={(e) => setScopeTab(e.target.value)}
+                      className="w-full bg-white border border-gray-200 text-emerald-700 font-bold text-xs rounded-xl p-2.5 shadow-sm outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer"
+                    >
+                      <option value="all">All Requirements ({fileAttachments.length})</option>
+                      <option value="osas">OSAS Requirements ({fileAttachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') === 'OSAS').length})</option>
+                      <option value="local">LOCAL Requirements ({fileAttachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') !== 'OSAS').length})</option>
+                    </select>
+                  </div>
+                </>
               )}
 
               {fileAttachments.length > 0 ? (
@@ -654,8 +667,6 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
                   const reqObj = file.requirements || file.requirement;
                   const scope = reqObj?.requirement_scope || 'OSAS';
                   const isOsas = scope === 'OSAS';
-                  const isForwardedPhase = ['main campus review', 'completed', 'waiting for accomplishment report', 'approved', 'ready for retrieval'].includes(String(submission.status || '').toLowerCase());
-                  const isForwardedItem = isForwardedPhase && isOsas;
 
                   const cardBg = isDisapproved
                     ? 'bg-red-600'
@@ -668,35 +679,35 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
                   return (
                     <div
                       key={file.id || idx}
-                      className={`rounded-xl px-4 py-3 flex items-center justify-between gap-3 ${cardBg}`}
+                      className={`rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${cardBg} overflow-hidden`}
                     >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <CheckCircle size={18} className={iconColor} />
-                        <div className="min-w-0">
+                      <div className="flex items-start sm:items-center gap-2.5 sm:gap-3 min-w-0 flex-1 w-full sm:w-auto">
+                        <CheckCircle size={18} className={`${iconColor} mt-0.5 sm:mt-0`} />
+                        <div className="min-w-0 flex-1">
                           <div className="mb-1 flex flex-wrap items-center gap-2">
-                            <span className="text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-white/20 text-white border border-white/30 font-black">
+                            <span className="text-[8px] sm:text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-white/20 text-white border border-white/30 font-black shrink-0">
                               {isOsas ? 'OSAS Requirement' : 'LOCAL Requirement'}
                             </span>
                           </div>
-                          <p className={`${titleColor} font-semibold text-sm truncate`}>{fileName}</p>
-                          {meta && <p className={`text-[10px] uppercase font-semibold ${metaColor}`}>{meta}</p>}
+                          <p className={`${titleColor} font-semibold text-xs sm:text-sm break-all leading-tight`} title={fileName}>{fileName}</p>
+                          {meta && <p className={`text-[9px] sm:text-[10px] uppercase font-semibold ${metaColor} mt-0.5`}>{meta}</p>}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
                         <button
                           type="button"
                           onClick={() => handleAttachmentAction(file.file_url, 'view')}
-                          className="inline-flex items-center gap-1 bg-secondary-gold text-white px-4 py-2 rounded-lg text-xs font-bold hover:brightness-110"
+                          className="inline-flex items-center gap-1 bg-secondary-gold text-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-bold hover:brightness-110 shadow-md shrink-0"
                         >
-                          <Eye size={12} />
+                          <Eye size={13} />
                           View
                         </button>
                         <button
                           type="button"
                           onClick={() => handleAttachmentAction(file.file_url, 'download', fileName)}
-                          className="inline-flex items-center gap-1 bg-secondary-gold text-white px-4 py-2 rounded-lg text-xs font-bold hover:brightness-110"
+                          className="inline-flex items-center gap-1 bg-secondary-gold text-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-bold hover:brightness-110 shadow-md shrink-0"
                         >
-                          <Download size={12} />
+                          <Download size={13} />
                           Download
                         </button>
                       </div>

@@ -249,7 +249,7 @@ const AnnouncementManagement = () => {
 
   return (
     <div>
-      <div className="mb-8 flex justify-between items-center">
+      <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-gray-100 pb-4 sm:pb-6">
         <PageHeader 
           title="Announcement Management" 
           subtitle="Create and manage system-wide announcements." 
@@ -258,9 +258,9 @@ const AnnouncementManagement = () => {
         />
         <button 
           onClick={() => openModal()}
-          className="flex items-center gap-2 bg-primary-green text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+          className="flex items-center gap-2 bg-primary-green text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors shrink-0 text-xs sm:text-sm font-semibold"
         >
-          <Plus size={20} />
+          <Plus size={18} />
           <span>New Announcement</span>
         </button>
       </div>
@@ -282,64 +282,66 @@ const AnnouncementManagement = () => {
             <p className="text-gray-500 mt-1">Click the button above to create your first announcement.</p>
           </div>
         ) : (
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-[#073c2d] border-b border-[#073c2d] text-white font-medium text-sm">
-                <th className="p-4 text-white">Title</th>
-                <th className="p-4 text-white">Audience</th>
-                <th className="p-4 text-white">Status</th>
-                <th className="p-4 text-white">Date Created</th>
-                <th className="p-4 text-right text-white">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {announcements.map((ann) => (
-                <tr key={ann.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                  <td className="p-4">
-                    <div className="font-medium text-gray-800">{ann.title}</div>
-                    <div className="text-sm text-gray-500 truncate max-w-md">{ann.content}</div>
-                  </td>
-                  <td className="p-4">
-                    <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs uppercase tracking-wider font-medium">
-                      {ann.target_audience && ann.target_audience.startsWith('org:') ? `Org: ${ann.target_audience.substring(4)}` : ann.target_audience}
-                    </span>
-                  </td>
-                  <td className="p-4">
-                    <button 
-                      onClick={() => toggleActive(ann)}
-                      className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium transition-colors ${
-                        ann.is_active 
-                          ? 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100' 
-                          : 'bg-gray-50 text-gray-500 border border-gray-200 hover:bg-gray-100'
-                      }`}
-                    >
-                      <Power size={14} />
-                      {ann.is_active ? 'Active' : 'Inactive'}
-                    </button>
-                  </td>
-                  <td className="p-4 text-sm text-gray-500">
-                    {new Date(ann.created_at).toLocaleDateString()}
-                  </td>
-                  <td className="p-4">
-                    <div className="flex items-center justify-end gap-2">
-                      <button 
-                        onClick={() => openModal(ann)}
-                        className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
-                      >
-                        <Edit2 size={18} />
-                      </button>
-                      <button 
-                        onClick={() => handleDelete(ann.id)}
-                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  </td>
+          <div>
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-[#073c2d] border-b border-[#073c2d] text-white font-medium text-xs sm:text-sm">
+                  <th className="px-3 sm:p-4 text-white">Title</th>
+                  <th className="hidden sm:table-cell p-4 text-white">Audience</th>
+                  <th className="px-3 sm:p-4 text-white">Status</th>
+                  <th className="hidden md:table-cell p-4 text-white">Date Created</th>
+                  <th className="px-3 sm:p-4 text-right text-white">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {announcements.map((ann) => (
+                  <tr key={ann.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                    <td className="px-3 sm:p-4">
+                      <div className="font-medium text-xs sm:text-sm text-gray-800 line-clamp-1">{ann.title}</div>
+                      <div className="text-[11px] sm:text-xs text-gray-500 line-clamp-1 max-w-[160px] sm:max-w-md">{ann.content}</div>
+                    </td>
+                    <td className="hidden sm:table-cell p-4">
+                      <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs uppercase tracking-wider font-medium">
+                        {ann.target_audience && ann.target_audience.startsWith('org:') ? `Org: ${ann.target_audience.substring(4)}` : ann.target_audience}
+                      </span>
+                    </td>
+                    <td className="px-3 sm:p-4">
+                      <button 
+                        onClick={() => toggleActive(ann)}
+                        className={`flex items-center gap-1 px-2.5 sm:px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                          ann.is_active 
+                            ? 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100' 
+                            : 'bg-gray-50 text-gray-500 border border-gray-200 hover:bg-gray-100'
+                        }`}
+                      >
+                        <Power size={12} className="sm:w-3.5 sm:h-3.5" />
+                        {ann.is_active ? 'Active' : 'Inactive'}
+                      </button>
+                    </td>
+                    <td className="hidden md:table-cell p-4 text-sm text-gray-500">
+                      {new Date(ann.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="px-3 sm:p-4">
+                      <div className="flex items-center justify-end gap-1 sm:gap-2">
+                        <button 
+                          onClick={() => openModal(ann)}
+                          className="p-1.5 sm:p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                        >
+                          <Edit2 size={16} className="sm:w-4 sm:h-4" />
+                        </button>
+                        <button 
+                          onClick={() => handleDelete(ann.id)}
+                          className="p-1.5 sm:p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          <Trash2 size={16} className="sm:w-4 sm:h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

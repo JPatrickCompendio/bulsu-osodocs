@@ -321,7 +321,22 @@ const ReportPreviewModal = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 overflow-y-auto font-sans text-gray-800">
+    <div 
+      className="fixed inset-0 bg-slate-900/85 z-[999999] flex flex-col items-center justify-start pt-2 sm:pt-4 pb-2 sm:pb-4 px-2 sm:px-4 backdrop-blur-md overflow-hidden font-sans text-gray-800"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      {/* ALWAYS VISIBLE FLOATING RED CLOSE BUTTON */}
+      <button
+        onClick={onClose}
+        className="fixed top-3 right-3 sm:top-5 sm:right-5 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white p-2.5 sm:p-3 rounded-full shadow-2xl z-[1000000] transition-all hover:scale-110 flex items-center justify-center cursor-pointer border-2 border-white"
+        title="Close modal"
+        aria-label="Close modal"
+      >
+        <X size={22} className="stroke-[3]" />
+      </button>
+
       {/* Hidden original logo in the DOM for canvas conversion */}
       <img
         ref={logoRef}
@@ -331,43 +346,45 @@ const ReportPreviewModal = ({
         onLoad={convertLogoToBase64}
       />
 
-      <div className="bg-white w-full max-w-4xl rounded-3xl shadow-2xl flex flex-col my-8 h-[90vh] overflow-hidden border border-gray-100">
+      <div className="bg-white w-full max-w-4xl rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col my-2 sm:my-8 h-[96vh] sm:h-[90vh] overflow-hidden border border-gray-100" onClick={e => e.stopPropagation()}>
         {/* Sticky Actions Bar */}
-        <div className="bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between shrink-0 no-print">
-          <div>
-            <h3 className="font-extrabold text-gray-900 text-lg uppercase tracking-tight">Report Document Preview</h3>
-            <p className="text-gray-400 text-xs font-semibold">Verify the data before printing or exporting to PDF.</p>
+        <div className="bg-white border-b border-gray-100 px-3 sm:px-6 py-2.5 sm:py-4 flex items-center justify-between gap-2 shrink-0 no-print w-full">
+          <div className="min-w-0 flex-1">
+            <h3 className="font-extrabold text-gray-900 text-xs sm:text-lg uppercase tracking-tight line-clamp-1">Report Document Preview</h3>
+            <p className="text-gray-400 text-[10px] sm:text-xs font-semibold hidden sm:block">Verify the data before printing or exporting to PDF.</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               onClick={handlePrint}
-              className="flex items-center gap-2 px-4 py-2.5 bg-gray-50 hover:bg-gray-100 text-gray-700 text-xs font-black rounded-xl transition-all uppercase tracking-widest border border-gray-200"
+              className="flex items-center gap-1 px-2.5 sm:px-4 py-2 sm:py-2.5 bg-gray-50 hover:bg-gray-100 text-gray-700 text-[11px] sm:text-xs font-black rounded-xl transition-all uppercase tracking-wider border border-gray-200"
             >
-              <Printer size={15} />
-              Print
+              <Printer size={14} />
+              <span className="hidden sm:inline">Print</span>
             </button>
             <button
               onClick={handleDownloadPDF}
-              className="flex items-center gap-2 px-5 py-2.5 bg-primary-green hover:brightness-110 text-white text-xs font-black rounded-xl transition-all uppercase tracking-widest shadow-md shadow-primary-green/20"
+              className="flex items-center gap-1 px-2.5 sm:px-5 py-2 sm:py-2.5 bg-primary-green hover:brightness-110 text-white text-[11px] sm:text-xs font-black rounded-xl transition-all uppercase tracking-wider shadow-md shadow-primary-green/20"
             >
-              <Download size={15} />
-              Download PDF
+              <Download size={14} />
+              <span>Download PDF</span>
             </button>
             <button
               onClick={onClose}
-              className="p-2.5 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-gray-800"
+              className="flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl text-[11px] sm:text-sm font-black transition-all shadow-md shrink-0 cursor-pointer"
+              title="Close modal"
             >
-              <X size={20} />
+              <X size={18} className="stroke-[3]" />
+              <span>CLOSE</span>
             </button>
           </div>
         </div>
 
         {/* Scrollable Preview Paper Sheet Container */}
-        <div className="flex-1 overflow-auto bg-gray-100/50 p-8 flex justify-center items-start scrollbar-thin">
+        <div className="flex-1 overflow-auto bg-gray-100/50 p-2 sm:p-8 flex justify-center items-start scrollbar-thin">
           {/* Printable A4 Simulated Sheet */}
           <div
             id="print-report-preview"
-            className="bg-white w-[210mm] shrink-0 min-h-[297mm] px-[10mm] py-[20mm] shadow-lg border border-gray-200/50 rounded-lg text-gray-800 flex flex-col font-sans relative"
+            className="bg-white w-[210mm] max-w-full sm:max-w-none shrink-0 min-h-[297mm] px-4 sm:px-[10mm] py-6 sm:py-[20mm] shadow-lg border border-gray-200/50 rounded-lg text-gray-800 flex flex-col font-sans relative"
           >
             {/* 1. Header Area */}
             <div className="flex items-center gap-4 border-b-2 border-primary-green pb-4 mb-6">
@@ -385,12 +402,12 @@ const ReportPreviewModal = ({
 
             {/* 2. Title & Metadata */}
             <div className="text-center mb-6">
-              <h2 className="text-xl font-extrabold text-gray-900 uppercase tracking-wide border-b border-gray-100 pb-2 inline-block px-8">
+              <h2 className="text-base sm:text-xl font-extrabold text-gray-900 uppercase tracking-wide border-b border-gray-100 pb-2 inline-block px-4 sm:px-8 break-words">
                 {title}
               </h2>
             </div>
             
-            <div className="flex justify-between items-start text-xs text-gray-500 mb-8 bg-gray-50/50 p-4 rounded-xl border border-gray-100">
+            <div className="flex flex-col sm:flex-row justify-between items-start text-xs text-gray-500 mb-6 sm:mb-8 bg-gray-50/50 p-3 sm:p-4 rounded-xl border border-gray-100 gap-3">
               <div>
                 <p className="font-semibold text-gray-700">Generated By:</p>
                 <p className="font-bold text-primary-green mt-0.5 text-sm">{generatedBy}</p>

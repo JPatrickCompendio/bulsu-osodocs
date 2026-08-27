@@ -363,6 +363,72 @@ export const appendPendingTimelinePhase = (realLogs, { submissionStatus, isViewi
 
   if (isTerminalStatus(status)) return realLogs;
 
+  // Special check for Document Retrieval confirmation pending step
+  const hasDocumentRetrievedLog = (realLogs || []).some(log => {
+    const text = logText(log);
+    const at = norm(log.action_type);
+    const ra = norm(log.review_action);
+    return text.includes('document retrieved') || at === 'document_retrieved' || ra === 'document_retrieved';
+  });
+
+  const hasConfirmRetrievalLog = (realLogs || []).some(log => {
+    const text = logText(log);
+    const at = norm(log.action_type);
+    const ra = norm(log.review_action);
+    return text.includes('retrieval confirmed') || text.includes('confirmed retrieval') || at === 'confirm_retrieval' || ra === 'confirm_retrieval';
+  });
+
+  if (hasDocumentRetrievedLog && !hasConfirmRetrievalLog) {
+    const firstRetrievalLog = (realLogs || []).find(log => {
+      const text = logText(log);
+      const at = norm(log.action_type);
+      const ra = norm(log.review_action);
+      return text.includes('document retrieved') || at === 'document_retrieved' || ra === 'document_retrieved';
+    });
+
+    const firstUserRole = norm(firstRetrievalLog?.users?.role);
+    const isFirstRetrieverAdmin = firstUserRole.includes('admin') || firstUserRole.includes('sds') || firstUserRole.includes('oso');
+
+    const adminLog = (realLogs || []).find(log => {
+      const r = norm(log.users?.role);
+      return r === 'admin' || r === 'sds-coordinator' || r === 'sds coordinator';
+    });
+
+    const adminName = adminLog?.users?.full_name || adminLog?.displayName || 'Teresita Dela Cruz';
+
+    const orgLog = (realLogs || []).find(log => {
+      const r = norm(log.users?.role);
+      return r === 'org-president' || r === 'org president';
+    });
+
+    const orgName = firstRetrievalLog?.submissions?.users?.abbreviation ||
+      firstRetrievalLog?.submissions?.users?.org_name ||
+      orgLog?.users?.full_name ||
+      'Organization President';
+
+    const pendingConfirmLog = {
+      id: 'pending-confirm_retrieval',
+      isPending: true,
+      pendingPhaseId: 'confirm_retrieval',
+      action_type: 'confirm_retrieval',
+      workflow_phase: 'Document Retrieval',
+      description: isFirstRetrieverAdmin
+        ? `Awaiting retrieval confirmation by ${orgName}.`
+        : `Awaiting retrieval confirmation by ${adminName}.`,
+      comment: isFirstRetrieverAdmin
+        ? `Awaiting retrieval confirmation by ${orgName}.`
+        : `Awaiting retrieval confirmation by ${adminName}.`,
+      users: isFirstRetrieverAdmin
+        ? { full_name: orgName, role: 'org-president' }
+        : { full_name: adminName, role: 'admin' },
+      displayName: isFirstRetrieverAdmin ? orgName : adminName,
+      displayRole: isFirstRetrieverAdmin ? 'ORG-PRESIDENT' : 'ADMIN',
+      created_at: null
+    };
+
+    return [pendingConfirmLog, ...realLogs];
+  }
+
   const phaseId = STATUS_TO_NEXT_PHASE[status];
   if (!phaseId) return realLogs;
 
