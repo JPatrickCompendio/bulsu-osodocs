@@ -405,14 +405,14 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
           <ChevronLeft size={22} />
         </button>
         <div className="flex items-center gap-3">
-          {accomplishmentReport && (
+          {isActivityProposal && (
             <button
               type="button"
               onClick={() => setIsAccomplishmentReportOpen(true)}
               className="flex items-center gap-2 px-5 py-2.5 bg-green-600 border border-green-600 text-white hover:bg-green-700 rounded-xl transition-all font-semibold text-sm hover:shadow-sm"
             >
               <FileText size={16} />
-              <span>Generate Accomplishment Report</span>
+              <span>{accomplishmentReport ? 'View Accomplishment Report' : 'Generate Accomplishment Report'}</span>
             </button>
           )}
         </div>

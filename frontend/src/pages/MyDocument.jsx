@@ -34,7 +34,7 @@ import { useToast } from '../hooks/useToast';
 
 const getStatusColor = (status) => {
   const s = (status || '').toLowerCase().trim();
-  if (s.includes('pending hard copy') || s.includes('pending hardcopy') || s.includes('to forward') || s.includes('hardcopy submission') || s.includes('hard copy submission') || s.includes('hardcopy')) {
+  if (s.includes('pending hard copy') || s.includes('pending hardcopy') || s.includes('to forward') || s.includes('hardcopy submission') || s.includes('hard copy submission') || s.includes('hardcopy') || s.includes('hard copy')) {
     return '#db2777';
   }
   if (s.includes('chairman') || s.includes('vice chairman') || s.includes('oso staff review') || s.includes('oso staff') || s.includes('pending')) {
@@ -172,12 +172,12 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy, subtypesMap =
 
   let category = 'All';
   if (subStatus === 'returned') category = 'Returned';
-  else if (subStatus === 'to forward') category = user?.role === 'org-president' ? 'Hard Copy Submission' : 'Pending Hard Copy';
+  else if (subStatus === 'to forward') category = user?.role === 'org-president' ? 'SDS Review' : 'Hard Copy';
   else if (subStatus === 'submitted' || subStatus === 'pending') category = 'OSO Staff review';
   else if (subStatus.includes('sds')) category = 'SDS Review';
   else if (subStatus.includes('dean approved') || subStatus.includes('dean review') || subStatus.includes('external approved')) category = 'Final In-Campus review';
   else if (subStatus.includes('main campus review') || subStatus.includes('external review') || subStatus.includes('vice chairman approved')) category = 'Main Campus Review';
-  else if (subStatus.includes('ready for retrieval') || subStatus.includes('document retrieval') || subStatus.includes('document retrieved') || subStatus.includes('retriev')) category = 'For Retrieval';
+  else if (subStatus.includes('ready for retrieval') || subStatus.includes('document retrieval') || subStatus.includes('document retrieved') || subStatus.includes('retriev')) category = user?.role === 'org-president' ? 'SDS Review' : 'Hard Copy';
   else if (subStatus.includes('waiting for accomplishment report')) category = 'Approved';
   else if (subStatus === 'approved') category = 'Approved';
   else if (subStatus === 'completed') category = 'Completed';
@@ -187,8 +187,8 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy, subtypesMap =
     else if (wpNorm === 'dean review' || wpNorm === 'external approved') category = 'Final In-Campus review';
     else if (wpNorm === 'main campus review' || wpNorm === 'external review') category = 'Main Campus Review';
     else if (wpNorm === 'chairman review') category = 'Chairman Review';
-    else if (ra === 'ready-for-hardcopy') category = user?.role === 'org-president' ? 'Hard Copy Submission' : 'Pending Hard Copy';
-    else if (ra === 'ready-for-retrieval' || ra === 'document-retrieved' || ra === 'retrieval-confirmed') category = 'For Retrieval';
+    else if (ra === 'ready-for-hardcopy') category = user?.role === 'org-president' ? 'SDS Review' : 'Hard Copy';
+    else if (ra === 'ready-for-retrieval' || ra === 'document-retrieved' || ra === 'retrieval-confirmed') category = user?.role === 'org-president' ? 'SDS Review' : 'Hard Copy';
     else if (ra === 'approved') category = 'Approved';
     else if (ra === 'returned') category = 'Returned';
   }
@@ -1676,11 +1676,24 @@ export const MyDocuments = () => {
     const subLogs = [
       ...(Array.isArray(submission.submission_logs) ? submission.submission_logs : []),
       ...(allLogs || []),
-      ...(logsData || []).filter(l => String(l.submission_id || l.submissionId || l.submissions?.id) === String(submission.id))
+...(logsData || []).filter(l => String(l.submission_id || l.submissionId || l.submissions?.id) === String(submission.id))
     ];
     const hasHardcopyVerifiedLog = (subLogs || []).some(log => {
       const text = [log.action_type, log.review_action, log.description, log.comment].map(s => String(s || '').toLowerCase()).join(' ');
       return text.includes('hard copy verified') || text.includes('hardcopy verified');
+    });
+
+    const firstRetrievedLog = (subLogs || []).find(log => {
+      const text = [log.action_type, log.review_action, log.description, log.comment].map(s => String(s || '').toLowerCase()).join(' ');
+      return (text.includes('document retrieved') || text.includes('document_retrieved') || text.includes('retrieved by')) && !text.includes('confirm');
+    });
+
+    const retrieverUserRole = String(firstRetrievedLog?.users?.role || firstRetrievedLog?.user_role || '').toLowerCase();
+    const retrieverUserId = String(firstRetrievedLog?.user_id || firstRetrievedLog?.userId || '');
+
+    const hasDocumentRetrievedLog = Boolean(firstRetrievedLog) && !(subLogs || []).some(log => {
+      const text = [log.action_type, log.review_action, log.description, log.comment].map(s => String(s || '').toLowerCase()).join(' ');
+      return text.includes('confirm_retrieval') || text.includes('retrieval confirmed') || text.includes('confirmed retrieval');
     });
 
     let rawStatus = normalizeText(submission.status);
@@ -1696,7 +1709,7 @@ export const MyDocuments = () => {
     if (subStatus === 'returned') {
       category = 'Returned';
     } else if (subStatus === 'to forward') {
-      category = user?.role === 'org-president' ? 'Hard Copy Submission' : 'Pending Hard Copy';
+      category = user?.role === 'org-president' ? 'SDS Review' : 'Hard Copy';
     } else if (subStatus === 'submitted' || subStatus === 'pending') {
       category = 'OSO Staff review';
     } else if (subStatus.includes('sds')) {
@@ -1708,7 +1721,7 @@ export const MyDocuments = () => {
     } else if (subStatus.includes('main campus review') || subStatus.includes('external review') || subStatus.includes('vice chairman approved')) {
       category = 'Main Campus Review';
     } else if (subStatus.includes('ready for retrieval') || subStatus.includes('document retrieval') || subStatus.includes('document retrieved') || subStatus.includes('retriev')) {
-      category = 'For Retrieval';
+      category = user?.role === 'org-president' ? 'SDS Review' : 'Hard Copy';
     } else if (subStatus.includes('waiting for accomplishment report')) {
       category = 'Approved';
     } else if (subStatus === 'approved') {
@@ -1723,8 +1736,8 @@ export const MyDocuments = () => {
       else if (wpNorm === 'dean review' || wpNorm === 'external approved') category = 'Final In-Campus review';
       else if (wpNorm === 'main campus review' || wpNorm === 'external review') category = 'Main Campus Review';
       else if (wpNorm === 'chairman review') category = 'Chairman Review';
-      else if (ra === 'ready-for-hardcopy') category = user?.role === 'org-president' ? 'Hard Copy Submission' : 'Pending Hard Copy';
-      else if (ra === 'ready-for-retrieval' || ra === 'document-retrieved' || ra === 'retrieval-confirmed') category = 'For Retrieval';
+      else if (ra === 'ready-for-hardcopy') category = user?.role === 'org-president' ? 'SDS Review' : 'Hard Copy';
+      else if (ra === 'ready-for-retrieval' || ra === 'document-retrieved' || ra === 'retrieval-confirmed') category = user?.role === 'org-president' ? 'SDS Review' : 'Hard Copy';
       else if (ra === 'approved') category = 'Approved';
       else if (ra === 'returned') category = 'Returned';
     }
@@ -1785,6 +1798,10 @@ export const MyDocuments = () => {
       satisfy_needs: details?.satisfy_needs || null,
       isActivityProposal,
       schedules: details?.activity_schedules || [],
+      hasDocumentRetrievedLog,
+      firstRetrievedLog,
+      retrieverUserRole,
+      retrieverUserId,
       latestLogDate: latestLog?.created_at,
       raw: submission
     };
@@ -1823,14 +1840,12 @@ export const MyDocuments = () => {
   const tabs = [
     { name: 'All', count: visibleDocs.length },
     ...(user?.role === 'org-president' ? [{ name: 'OSO Staff review', count: countByTab('OSO Staff review') }] : []),
-    ...(user?.role === 'org-president' ? [{ name: 'Hard Copy Submission', count: countByTab('Hard Copy Submission') }] : []),
     ...(user?.role !== 'admin' ? [{ name: 'SDS Review', count: countByTab('SDS Review') }] : []),
     { name: 'Final In-Campus review', count: countByTab('Final In-Campus review') },
     { name: 'Main Campus Review', count: countByTab('Main Campus Review') },
-    ...(user?.role === 'org-president' || user?.role === 'admin' ? [{ name: 'For Retrieval', count: countByTab('For Retrieval') }] : []),
     { name: 'Approved', count: countByTab('Approved') },
     ...(user?.role !== 'org-president' && user?.role !== 'admin' && user?.role !== 'chairman' ? [{ name: 'Completed', count: countByTab('Completed') }] : []),
-    ...(user?.role === 'admin' ? [{ name: 'Pending Hard Copy', count: countByTab('Pending Hard Copy') }] : []),
+    ...((user?.role === 'admin' || user?.role === 'oso-staff' || user?.role === 'chairman') ? [{ name: 'Hard Copy', count: countByTab('Hard Copy') }] : []),
     { name: 'Returned', count: countByTab('Returned') }
   ];
 
@@ -1990,7 +2005,7 @@ export const MyDocuments = () => {
     const isReadyForOrgPickup = isReadyForOrgRetrieval(selectedDoc);
     const isWaitingForAccomplishment = isWaitingForAccomplishmentReport(selectedDoc);
 
-    const isSdsStage = docStatusLower === 'sds coordinator review' || docStatusLower.includes('sds') || docStatusLower === 'to forward' || docStatusLower.includes('hardcopy') || selectedDoc?.category === 'SDS Review' || selectedDoc?.category === 'Pending Hard Copy';
+    const isSdsStage = (docStatusLower === 'sds coordinator review' || docStatusLower.includes('sds') || docStatusLower === 'to forward' || docStatusLower.includes('hardcopy') || selectedDoc?.category === 'SDS Review' || selectedDoc?.category === 'Pending Hard Copy' || selectedDoc?.category === 'Hard Copy') && selectedDoc?.category !== 'Approved' && selectedDoc?.category !== 'Main Campus Review' && selectedDoc?.category !== 'Final In-Campus review';
 
     const sdsPhaseLogs = (timelineLogs || []).filter(l => {
       const wp = String(l.workflow_phase || '').toLowerCase().replace(/[_-]/g, ' ').trim();
@@ -2056,7 +2071,7 @@ export const MyDocuments = () => {
       );
     });
 
-    const mainCampusLogs = mainCampusReviewLogIndex >= 0 ? (timelineLogs || []).slice(0, mainCampusReviewLogIndex + 1) : [];
+    const mainCampusLogs = mainCampusReviewLogIndex >= 0 ? (timelineLogs || []).slice(0, mainCampusReviewLogIndex + 1) : (timelineLogs || []);
     const sdsLogs = mainCampusReviewLogIndex >= 0 ? (timelineLogs || []).slice(mainCampusReviewLogIndex + 1) : (timelineLogs || []);
 
     const sdsRetrievalLog = sdsLogs.find(l => {
@@ -3960,25 +3975,7 @@ export const MyDocuments = () => {
                 );
               }
             } else if (!isSdsConfirmedRetrievalLog) {
-              if (!isSdsReadyForRetrievalLog) {
-                if (userRoleNorm === 'admin') {
-                  buttons.push(
-                    <button
-                      key="sds-ready"
-                      onClick={() => {
-                        setDecisionType('ready_for_retrieval');
-                        setReturnComments('');
-                        setExternalProofFile(null);
-                        setIsReturnModalOpen(true);
-                      }}
-                      className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-purple-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-tight sm:tracking-widest shrink-0"
-                    >
-                      <CheckCircle size={15} />
-                      <span>Ready for retrieval</span>
-                    </button>
-                  );
-                }
-              } else if (!sdsRetrievalLog) {
+              if (!sdsRetrievalLog) {
                 buttons.push(
                   <button
                     key="sds-retrieved"
@@ -4032,28 +4029,12 @@ export const MyDocuments = () => {
               </button>
             );
           } else if (isApprovedDoc || docStatusLower === 'document retrieval' || docStatusLower === 'ready for retrieval' || docStatusLower === 'document_retrieval' || isSdsHardcopyApprovedLog) {
-            const activeRetrievalLog = mainRetrievalLog || sdsRetrievalLog;
-            const activeIsFirstRetriever = mainRetrievalLog ? isFirstRetriever : isFirstSdsRetriever;
-            if (!isMainConfirmedRetrievalLog && !isSdsConfirmedRetrievalLog) {
-              if (!isMainReadyForRetrievalLog && !isSdsReadyForRetrievalLog) {
-                if (userRoleNorm === 'admin' || userRoleNorm === 'oso-staff' || userRoleNorm === 'sds-coordinator') {
-                  buttons.push(
-                    <button
-                      key="main-ready"
-                      onClick={() => {
-                        setDecisionType('ready_for_retrieval');
-                        setReturnComments('');
-                        setExternalProofFile(null);
-                        setIsReturnModalOpen(true);
-                      }}
-                      className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-purple-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-tight sm:tracking-widest shrink-0"
-                    >
-                      <CheckCircle size={15} />
-                      <span>Ready for retrieval</span>
-                    </button>
-                  );
-                }
-              } else if (!activeRetrievalLog) {
+            const activeRetrievalLog = mainRetrievalLog;
+            const activeIsFirstRetriever = isFirstRetriever;
+            const isConfirmed = isMainConfirmedRetrievalLog;
+
+            if (!isConfirmed) {
+              if (!activeRetrievalLog) {
                 buttons.push(
                   <button
                     key="main-retrieved"
@@ -4105,7 +4086,7 @@ export const MyDocuments = () => {
             );
           });
 
-          if (!isDeanApprovedDoc && buttons.length === 0 && !isSdsHardcopyApprovedLog && docStatusLower !== 'ready for retrieval' && (selectedDoc?.category === 'Pending Hard Copy' || selectedDoc?.category === 'To Forward' || (selectedDoc?.raw?.status || selectedDoc?.status || '').toLowerCase().includes('forward'))) {
+          if (!isDeanApprovedDoc && buttons.length === 0 && !isSdsHardcopyApprovedLog && docStatusLower !== 'ready for retrieval' && (selectedDoc?.category === 'Pending Hard Copy' || selectedDoc?.category === 'Hard Copy' || selectedDoc?.category === 'To Forward' || (selectedDoc?.raw?.status || selectedDoc?.status || '').toLowerCase().includes('forward'))) {
             buttons.push(
               <button
                 key="forward-verify-approve"
@@ -4976,17 +4957,114 @@ export const MyDocuments = () => {
                     </td>
                     <td className="px-3 sm:px-6 py-4 sm:py-5 text-center">
                       {(() => {
-                        const isForRetrievalCat = doc.category === 'For Retrieval' || doc.status === 'READY FOR RETRIEVAL';
-                        const displayTableStatus = isForRetrievalCat ? 'FOR RETRIEVAL' : ((['ready for retrieval', 'waiting for accomplishment report'].includes(doc.status?.toLowerCase())) ? 'APPROVED' : doc.status);
+                        const rawStatusLower = (doc.raw?.status || doc.status || '').toLowerCase().trim();
+                        
+                        let stageText = doc.category || 'SDS Review';
+                        if (stageText === 'Hard Copy Submission' || stageText === 'For Retrieval') {
+                          stageText = 'SDS Review';
+                        }
+
+                        let subLabelText = 'PENDING';
+                        let subLabelColorClass = 'text-amber-500 animate-pulse';
+
+                        // Retrieval and hard copy sub-labels ONLY apply when in SDS Review stage!
+                        if (stageText === 'SDS Review') {
+                          const isDocRetrieved = Boolean(
+                            doc.hasDocumentRetrievedLog ||
+                            rawStatusLower === 'document retrieved' ||
+                            rawStatusLower === 'document_retrieved' ||
+                            doc.status === 'DOCUMENT RETRIEVED'
+                          );
+
+                          const isForRetrievalCat = !isDocRetrieved && (rawStatusLower.includes('ready for retrieval') || rawStatusLower.includes('retriev') || doc.status === 'READY FOR RETRIEVAL' || doc.status === 'FOR RETRIEVAL');
+                          const isHardCopyCat = !isDocRetrieved && !isForRetrievalCat && (rawStatusLower === 'to forward' || rawStatusLower.includes('hardcopy') || doc.status === 'HARDCOPY SUBMISSION' || doc.status === 'PENDING HARD COPY');
+
+                          if (isDocRetrieved) {
+                            subLabelText = 'CONFIRM RETRIEVAL';
+                          } else if (isForRetrievalCat) {
+                            subLabelText = 'FOR RETRIEVAL';
+                          } else if (isHardCopyCat) {
+                            subLabelText = 'HARD COPY SUBMISSION';
+                          }
+                        } else if (stageText === 'Hard Copy') {
+                          const isForRetrievalCat = (rawStatusLower.includes('ready for retrieval') || rawStatusLower.includes('retriev') || doc.status === 'READY FOR RETRIEVAL' || doc.status === 'FOR RETRIEVAL');
+                          
+                          if (isForRetrievalCat) {
+                            subLabelText = 'FOR RETRIEVAL';
+                            subLabelColorClass = 'text-amber-500 animate-pulse';
+                          } else if (rawStatusLower.includes('returned')) {
+                            subLabelText = 'RETURNED';
+                            subLabelColorClass = 'text-red-500';
+                          } else {
+                            subLabelText = 'PENDING';
+                            subLabelColorClass = 'text-amber-500 animate-pulse';
+                          }
+                        } else if (stageText === 'Final In-Campus review') {
+                          if (rawStatusLower.includes('dean approved') || rawStatusLower.includes('approved')) {
+                            subLabelText = 'READY FOR MAIN CAMPUS';
+                            subLabelColorClass = 'text-amber-500 animate-pulse';
+                          } else if (rawStatusLower.includes('returned')) {
+                            subLabelText = 'RETURNED';
+                            subLabelColorClass = 'text-red-500';
+                          } else {
+                            subLabelText = 'PENDING';
+                            subLabelColorClass = 'text-amber-500 animate-pulse';
+                          }
+                        } else if (stageText === 'Approved') {
+                          if (rawStatusLower.includes('returned')) {
+                            subLabelText = 'RETURNED';
+                            subLabelColorClass = 'text-red-500';
+                          } else if (doc.hasDocumentRetrievedLog && doc.firstRetrievedLog) {
+                            const myRoleNorm = String(user?.role || '').toLowerCase();
+                            const myUserId = String(user?.id || '');
+                            const isRetrieverMe =
+                              (doc.retrieverUserId && doc.retrieverUserId === myUserId) ||
+                              (doc.retrieverUserRole && (
+                                (doc.retrieverUserRole === 'org-president' && myRoleNorm === 'org-president') ||
+                                (doc.retrieverUserRole !== 'org-president' && myRoleNorm !== 'org-president')
+                              ));
+
+                            if (isRetrieverMe) {
+                              subLabelText = 'FOR RETRIEVAL';
+                              subLabelColorClass = 'text-amber-500 animate-pulse';
+                            } else {
+                              subLabelText = 'CONFIRM RETRIEVAL';
+                              subLabelColorClass = 'text-amber-500 animate-pulse';
+                            }
+                          } else {
+                            subLabelText = 'FOR RETRIEVAL';
+                            subLabelColorClass = 'text-amber-500 animate-pulse';
+                          }
+                        } else {
+                          // For all other stage tabs (e.g. Main Campus Review, OSO Staff review, etc.)
+                          if (rawStatusLower.includes('approved') || rawStatusLower.includes('vice chairman approved')) {
+                            subLabelText = 'APPROVED';
+                            subLabelColorClass = 'text-emerald-600';
+                          } else if (rawStatusLower.includes('returned')) {
+                            subLabelText = 'RETURNED';
+                            subLabelColorClass = 'text-red-500';
+                          } else {
+                            subLabelText = 'PENDING';
+                            subLabelColorClass = 'text-amber-500 animate-pulse';
+                          }
+                        }
+
+                        const badgeColor = getStatusColor(stageText);
+
                         return (
-                          <span
-                            style={{
-                              backgroundColor: getStatusColor(isForRetrievalCat ? 'ready for retrieval' : displayTableStatus)
-                            }}
-                            className="px-2.5 sm:px-4 py-1.5 rounded-full text-[9px] sm:text-[10px] font-bold shadow-sm inline-block min-w-[90px] sm:min-w-[120px] transition-all uppercase text-white"
-                          >
-                            {displayTableStatus}
-                          </span>
+                          <div className="flex flex-col items-center justify-center gap-0.5">
+                            <span
+                              style={{ backgroundColor: badgeColor }}
+                              className="px-3 sm:px-4 py-1.5 rounded-full text-[9px] sm:text-[10px] font-bold shadow-sm inline-block uppercase text-white transition-all min-w-[90px] sm:min-w-[120px]"
+                            >
+                              {stageText}
+                            </span>
+                            {subLabelText && (
+                              <span className={`block text-[9px] font-semibold mt-1 uppercase tracking-tight ${subLabelColorClass}`}>
+                                {subLabelText}
+                              </span>
+                            )}
+                          </div>
                         );
                       })()}
                     </td>

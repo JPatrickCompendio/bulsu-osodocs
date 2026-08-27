@@ -1875,23 +1875,6 @@ export const Inbox = () => {
           icon={Mail} 
           iconColor="blue" 
         />
-
-        {!isOsoStaff && (
-          <div className="flex p-1 bg-gray-100/50 rounded-xl border border-gray-100 self-start sm:self-auto shrink-0">
-            <button 
-              onClick={() => { setViewMode('inbox'); setSelectedDocs([]); }}
-              className={`px-4 sm:px-5 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all ${viewMode === 'inbox' ? 'bg-white text-primary-green shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-            >
-              All Messages
-            </button>
-            <button 
-              onClick={() => { setViewMode('archive'); setSelectedDocs([]); }}
-              className={`px-4 sm:px-5 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all ${viewMode === 'archive' ? 'bg-white text-primary-green shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-            >
-              Archive
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Top Header Bar */}
