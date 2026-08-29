@@ -86,6 +86,22 @@ const CustomDatePicker = ({
     });
   };
 
+  const [dropUp, setDropUp] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      // Calendar height is ~340px and footer is ~75px.
+      // If space below input is less than 420px, open UPWARD above input box!
+      if (spaceBelow < 420) {
+        setDropUp(true);
+      } else {
+        setDropUp(false);
+      }
+    }
+  }, [isOpen]);
+
   // Calendar calculations
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDayOfWeek = new Date(year, month, 1).getDay();
@@ -133,7 +149,7 @@ const CustomDatePicker = ({
 
       {/* Calendar Popover */}
       {isOpen && (
-        <div className="absolute left-0 top-full mt-1 z-[9999] bg-white border border-gray-200 rounded-2xl shadow-2xl p-4 w-[290px] animate-in fade-in-50 zoom-in-95 duration-150">
+        <div className={`absolute left-0 ${dropUp ? 'bottom-full mb-1' : 'top-full mt-1'} z-[99999] bg-white border border-gray-200 rounded-2xl shadow-2xl p-4 w-[290px] animate-in fade-in-50 zoom-in-95 duration-150`}>
           {/* Header */}
           <div className="flex items-center justify-between pb-3 border-b border-gray-100">
             <button

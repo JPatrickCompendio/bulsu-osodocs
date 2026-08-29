@@ -1505,8 +1505,8 @@ export const Inbox = () => {
           if (!isLatestVersion) return null;
 
           return (
-            <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50">
-              <div className="bg-white/80 backdrop-blur-2xl px-10 py-5 rounded-[2rem] border border-white/50 shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex items-center gap-6 animate-in slide-in-from-bottom-12 duration-1000">
+            <div className="fixed bottom-3 sm:bottom-10 left-1/2 -translate-x-1/2 z-50 w-[95vw] sm:w-auto flex justify-center">
+              <div className="bg-white/90 backdrop-blur-2xl px-2 sm:px-10 py-2 sm:py-5 rounded-2xl sm:rounded-[2rem] border border-white/50 shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex items-center justify-center gap-1.5 sm:gap-6 w-full sm:w-auto max-w-full animate-in slide-in-from-bottom-12 duration-1000">
                 <button 
                   onClick={() => {
                     setDecisionType('approve');
@@ -1514,17 +1514,17 @@ export const Inbox = () => {
                     setIsReturnModalOpen(true);
                   }}
                   disabled={disableApprove}
-                  className={`flex items-center gap-3 px-8 py-3.5 bg-primary-green text-white rounded-2xl font-bold transition-all shadow-lg shadow-primary-green/20 group ${
+                  className={`flex items-center gap-1.5 sm:gap-3 px-2.5 sm:px-8 py-2 sm:py-3.5 bg-primary-green text-white rounded-xl sm:rounded-2xl font-bold transition-all shadow-lg shadow-primary-green/20 group shrink-0 ${
                     disableApprove
                       ? 'opacity-40 cursor-not-allowed'
                       : 'hover:scale-105 active:scale-95'
                   }`}
                 >
-                  <CheckCircle size={20} className="group-hover:rotate-12 transition-transform" />
-                  <span className="uppercase text-xs tracking-widest">Approve</span>
+                  <CheckCircle size={16} className="sm:w-5 sm:h-5 group-hover:rotate-12 transition-transform" />
+                  <span className="uppercase text-[10px] sm:text-xs tracking-wider sm:tracking-widest">Approve</span>
                 </button>
                 
-                <div className="h-10 w-[1px] bg-gray-200/50"></div>
+                <div className="hidden sm:block h-10 w-[1px] bg-gray-200/50"></div>
  
                 <button 
                   onClick={() => {
@@ -1534,14 +1534,14 @@ export const Inbox = () => {
                   }}
                   disabled={disableReturn}
                   title={allFilesApproved ? "All attachments are approved. Click Approve to proceed." : ""}
-                  className={`flex items-center gap-3 px-8 py-3.5 bg-amber-500 text-white rounded-2xl font-bold transition-all shadow-lg shadow-amber-500/20 group ${
+                  className={`flex items-center gap-1.5 sm:gap-3 px-2.5 sm:px-8 py-2 sm:py-3.5 bg-amber-500 text-white rounded-xl sm:rounded-2xl font-bold transition-all shadow-lg shadow-amber-500/20 group shrink-0 ${
                     disableReturn
                       ? 'opacity-40 cursor-not-allowed'
                       : 'hover:scale-105 active:scale-95'
                   }`}
                 >
-                  <RotateCcw size={20} className="group-hover:-rotate-45 transition-transform" />
-                  <span className="uppercase text-xs tracking-widest">Return</span>
+                  <RotateCcw size={16} className="sm:w-5 sm:h-5 group-hover:-rotate-45 transition-transform" />
+                  <span className="uppercase text-[10px] sm:text-xs tracking-wider sm:tracking-widest">Return</span>
                 </button>
  
                 <button 
@@ -1551,7 +1551,7 @@ export const Inbox = () => {
                     setIsReturnModalOpen(true);
                   }}
                   disabled={disableActions}
-                  className={`flex items-center gap-3 px-8 py-3.5 bg-red-600 text-white rounded-2xl font-bold transition-all shadow-lg shadow-red-600/20 group ${
+                  className={`flex items-center gap-1.5 sm:gap-3 px-2.5 sm:px-8 py-2 sm:py-3.5 bg-red-600 text-white rounded-xl sm:rounded-2xl font-bold transition-all shadow-lg shadow-red-600/20 group shrink-0 ${
                     disableActions
                       ? (disabledByReview
                           ? 'opacity-40 cursor-not-allowed'
@@ -1559,8 +1559,8 @@ export const Inbox = () => {
                       : 'hover:scale-105 active:scale-95'
                   }`}
                 >
-                  <X size={20} className="group-hover:scale-110 transition-transform" />
-                  <span className="uppercase text-xs tracking-widest">Disapprove</span>
+                  <X size={16} className="sm:w-5 sm:h-5 group-hover:scale-110 transition-transform" />
+                  <span className="uppercase text-[10px] sm:text-xs tracking-wider sm:tracking-widest">Disapprove</span>
                 </button>
               </div>
             </div>

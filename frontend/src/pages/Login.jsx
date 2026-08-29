@@ -145,8 +145,8 @@ const Login = () => {
 
       {/* Centered two-pane login card */}
       <div className="relative z-10 w-full max-w-4xl bg-white rounded-2xl shadow-[0_20px_60px_-12px_rgba(0,0,0,0.35)] overflow-hidden flex flex-col md:flex-row animate-in zoom-in-95 duration-300">
-        {/* Left — login form (slightly wider) */}
-        <div className="md:w-[calc(50%+2px)] flex flex-col min-h-[440px] md:min-h-[500px] bg-gradient-to-b from-white to-gray-50/80">
+        {/* Left — login form */}
+        <div className="w-full md:w-[calc(50%+2px)] flex flex-col min-h-[440px] md:min-h-[500px] bg-gradient-to-b from-white to-gray-50/80">
           <div className="px-7 sm:px-9 pt-8 pb-6 border-b border-gray-200/90 bg-white text-center">
             <h1 className="text-2xl sm:text-3xl font-bold text-primary-green tracking-[0.12em] uppercase">
               LOGIN
@@ -265,8 +265,8 @@ const Login = () => {
           </div>
         </div>
 
-        {/* Right — branding with rotated portrait video background */}
-        <div className="relative md:w-[calc(50%-2px)] flex flex-col items-center justify-center text-center px-6 sm:px-8 py-8 min-h-[280px] md:min-h-[500px] overflow-hidden bg-primary-green">
+        {/* Right — branding with rotated portrait video background (desktop only) */}
+        <div className="hidden md:flex relative md:w-[calc(50%-2px)] flex-col items-center justify-center text-center px-6 sm:px-8 py-8 min-h-[280px] md:min-h-[500px] overflow-hidden bg-primary-green">
           <div className="absolute inset-0 overflow-hidden" aria-hidden="true">
             <video
               src="/loginbgvid.mp4"

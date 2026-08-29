@@ -384,25 +384,15 @@ const AccomplishmentReportPreviewModal = ({
 
   return (
     <div
-      className="fixed inset-0 bg-slate-900/85 z-[999999] flex flex-col items-center justify-start pt-2 sm:pt-4 pb-2 sm:pb-4 px-2 sm:px-4 backdrop-blur-md overflow-hidden"
+      className="fixed inset-0 bg-slate-900/85 z-[999999] flex flex-col items-center justify-center p-3 sm:p-6 backdrop-blur-md overflow-hidden"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      {/* ALWAYS VISIBLE FLOATING SOLID RED CLOSE BUTTON */}
-      <button
-        onClick={onClose}
-        className="fixed top-2 right-2 sm:top-4 sm:right-4 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white p-3 rounded-full shadow-2xl z-[1000000] transition-all hover:scale-110 flex items-center justify-center cursor-pointer border-2 border-white"
-        title="Close modal"
-        aria-label="Close modal"
-      >
-        <X size={24} className="stroke-[3]" />
-      </button>
-
-      <div className="bg-white rounded-2xl sm:rounded-3xl max-w-[1000px] w-full h-[96vh] sm:h-[95vh] shadow-2xl border border-gray-100 overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl sm:rounded-3xl max-w-[1000px] w-full h-[92vh] sm:h-[88vh] shadow-2xl border border-gray-100 overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
 
         {/* Sticky Header Bar */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-3 sm:px-6 py-2.5 sm:py-4 flex items-center justify-between gap-2 shrink-0 z-50 w-full shadow-xs">
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-3 shrink-0 z-50 w-full shadow-xs">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center shrink-0">
               <Edit3 size={16} className="sm:w-5 sm:h-5" />
@@ -419,11 +409,11 @@ const AccomplishmentReportPreviewModal = ({
             </button>
             <button 
               onClick={onClose} 
-              className="flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl text-[11px] sm:text-sm font-black transition-all shadow-md shrink-0 cursor-pointer" 
+              className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors shrink-0 ml-1" 
               title="Close modal"
+              aria-label="Close modal"
             >
-              <X size={18} className="stroke-[3]" />
-              <span>CLOSE</span>
+              <X size={20} />
             </button>
           </div>
         </div>

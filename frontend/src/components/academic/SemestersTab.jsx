@@ -50,10 +50,10 @@ export function SemestersTab({
         <table className="w-full text-left text-sm">
           <thead className="bg-[#073c2d] text-white font-bold border-b border-[#073c2d] uppercase tracking-wider text-xs">
             <tr>
-              <th className="p-4 text-white">Semester Name</th>
-              <th className="p-4 text-white">Duration</th>
-              <th className="p-4 text-white">Status</th>
-              <th className="p-4 text-right text-white">Actions</th>
+              <th className="px-3 sm:p-4 text-white">Semester Name</th>
+              <th className="hidden sm:table-cell p-4 text-white">Duration</th>
+              <th className="px-3 sm:p-4 text-white">Status</th>
+              <th className="px-3 sm:p-4 text-right text-white">Actions</th>
             </tr>
           </thead>
 
@@ -64,51 +64,58 @@ export function SemestersTab({
 
               return (
                 <tr key={sem.id} className="hover:bg-gray-50/70 transition">
-                  <td className="p-4 font-extrabold text-gray-900">
+                  <td className="px-3 sm:p-4 font-extrabold text-gray-900">
                     <div className="flex items-center gap-2.5">
                       <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-800 flex items-center justify-center font-bold text-xs shrink-0">
                         <Clock size={16} />
                       </div>
-                      <span>{sem.name}</span>
+                      <div>
+                        <span className="text-xs sm:text-sm">{sem.name}</span>
+                        <div className="sm:hidden text-[10px] text-gray-500 font-semibold mt-0.5">
+                          {formatDateRange(sem.start_date, sem.end_date)}
+                        </div>
+                      </div>
                     </div>
                   </td>
 
-                  <td className="p-4 text-gray-600 font-semibold text-xs">
+                  <td className="hidden sm:table-cell p-4 text-gray-600 font-semibold text-xs">
                     {formatDateRange(sem.start_date, sem.end_date)}
                   </td>
 
-                  <td className="p-4">
+                  <td className="px-3 sm:p-4">
                     {isArchived ? (
-                      <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-bold uppercase">Archived</span>
+                      <span className="bg-red-100 text-red-700 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-[10px] sm:text-xs font-bold uppercase">Archived</span>
                     ) : sem.is_active ? (
-                      <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-1 rounded-full text-xs font-extrabold flex items-center gap-1 w-fit">
-                        <CheckCircle2 size={12} className="text-emerald-600" /> Ongoing Term
+                      <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-[10px] sm:text-xs font-extrabold inline-flex items-center gap-1 w-fit">
+                        <CheckCircle2 size={12} className="text-emerald-600 shrink-0" />
+                        <span className="truncate">Ongoing Term</span>
                       </span>
                     ) : (
-                      <span className="bg-gray-100 text-gray-600 border border-gray-200 px-3 py-1 rounded-full text-xs font-bold w-fit">
+                      <span className="bg-gray-100 text-gray-600 border border-gray-200 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-[10px] sm:text-xs font-bold w-fit">
                         {status}
                       </span>
                     )}
                   </td>
 
-                  <td className="p-4 text-right">
-                    <div className="flex items-center justify-end gap-2">
+                  <td className="px-3 sm:p-4 text-right">
+                    <div className="flex items-center justify-end gap-1 sm:gap-2">
                       {!sem.is_active && !isArchived && (
                         <button
                           onClick={() => onActivateSemester(sem.id)}
-                          className="px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-bold transition flex items-center gap-1"
+                          className="px-2 sm:px-3 py-1 sm:py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-[10px] sm:text-xs font-bold transition flex items-center gap-1 shrink-0"
                         >
-                          Set as Current
+                          <span className="hidden sm:inline">Set as Current</span>
+                          <span className="sm:hidden">Current</span>
                         </button>
                       )}
 
                       {!isArchived && (
                         <button
                           onClick={() => onEditSemester(sem)}
-                          className="p-1.5 text-gray-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition"
+                          className="p-1 sm:p-1.5 text-gray-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition"
                           title="Edit Semester"
                         >
-                          <Edit3 size={16} />
+                          <Edit3 size={15} />
                         </button>
                       )}
 
@@ -116,13 +123,13 @@ export function SemestersTab({
                         onClick={() => onArchiveSemester(sem.id)}
                         disabled={sem.is_active || isArchived}
                         title={sem.is_active ? "Active semesters cannot be archived" : isArchived ? "Already archived" : "Archive Semester"}
-                        className={`p-1.5 rounded-lg transition ${
+                        className={`p-1 sm:p-1.5 rounded-lg transition ${
                           sem.is_active || isArchived
                             ? 'text-gray-300 cursor-not-allowed'
                             : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
                         }`}
                       >
-                        <Trash2 size={16} />
+                        <Trash2 size={15} />
                       </button>
                     </div>
                   </td>

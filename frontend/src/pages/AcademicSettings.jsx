@@ -406,7 +406,7 @@ const AcademicSettings = () => {
     <div className="min-h-screen bg-[#f8fafc] pb-32 relative">
       {/* Toast Notification Banner */}
       {toast && (
-        <div className={`fixed top-8 right-8 z-[200] px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 text-white font-extrabold text-xs tracking-wide ${
+        <div className={`fixed top-20 right-4 sm:right-10 z-[999999] px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 text-white font-extrabold text-xs tracking-wide ${
           toast.type === 'error' ? 'bg-red-600' : 'bg-emerald-700'
         } animate-in slide-in-from-top-4`}>
           {toast.type === 'error' ? <AlertCircle size={20} /> : <Check size={20} />}
@@ -425,9 +425,9 @@ const AcademicSettings = () => {
       </div>
 
       {/* 4-Step Navigation Tabs */}
-      <div className="flex flex-wrap gap-2 border-b border-gray-200 mb-8 bg-white p-2 rounded-2xl border border-gray-100 shadow-2xs">
+      <div className="flex items-center gap-2 overflow-x-auto pb-2 sm:pb-0 mb-6 bg-white p-2 rounded-2xl border border-gray-100 shadow-2xs scrollbar-none">
         <button
-          className={`px-5 py-3 font-extrabold text-xs rounded-xl transition flex items-center gap-2 ${
+          className={`px-4 sm:px-5 py-2.5 sm:py-3 font-extrabold text-xs rounded-xl transition flex items-center gap-2 shrink-0 ${
             activeTab === 'school-years'
               ? 'bg-emerald-800 text-white shadow-md'
               : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
@@ -438,7 +438,7 @@ const AcademicSettings = () => {
         </button>
 
         <button
-          className={`px-5 py-3 font-extrabold text-xs rounded-xl transition flex items-center gap-2 ${
+          className={`px-4 sm:px-5 py-2.5 sm:py-3 font-extrabold text-xs rounded-xl transition flex items-center gap-2 shrink-0 ${
             activeTab === 'semesters'
               ? 'bg-emerald-800 text-white shadow-md'
               : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
@@ -449,7 +449,7 @@ const AcademicSettings = () => {
         </button>
 
         <button
-          className={`px-5 py-3 font-extrabold text-xs rounded-xl transition flex items-center gap-2 ${
+          className={`px-4 sm:px-5 py-2.5 sm:py-3 font-extrabold text-xs rounded-xl transition flex items-center gap-2 shrink-0 ${
             activeTab === 'calendar'
               ? 'bg-emerald-800 text-white shadow-md'
               : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
@@ -460,7 +460,7 @@ const AcademicSettings = () => {
         </button>
 
         <button
-          className={`px-5 py-3 font-extrabold text-xs rounded-xl transition flex items-center gap-2 ${
+          className={`px-4 sm:px-5 py-2.5 sm:py-3 font-extrabold text-xs rounded-xl transition flex items-center gap-2 shrink-0 ${
             activeTab === 'submission-windows'
               ? 'bg-emerald-800 text-white shadow-md'
               : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'

@@ -172,15 +172,16 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
 
     // Weekday Headers
     const headers = weekDays.map(day => (
-      <div key={`header-${day}`} className="font-extrabold text-center text-[11px] uppercase tracking-wider py-2.5 text-gray-500 bg-gray-50/80 border-b border-gray-200/80">
-        {day}
+      <div key={`header-${day}`} className="font-extrabold text-center text-[10px] sm:text-[11px] uppercase tracking-wider py-1.5 sm:py-2.5 text-gray-500 bg-gray-50/80 border-b border-gray-200/80">
+        <span className="hidden sm:inline">{day}</span>
+        <span className="sm:hidden">{day.charAt(0)}</span>
       </div>
     ));
 
     // Empty slots before 1st of month
     for (let i = 0; i < firstDay; i++) {
       days.push(
-        <div key={`empty-prev-${i}`} className="min-h-[105px] border-b border-r border-gray-100 bg-gray-50/30 p-2"></div>
+        <div key={`empty-prev-${i}`} className="min-h-[50px] sm:min-h-[105px] border-b border-r border-gray-100 bg-gray-50/30 p-1 sm:p-2"></div>
       );
     }
 
@@ -218,7 +219,7 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
             }
           }}
           title={blockedTitle}
-          className={`min-h-[105px] border-b border-r border-gray-100 p-2 transition-all relative flex flex-col justify-between group ${
+          className={`min-h-[50px] sm:min-h-[105px] border-b border-r border-gray-100 p-1 sm:p-2 transition-all relative flex flex-col justify-between group ${
             hasBlockedEvent 
               ? 'bg-rose-50/40 hover:bg-rose-100/50 border-rose-100/70 cursor-pointer' 
               : isToday 
@@ -228,8 +229,8 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
         >
           {/* Day Number Row */}
           <div>
-            <div className="flex justify-between items-center mb-1.5">
-              <span className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full transition-all ${
+            <div className="flex justify-between items-center mb-0.5 sm:mb-1.5">
+              <span className={`text-[10px] sm:text-xs font-bold w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full transition-all ${
                 isToday 
                   ? 'bg-primary-green text-white font-extrabold shadow-sm ring-2 ring-emerald-500/20' 
                   : hasBlockedEvent
@@ -240,31 +241,31 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
               </span>
 
               {hasBlockedEvent && (
-                <span className="flex items-center gap-1 text-[10px] font-black text-rose-700 bg-rose-100/80 px-1.5 py-0.5 rounded-full border border-rose-200/80" title={blockedTitle}>
-                  <Lock size={10} className="text-rose-600" />
-                  <span>BLOCKED</span>
+                <span className="flex items-center gap-0.5 text-[9px] sm:text-[10px] font-black text-rose-700 bg-rose-100/80 px-1 sm:px-1.5 py-0.5 rounded-full border border-rose-200/80 shrink-0" title={blockedTitle}>
+                  <Lock size={10} className="text-rose-600 shrink-0" />
+                  <span className="hidden sm:inline">BLOCKED</span>
                 </span>
               )}
             </div>
 
             {/* Display Events (Max 2 visible for clean spacing) */}
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               {dayEvents.slice(0, 2).map((ev, idx) => (
                 <div 
                   key={idx} 
                   title={ev.isBlocked ? `This date cannot be chosen for activity event (${ev.title})` : ev.title}
-                  className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-all truncate flex items-center gap-1.5 border shadow-2xs ${
+                  className={`px-1 sm:px-2 py-0.5 sm:py-1 rounded-md sm:rounded-lg text-[9px] sm:text-[11px] font-bold transition-all truncate flex items-center gap-1 border shadow-2xs ${
                     ev.isBlocked 
                       ? 'bg-rose-100/90 text-rose-900 border-rose-200/80 hover:bg-rose-200/90' 
                       : 'bg-sky-50 text-sky-900 border-sky-200/80 hover:border-sky-300'
                   }`}
                 >
                   {ev.isBlocked ? (
-                    <ShieldAlert size={12} className="text-rose-600 shrink-0" />
+                    <ShieldAlert size={10} className="text-rose-600 shrink-0" />
                   ) : (
                     <div className="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0"></div>
                   )}
-                  <span className="truncate">{ev.title}</span>
+                  <span className="truncate hidden sm:inline">{ev.title}</span>
                 </div>
               ))}
             </div>
@@ -272,9 +273,9 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
 
           {/* More items overflow badge */}
           {dayEvents.length > 2 && (
-            <div className="mt-1 flex items-center justify-between text-[10px] font-extrabold text-gray-500 group-hover:text-gray-800">
-              <span className="px-1.5 py-0.5 bg-gray-100 rounded-md border border-gray-200/60">
-                +{dayEvents.length - 2} more
+            <div className="mt-0.5 flex items-center justify-between text-[9px] sm:text-[10px] font-extrabold text-gray-500 group-hover:text-gray-800">
+              <span className="px-1 sm:px-1.5 py-0.5 bg-gray-100 rounded-md border border-gray-200/60">
+                +{dayEvents.length - 2}
               </span>
             </div>
           )}
@@ -287,7 +288,7 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
     const trailingSlots = (7 - (totalSlots % 7)) % 7;
     for (let i = 0; i < trailingSlots; i++) {
       days.push(
-        <div key={`empty-next-${i}`} className="min-h-[105px] border-b border-r border-gray-100 bg-gray-50/30 p-2"></div>
+        <div key={`empty-next-${i}`} className="min-h-[50px] sm:min-h-[105px] border-b border-r border-gray-100 bg-gray-50/30 p-1 sm:p-2"></div>
       );
     }
 
@@ -425,18 +426,18 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 sm:p-6" onClick={onClose}>
-      <div className="bg-[#f8fafc] rounded-3xl shadow-2xl w-full max-w-6xl h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-gray-100" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-2 sm:p-6" onClick={onClose}>
+      <div className="bg-[#f8fafc] rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-6xl h-[95vh] sm:h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-gray-100" onClick={e => e.stopPropagation()}>
         
         {/* Header */}
-        <div className="bg-white px-8 py-5 border-b border-gray-100 flex items-center justify-between shrink-0 sticky top-0 z-10">
-          <div className="flex items-center gap-4">
-            <div className="w-11 h-11 bg-primary-green/10 text-primary-green rounded-2xl flex items-center justify-center shadow-2xs shrink-0">
-              <CalendarIcon size={22} />
+        <div className="bg-white px-4 sm:px-8 py-3.5 sm:py-5 border-b border-gray-100 flex items-center justify-between shrink-0 sticky top-0 z-10">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+            <div className="w-9 h-9 sm:w-11 sm:h-11 bg-primary-green/10 text-primary-green rounded-xl sm:rounded-2xl flex items-center justify-center shadow-2xs shrink-0">
+              <CalendarIcon size={20} className="sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <h2 className="text-xl font-black text-gray-900 tracking-tight">School Year Calendar</h2>
-              <p className="text-xs font-bold text-gray-400 mt-0.5">
+            <div className="min-w-0 flex-1">
+              <h2 className="text-sm sm:text-xl font-black text-gray-900 tracking-tight truncate">School Year Calendar</h2>
+              <p className="text-[10px] sm:text-xs font-bold text-gray-400 mt-0.5 truncate">
                 {activeSy ? (
                   <>
                     {activeSy.name} (
@@ -450,18 +451,18 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-2">
             <button
               onClick={generateReport}
-              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 hover:border-primary-green hover:bg-emerald-50 hover:text-primary-green text-gray-700 text-xs font-bold rounded-xl transition-all shadow-2xs"
+              className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-white border border-gray-200 hover:border-primary-green hover:bg-emerald-50 hover:text-primary-green text-gray-700 text-xs font-bold rounded-xl transition-all shadow-2xs"
             >
-              <FileDown size={16} />
+              <FileDown size={15} />
               <span className="hidden sm:inline">Export PDF Report</span>
             </button>
-            <div className="h-6 w-[1px] bg-gray-200 mx-1"></div>
+            <div className="h-6 w-[1px] bg-gray-200 mx-0.5 hidden sm:block"></div>
             <button
               onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
+              className="p-1.5 sm:p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
             >
               <X size={20} />
             </button>
@@ -469,20 +470,20 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
         </div>
 
         {/* Unified Control Toolbar & Legend Bar */}
-        <div className="px-8 py-3.5 bg-white border-b border-gray-100 flex flex-wrap items-center justify-between gap-4 shrink-0 shadow-2xs z-0 relative">
+        <div className="px-3 sm:px-8 py-3 bg-white border-b border-gray-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0 shadow-2xs z-0 relative">
           
           {/* Left Controls: View Switcher & Semester Filter */}
-          <div className="flex items-center gap-3">
-            <div className="flex bg-gray-100 p-1 rounded-xl">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
+            <div className="flex bg-gray-100 p-1 rounded-xl w-full sm:w-auto justify-center">
               <button
                 onClick={() => setView('calendar')}
-                className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-extrabold transition-all ${view === 'calendar' ? 'bg-white text-gray-900 shadow-2xs' : 'text-gray-500 hover:text-gray-700'}`}
+                className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-extrabold transition-all ${view === 'calendar' ? 'bg-white text-gray-900 shadow-2xs' : 'text-gray-500 hover:text-gray-700'}`}
               >
                 <CalendarIcon size={14} /> Calendar
               </button>
               <button
                 onClick={() => setView('list')}
-                className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-extrabold transition-all ${view === 'list' ? 'bg-white text-gray-900 shadow-2xs' : 'text-gray-500 hover:text-gray-700'}`}
+                className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-extrabold transition-all ${view === 'list' ? 'bg-white text-gray-900 shadow-2xs' : 'text-gray-500 hover:text-gray-700'}`}
               >
                 <List size={14} /> List
               </button>
@@ -501,7 +502,7 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
                     }
                   }
                 }}
-                className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-700 outline-none focus:border-primary-green transition-all"
+                className="w-full sm:w-auto max-w-full truncate px-3 py-1.5 sm:py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-700 outline-none focus:border-primary-green transition-all"
               >
                 <option value="all">All Semesters</option>
                 {semesters.map(s => (
@@ -515,11 +516,11 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
 
           {/* Center Month Navigator */}
           {view === 'calendar' && (
-            <div className="flex items-center gap-2 bg-gray-50 border border-gray-200/80 rounded-xl p-1 shadow-2xs">
+            <div className="flex items-center justify-between sm:justify-center gap-2 bg-gray-50 border border-gray-200/80 rounded-xl p-1 shadow-2xs w-full sm:w-auto">
               <button onClick={prevMonth} className="p-1 hover:bg-white rounded-lg text-gray-600 transition-colors shadow-2xs">
                 <ChevronLeft size={16} />
               </button>
-              <span className="min-w-[130px] text-center font-extrabold text-gray-800 text-xs tracking-tight">
+              <span className="min-w-[110px] sm:min-w-[130px] text-center font-extrabold text-gray-800 text-xs tracking-tight">
                 {monthName}
               </span>
               <button onClick={nextMonth} className="p-1 hover:bg-white rounded-lg text-gray-600 transition-colors shadow-2xs">
@@ -535,17 +536,17 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
           )}
 
           {/* Right Compact Legend Indicators */}
-          <div className="flex items-center gap-3 text-[11px] font-bold text-gray-600">
-            <div className="flex items-center gap-1.5 bg-rose-50 text-rose-800 px-2.5 py-1 rounded-md border border-rose-200/80">
-              <div className="w-2 h-2 rounded-full bg-rose-600"></div>
+          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 sm:gap-3 text-[10px] sm:text-[11px] font-bold text-gray-600 w-full sm:w-auto">
+            <div className="flex items-center gap-1.5 bg-rose-50 text-rose-800 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md border border-rose-200/80">
+              <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-rose-600"></div>
               <span>Blocked Date</span>
             </div>
-            <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-800 px-2.5 py-1 rounded-md border border-emerald-200/80">
-              <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+            <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-800 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md border border-emerald-200/80">
+              <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-500"></div>
               <span>Open Window</span>
             </div>
-            <div className="flex items-center gap-1.5 bg-sky-50 text-sky-800 px-2.5 py-1 rounded-md border border-sky-200/80">
-              <div className="w-2 h-2 rounded-full bg-sky-500"></div>
+            <div className="flex items-center gap-1.5 bg-sky-50 text-sky-800 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md border border-sky-200/80">
+              <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-sky-500"></div>
               <span>Academic Event</span>
             </div>
           </div>

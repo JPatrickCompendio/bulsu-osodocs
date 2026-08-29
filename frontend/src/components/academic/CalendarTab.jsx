@@ -70,7 +70,7 @@ export function CalendarTab({
           </div>
 
           {/* Category Filter Pills */}
-          <div className="flex flex-wrap items-center gap-1.5 bg-gray-100 p-1 rounded-xl w-fit border border-gray-200">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 max-w-full bg-gray-100 p-1 rounded-xl w-full sm:w-fit border border-gray-200 scrollbar-none">
             {[
               { id: 'ALL', label: 'All Events' },
               { id: 'school_event', label: 'School Events' },
@@ -81,7 +81,7 @@ export function CalendarTab({
               <button
                 key={cat.id}
                 onClick={() => setCategoryFilter(cat.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition shrink-0 ${
                   categoryFilter === cat.id
                     ? 'bg-white text-gray-900 shadow-2xs font-extrabold'
                     : 'text-gray-500 hover:text-gray-800'
@@ -97,11 +97,11 @@ export function CalendarTab({
             <table className="w-full text-left text-sm">
               <thead className="bg-[#073c2d] text-white font-bold border-b border-[#073c2d] uppercase tracking-wider text-xs">
                 <tr>
-                  <th className="p-4 text-white">Event Title</th>
-                  <th className="p-4 text-white">Category</th>
-                  <th className="p-4 text-white">Duration</th>
-                  <th className="p-4 text-white">Blocks Proposals</th>
-                  <th className="p-4 text-right text-white">Actions</th>
+                  <th className="px-3 sm:p-4 text-white">Event Title</th>
+                  <th className="hidden sm:table-cell p-4 text-white">Category</th>
+                  <th className="hidden md:table-cell p-4 text-white">Duration</th>
+                  <th className="px-2 sm:p-4 text-center sm:text-left text-white">Blocks</th>
+                  <th className="px-3 sm:p-4 text-right text-white">Actions</th>
                 </tr>
               </thead>
 
@@ -111,52 +111,62 @@ export function CalendarTab({
 
                   return (
                     <tr key={ev.id} className="hover:bg-gray-50/70 transition">
-                      <td className="p-4 font-extrabold text-gray-900">
+                      <td className="px-3 sm:p-4 font-extrabold text-gray-900">
                         <div className="flex items-center gap-2">
                           {isBlocked && <Lock size={14} className="text-red-500 shrink-0" />}
-                          <span>{ev.title}</span>
+                          <div>
+                            <span className="text-xs sm:text-sm">{ev.title}</span>
+                            <div className="sm:hidden flex flex-wrap items-center gap-1 mt-0.5">
+                              <span className="bg-gray-100 border border-gray-200 px-1.5 py-0.5 rounded text-[9px] font-bold text-gray-600">
+                                {eventTypeLabels[ev.event_type] || ev.event_type}
+                              </span>
+                              <span className="text-[10px] text-gray-400 font-semibold">
+                                {formatDateRange(ev.start_date, ev.end_date)}
+                              </span>
+                            </div>
+                          </div>
                         </div>
                       </td>
 
-                      <td className="p-4 text-xs font-bold text-gray-600">
+                      <td className="hidden sm:table-cell p-4 text-xs font-bold text-gray-600">
                         <span className="bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full text-gray-700">
                           {eventTypeLabels[ev.event_type] || ev.event_type}
                         </span>
                       </td>
 
-                      <td className="p-4 text-gray-600 font-semibold text-xs">
+                      <td className="hidden md:table-cell p-4 text-gray-600 font-semibold text-xs">
                         {formatDateRange(ev.start_date, ev.end_date)}
                       </td>
 
-                      <td className="p-4">
+                      <td className="px-2 sm:p-4 text-center sm:text-left">
                         <button
                           onClick={() => onToggleBlock(ev)}
-                          className={`w-10 h-5 flex items-center rounded-full p-0.5 transition cursor-pointer ${
+                          className={`w-9 sm:w-10 h-4.5 sm:h-5 inline-flex items-center rounded-full p-0.5 transition cursor-pointer ${
                             isBlocked ? 'bg-red-500' : 'bg-gray-300'
                           }`}
                           title="Toggle proposal date blocking for this event"
                         >
-                          <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
-                            isBlocked ? 'translate-x-5' : ''
+                          <div className={`bg-white w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full shadow-md transform transition-transform ${
+                            isBlocked ? 'translate-x-4 sm:translate-x-5' : ''
                           }`} />
                         </button>
                       </td>
 
-                      <td className="p-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
+                      <td className="px-3 sm:p-4 text-right">
+                        <div className="flex items-center justify-end gap-1 sm:gap-2">
                           <button
                             onClick={() => onEditEvent(ev)}
-                            className="p-1.5 text-gray-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition"
+                            className="p-1 sm:p-1.5 text-gray-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition"
                             title="Edit Event"
                           >
-                            <Edit3 size={16} />
+                            <Edit3 size={15} />
                           </button>
                           <button
                             onClick={() => onDeleteEvent(ev.id)}
-                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                            className="p-1 sm:p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
                             title="Delete Event"
                           >
-                            <Trash2 size={16} />
+                            <Trash2 size={15} />
                           </button>
                         </div>
                       </td>

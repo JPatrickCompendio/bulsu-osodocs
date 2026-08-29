@@ -322,21 +322,11 @@ const ReportPreviewModal = ({
 
   return (
     <div 
-      className="fixed inset-0 bg-slate-900/85 z-[999999] flex flex-col items-center justify-start pt-2 sm:pt-4 pb-2 sm:pb-4 px-2 sm:px-4 backdrop-blur-md overflow-hidden font-sans text-gray-800"
+      className="fixed inset-0 bg-slate-900/85 z-[999999] flex flex-col items-center justify-center p-3 sm:p-6 backdrop-blur-md overflow-hidden font-sans text-gray-800"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      {/* ALWAYS VISIBLE FLOATING RED CLOSE BUTTON */}
-      <button
-        onClick={onClose}
-        className="fixed top-3 right-3 sm:top-5 sm:right-5 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white p-2.5 sm:p-3 rounded-full shadow-2xl z-[1000000] transition-all hover:scale-110 flex items-center justify-center cursor-pointer border-2 border-white"
-        title="Close modal"
-        aria-label="Close modal"
-      >
-        <X size={22} className="stroke-[3]" />
-      </button>
-
       {/* Hidden original logo in the DOM for canvas conversion */}
       <img
         ref={logoRef}
@@ -346,138 +336,140 @@ const ReportPreviewModal = ({
         onLoad={convertLogoToBase64}
       />
 
-      <div className="bg-white w-full max-w-4xl rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col my-2 sm:my-8 h-[96vh] sm:h-[90vh] overflow-hidden border border-gray-100" onClick={e => e.stopPropagation()}>
+      <div className="bg-white w-full max-w-4xl rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col h-[92vh] sm:h-[88vh] overflow-hidden border border-gray-100" onClick={e => e.stopPropagation()}>
         {/* Sticky Actions Bar */}
-        <div className="bg-white border-b border-gray-100 px-3 sm:px-6 py-2.5 sm:py-4 flex items-center justify-between gap-2 shrink-0 no-print w-full">
+        <div className="bg-white border-b border-gray-100 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-3 shrink-0 no-print w-full">
           <div className="min-w-0 flex-1">
-            <h3 className="font-extrabold text-gray-900 text-xs sm:text-lg uppercase tracking-tight line-clamp-1">Report Document Preview</h3>
+            <h3 className="font-extrabold text-gray-900 text-sm sm:text-lg uppercase tracking-tight line-clamp-1">Report Document Preview</h3>
             <p className="text-gray-400 text-[10px] sm:text-xs font-semibold hidden sm:block">Verify the data before printing or exporting to PDF.</p>
           </div>
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={handlePrint}
-              className="flex items-center gap-1 px-2.5 sm:px-4 py-2 sm:py-2.5 bg-gray-50 hover:bg-gray-100 text-gray-700 text-[11px] sm:text-xs font-black rounded-xl transition-all uppercase tracking-wider border border-gray-200"
+              className="flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 text-[11px] sm:text-xs font-black rounded-xl transition-all uppercase tracking-wider border border-gray-200"
             >
               <Printer size={14} />
               <span className="hidden sm:inline">Print</span>
             </button>
             <button
               onClick={handleDownloadPDF}
-              className="flex items-center gap-1 px-2.5 sm:px-5 py-2 sm:py-2.5 bg-primary-green hover:brightness-110 text-white text-[11px] sm:text-xs font-black rounded-xl transition-all uppercase tracking-wider shadow-md shadow-primary-green/20"
+              className="flex items-center gap-1.5 px-3 sm:px-5 py-2 sm:py-2 bg-primary-green hover:brightness-110 text-white text-[11px] sm:text-xs font-black rounded-xl transition-all uppercase tracking-wider shadow-md shadow-primary-green/20"
             >
               <Download size={14} />
               <span>Download PDF</span>
             </button>
             <button
               onClick={onClose}
-              className="flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl text-[11px] sm:text-sm font-black transition-all shadow-md shrink-0 cursor-pointer"
+              className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors shrink-0 ml-1"
               title="Close modal"
+              aria-label="Close modal"
             >
-              <X size={18} className="stroke-[3]" />
-              <span>CLOSE</span>
+              <X size={20} />
             </button>
           </div>
         </div>
 
         {/* Scrollable Preview Paper Sheet Container */}
         <div className="flex-1 overflow-auto bg-gray-100/50 p-2 sm:p-8 flex justify-center items-start scrollbar-thin">
-          {/* Printable A4 Simulated Sheet */}
-          <div
-            id="print-report-preview"
-            className="bg-white w-[210mm] max-w-full sm:max-w-none shrink-0 min-h-[297mm] px-4 sm:px-[10mm] py-6 sm:py-[20mm] shadow-lg border border-gray-200/50 rounded-lg text-gray-800 flex flex-col font-sans relative"
-          >
-            {/* 1. Header Area */}
-            <div className="flex items-center gap-4 border-b-2 border-primary-green pb-4 mb-6">
-              <img
-                src="/logo.png"
-                className="w-14 h-14 object-contain shrink-0"
-                alt="BulSU Logo"
-              />
-              <div>
-                <h1 className="text-primary-green font-black text-base uppercase tracking-wide leading-tight">Bulacan State University</h1>
-                <p className="text-gray-600 font-bold text-xs">BUSTOS CAMPUS</p>
-                <p className="text-gray-500 font-medium text-[11px] uppercase tracking-wider">Office of Student Organizations (OSODOCS)</p>
-              </div>
-            </div>
-
-            {/* 2. Title & Metadata */}
-            <div className="text-center mb-6">
-              <h2 className="text-base sm:text-xl font-extrabold text-gray-900 uppercase tracking-wide border-b border-gray-100 pb-2 inline-block px-4 sm:px-8 break-words">
-                {title}
-              </h2>
-            </div>
-            
-            <div className="flex flex-col sm:flex-row justify-between items-start text-xs text-gray-500 mb-6 sm:mb-8 bg-gray-50/50 p-3 sm:p-4 rounded-xl border border-gray-100 gap-3">
-              <div>
-                <p className="font-semibold text-gray-700">Generated By:</p>
-                <p className="font-bold text-primary-green mt-0.5 text-sm">{generatedBy}</p>
-                {schoolYear && (
-                  <>
-                    <p className="font-semibold text-gray-700 mt-2">School Year:</p>
-                    <p className="font-bold text-gray-800 mt-0.5">{schoolYear}</p>
-                  </>
-                )}
-              </div>
-              {personInCharge && (
+          <div className="w-[794px] shrink-0 origin-top scale-[0.41] min-[380px]:scale-[0.47] min-[440px]:scale-[0.55] sm:scale-[0.72] md:scale-[0.85] lg:scale-100 mb-[-640px] min-[380px]:mb-[-560px] min-[440px]:mb-[-470px] sm:mb-[-300px] md:mb-[-160px] lg:mb-0">
+            {/* Printable A4 Simulated Sheet */}
+            <div
+              id="print-report-preview"
+              className="bg-white w-[794px] min-h-[297mm] px-6 sm:px-[10mm] py-6 sm:py-[20mm] shadow-lg border border-gray-200/50 rounded-lg text-gray-800 flex flex-col font-sans relative"
+            >
+              {/* 1. Header Area */}
+              <div className="flex items-center gap-4 border-b-2 border-primary-green pb-4 mb-6">
+                <img
+                  src="/logo.png"
+                  className="w-14 h-14 object-contain shrink-0"
+                  alt="BulSU Logo"
+                />
                 <div>
-                  <p className="font-semibold text-gray-700">Person in Charge:</p>
-                  <p className="font-bold text-gray-900 mt-0.5 text-sm">{personInCharge}</p>
+                  <h1 className="text-primary-green font-black text-base uppercase tracking-wide leading-tight">Bulacan State University</h1>
+                  <p className="text-gray-600 font-bold text-xs">BUSTOS CAMPUS</p>
+                  <p className="text-gray-500 font-medium text-[11px] uppercase tracking-wider">Office of Student Organizations (OSODOCS)</p>
+                </div>
+              </div>
+
+              {/* 2. Title & Metadata */}
+              <div className="text-center mb-6">
+                <h2 className="text-base sm:text-xl font-extrabold text-gray-900 uppercase tracking-wide border-b border-gray-100 pb-2 inline-block px-4 sm:px-8 break-words">
+                  {title}
+                </h2>
+              </div>
+              
+              <div className="flex flex-col sm:flex-row justify-between items-start text-xs text-gray-500 mb-6 sm:mb-8 bg-gray-50/50 p-3 sm:p-4 rounded-xl border border-gray-100 gap-3">
+                <div>
+                  <p className="font-semibold text-gray-700">Generated By:</p>
+                  <p className="font-bold text-primary-green mt-0.5 text-sm">{generatedBy}</p>
+                  {schoolYear && (
+                    <>
+                      <p className="font-semibold text-gray-700 mt-2">School Year:</p>
+                      <p className="font-bold text-gray-800 mt-0.5">{schoolYear}</p>
+                    </>
+                  )}
+                </div>
+                {personInCharge && (
+                  <div>
+                    <p className="font-semibold text-gray-700">Person in Charge:</p>
+                    <p className="font-bold text-gray-900 mt-0.5 text-sm">{personInCharge}</p>
+                  </div>
+                )}
+                <div className="text-right">
+                  <p className="font-semibold text-gray-700">Date Generated:</p>
+                  <p className="font-bold text-gray-800 mt-0.5">{timestamp}</p>
+                </div>
+              </div>
+
+              {/* 3. Stats Section */}
+              {stats && stats.length > 0 && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                  {stats.map((stat, idx) => (
+                    <div key={idx} className="bg-[#F8F9FA] p-3.5 rounded-xl border border-gray-200/60 flex flex-col justify-between border-l-2 border-l-primary-green">
+                      <span className="text-[9px] font-semibold text-gray-500 uppercase tracking-wider leading-none mb-2">{stat.label}</span>
+                      <span className="text-base font-bold text-gray-800 leading-tight mt-1">{stat.value}</span>
+                    </div>
+                  ))}
                 </div>
               )}
-              <div className="text-right">
-                <p className="font-semibold text-gray-700">Date Generated:</p>
-                <p className="font-bold text-gray-800 mt-0.5">{timestamp}</p>
-              </div>
-            </div>
 
-            {/* 3. Stats Section */}
-            {stats && stats.length > 0 && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                {stats.map((stat, idx) => (
-                  <div key={idx} className="bg-[#F8F9FA] p-3.5 rounded-xl border border-gray-200/60 flex flex-col justify-between border-l-2 border-l-primary-green">
-                    <span className="text-[9px] font-semibold text-gray-500 uppercase tracking-wider leading-none mb-2">{stat.label}</span>
-                    <span className="text-base font-bold text-gray-800 leading-tight mt-1">{stat.value}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="mb-8">
-              <table className={`w-full text-left border-collapse text-xs border border-gray-200 ${tableHeaders.length === 2 ? 'table-fixed' : ''}`}>
-                <thead>
-                  <tr className="bg-[#073c2d] text-white font-bold">
-                    {tableHeaders.map((head, idx) => (
-                      <th key={idx} className="px-4 py-2.5 uppercase tracking-wider text-[9px] first:rounded-tl-lg last:rounded-tr-lg border-b border-[#073c2d] font-semibold text-white">
-                        {head}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  {tableData.map((row, rIdx) => {
-                    const isKeyValueTable = tableHeaders.length === 2;
-                    return (
-                      <tr key={rIdx} className="hover:bg-gray-50 transition-colors odd:bg-gray-50/10">
-                        {row.map((cell, cIdx) => {
-                          if (isKeyValueTable && cIdx === 0) {
+              <div className="mb-8">
+                <table className={`w-full text-left border-collapse text-xs border border-gray-200 ${tableHeaders.length === 2 ? 'table-fixed' : ''}`}>
+                  <thead>
+                    <tr className="bg-[#073c2d] text-white font-bold">
+                      {tableHeaders.map((head, idx) => (
+                        <th key={idx} className="px-4 py-2.5 uppercase tracking-wider text-[9px] first:rounded-tl-lg last:rounded-tr-lg border-b border-[#073c2d] font-semibold text-white">
+                          {head}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white">
+                    {tableData.map((row, rIdx) => {
+                      const isKeyValueTable = tableHeaders.length === 2;
+                      return (
+                        <tr key={rIdx} className="hover:bg-gray-50 transition-colors odd:bg-gray-50/10">
+                          {row.map((cell, cIdx) => {
+                            if (isKeyValueTable && cIdx === 0) {
+                              return (
+                                <td key={cIdx} className="px-4 py-2.5 text-gray-500 font-semibold text-[10px] uppercase tracking-wider bg-gray-50/50 w-1/5 select-none border-b border-gray-100">
+                                  {cell}
+                                </td>
+                              );
+                            }
+                            const isStatusCol = cIdx === row.length - 1;
                             return (
-                              <td key={cIdx} className="px-4 py-2.5 text-gray-500 font-semibold text-[10px] uppercase tracking-wider bg-gray-50/50 w-1/5 select-none border-b border-gray-100">
+                              <td key={cIdx} className={`px-4 py-2.5 text-gray-600 border-b border-gray-100 ${isStatusCol ? 'whitespace-nowrap font-bold text-emerald-800' : 'break-words'} ${isKeyValueTable ? 'font-normal text-xs' : 'font-medium text-xs'}`}>
                                 {cell}
                               </td>
                             );
-                          }
-                          return (
-                            <td key={cIdx} className={`px-4 py-2.5 text-gray-600 border-b border-gray-100 whitespace-pre-line break-all break-words max-w-0 ${isKeyValueTable ? 'font-normal text-xs' : 'font-medium text-xs'}`}>
-                              {cell}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
 
             {/* 5. Secondary Data Table (Timeline/History for Detail view) */}
             {secondTableHeaders && secondTableData && (
@@ -543,7 +535,8 @@ const ReportPreviewModal = ({
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 };
 
 export default ReportPreviewModal;

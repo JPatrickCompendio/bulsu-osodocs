@@ -536,7 +536,7 @@ const Header = ({ onToggleMobileMenu }) => {
 
   return (
     <>
-      <header className={`h-16 bg-white border-b border-gray-100 flex items-center justify-between px-4 sm:px-8 sticky top-0 shadow-sm transition-all ${showUserDropdown ? 'z-[999999]' : 'z-30'}`}>
+      <header className={`h-16 bg-white border-b border-gray-100 flex items-center justify-between px-4 sm:px-8 sticky top-0 shadow-sm transition-all ${showUserDropdown ? 'z-40' : 'z-30'}`}>
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -1044,9 +1044,9 @@ const DashboardLayout = () => {
       <Sidebar isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <Header onToggleMobileMenu={() => setIsMobileMenuOpen(true)} />
-        <main className="flex-1 overflow-y-auto p-3.5 sm:p-6 md:p-8 relative z-0">
+        <main className="flex-1 overflow-y-auto p-2 sm:p-4 md:p-6 relative">
           <PageTransition>
-            <div className="max-w-7xl mx-auto">
+            <div className="max-w-[96rem] mx-auto">
               <Outlet />
             </div>
           </PageTransition>

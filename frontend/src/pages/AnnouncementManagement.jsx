@@ -29,6 +29,8 @@ const AnnouncementManagement = () => {
   const [existingFiles, setExistingFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const { showToast, ToastComponent } = useToast();
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [fileToDelete, setFileToDelete] = useState(null);
   
   const [formData, setFormData] = useState({
     title: '',
@@ -116,12 +118,18 @@ const AnnouncementManagement = () => {
     }
   };
 
-  const removeExistingFile = async (fileName) => {
-    if (!window.confirm(`Are you sure you want to remove ${fileName}?`)) return;
+  const removeExistingFile = (fileName) => {
+    setFileToDelete(fileName);
+  };
+
+  const confirmRemoveFile = async () => {
+    if (!fileToDelete) return;
     try {
-      const filePath = `announcements/${editingId}/${fileName}`;
+      const filePath = `announcements/${editingId}/${fileToDelete}`;
       await supabase.storage.from('documents').remove([filePath]);
-      setExistingFiles(prev => prev.filter(f => f.name !== fileName));
+      setExistingFiles(prev => prev.filter(f => f.name !== fileToDelete));
+      showToast('File removed successfully');
+      setFileToDelete(null);
     } catch (err) {
       console.error('Error removing file:', err);
       showToast('Failed to remove file');
@@ -221,16 +229,21 @@ const AnnouncementManagement = () => {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this announcement?')) {
-      try {
-        await apiClient.delete(apiUrl(`/api/announcements/${id}`));
-        fetchAnnouncements();
-        window.dispatchEvent(new CustomEvent('announcement-updated'));
-      } catch (err) {
-        console.error('Error deleting announcement:', err);
-        showToast('Failed to delete announcement.');
-      }
+  const handleDelete = (ann) => {
+    setDeleteTarget(ann);
+  };
+
+  const confirmDeleteAnnouncement = async () => {
+    if (!deleteTarget) return;
+    try {
+      await apiClient.delete(apiUrl(`/api/announcements/${deleteTarget.id}`));
+      fetchAnnouncements();
+      window.dispatchEvent(new CustomEvent('announcement-updated'));
+      showToast('Announcement deleted successfully.');
+      setDeleteTarget(null);
+    } catch (err) {
+      console.error('Error deleting announcement:', err);
+      showToast('Failed to delete announcement.');
     }
   };
 
@@ -330,7 +343,7 @@ const AnnouncementManagement = () => {
                           <Edit2 size={16} className="sm:w-4 sm:h-4" />
                         </button>
                         <button 
-                          onClick={() => handleDelete(ann.id)}
+                          onClick={() => handleDelete(ann)}
                           className="p-1.5 sm:p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                         >
                           <Trash2 size={16} className="sm:w-4 sm:h-4" />
@@ -544,6 +557,68 @@ const AnnouncementManagement = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Announcement Modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 text-center border border-gray-100 animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+            <div className="w-14 h-14 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-red-50">
+              <Trash2 size={26} />
+            </div>
+            <h3 className="text-lg font-extrabold text-gray-900 mb-1">Delete Announcement</h3>
+            <p className="text-xs text-gray-500 mb-6 leading-relaxed">
+              Are you sure you want to delete <span className="font-bold text-gray-800">"{deleteTarget.title}"</span>? This action cannot be undone.
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-xl transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteAnnouncement}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-red-600/20"
+              >
+                Delete Announcement
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete File Attachment Modal */}
+      {fileToDelete && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 text-center border border-gray-100 animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+            <div className="w-14 h-14 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-red-50">
+              <Trash2 size={26} />
+            </div>
+            <h3 className="text-lg font-extrabold text-gray-900 mb-1">Remove Attachment</h3>
+            <p className="text-xs text-gray-500 mb-6 leading-relaxed">
+              Are you sure you want to remove <span className="font-bold text-gray-800">"{fileToDelete}"</span> from this announcement?
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setFileToDelete(null)}
+                className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-xl transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmRemoveFile}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-red-600/20"
+              >
+                Remove File
+              </button>
+            </div>
           </div>
         </div>
       )}

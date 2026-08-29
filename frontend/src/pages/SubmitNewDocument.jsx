@@ -1389,11 +1389,21 @@ const SubmitNewDocument = () => {
   }, [localFiles, existingAttachments, selectedType, requirements]);
 
   const isAllRequiredAttached = useMemo(() => {
-    const requiredReqs = requirements.filter(r => 
-      !r.is_optional && 
-      String(r.is_optional) !== 'true' && 
-      !r.title.toLowerCase().includes('(optional)')
-    );
+    const docTypeName = (selectedType?.name || '').toLowerCase();
+    const isStrictRequirementDoc = 
+      docTypeName.includes('mid year') || docTypeName.includes('mid-year') || docTypeName.includes('mid_year') ||
+      docTypeName.includes('renewal') ||
+      docTypeName.includes('year end') || docTypeName.includes('year-end') || docTypeName.includes('year_end');
+
+    if (isStrictRequirementDoc) {
+      if (requirements.length === 0) return true;
+      return requirements.every(r => attachedRequirementIds.has(String(r.id)));
+    }
+
+    const requiredReqs = requirements.filter(r => {
+      const isOpt = r?.is_optional === true || String(r?.is_optional).toLowerCase() === 'true' || String(r?.title || '').toLowerCase().includes('(optional)');
+      return !isOpt;
+    });
 
     if (requiredReqs.length === 0) return true;
 
@@ -1403,33 +1413,37 @@ const SubmitNewDocument = () => {
       const is02F1 = r.id === 78 || code.includes('02f1') || title.includes('02f1') || title.includes('activity proposal form');
 
       if (is02F1) {
-        return Boolean(proposalDetails?.activity_title?.trim());
+        return hasDownloadedProposal || Boolean(proposalDetails?.activity_title?.trim());
       }
 
       return attachedRequirementIds.has(String(r.id));
     });
-  }, [requirements, attachedRequirementIds, proposalDetails]);
+  }, [selectedType, requirements, attachedRequirementIds, proposalDetails, hasDownloadedProposal]);
 
   const isResubmitDisabled = useMemo(() => {
     if (isSaving) return true;
 
-    if (!isReturnedDocument) {
-      return !isAllRequiredAttached;
+    if (!isAllRequiredAttached) {
+      return true;
     }
 
-    // For returned documents:
-    // 1. If 02F1 Activity Proposal Form was returned, hasFormChanges MUST be true
-    if (is02F1Returned && !hasFormChanges) return true;
+    if (isReturnedDocument) {
+      // For returned documents:
+      // 1. If 02F1 Activity Proposal Form was returned, hasFormChanges MUST be true
+      if (is02F1Returned && !hasFormChanges) return true;
 
-    // 2. All returned requirements MUST have a replacement file in localFiles
-    for (const reqId of returnedReqIds) {
-      if (!localFiles[reqId]) {
-        return true;
+      // 2. All non-optional returned requirements MUST have a replacement file in localFiles
+      for (const reqId of returnedReqIds) {
+        const reqObj = requirements.find(r => String(r.id) === String(reqId));
+        const isOpt = reqObj?.is_optional === true || String(reqObj?.is_optional).toLowerCase() === 'true' || String(reqObj?.title || '').toLowerCase().includes('(optional)');
+        if (!isOpt && !localFiles[reqId]) {
+          return true;
+        }
       }
     }
 
     return false;
-  }, [isSaving, isReturnedDocument, isAllRequiredAttached, is02F1Returned, hasFormChanges, returnedReqIds, localFiles]);
+  }, [isSaving, isAllRequiredAttached, isReturnedDocument, is02F1Returned, hasFormChanges, returnedReqIds, localFiles]);
 
   const getReqCount = (typeId, subtypeObj) => {
     const sId = subtypeObj ? subtypeObj.id : null;
@@ -1701,10 +1715,16 @@ const SubmitNewDocument = () => {
     if (isProposal) {
       const p = proposalDetails;
 
+      const hasSameDayRange = scheduleMode === 'range' && p.schedules.some(s => s.activity_date && s.end_date && s.activity_date === s.end_date);
+      if (hasSameDayRange) {
+        showToast("Date Range mode requires the start date and end date to be on different days. Use 'Single Day' mode for single-day activities.", 'error');
+        return;
+      }
+
       const hasInvalidSchedule = p.schedules.length === 0 || p.schedules.some(s => {
         if (!s.activity_date) return true;
         if (scheduleMode === 'range') {
-          if (!s.end_date) return true;
+          if (!s.end_date || s.activity_date === s.end_date) return true;
         } else {
           if (!s.start_time) return true;
           if (!s.is_indefinite && !s.end_time) return true;
@@ -1736,10 +1756,24 @@ const SubmitNewDocument = () => {
     }
 
     const attachedIds = attachedRequirementIds;
-    const requiredReqs = requirements.filter(r => !r.is_optional && String(r.is_optional) !== 'true' && !r.title.toLowerCase().includes('(optional)'));
-    if (attachedIds.size < requiredReqs.length) {
-      showToast(`Please attach all ${requiredReqs.length} required documents before registering.`, 'error');
-      return;
+    const docTypeName = (selectedType?.name || '').toLowerCase();
+    const isStrictRequirementDoc = 
+      docTypeName.includes('mid year') || docTypeName.includes('mid-year') || docTypeName.includes('mid_year') ||
+      docTypeName.includes('renewal') ||
+      docTypeName.includes('year end') || docTypeName.includes('year-end') || docTypeName.includes('year_end');
+
+    if (isStrictRequirementDoc) {
+      const missingReqs = requirements.filter(r => !attachedIds.has(String(r.id)));
+      if (missingReqs.length > 0) {
+        showToast(`Please attach files for all ${requirements.length} required documents before registering.`, 'error');
+        return;
+      }
+    } else {
+      const requiredReqs = requirements.filter(r => !r.is_optional && String(r.is_optional) !== 'true' && !r.title.toLowerCase().includes('(optional)'));
+      if (attachedIds.size < requiredReqs.length) {
+        showToast(`Please attach all ${requiredReqs.length} required documents before registering.`, 'error');
+        return;
+      }
     }
 
     processUploadsAndSave('submitted');
@@ -2008,7 +2042,7 @@ const SubmitNewDocument = () => {
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-gray-700 font-sans pb-32 relative">
       {toast && (
-        <div className={`fixed top-10 right-10 z-[200] flex items-center gap-4 px-6 py-4 rounded-xl shadow-xl animate-in slide-in-from-right-full ${toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-primary-green text-white'
+        <div className={`fixed top-20 right-4 sm:right-10 z-[999999] flex items-center gap-4 px-6 py-4 rounded-xl shadow-xl animate-in slide-in-from-right-full ${toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-primary-green text-white'
           }`}>
           {toast.type === 'error' ? <AlertCircle size={20} /> : <CheckCircle2 size={20} />}
           <span className="font-bold text-sm">{toast.message}</span>
@@ -2183,7 +2217,7 @@ const SubmitNewDocument = () => {
       {view === 'form' && (
         <form ref={formRef} onSubmit={handleRegisterDocument} className="flex flex-col animate-in fade-in duration-500 relative min-h-screen">
           {/* Header - Stretches full width, auto-hides on scroll down */}
-          <div className={`fixed top-20 left-64 right-0 z-40 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between shadow-sm transition-transform duration-300 ${showHeader ? 'translate-y-0' : '-translate-y-full'}`}>
+          <div className={`hidden md:flex fixed top-16 left-64 right-0 z-10 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between shadow-sm transition-transform duration-300 ${showHeader ? 'translate-y-0' : '-translate-y-full'}`}>
             <div className="flex items-center gap-6">
               <button type="button" onClick={handleBackNavigation} className="p-2 hover:bg-gray-50 rounded-lg transition-all">
                 <ArrowLeft size={24} className="text-gray-500" />
@@ -2208,12 +2242,12 @@ const SubmitNewDocument = () => {
             </div>
           </div>
 
-          <div className="flex-1 p-8 pb-5 pt-15 bg-gray-50/20">
-            <div className={`w-full max-w-5xl mx-auto space-y-8`}>
+          <div className="flex-1 p-2 sm:p-4 md:p-8 pb-24 pt-4 md:pt-15 bg-gray-50/20">
+            <div className={`w-full max-w-5xl mx-auto space-y-4 sm:space-y-8`}>
 
               {/* Returned Document Revision Banner */}
               {isReturnedDocument && (
-                <div className="p-5 bg-amber-50 border-2 border-amber-200 rounded-2xl flex items-center justify-between gap-4 shadow-sm animate-in fade-in">
+                <div className="p-3.5 sm:p-5 bg-amber-50 border-2 border-amber-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm animate-in fade-in">
                   <div className="flex items-center gap-3">
                     <div className="p-3 bg-amber-100 text-amber-700 rounded-xl shrink-0">
                       <RefreshCcw size={22} className="animate-spin-slow" />
@@ -2235,24 +2269,24 @@ const SubmitNewDocument = () => {
                 </div>
               )}
 
-              {/* Conditional Proposal Form */}
+              {/* Proposal Stepper Indicator */}
               {isProposal && (
-                <div className="space-y-8">
-                  {/* Stepper UI - Sticky to stay visible when scrolling */}
-                  <div className="sticky top-[-20px] z-10 bg-white px-6 py-3 rounded-2xl shadow-md border border-gray-100 flex items-center justify-between overflow-hidden">
-                    <div className="absolute top-1/2 left-0 w-full h-1 bg-gray-100 -translate-y-1/2 z-0"></div>
+                <div className="bg-white p-3 sm:p-6 rounded-2xl shadow-sm border border-gray-100">
+                  <div className="flex items-center justify-between max-w-xl mx-auto relative">
+                    <div className="absolute top-1/2 left-0 right-0 h-1 bg-gray-100 -translate-y-1/2 z-0"></div>
                     <div className="absolute top-1/2 left-0 h-1 bg-primary-green -translate-y-1/2 z-0 transition-all duration-500 ease-in-out" style={{ width: proposalStep === 1 ? '15%' : proposalStep === 2 ? '50%' : '85%' }}></div>
-
+                    
                     {[
                       { step: 1, label: 'General Info', icon: <FileText size={14} /> },
                       { step: 2, label: 'Preview & Download', icon: <Download size={14} /> },
-                      { step: 3, label: 'Upload Requirements', icon: <Upload size={14} /> }
+                      { step: 3, label: 'Upload Requirements', icon: <Upload size={14} /> },
                     ].map((s) => (
-                      <div key={s.step} className={`relative z-10 flex flex-col items-center gap-1 px-4 transition-all duration-300 ${proposalStep >= s.step ? 'opacity-100' : 'opacity-40'}`}>
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black shadow-md border-2 transition-all duration-300 ${proposalStep > s.step ? 'bg-primary-green text-white border-green-200' :
-                          proposalStep === s.step ? 'bg-primary-green text-white border-green-200 ring-2 ring-green-500/20' :
-                            'bg-white text-gray-400 border-gray-100'
-                          }`}>
+                      <div key={s.step} className="flex flex-col items-center gap-2 relative z-10">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs transition-all duration-300 ${
+                          proposalStep >= s.step 
+                            ? 'bg-primary-green text-white shadow-md shadow-green-600/20 ring-4 ring-green-50' 
+                            : 'bg-white text-gray-400 border-2 border-gray-200'
+                        }`}>
                           {proposalStep > s.step ? <Check size={14} strokeWidth={3} /> : s.icon}
                         </div>
                         <span className={`text-[9px] font-black uppercase tracking-widest ${proposalStep >= s.step ? 'text-primary-green' : 'text-gray-400'}`}>{s.label}</span>
@@ -2261,7 +2295,7 @@ const SubmitNewDocument = () => {
                   </div>
 
                   {proposalStep === 1 && (
-                    <div className="bg-white p-10 rounded-2xl shadow-sm border border-gray-100 space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
+                    <div className="bg-white p-4 sm:p-8 md:p-10 rounded-2xl shadow-sm border border-gray-100 space-y-6 sm:space-y-8 animate-in fade-in slide-in-from-right-4 duration-500 mt-4 sm:mt-6">
                       <div className="flex items-center gap-4 pb-6 border-b border-gray-100">
                         <div className="w-10 h-10 bg-primary-green/10 rounded-xl flex items-center justify-center text-primary-green shrink-0">
                           <FileText size={20} />
@@ -2439,6 +2473,10 @@ const SubmitNewDocument = () => {
                                               if (!validateDateSelection(val)) return;
                                               const newScheds = [...proposalDetails.schedules];
                                               newScheds[idx].activity_date = val;
+                                              if (scheduleMode === 'range' && newScheds[idx].end_date && val === newScheds[idx].end_date) {
+                                                showToast("Date Range mode requires the start date and end date to be on different days. Use 'Single Day' mode for single-day activities.", "error");
+                                                newScheds[idx].end_date = '';
+                                              }
                                               setProposalDetails(prev => ({ ...prev, schedules: newScheds }));
                                             }}
                                           />
@@ -2455,6 +2493,10 @@ const SubmitNewDocument = () => {
                                             value={sched.end_date || ''}
                                             onChange={val => {
                                               if (!validateDateSelection(val)) return;
+                                              if (scheduleMode === 'range' && sched.activity_date && val === sched.activity_date) {
+                                                showToast("Date Range mode requires the end date to be different from the start date. Use 'Single Day' mode for single-day activities.", "error");
+                                                return;
+                                              }
                                               const newScheds = [...proposalDetails.schedules];
                                               newScheds[idx].end_date = val;
                                               setProposalDetails(prev => ({ ...prev, schedules: newScheds }));
@@ -2745,7 +2787,7 @@ const SubmitNewDocument = () => {
                                 const currentObjs = ensureArrayOfStrings(proposalDetails.objectives);
                                 const isOthersChecked = currentObjs.includes('Others');
                                 return (
-                                  <div className="flex items-center gap-3 col-span-1 md:col-span-2">
+                                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full col-span-1 md:col-span-2 min-w-0">
                                     <label className="flex items-center gap-3 cursor-pointer group shrink-0">
                                       <div className={`w-5 h-5 rounded flex items-center justify-center border-2 ${isOthersChecked ? 'bg-primary-green border-primary-green text-white' : 'border-gray-300 group-hover:border-primary-green'}`}>
                                         {isOthersChecked && <Check size={14} strokeWidth={3} />}
@@ -2763,7 +2805,7 @@ const SubmitNewDocument = () => {
                                     </label>
                                     <input 
                                       type="text" 
-                                      className={`flex-1 px-4 py-2 border-2 font-bold text-sm outline-none transition-all rounded-xl ${
+                                      className={`flex-1 min-w-0 w-full px-4 py-2 border-2 font-bold text-sm outline-none transition-all rounded-xl ${
                                         showValidationHighlights && isOthersChecked && !proposalDetails.others_objective?.trim()
                                           ? 'border-red-500 bg-red-50/70 text-red-900 ring-2 ring-red-400/30'
                                           : draftLoadedFields.has('others_objective')
@@ -2905,7 +2947,7 @@ const SubmitNewDocument = () => {
                     </div>
                   )}
                   {proposalStep === 2 && (
-                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-right-4 duration-500">
+                    <div className="bg-white p-3 sm:p-6 rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-right-4 duration-500 overflow-hidden">
                       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
                         <div className="flex items-center gap-4">
                           <div className="w-10 h-10 bg-primary-green/10 rounded-xl flex items-center justify-center text-primary-green shrink-0">
@@ -2949,8 +2991,8 @@ const SubmitNewDocument = () => {
                   )}
 
                   {proposalStep === 3 && (
-                    <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-right-4 duration-500">
-                      <div className="flex items-center gap-4 pb-6 border-b border-gray-100 mb-6">
+                    <div className="bg-white p-4 sm:p-8 rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-right-4 duration-500">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 pb-6 border-b border-gray-100 mb-6">
                         <div className="w-10 h-10 bg-primary-green/10 rounded-xl flex items-center justify-center text-primary-green shrink-0">
                           <Upload size={20} />
                         </div>
@@ -2958,7 +3000,7 @@ const SubmitNewDocument = () => {
                           <h2 className="text-xl font-black text-gray-800 uppercase tracking-widest">Upload Requirements</h2>
                           <p className="text-xs font-bold text-gray-400 mt-1">Please provide all necessary documents below to complete your submission</p>
                         </div>
-                        <div className="ml-auto">
+                        <div className="sm:ml-auto">
                           <span className="text-xs font-black text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg uppercase tracking-widest">
                             {attachedRequirementIds.size} / {requirements.length} attached
                           </span>
@@ -2977,20 +3019,20 @@ const SubmitNewDocument = () => {
           </div>
 
           {/* Fixed Bottom Action Bar */}
-          <div className="fixed bottom-0 left-64 right-0 bg-white border-t border-gray-100 shadow-[0_-5px_20px_rgba(0,0,0,0.05)] z-50 p-4 flex justify-center w-[calc(100%-16rem)]">
-            <div className="max-w-[90rem] w-full flex items-center justify-end gap-4 px-4">
+          <div className="fixed bottom-0 left-0 md:left-64 right-0 bg-white/95 backdrop-blur-md border-t border-gray-100 shadow-[0_-5px_20px_rgba(0,0,0,0.08)] z-50 p-2.5 sm:p-4 flex justify-center w-full md:w-[calc(100%-16rem)]">
+            <div className="max-w-[90rem] w-full flex items-center justify-between sm:justify-end gap-1.5 sm:gap-3 px-1 sm:px-4">
 
               {/* Action Buttons */}
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5 sm:gap-3 w-full sm:w-auto justify-between sm:justify-end">
                 {isProposal ? (
                   <>
                     {proposalStep > 1 && !(isReturnedDocument && !is02F1Returned) && (
                       <button
                         type="button"
                         onClick={() => setProposalStep(prev => prev - 1)}
-                        className="px-4 py-2.5 bg-white border border-gray-200 text-gray-500 font-black rounded-lg hover:bg-gray-50 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest mr-auto"
+                        className="px-2.5 sm:px-4 py-2 sm:py-2.5 bg-white border border-gray-200 text-gray-500 font-black rounded-lg hover:bg-gray-50 transition-all flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] uppercase shadow-sm tracking-tight sm:tracking-widest mr-auto shrink-0"
                       >
-                        <ArrowLeft size={14} /> Back
+                        <ArrowLeft size={13} /> <span>Back</span>
                       </button>
                     )}
 
@@ -2998,9 +3040,9 @@ const SubmitNewDocument = () => {
                       <button
                         type="button"
                         onClick={() => setShowClearModal(true)}
-                        className="px-4 py-2.5 bg-white border border-gray-200 text-gray-500 font-black rounded-lg hover:bg-gray-50 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
+                        className="px-2.5 sm:px-4 py-2 sm:py-2.5 bg-white border border-gray-200 text-gray-500 font-black rounded-lg hover:bg-gray-50 transition-all flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] uppercase shadow-sm tracking-tight sm:tracking-widest shrink-0"
                       >
-                        <Eraser size={14} /> Clear Form
+                        <Eraser size={13} /> <span className="hidden xs:inline">Clear Form</span><span className="xs:hidden">Clear</span>
                       </button>
                     )}
 
@@ -3008,9 +3050,9 @@ const SubmitNewDocument = () => {
                       <button
                         type="button"
                         onClick={() => clearFormOptions('attachments')}
-                        className="px-4 py-2.5 bg-white border border-gray-200 text-gray-500 font-black rounded-lg hover:bg-gray-50 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
+                        className="px-2.5 sm:px-4 py-2 sm:py-2.5 bg-white border border-gray-200 text-gray-500 font-black rounded-lg hover:bg-gray-50 transition-all flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] uppercase shadow-sm tracking-tight sm:tracking-widest shrink-0"
                       >
-                        <Eraser size={14} /> Clear Attachments
+                        <Eraser size={13} /> <span className="hidden xs:inline">Clear Attachments</span><span className="xs:hidden">Clear</span>
                       </button>
                     )}
 
@@ -3018,9 +3060,9 @@ const SubmitNewDocument = () => {
                       type="button"
                       onClick={handleSaveDraft}
                       disabled={isSaving}
-                      className="px-5 py-2.5 bg-amber-50 text-amber-600 border border-amber-200 font-black rounded-lg hover:bg-amber-100 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
+                      className="px-3 sm:px-5 py-2 sm:py-2.5 bg-amber-50 text-amber-600 border border-amber-200 font-black rounded-lg hover:bg-amber-100 transition-all flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] uppercase shadow-sm tracking-tight sm:tracking-widest shrink-0"
                     >
-                      <Save size={14} /> Save Draft
+                      <Save size={13} /> <span>Save Draft</span>
                     </button>
 
                     {proposalStep === 1 && (
@@ -3028,14 +3070,14 @@ const SubmitNewDocument = () => {
                         type="button"
                         onClick={handleNextFromStep1}
                         disabled={isReturnedDocument && is02F1Returned && !hasFormChanges}
-                        className="px-8 py-2.5 bg-primary-green text-white font-black rounded-lg hover:bg-green-700 hover:scale-105 active:scale-95 transition-all shadow-md shadow-green-600/20 flex items-center gap-2 text-[11px] uppercase disabled:opacity-50 tracking-widest"
+                        className="px-4 sm:px-8 py-2 sm:py-2.5 bg-primary-green text-white font-black rounded-lg hover:bg-green-700 hover:scale-105 active:scale-95 transition-all shadow-md shadow-green-600/20 flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] uppercase disabled:opacity-50 tracking-tight sm:tracking-widest shrink-0"
                         title={
                           isReturnedDocument && is02F1Returned && !hasFormChanges
                             ? "Make changes to the form content before proceeding"
                             : "Click to validate and proceed to next step"
                         }
                       >
-                        Next Step <ChevronRight size={14} />
+                        <span>Next Step</span> <ChevronRight size={13} />
                       </button>
                     )}
 
@@ -3044,10 +3086,10 @@ const SubmitNewDocument = () => {
                         type="button"
                         onClick={() => setProposalStep(3)}
                         disabled={!hasDownloadedProposal}
-                        className="px-8 py-2.5 bg-primary-green text-white font-black rounded-lg hover:bg-green-700 hover:scale-105 active:scale-95 transition-all shadow-md shadow-green-600/20 flex items-center gap-2 text-[11px] uppercase disabled:opacity-50 tracking-widest"
+                        className="px-4 sm:px-8 py-2 sm:py-2.5 bg-primary-green text-white font-black rounded-lg hover:bg-green-700 hover:scale-105 active:scale-95 transition-all shadow-md shadow-green-600/20 flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] uppercase disabled:opacity-50 tracking-tight sm:tracking-widest shrink-0"
                         title={!hasDownloadedProposal ? "Please download the form to continue" : "Proceed to next step"}
                       >
-                        Next Step <ChevronRight size={14} />
+                        <span>Next Step</span> <ChevronRight size={13} />
                       </button>
                     )}
 
@@ -3055,7 +3097,7 @@ const SubmitNewDocument = () => {
                       <button
                         type="submit"
                         disabled={isResubmitDisabled || isSaving}
-                        className={`px-6 py-2.5 font-black rounded-lg transition-all shadow-md flex items-center gap-2 text-[11px] uppercase tracking-widest ${
+                        className={`px-4 sm:px-6 py-2 sm:py-2.5 font-black rounded-lg transition-all shadow-md flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] uppercase tracking-tight sm:tracking-widest shrink-0 ${
                           isResubmitDisabled || isSaving
                             ? 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-60'
                             : 'bg-primary-green text-white hover:bg-green-700 hover:scale-105 active:scale-95 shadow-green-600/20'
@@ -3068,8 +3110,8 @@ const SubmitNewDocument = () => {
                             : "Resubmit Document"
                         }
                       >
-                        {isSaving ? <Loader2 className="animate-spin" size={14} /> : (isReturnedDocument ? <RefreshCcw size={14} /> : <Send size={14} />)}
-                        {isReturnedDocument ? 'Resubmit Document' : 'Register'}
+                        {isSaving ? <Loader2 className="animate-spin" size={13} /> : (isReturnedDocument ? <RefreshCcw size={13} /> : <Send size={13} />)}
+                        <span>{isReturnedDocument ? 'Resubmit' : 'Register'}</span>
                       </button>
                     )}
                   </>
@@ -3079,31 +3121,37 @@ const SubmitNewDocument = () => {
                       <button
                         type="button"
                         onClick={() => clearFormOptions('attachments')}
-                        className="px-4 py-2.5 bg-white border border-gray-200 text-gray-500 font-black rounded-lg hover:bg-gray-50 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
+                        className="px-2.5 sm:px-4 py-2 sm:py-2.5 bg-white border border-gray-200 text-gray-500 font-black rounded-lg hover:bg-gray-50 transition-all flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] uppercase shadow-sm tracking-tight sm:tracking-widest shrink-0"
                       >
-                        <Eraser size={14} /> Clear Attachments
+                        <Eraser size={13} /> <span className="hidden xs:inline">Clear Attachments</span><span className="xs:hidden">Clear</span>
                       </button>
                     )}
                     <button
                       type="button"
                       onClick={handleSaveDraft}
                       disabled={isSaving}
-                      className="px-5 py-2.5 bg-amber-50 text-amber-600 border border-amber-200 font-black rounded-lg hover:bg-amber-100 transition-all flex items-center gap-2 text-[11px] uppercase shadow-sm tracking-widest"
+                      className="px-3 sm:px-5 py-2 sm:py-2.5 bg-amber-50 text-amber-600 border border-amber-200 font-black rounded-lg hover:bg-amber-100 transition-all flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] uppercase shadow-sm tracking-tight sm:tracking-widest shrink-0"
                     >
-                      <Save size={14} /> Save Draft
+                      <Save size={13} /> <span>Save Draft</span>
                     </button>
                     <button
                       type="submit"
                       disabled={isResubmitDisabled || isSaving}
-                      className={`px-6 py-2.5 font-black rounded-lg transition-all shadow-md flex items-center gap-2 text-[11px] uppercase tracking-widest ${
+                      className={`px-4 sm:px-6 py-2 sm:py-2.5 font-black rounded-lg transition-all shadow-md flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] uppercase tracking-tight sm:tracking-widest shrink-0 ${
                         isResubmitDisabled || isSaving
                           ? 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-60'
                           : 'bg-primary-green text-white hover:bg-green-700 hover:scale-105 active:scale-95 shadow-green-600/20'
                       }`}
-                      title={isResubmitDisabled ? "Upload replacement .pdf files for all returned attachments." : ""}
+                      title={
+                        isResubmitDisabled
+                          ? (isReturnedDocument
+                              ? "Upload replacement .pdf files for all returned attachments."
+                              : "Please attach files for all required documents before registering.")
+                          : ""
+                      }
                     >
-                      {isSaving ? <Loader2 className="animate-spin" size={14} /> : (isReturnedDocument ? <RefreshCcw size={14} /> : <Send size={14} />)}
-                      {isReturnedDocument ? 'Resubmit Document' : 'Register'}
+                      {isSaving ? <Loader2 className="animate-spin" size={13} /> : (isReturnedDocument ? <RefreshCcw size={13} /> : <Send size={13} />)}
+                      <span>{isReturnedDocument ? 'Resubmit' : 'Register'}</span>
                     </button>
                   </>
                 )}

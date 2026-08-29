@@ -316,6 +316,54 @@ const ActivityProposalPreviewModal = ({
   if (!isOpen && !inline) return null;
 
   const handlePrint = () => {
+    try {
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>Activity Proposal Form</title>
+              <style>
+                @media print {
+                  html, body { height: 100%; margin: 0; padding: 0; background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                  @page { margin: 4mm 6mm; size: A4 portrait; }
+                  .print-wrapper { display: flex; flex-direction: column; min-height: 280mm; box-sizing: border-box; position: relative; }
+                  .official-document-footer {
+                    position: fixed !important;
+                    bottom: 2mm !important;
+                    left: 6mm !important;
+                    right: 6mm !important;
+                    width: auto !important;
+                    background: white !important;
+                  }
+                }
+                body { font-family: Arial, Helvetica, sans-serif; color: black; background: white; margin: 0; font-size: 11.5px; padding: 15px; }
+                .form-row { display: flex; align-items: flex-end; margin-bottom: 7px; }
+                .form-label { font-weight: bold; font-size: 11.5px; margin-right: 5px; white-space: nowrap; }
+                .form-line { flex-grow: 1; border-bottom: 1.5px solid black; min-height: 14px; font-size: 11.5px; font-weight: normal; padding-bottom: 1px; text-align: left; padding-left: 8px; }
+                .section-title { font-weight: bold; font-size: 11.5px; margin-top: 8px; margin-bottom: 4px; }
+              </style>
+            </head>
+            <body>
+              <div class="print-wrapper">
+                ${content}
+              </div>
+            </body>
+          </html>
+        `);
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => {
+          printWindow.print();
+          if (onDownload) onDownload();
+        }, 500);
+        return;
+      }
+    } catch (e) {
+      console.warn('Window open fallback triggered:', e);
+    }
+
     const printIframe = document.createElement('iframe');
     printIframe.style.position = 'absolute';
     printIframe.style.width = '0px';
@@ -326,6 +374,7 @@ const ActivityProposalPreviewModal = ({
     const doc = printIframe.contentWindow.document;
     doc.open();
     doc.write(`
+      <!DOCTYPE html>
       <html>
         <head>
           <title>Activity Proposal Form</title>
@@ -369,7 +418,9 @@ const ActivityProposalPreviewModal = ({
       
       if (onDownload) onDownload();
       setTimeout(() => {
-        document.body.removeChild(printIframe);
+        if (printIframe.parentNode) {
+          document.body.removeChild(printIframe);
+        }
       }, 2000);
     }, 500);
   };
@@ -400,66 +451,77 @@ const ActivityProposalPreviewModal = ({
         )}
 
         {/* Toolbar */}
-        <div className="px-6 py-3 border-b border-gray-100 bg-gray-50/50 flex flex-wrap items-center gap-4 shrink-0 relative z-10">
-          <div className="flex-1"></div>
+        <div className="px-4 sm:px-6 py-3 border-b border-gray-100 bg-gray-50/50 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0 relative z-10">
+          <div className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+            Activity Proposal Form Preview
+          </div>
           
           <button 
             type="button"
             onClick={handlePrint}
-            className="flex items-center gap-2 px-5 py-2 bg-primary-green hover:bg-green-700 text-white rounded-xl text-sm font-bold shadow-md shadow-green-600/20 transition-all active:scale-95"
+            className="flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-green hover:bg-green-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-green-600/20 transition-all active:scale-95 w-full sm:w-auto"
           >
             <Printer size={16} />
-            Print / Save as PDF
+            <span>Print / Save as PDF</span>
           </button>
         </div>
 
         {/* Editor Area Wrapper */}
-        <div className={`flex-1 w-full bg-gray-200 p-4 md:p-8 ${inline ? '' : 'overflow-y-auto custom-scrollbar'}`}>
+        <div className={`flex-1 w-full bg-gray-200/80 p-2 sm:p-4 md:p-6 overflow-hidden rounded-xl flex justify-center items-start ${inline ? '' : 'overflow-y-auto'}`}>
           
-          {/* Paper Container */}
+          {/* Outer Scaling Box */}
           <div 
-            className={`max-w-[794px] mx-auto min-h-[1123px] flex flex-col relative bg-white ${inline ? 'origin-top scale-[0.80] mb-[-224px]' : ''}`}
-            style={{
-              boxShadow: '0 0 20px rgba(0,0,0,0.15)'
-            }}
+            className={`relative transition-all duration-300 ${
+              inline 
+                ? 'w-[794px] shrink-0 origin-top scale-[0.41] min-[380px]:scale-[0.47] min-[440px]:scale-[0.55] sm:scale-[0.72] md:scale-[0.85] lg:scale-100 mb-[-640px] min-[380px]:mb-[-560px] min-[440px]:mb-[-470px] sm:mb-[-300px] md:mb-[-160px] lg:mb-0' 
+                : 'w-full max-w-[794px]'
+            }`}
           >
-            {/* Jodit Content (Body) */}
-            <div className="flex-1 jodit-seamless-wrapper relative">
-              {!isInitialized ? (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-8 h-8 border-4 border-gray-200 border-t-blue-500 rounded-full animate-spin"></div>
-                </div>
-              ) : (
-                <>
-                  <style>{`
-                    .jodit-seamless-wrapper .jodit-container {
-                      border: none !important;
-                    }
-                    .jodit-seamless-wrapper .jodit-toolbar__box {
-                      position: sticky;
-                      top: 0;
-                      z-index: 50;
-                      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                    }
-                    .jodit-seamless-wrapper .jodit-workplace {
-                      background: transparent !important;
-                    }
-                    .jodit-seamless-wrapper .jodit-wysiwyg {
-                      background: transparent !important;
-                      padding: 0 !important;
-                    }
-                  `}</style>
-                  <JoditEditor
-                    ref={editorRef}
-                    value={content}
-                    config={config}
-                    onBlur={newContent => setContent(newContent)}
-                    onChange={() => {}} 
-                  />
-                </>
-              )}
-            </div>
+            {/* Paper Container */}
+            <div 
+              className="w-[794px] min-w-[794px] min-h-[1123px] flex flex-col relative bg-white"
+              style={{
+                boxShadow: '0 0 20px rgba(0,0,0,0.15)'
+              }}
+            >
+              {/* Jodit Content (Body) */}
+              <div className="flex-1 jodit-seamless-wrapper relative">
+                {!isInitialized ? (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-8 h-8 border-4 border-gray-200 border-t-blue-500 rounded-full animate-spin"></div>
+                  </div>
+                ) : (
+                  <>
+                    <style>{`
+                      .jodit-seamless-wrapper .jodit-container {
+                        border: none !important;
+                      }
+                      .jodit-seamless-wrapper .jodit-toolbar__box {
+                        position: sticky;
+                        top: 0;
+                        z-index: 50;
+                        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                      }
+                      .jodit-seamless-wrapper .jodit-workplace {
+                        background: transparent !important;
+                      }
+                      .jodit-seamless-wrapper .jodit-wysiwyg {
+                        background: transparent !important;
+                        padding: 0 !important;
+                      }
+                    `}</style>
+                    <JoditEditor
+                      ref={editorRef}
+                      value={content}
+                      config={config}
+                      onBlur={newContent => setContent(newContent)}
+                      onChange={() => {}} 
+                    />
+                  </>
+                )}
+              </div>
 
+            </div>
           </div>
         </div>
 

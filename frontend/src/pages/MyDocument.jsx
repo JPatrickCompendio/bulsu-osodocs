@@ -4993,8 +4993,7 @@ export const MyDocuments = () => {
                             subLabelText = 'FOR RETRIEVAL';
                             subLabelColorClass = 'text-amber-500 animate-pulse';
                           } else if (rawStatusLower.includes('returned')) {
-                            subLabelText = 'RETURNED';
-                            subLabelColorClass = 'text-red-500';
+                            subLabelText = null;
                           } else {
                             subLabelText = 'PENDING';
                             subLabelColorClass = 'text-amber-500 animate-pulse';
@@ -5004,16 +5003,14 @@ export const MyDocuments = () => {
                             subLabelText = 'READY FOR MAIN CAMPUS';
                             subLabelColorClass = 'text-amber-500 animate-pulse';
                           } else if (rawStatusLower.includes('returned')) {
-                            subLabelText = 'RETURNED';
-                            subLabelColorClass = 'text-red-500';
+                            subLabelText = null;
                           } else {
                             subLabelText = 'PENDING';
                             subLabelColorClass = 'text-amber-500 animate-pulse';
                           }
                         } else if (stageText === 'Approved') {
                           if (rawStatusLower.includes('returned')) {
-                            subLabelText = 'RETURNED';
-                            subLabelColorClass = 'text-red-500';
+                            subLabelText = null;
                           } else if (doc.hasDocumentRetrievedLog && doc.firstRetrievedLog) {
                             const myRoleNorm = String(user?.role || '').toLowerCase();
                             const myUserId = String(user?.id || '');
@@ -5041,8 +5038,7 @@ export const MyDocuments = () => {
                             subLabelText = 'APPROVED';
                             subLabelColorClass = 'text-emerald-600';
                           } else if (rawStatusLower.includes('returned')) {
-                            subLabelText = 'RETURNED';
-                            subLabelColorClass = 'text-red-500';
+                            subLabelText = null;
                           } else {
                             subLabelText = 'PENDING';
                             subLabelColorClass = 'text-amber-500 animate-pulse';
