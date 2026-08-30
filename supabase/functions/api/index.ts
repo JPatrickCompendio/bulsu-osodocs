@@ -3291,8 +3291,8 @@ export const WORKFLOW_CONFIGS: Record<string, {
       SDS_REVIEW: { approve: 'HARDCOPY_SUBMISSION', return: 'RETURNED', disapprove: 'DISAPPROVED' },
       HARDCOPY_SUBMISSION: { approve: 'DOCUMENT_RETRIEVAL', ready_for_retrieval: 'DOCUMENT_RETRIEVAL', document_retrieved: 'DOCUMENT_RETRIEVAL', confirm_retrieval: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'FINAL_LOCAL_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
       FINAL_LOCAL_CAMPUS_REVIEW: { approve: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'MAIN_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
-      MAIN_CAMPUS_REVIEW: { approve: 'DOCUMENT_RETRIEVAL', ready_for_retrieval: 'DOCUMENT_RETRIEVAL', forward: 'DOCUMENT_RETRIEVAL', return: 'RETURNED', disapprove: 'DISAPPROVED' },
-      DOCUMENT_RETRIEVAL: { ready_for_retrieval: 'DOCUMENT_RETRIEVAL', document_retrieved: 'DOCUMENT_RETRIEVAL', confirm_retrieval: 'COMPLETED', approve: 'COMPLETED', return: 'RETURNED' },
+      MAIN_CAMPUS_REVIEW: { approve: 'COMPLETED', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      DOCUMENT_RETRIEVAL: { ready_for_retrieval: 'DOCUMENT_RETRIEVAL', document_retrieved: 'DOCUMENT_RETRIEVAL', confirm_retrieval: 'FINAL_LOCAL_CAMPUS_REVIEW', approve: 'FINAL_LOCAL_CAMPUS_REVIEW', return: 'RETURNED' },
       RETURNED: { resubmit: 'OSO_REVIEW' }
     }
   },
@@ -3324,8 +3324,8 @@ export const WORKFLOW_CONFIGS: Record<string, {
       SDS_REVIEW: { approve: 'HARDCOPY_SUBMISSION', return: 'RETURNED', disapprove: 'DISAPPROVED' },
       HARDCOPY_SUBMISSION: { approve: 'DOCUMENT_RETRIEVAL', ready_for_retrieval: 'DOCUMENT_RETRIEVAL', document_retrieved: 'DOCUMENT_RETRIEVAL', confirm_retrieval: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'FINAL_LOCAL_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
       FINAL_LOCAL_CAMPUS_REVIEW: { approve: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'MAIN_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
-      MAIN_CAMPUS_REVIEW: { approve: 'DOCUMENT_RETRIEVAL', ready_for_retrieval: 'DOCUMENT_RETRIEVAL', forward: 'DOCUMENT_RETRIEVAL', return: 'RETURNED', disapprove: 'DISAPPROVED' },
-      DOCUMENT_RETRIEVAL: { ready_for_retrieval: 'DOCUMENT_RETRIEVAL', document_retrieved: 'DOCUMENT_RETRIEVAL', confirm_retrieval: 'COMPLETED', approve: 'COMPLETED', return: 'RETURNED' },
+      MAIN_CAMPUS_REVIEW: { approve: 'COMPLETED', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      DOCUMENT_RETRIEVAL: { ready_for_retrieval: 'DOCUMENT_RETRIEVAL', document_retrieved: 'DOCUMENT_RETRIEVAL', confirm_retrieval: 'FINAL_LOCAL_CAMPUS_REVIEW', approve: 'FINAL_LOCAL_CAMPUS_REVIEW', return: 'RETURNED' },
       RETURNED: { resubmit: 'OSO_REVIEW' }
     }
   }
