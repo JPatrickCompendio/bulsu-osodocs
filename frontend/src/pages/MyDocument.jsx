@@ -1432,7 +1432,7 @@ export const MyDocuments = () => {
           event: 'retrieval_status_changed',
           payload: { submissionId: selectedDoc.id, action: 'document_retrieved' }
         });
-      } catch (_) {}
+      } catch (_) { }
     } catch (err) {
       console.error('Error marking document retrieved:', err);
       showToast(err.message || 'Failed to mark as retrieved.');
@@ -1459,7 +1459,7 @@ export const MyDocuments = () => {
           event: 'retrieval_status_changed',
           payload: { submissionId: selectedDoc.id, action: 'confirm_retrieval' }
         });
-      } catch (_) {}
+      } catch (_) { }
 
       setSelectedDoc(null);
       await fetchHandledLogs();
@@ -1690,7 +1690,7 @@ export const MyDocuments = () => {
     const subLogs = [
       ...(Array.isArray(submission.submission_logs) ? submission.submission_logs : []),
       ...(allLogs || []),
-...(logsData || []).filter(l => String(l.submission_id || l.submissionId || l.submissions?.id) === String(submission.id))
+      ...(logsData || []).filter(l => String(l.submission_id || l.submissionId || l.submissions?.id) === String(submission.id))
     ];
     const hasHardcopyVerifiedLog = (subLogs || []).some(log => {
       const text = [log.action_type, log.review_action, log.description, log.comment].map(s => String(s || '').toLowerCase()).join(' ');
@@ -1968,7 +1968,7 @@ export const MyDocuments = () => {
           <p className="text-sm text-gray-500 mb-6 leading-relaxed">
             Are you sure you want to delete this draft? This action cannot be undone and will permanently remove the document from your account and database.
           </p>
-          
+
           <div className="flex gap-3">
             <button
               type="button"
@@ -2056,7 +2056,7 @@ export const MyDocuments = () => {
     })();
 
     // Determine CURRENT retrieval phase based on workflow context
-    const isPhase2 = 
+    const isPhase2 =
       docStatusLower === 'approved' ||
       docStatusLower === 'dean approved' ||
       docStatusLower === 'external approved' ||
@@ -2118,7 +2118,7 @@ export const MyDocuments = () => {
     const isEffectiveReadyForRetrieval =
       docStatusLower === 'ready for retrieval' ||
       docStatusLower === 'ready_for_retrieval' ||
-      ( (docStatusLower === 'to forward' || docStatusLower.includes('hardcopy') || docStatusLower.includes('forward')) && hasHardcopyVerifiedInTimeline );
+      ((docStatusLower === 'to forward' || docStatusLower.includes('hardcopy') || docStatusLower.includes('forward')) && hasHardcopyVerifiedInTimeline);
 
     // Timeline logs are NEWEST FIRST (descending).
     // Find the transition log when document moved to Phase #2 (e.g. forward/sent to main campus)
@@ -2135,11 +2135,11 @@ export const MyDocuments = () => {
       );
     });
 
-    const phase1Logs = phase2TransitionLogIndex >= 0 
-      ? (timelineLogs || []).slice(phase2TransitionLogIndex) 
+    const phase1Logs = phase2TransitionLogIndex >= 0
+      ? (timelineLogs || []).slice(phase2TransitionLogIndex)
       : (currentPhase === 1 ? (timelineLogs || []) : []);
-    const phase2Logs = phase2TransitionLogIndex >= 0 
-      ? (timelineLogs || []).slice(0, phase2TransitionLogIndex) 
+    const phase2Logs = phase2TransitionLogIndex >= 0
+      ? (timelineLogs || []).slice(0, phase2TransitionLogIndex)
       : (currentPhase === 2 ? (timelineLogs || []) : []);
 
     const sdsLogs = phase1Logs;
@@ -2404,7 +2404,7 @@ export const MyDocuments = () => {
                 <p className="text-[10px] sm:text-[11px] font-mono uppercase tracking-widest text-gray-400">
                   {selectedDoc.ref}
                 </p>
-                <h1 
+                <h1
                   className="mt-1 text-lg sm:text-2xl md:text-3xl font-extrabold tracking-tight text-gray-900 break-all line-clamp-2 max-w-3xl"
                   title={isActivityProposal ? docTitle : `${selectedDoc.sender} ${selectedDoc.type} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
                 >
@@ -2423,110 +2423,110 @@ export const MyDocuments = () => {
               {isActivityProposal && (
                 <>
                   <div className="space-y-3 sm:space-y-4 text-xs sm:text-sm text-gray-700 max-w-4xl">
-                <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                  <span className="font-bold sm:min-w-[200px] shrink-0">Person In-Charge:</span>
-                  <span className="break-all">{selectedDoc.pic || '—'}</span>
-                </div>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                  <span className="font-bold sm:min-w-[200px] shrink-0">Student ID No.:</span>
-                  <span>{selectedDoc.studentId || '—'}</span>
-                </div>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                  <span className="font-bold sm:min-w-[200px] shrink-0">Contact Number of Person-in-Charge:</span>
-                  <span>{selectedDoc.contact || '—'}</span>
-                </div>
-                <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-2">
-                  <span className="font-bold sm:min-w-[200px] shrink-0">Target Date and Time:</span>
-                  <span>
-                    {selectedDoc.schedules && selectedDoc.schedules.length > 0 ? (
-                      selectedDoc.schedules.map((s, idx) => {
-                        let dateStr = 'TBD';
-                        if (s.activity_date) {
-                          try {
-                            dateStr = new Date(s.activity_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase();
-                          } catch (e) {
-                            dateStr = String(s.activity_date).toUpperCase();
-                          }
-                        }
-                        if (s.end_date) {
-                          const endStr = new Date(s.end_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase();
-                          return <span key={idx} className="block">{`${dateStr} – ${endStr}`}</span>;
-                        }
-                        const formatTime = (t) => {
-                          if (!t) return 'TBD';
-                          try {
-                            const [h, m] = t.split(':');
-                            const d = new Date(); d.setHours(parseInt(h, 10)); d.setMinutes(parseInt(m, 10));
-                            return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toUpperCase();
-                          } catch (e) { return t; }
-                        };
-                        return <span key={idx} className="block">{`${dateStr} — ${formatTime(s.start_time)} – ${s.is_indefinite ? 'INDEFINITE' : formatTime(s.end_time)}`}</span>;
-                      })
-                    ) : (
-                      selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-' ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}` : selectedDoc.targetDate
-                    )}
-                  </span>
-                </div>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                  <span className="font-bold sm:min-w-[200px] shrink-0">Duration:</span>
-                  <span>{calculateProposalDuration(selectedDoc.proposalDetails || selectedDoc.raw?.activity_proposal_details || { schedules: selectedDoc.schedules, duration: selectedDoc.duration, is_indefinite_end_time: selectedDoc.is_indefinite_end_time })}</span>
-                </div>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                  <span className="font-bold sm:min-w-[200px] shrink-0">Number of Students Involved:</span>
-                  <span>{selectedDoc.students || '—'}</span>
-                </div>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                  <span className="font-bold sm:min-w-[200px] shrink-0">Nature of Activity:</span>
-                  <span>{selectedDoc.nature || '—'}</span>
-                </div>
-              </div>
-
-              <div className="mt-6 space-y-4">
-                {isActivityProposal && (
-                  <div>
-                    <p className="font-bold text-xs sm:text-sm mb-2">Objectives of the Activity:</p>
-                    <div className="bg-gray-50 p-4 sm:p-6 rounded-2xl border border-gray-100">
-                      {(() => {
-                        const objList = parseObjectivesList(selectedDoc.objectives);
-                        if (objList.length > 0) {
-                          return (
-                            <ul className="list-disc pl-5 space-y-1 text-xs sm:text-sm text-gray-700 font-medium">
-                              {objList.map((obj, i) => <li key={i}>{obj}</li>)}
-                            </ul>
-                          );
-                        }
-                        return <p className="text-gray-700 text-xs sm:text-sm leading-relaxed">{selectedDoc.objectives || '-'}</p>;
-                      })()}
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                      <span className="font-bold sm:min-w-[200px] shrink-0">Person In-Charge:</span>
+                      <span className="break-all">{selectedDoc.pic || '—'}</span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                      <span className="font-bold sm:min-w-[200px] shrink-0">Student ID No.:</span>
+                      <span>{selectedDoc.studentId || '—'}</span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                      <span className="font-bold sm:min-w-[200px] shrink-0">Contact Number of Person-in-Charge:</span>
+                      <span>{selectedDoc.contact || '—'}</span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-2">
+                      <span className="font-bold sm:min-w-[200px] shrink-0">Target Date and Time:</span>
+                      <span>
+                        {selectedDoc.schedules && selectedDoc.schedules.length > 0 ? (
+                          selectedDoc.schedules.map((s, idx) => {
+                            let dateStr = 'TBD';
+                            if (s.activity_date) {
+                              try {
+                                dateStr = new Date(s.activity_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase();
+                              } catch (e) {
+                                dateStr = String(s.activity_date).toUpperCase();
+                              }
+                            }
+                            if (s.end_date) {
+                              const endStr = new Date(s.end_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase();
+                              return <span key={idx} className="block">{`${dateStr} – ${endStr}`}</span>;
+                            }
+                            const formatTime = (t) => {
+                              if (!t) return 'TBD';
+                              try {
+                                const [h, m] = t.split(':');
+                                const d = new Date(); d.setHours(parseInt(h, 10)); d.setMinutes(parseInt(m, 10));
+                                return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toUpperCase();
+                              } catch (e) { return t; }
+                            };
+                            return <span key={idx} className="block">{`${dateStr} — ${formatTime(s.start_time)} – ${s.is_indefinite ? 'INDEFINITE' : formatTime(s.end_time)}`}</span>;
+                          })
+                        ) : (
+                          selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-' ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}` : selectedDoc.targetDate
+                        )}
+                      </span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                      <span className="font-bold sm:min-w-[200px] shrink-0">Duration:</span>
+                      <span>{calculateProposalDuration(selectedDoc.proposalDetails || selectedDoc.raw?.activity_proposal_details || { schedules: selectedDoc.schedules, duration: selectedDoc.duration, is_indefinite_end_time: selectedDoc.is_indefinite_end_time })}</span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                      <span className="font-bold sm:min-w-[200px] shrink-0">Number of Students Involved:</span>
+                      <span>{selectedDoc.students || '—'}</span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                      <span className="font-bold sm:min-w-[200px] shrink-0">Nature of Activity:</span>
+                      <span>{selectedDoc.nature || '—'}</span>
                     </div>
                   </div>
-                )}
 
-                <div>
-                  <p className="font-bold text-xs sm:text-sm mb-1">
-                    Target Audience / Participants: <span className="font-normal">BulSUans Only</span>
-                  </p>
-                </div>
-
-                <div>
-                  <p className="font-bold text-xs sm:text-sm mb-2">
-                    Describe how this activity will satisfy the needs of the organization and how it will help the organization achieve its goals:
-                  </p>
-                  <div className="bg-gray-50 p-4 sm:p-6 rounded-2xl text-xs sm:text-sm leading-relaxed text-gray-700 border border-gray-100">
-                    {isActivityProposal && selectedDoc.satisfy_goals && selectedDoc.satisfy_goals.length > 0 ? (
-                      <ol className="list-decimal pl-5 space-y-1.5">
-                        {selectedDoc.satisfy_goals.map((goal, idx) => (
-                          <li key={idx}>{goal}</li>
-                        ))}
-                      </ol>
-                    ) : (
-                      <div className="text-gray-400 italic">
-                        No goals provided.
+                  <div className="mt-6 space-y-4">
+                    {isActivityProposal && (
+                      <div>
+                        <p className="font-bold text-xs sm:text-sm mb-2">Objectives of the Activity:</p>
+                        <div className="bg-gray-50 p-4 sm:p-6 rounded-2xl border border-gray-100">
+                          {(() => {
+                            const objList = parseObjectivesList(selectedDoc.objectives);
+                            if (objList.length > 0) {
+                              return (
+                                <ul className="list-disc pl-5 space-y-1 text-xs sm:text-sm text-gray-700 font-medium">
+                                  {objList.map((obj, i) => <li key={i}>{obj}</li>)}
+                                </ul>
+                              );
+                            }
+                            return <p className="text-gray-700 text-xs sm:text-sm leading-relaxed">{selectedDoc.objectives || '-'}</p>;
+                          })()}
+                        </div>
                       </div>
                     )}
+
+                    <div>
+                      <p className="font-bold text-xs sm:text-sm mb-1">
+                        Target Audience / Participants: <span className="font-normal">BulSUans Only</span>
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="font-bold text-xs sm:text-sm mb-2">
+                        Describe how this activity will satisfy the needs of the organization and how it will help the organization achieve its goals:
+                      </p>
+                      <div className="bg-gray-50 p-4 sm:p-6 rounded-2xl text-xs sm:text-sm leading-relaxed text-gray-700 border border-gray-100">
+                        {isActivityProposal && selectedDoc.satisfy_goals && selectedDoc.satisfy_goals.length > 0 ? (
+                          <ol className="list-decimal pl-5 space-y-1.5">
+                            {selectedDoc.satisfy_goals.map((goal, idx) => (
+                              <li key={idx}>{goal}</li>
+                            ))}
+                          </ol>
+                        ) : (
+                          <div className="text-gray-400 italic">
+                            No goals provided.
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-              </>
+                </>
               )}
 
               {/* Attached Files Section - Collapsible with Live Data */}
@@ -2550,33 +2550,30 @@ export const MyDocuments = () => {
                           <button
                             type="button"
                             onClick={() => setDocDetailTabFilter('all')}
-                            className={`px-3 py-1.5 rounded-lg transition-all ${
-                              docDetailTabFilter === 'all'
+                            className={`px-3 py-1.5 rounded-lg transition-all ${docDetailTabFilter === 'all'
                                 ? 'bg-emerald-600 text-white shadow-xs font-black'
                                 : 'text-gray-600 hover:text-gray-800'
-                            }`}
+                              }`}
                           >
                             All ({attachments.length})
                           </button>
                           <button
                             type="button"
                             onClick={() => setDocDetailTabFilter('osas')}
-                            className={`px-3 py-1.5 rounded-lg transition-all ${
-                              docDetailTabFilter === 'osas'
+                            className={`px-3 py-1.5 rounded-lg transition-all ${docDetailTabFilter === 'osas'
                                 ? 'bg-emerald-600 text-white shadow-xs font-black'
                                 : 'text-gray-600 hover:text-gray-800'
-                            }`}
+                              }`}
                           >
                             OSAS Requirements ({attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') === 'OSAS').length})
                           </button>
                           <button
                             type="button"
                             onClick={() => setDocDetailTabFilter('local')}
-                            className={`px-3 py-1.5 rounded-lg transition-all ${
-                              docDetailTabFilter === 'local'
+                            className={`px-3 py-1.5 rounded-lg transition-all ${docDetailTabFilter === 'local'
                                 ? 'bg-emerald-600 text-white shadow-xs font-black'
                                 : 'text-gray-600 hover:text-gray-800'
-                            }`}
+                              }`}
                           >
                             LOCAL Requirements ({attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') !== 'OSAS').length})
                           </button>
@@ -2605,145 +2602,145 @@ export const MyDocuments = () => {
                           return true;
                         })
                         .map((file, idx) => {
-                        const fileName = file.file_name || 'Attached File';
-                        let finalPath = file.file_url || '';
-                        if (finalPath.startsWith('documents/')) {
-                          finalPath = finalPath.replace('documents/', '');
-                        }
-                        const { data } = supabase.storage.from('documents').getPublicUrl(finalPath);
-                        const fileUrl = data?.publicUrl || '#';
+                          const fileName = file.file_name || 'Attached File';
+                          let finalPath = file.file_url || '';
+                          if (finalPath.startsWith('documents/')) {
+                            finalPath = finalPath.replace('documents/', '');
+                          }
+                          const { data } = supabase.storage.from('documents').getPublicUrl(finalPath);
+                          const fileUrl = data?.publicUrl || '#';
 
-                        const currentVersionNum = Number(currentVersion?.version_number || 1);
-                        const isResubmittedVersion = currentVersionNum > 1;
-                        const prevVersion = (allVersions || []).find(v => Number(v?.version_number || 0) === (currentVersionNum - 1));
-                        const prevAttachment = prevVersion?.submission_attachments?.find(att => {
-                          if (att?.requirement_id && file?.requirement_id) return String(att.requirement_id) === String(file.requirement_id);
-                          return !!att?.file_name && !!file?.file_name && att.file_name === file.file_name;
-                        });
-                        const existedInPreviousVersion = !!prevAttachment;
-                        const isModifiedInResubmission = existedInPreviousVersion && prevAttachment.file_url !== file.file_url;
-                        const isUnchangedApproved = isResubmittedVersion && existedInPreviousVersion && !isModifiedInResubmission;
+                          const currentVersionNum = Number(currentVersion?.version_number || 1);
+                          const isResubmittedVersion = currentVersionNum > 1;
+                          const prevVersion = (allVersions || []).find(v => Number(v?.version_number || 0) === (currentVersionNum - 1));
+                          const prevAttachment = prevVersion?.submission_attachments?.find(att => {
+                            if (att?.requirement_id && file?.requirement_id) return String(att.requirement_id) === String(file.requirement_id);
+                            return !!att?.file_name && !!file?.file_name && att.file_name === file.file_name;
+                          });
+                          const existedInPreviousVersion = !!prevAttachment;
+                          const isModifiedInResubmission = existedInPreviousVersion && prevAttachment.file_url !== file.file_url;
+                          const isUnchangedApproved = isResubmittedVersion && existedInPreviousVersion && !isModifiedInResubmission;
 
-                        const viewingLatestVersion = currentVersion?.id === selectedDoc.raw?.current_version_id;
-                        const docStatus = String(
-                          viewingLatestVersion
-                            ? (selectedDoc.raw?.status || selectedDoc.status || '')
-                            : (currentVersion?.status || selectedDoc.raw?.status || selectedDoc.status || '')
+                          const viewingLatestVersion = currentVersion?.id === selectedDoc.raw?.current_version_id;
+                          const docStatus = String(
+                            viewingLatestVersion
+                              ? (selectedDoc.raw?.status || selectedDoc.status || '')
+                              : (currentVersion?.status || selectedDoc.raw?.status || selectedDoc.status || '')
                           ).toLowerCase();
-                        const isChairmanStage = docStatus === 'submitted' || docStatus === 'oso staff review' || docStatus === 'pending' || docStatus === 'returned';
-                        const historicalChairmanVersion = !viewingLatestVersion && isChairmanStage;
+                          const isChairmanStage = docStatus === 'submitted' || docStatus === 'oso staff review' || docStatus === 'pending' || docStatus === 'returned';
+                          const historicalChairmanVersion = !viewingLatestVersion && isChairmanStage;
 
-                        const fileLog = (timelineLogs || []).find(log => log.attachment_id === file.id);
-                        const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
-                        const isReturnedAttachment = ['missing-requirements', 'incorrect-format', 'incomplete-information'].includes(reviewActionValue);
+                          const fileLog = (timelineLogs || []).find(log => log.attachment_id === file.id);
+                          const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
+                          const isReturnedAttachment = ['missing-requirements', 'incorrect-format', 'incomplete-information'].includes(reviewActionValue);
 
-                        const isReturnByCurrentReviewer =
-                          isReturnedAttachment &&
-                          ((fileLog?.user_id && fileLog.user_id === user?.id) ||
-                            sameRole(fileLog?.users?.role, user?.role));
-                        const returnedForDisplay = isChairmanStage ? isReturnedAttachment : isReturnByCurrentReviewer;
-                        const hasRevision = returnedForDisplay;
+                          const isReturnByCurrentReviewer =
+                            isReturnedAttachment &&
+                            ((fileLog?.user_id && fileLog.user_id === user?.id) ||
+                              sameRole(fileLog?.users?.role, user?.role));
+                          const returnedForDisplay = isChairmanStage ? isReturnedAttachment : isReturnByCurrentReviewer;
+                          const hasRevision = returnedForDisplay;
 
-                        const isExplicitlyApproved = (fileLog && fileLog.review_action === 'approved') || (locallyApproved && locallyApproved.includes(file.id));
+                          const isExplicitlyApproved = (fileLog && fileLog.review_action === 'approved') || (locallyApproved && locallyApproved.includes(file.id));
 
-                        const isChairmanApproved = historicalChairmanVersion
-                          ? !returnedForDisplay
-                          : (isChairmanStage
+                          const isChairmanApproved = historicalChairmanVersion
+                            ? !returnedForDisplay
+                            : (isChairmanStage
                               ? (isExplicitlyApproved || isUnchangedApproved)
                               : !returnedForDisplay);
 
-                        const reqObj = file.requirements || file.requirement;
-                        const scope = reqObj?.requirement_scope || 'OSAS';
-                        const isOsas = scope === 'OSAS';
-                        const isForwardedPhase = docStatus.includes('main campus review') || docStatus === 'completed' || docStatus === 'waiting for accomplishment report' || docStatus === 'approved' || docStatus === 'ready for retrieval';
-                        const isForwardedItem = isForwardedPhase && isOsas;
+                          const reqObj = file.requirements || file.requirement;
+                          const scope = reqObj?.requirement_scope || 'OSAS';
+                          const isOsas = scope === 'OSAS';
+                          const isForwardedPhase = docStatus.includes('main campus review') || docStatus === 'completed' || docStatus === 'waiting for accomplishment report' || docStatus === 'approved' || docStatus === 'ready for retrieval';
+                          const isForwardedItem = isForwardedPhase && isOsas;
 
-                        let containerBg = 'bg-[#525252]';
-                        let textColor = 'text-white';
-                        let subtitleColor = 'text-gray-300';
-                        let iconStyle = 'bg-white/10 text-white/80';
-                        let badgeStyle = 'bg-white/10 text-white/90 border border-white/20';
+                          let containerBg = 'bg-[#525252]';
+                          let textColor = 'text-white';
+                          let subtitleColor = 'text-gray-300';
+                          let iconStyle = 'bg-white/10 text-white/80';
+                          let badgeStyle = 'bg-white/10 text-white/90 border border-white/20';
 
-                        if (hasRevision) {
-                          containerBg = 'bg-[#f59e0b]';
-                          textColor = 'text-[#451a03]';
-                          subtitleColor = 'text-[#78350f]';
-                          iconStyle = 'bg-[#78350f]/10 text-[#78350f]';
-                          badgeStyle = 'bg-amber-100 text-amber-800 border border-amber-200';
-                        } else if (isForwardedPhase || isChairmanApproved) {
-                          // Approved or forwarded attachment: Solid Green
-                          containerBg = 'bg-green-600 shadow-md';
-                          textColor = 'text-white';
-                          subtitleColor = 'text-green-100';
-                          iconStyle = 'bg-white/20 text-white';
-                          badgeStyle = 'bg-white/20 text-white border border-white/30 font-black';
-                        } else {
-                          // Resubmitted or pending review attachment: Neutral Dark Gray
-                          containerBg = 'bg-[#525252]';
-                          textColor = 'text-white';
-                          subtitleColor = 'text-gray-300';
-                          iconStyle = 'bg-white/10 text-white/80';
-                          badgeStyle = 'bg-white/10 text-white/90 border border-white/20';
-                        }
+                          if (hasRevision) {
+                            containerBg = 'bg-[#f59e0b]';
+                            textColor = 'text-[#451a03]';
+                            subtitleColor = 'text-[#78350f]';
+                            iconStyle = 'bg-[#78350f]/10 text-[#78350f]';
+                            badgeStyle = 'bg-amber-100 text-amber-800 border border-amber-200';
+                          } else if (isForwardedPhase || isChairmanApproved) {
+                            // Approved or forwarded attachment: Solid Green
+                            containerBg = 'bg-green-600 shadow-md';
+                            textColor = 'text-white';
+                            subtitleColor = 'text-green-100';
+                            iconStyle = 'bg-white/20 text-white';
+                            badgeStyle = 'bg-white/20 text-white border border-white/30 font-black';
+                          } else {
+                            // Resubmitted or pending review attachment: Neutral Dark Gray
+                            containerBg = 'bg-[#525252]';
+                            textColor = 'text-white';
+                            subtitleColor = 'text-gray-300';
+                            iconStyle = 'bg-white/10 text-white/80';
+                            badgeStyle = 'bg-white/10 text-white/90 border border-white/20';
+                          }
 
-                        return (
-                          <div
-                            key={file.id || idx}
-                            onClick={() => {
-                              setPreviewFile(file);
-                              setReviewAction('');
-                              setReviewComments('');
-                            }}
-                            className={`${containerBg} rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 group hover:brightness-110 transition-all cursor-pointer overflow-hidden`}
-                          >
-                            <div className="flex items-start sm:items-center gap-2.5 sm:gap-4 min-w-0 flex-1 w-full sm:w-auto">
-                              <div className={`w-9 h-9 sm:w-10 sm:h-10 ${iconStyle} rounded-lg flex items-center justify-center shrink-0 mt-0.5 sm:mt-0`}>
-                                <Paperclip size={18} />
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <div className="mb-1 flex flex-wrap items-center gap-1.5 sm:gap-2">
-                                  <span className={`text-[8px] sm:text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${badgeStyle}`}>
-                                    {isOsas ? 'OSAS Requirement' : 'LOCAL Requirement'}
-                                  </span>
+                          return (
+                            <div
+                              key={file.id || idx}
+                              onClick={() => {
+                                setPreviewFile(file);
+                                setReviewAction('');
+                                setReviewComments('');
+                              }}
+                              className={`${containerBg} rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 group hover:brightness-110 transition-all cursor-pointer overflow-hidden`}
+                            >
+                              <div className="flex items-start sm:items-center gap-2.5 sm:gap-4 min-w-0 flex-1 w-full sm:w-auto">
+                                <div className={`w-9 h-9 sm:w-10 sm:h-10 ${iconStyle} rounded-lg flex items-center justify-center shrink-0 mt-0.5 sm:mt-0`}>
+                                  <Paperclip size={18} />
                                 </div>
-                                <p className={`${textColor} font-semibold text-xs sm:text-sm break-all line-clamp-2 max-w-full sm:max-w-md`} title={fileName}>{fileName}</p>
-                                <p className={`${subtitleColor} text-[9px] sm:text-[10px] uppercase font-bold mt-0.5`}>
-                                  {isForwardedPhase ? (isOsas ? '✓ Forwarded to Main Campus' : '✓ Retained Locally') : 'Attached Document'}
-                                </p>
-                                {returnedForDisplay && fileLog?.comment && (
-                                  <p className="mt-1 text-[11px] sm:text-xs italic font-medium opacity-90 max-w-lg">
-                                    {(fileLog?.users?.full_name || fileLog?.users?.role || 'Reviewer')}'s Comment: "{fileLog.comment}"
+                                <div className="min-w-0 flex-1">
+                                  <div className="mb-1 flex flex-wrap items-center gap-1.5 sm:gap-2">
+                                    <span className={`text-[8px] sm:text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${badgeStyle}`}>
+                                      {isOsas ? 'OSAS Requirement' : 'LOCAL Requirement'}
+                                    </span>
+                                  </div>
+                                  <p className={`${textColor} font-semibold text-xs sm:text-sm break-all line-clamp-2 max-w-full sm:max-w-md`} title={fileName}>{fileName}</p>
+                                  <p className={`${subtitleColor} text-[9px] sm:text-[10px] uppercase font-bold mt-0.5`}>
+                                    {isForwardedPhase ? (isOsas ? '✓ Forwarded to Main Campus' : '✓ Retained Locally') : 'Attached Document'}
                                   </p>
-                                )}
+                                  {returnedForDisplay && fileLog?.comment && (
+                                    <p className="mt-1 text-[11px] sm:text-xs italic font-medium opacity-90 max-w-lg">
+                                      {(fileLog?.users?.full_name || fileLog?.users?.role || 'Reviewer')}'s Comment: "{fileLog.comment}"
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPreviewFile(file);
+                                    setReviewAction('');
+                                    setReviewComments('');
+                                  }}
+                                  className="bg-secondary-gold text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-bold hover:brightness-110 transition-all shadow-md text-center shrink-0"
+                                >
+                                  view
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDownload(file.file_url, fileName);
+                                  }}
+                                  className="bg-secondary-gold text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-bold hover:brightness-110 transition-all shadow-md text-center shrink-0"
+                                >
+                                  Download
+                                </button>
                               </div>
                             </div>
-                            <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setPreviewFile(file);
-                                  setReviewAction('');
-                                  setReviewComments('');
-                                }}
-                                className="bg-secondary-gold text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-bold hover:brightness-110 transition-all shadow-md text-center shrink-0"
-                              >
-                                view
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDownload(file.file_url, fileName);
-                                }}
-                                className="bg-secondary-gold text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-bold hover:brightness-110 transition-all shadow-md text-center shrink-0"
-                              >
-                                Download
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })
+                          );
+                        })
                     ) : (
                       <div className="text-center py-6 text-gray-500 text-sm italic">
                         No dynamic attachments uploaded for this submission.
@@ -2927,7 +2924,7 @@ export const MyDocuments = () => {
                 </button>
               )}
 
-              {/* SDS Stage Verification Buttons (Review decisions only; retrieval actions handled via floating action bar) */}
+              {/* SDS Stage Retrieval Buttons */}
               {isSdsStage && (
                 !isSdsHardcopyApprovedLog ? (
                   (user?.role === 'admin' || user?.role === 'oso-staff' || user?.role === 'sds-coordinator') ? (
@@ -2970,6 +2967,99 @@ export const MyDocuments = () => {
                       </button>
                     </div>
                   ) : null
+                ) : !isSdsConfirmedRetrievalLog ? (
+                  !isSdsReadyForRetrieval ? (
+                    (user?.role === 'admin' || user?.role === 'oso-staff' || user?.role === 'sds-coordinator') ? (
+                      <button
+                        onClick={() => {
+                          setDecisionType('ready_for_retrieval');
+                          setReturnComments('');
+                          setExternalProofFile(null);
+                          setIsReturnModalOpen(true);
+                        }}
+                        disabled={loading}
+                        className="w-full px-5 py-3.5 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        <CheckCircle size={16} />
+                        <span>Ready for retrieval</span>
+                      </button>
+                    ) : null
+                  ) : !sdsRetrievalLog ? (
+                    <button
+                      onClick={() => handleDocumentRetrieved('Document retrieved')}
+                      disabled={loading}
+                      className="w-full px-5 py-3.5 bg-green-700 text-white rounded-xl text-sm font-semibold hover:bg-green-800 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      <CheckCircle size={16} />
+                      <span>Document Retrieved</span>
+                    </button>
+                  ) : isFirstSdsRetriever ? (
+                    <button
+                      disabled
+                      className="w-full px-5 py-3.5 bg-purple-600/50 text-white rounded-xl text-sm font-semibold cursor-not-allowed shadow-sm mt-2 flex items-center justify-center gap-2 opacity-80"
+                    >
+                      <CheckCircle size={16} />
+                      <span>Awaiting retrieval confirmation</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleConfirmRetrieval(user?.role === 'org-president' ? 'Retrieval confirmed by Organization President' : 'Retrieval confirmed by SDS Coordinator')}
+                      disabled={loading}
+                      className="w-full px-5 py-3.5 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      <CheckCircle size={16} />
+                      <span>Confirm Document Retrieval</span>
+                    </button>
+                  )
+                ) : null
+              )}
+
+              {/* Final Approval Retrieval (Approved / Main Campus Approved) */}
+              {(!isSdsStage && currentPhase === 2 && (currentStage === 'DOCUMENT_RETRIEVAL' || ((isReadyForOrgPickup || isApprovedDoc || docStatusLower === 'document retrieval' || docStatusLower === 'document_retrieval') && currentStage !== 'MAIN_CAMPUS_REVIEW' && currentStage !== 'FINAL_LOCAL_CAMPUS_REVIEW'))) && (
+                !isMainConfirmedRetrievalLog ? (
+                  !isMainReadyForRetrieval ? (
+                    (user?.role === 'admin' || user?.role === 'oso-staff') ? (
+                      <button
+                        onClick={() => {
+                          setDecisionType('ready_for_retrieval');
+                          setReturnComments('');
+                          setExternalProofFile(null);
+                          setIsReturnModalOpen(true);
+                        }}
+                        disabled={loading}
+                        className="w-full px-5 py-3.5 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        <CheckCircle size={16} />
+                        <span>Ready for retrieval</span>
+                      </button>
+                    ) : null
+                  ) : !mainRetrievalLog ? (
+                    <button
+                      onClick={() => handleDocumentRetrieved('Document retrieved')}
+                      disabled={loading}
+                      className="w-full px-5 py-3.5 bg-green-700 text-white rounded-xl text-sm font-semibold hover:bg-green-800 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      <CheckCircle size={16} />
+                      <span>Document Retrieved</span>
+                    </button>
+                  ) : isFirstRetriever ? (
+                    <button
+                      disabled
+                      className="w-full px-5 py-3.5 bg-purple-600/50 text-white rounded-xl text-sm font-semibold cursor-not-allowed shadow-sm mt-2 flex items-center justify-center gap-2 opacity-80"
+                    >
+                      <CheckCircle size={16} />
+                      <span>Awaiting retrieval confirmation</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleConfirmRetrieval(user?.role === 'org-president' ? 'Retrieval confirmed by Organization President' : 'Retrieval confirmed by Admin')}
+                      disabled={loading}
+                      className="w-full px-5 py-3.5 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      <CheckCircle size={16} />
+                      <span>Confirm Document Retrieval</span>
+                    </button>
+                  )
                 ) : null
               )}
 
@@ -2986,7 +3076,7 @@ export const MyDocuments = () => {
                 <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50/80 p-4 text-sm text-blue-900 shadow-sm">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-blue-700">Accomplishment Report</p>
                   <p className="mt-2 font-semibold">Submitted on {new Date(accomplishmentReport.submitted_at || accomplishmentReport.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
-                  
+
                   <p className="text-[10px] font-bold uppercase tracking-widest text-blue-700 mt-4">Participants (College/Unit & Year Level)</p>
                   <p className="mt-1 font-medium">{accomplishmentReport.participants || 'N/A'}</p>
 
@@ -2998,7 +3088,7 @@ export const MyDocuments = () => {
 
                   <p className="text-[10px] font-bold uppercase tracking-widest text-blue-700 mt-3">Problem Encountered</p>
                   <p className="mt-1 whitespace-pre-wrap text-blue-800">{accomplishmentReport.problems_encountered || 'No problems encountered were provided.'}</p>
-                  
+
                   {accomplishmentImages.length > 0 && (
                     <div className="mt-3 grid grid-cols-2 gap-3">
                       {accomplishmentImages.map((image, idx) => (
@@ -3025,7 +3115,7 @@ export const MyDocuments = () => {
           )}
 
           {isAccomReportModalOpen && (
-            <div 
+            <div
               className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[100] flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-300"
               onClick={(e) => { if (e.target === e.currentTarget) setIsAccomReportModalOpen(false); }}
             >
@@ -3122,9 +3212,9 @@ export const MyDocuments = () => {
                       <div id="proof-images-gallery" className="mt-4 grid grid-cols-3 gap-3">
                         {accomReportFiles.map((file, idx) => (
                           <div key={idx} className="relative group rounded-xl overflow-hidden border border-gray-200 aspect-video bg-gray-50">
-                            <img 
-                              src={URL.createObjectURL(file)} 
-                              alt="preview" 
+                            <img
+                              src={URL.createObjectURL(file)}
+                              alt="preview"
                               className="w-full h-full object-cover"
                             />
                             <button
@@ -3494,7 +3584,7 @@ export const MyDocuments = () => {
               <ChevronLeft size={24} />
             </button>
             <div>
-              <h1 
+              <h1
                 className="text-xl sm:text-3xl font-bold text-gray-800 tracking-tight flex flex-wrap items-center gap-2 sm:gap-3 break-all line-clamp-2 max-w-4xl"
                 title={selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title}
               >
@@ -3575,7 +3665,7 @@ export const MyDocuments = () => {
           <div className="bg-white rounded-2xl sm:rounded-[2.5rem] p-3.5 sm:p-8 md:p-10 shadow-sm border border-gray-100 mb-6 sm:mb-8 text-gray-800">
             <h2 className="text-base sm:text-xl font-bold text-gray-800 mb-4 sm:mb-8">{selectedDoc.type} Form Details</h2>
             <div className="text-center mb-6 sm:mb-10">
-              <h3 
+              <h3
                 className="text-sm sm:text-lg font-bold text-gray-800 break-all line-clamp-2 max-w-3xl mx-auto"
                 title={isActivityProposal ? (selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title) : `${selectedDoc.sender} ${selectedDoc.type} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
               >
@@ -3708,33 +3798,30 @@ export const MyDocuments = () => {
                     <button
                       type="button"
                       onClick={() => setDocDetailTabFilter('all')}
-                      className={`px-3 py-1.5 rounded-lg transition-all ${
-                        docDetailTabFilter === 'all'
+                      className={`px-3 py-1.5 rounded-lg transition-all ${docDetailTabFilter === 'all'
                           ? 'bg-emerald-600 text-white shadow-xs font-black'
                           : 'text-gray-600 hover:text-gray-800'
-                      }`}
+                        }`}
                     >
                       All ({attachments.length})
                     </button>
                     <button
                       type="button"
                       onClick={() => setDocDetailTabFilter('osas')}
-                      className={`px-3 py-1.5 rounded-lg transition-all ${
-                        docDetailTabFilter === 'osas'
+                      className={`px-3 py-1.5 rounded-lg transition-all ${docDetailTabFilter === 'osas'
                           ? 'bg-emerald-600 text-white shadow-xs font-black'
                           : 'text-gray-600 hover:text-gray-800'
-                      }`}
+                        }`}
                     >
                       OSAS Requirements ({attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') === 'OSAS').length})
                     </button>
                     <button
                       type="button"
                       onClick={() => setDocDetailTabFilter('local')}
-                      className={`px-3 py-1.5 rounded-lg transition-all ${
-                        docDetailTabFilter === 'local'
+                      className={`px-3 py-1.5 rounded-lg transition-all ${docDetailTabFilter === 'local'
                           ? 'bg-emerald-600 text-white shadow-xs font-black'
                           : 'text-gray-600 hover:text-gray-800'
-                      }`}
+                        }`}
                     >
                       LOCAL Requirements ({attachments.filter(f => (f.requirements?.requirement_scope || f.requirement?.requirement_scope || 'OSAS') !== 'OSAS').length})
                     </button>
@@ -3763,120 +3850,120 @@ export const MyDocuments = () => {
                     return true;
                   })
                   .map((file, idx) => {
-                  const fileName = file.file_name || 'Attached File';
-                  let finalPath = file.file_url || '';
-                  if (finalPath.startsWith('documents/')) {
-                    finalPath = finalPath.replace('documents/', '');
-                  }
-                  const { data } = supabase.storage.from('documents').getPublicUrl(finalPath);
-                  const fileUrl = data?.publicUrl || '#';
+                    const fileName = file.file_name || 'Attached File';
+                    let finalPath = file.file_url || '';
+                    if (finalPath.startsWith('documents/')) {
+                      finalPath = finalPath.replace('documents/', '');
+                    }
+                    const { data } = supabase.storage.from('documents').getPublicUrl(finalPath);
+                    const fileUrl = data?.publicUrl || '#';
 
-                  const { isApproved, returnedForDisplay, fileLog } = getAttachmentReviewDisplay(
-                    file,
-                    selectedDoc,
-                    currentVersion,
-                    allVersions,
-                    timelineLogs,
-                    locallyApproved,
-                    locallyReturned,
-                    user
-                  );
+                    const { isApproved, returnedForDisplay, fileLog } = getAttachmentReviewDisplay(
+                      file,
+                      selectedDoc,
+                      currentVersion,
+                      allVersions,
+                      timelineLogs,
+                      locallyApproved,
+                      locallyReturned,
+                      user
+                    );
 
-                  const reqObj = file.requirements || file.requirement;
-                  const scope = reqObj?.requirement_scope || 'OSAS';
-                  const isOsas = scope === 'OSAS';
-                  const docStatus = String(selectedDoc?.status || currentVersion?.status || '').toLowerCase();
-                  const isForwardedPhase = docStatus.includes('main campus review') || docStatus === 'completed' || docStatus === 'waiting for accomplishment report' || docStatus === 'approved' || docStatus === 'ready for retrieval';
-                  const isForwardedItem = isForwardedPhase && isOsas;
+                    const reqObj = file.requirements || file.requirement;
+                    const scope = reqObj?.requirement_scope || 'OSAS';
+                    const isOsas = scope === 'OSAS';
+                    const docStatus = String(selectedDoc?.status || currentVersion?.status || '').toLowerCase();
+                    const isForwardedPhase = docStatus.includes('main campus review') || docStatus === 'completed' || docStatus === 'waiting for accomplishment report' || docStatus === 'approved' || docStatus === 'ready for retrieval';
+                    const isForwardedItem = isForwardedPhase && isOsas;
 
-                  const isChairmanStage = docStatus === 'submitted' || docStatus === 'oso staff review' || docStatus === 'pending' || docStatus === 'returned';
-                  const isChairmanApproved = (locallyApproved && locallyApproved.includes(file.id)) || isApproved || (!isChairmanStage && !returnedForDisplay);
+                    const isChairmanStage = docStatus === 'submitted' || docStatus === 'oso staff review' || docStatus === 'pending' || docStatus === 'returned';
+                    const isChairmanApproved = (locallyApproved && locallyApproved.includes(file.id)) || isApproved || (!isChairmanStage && !returnedForDisplay);
 
-                  // Dynamic styles based on review status
-                  let containerBg = 'bg-[#525252]';
-                  let textColor = 'text-white';
-                  let subtitleColor = 'text-gray-300';
-                  let iconStyle = 'bg-white/10 text-white/80';
-                  let badgeStyle = 'bg-white/10 text-white/90 border border-white/20';
+                    // Dynamic styles based on review status
+                    let containerBg = 'bg-[#525252]';
+                    let textColor = 'text-white';
+                    let subtitleColor = 'text-gray-300';
+                    let iconStyle = 'bg-white/10 text-white/80';
+                    let badgeStyle = 'bg-white/10 text-white/90 border border-white/20';
 
-                  if (returnedForDisplay) {
-                    containerBg = 'bg-[#f59e0b]';
-                    textColor = 'text-[#451a03]';
-                    subtitleColor = 'text-[#78350f]';
-                    iconStyle = 'bg-[#78350f]/10 text-[#78350f]';
-                    badgeStyle = 'bg-amber-100 text-amber-800 border border-amber-200';
-                  } else if (isForwardedPhase || isChairmanApproved) {
-                    // Approved or forwarded attachment: Solid Green
-                    containerBg = 'bg-green-600 shadow-md';
-                    textColor = 'text-white';
-                    subtitleColor = 'text-green-100';
-                    iconStyle = 'bg-white/20 text-white';
-                    badgeStyle = 'bg-white/20 text-white border border-white/30 font-black';
-                  } else {
-                    // Initial submission (before Chairman approval): Neutral Dark Gray
-                    containerBg = 'bg-[#525252]';
-                    textColor = 'text-white';
-                    subtitleColor = 'text-gray-300';
-                    iconStyle = 'bg-white/10 text-white/80';
-                    badgeStyle = 'bg-white/10 text-white/90 border border-white/20';
-                  }
+                    if (returnedForDisplay) {
+                      containerBg = 'bg-[#f59e0b]';
+                      textColor = 'text-[#451a03]';
+                      subtitleColor = 'text-[#78350f]';
+                      iconStyle = 'bg-[#78350f]/10 text-[#78350f]';
+                      badgeStyle = 'bg-amber-100 text-amber-800 border border-amber-200';
+                    } else if (isForwardedPhase || isChairmanApproved) {
+                      // Approved or forwarded attachment: Solid Green
+                      containerBg = 'bg-green-600 shadow-md';
+                      textColor = 'text-white';
+                      subtitleColor = 'text-green-100';
+                      iconStyle = 'bg-white/20 text-white';
+                      badgeStyle = 'bg-white/20 text-white border border-white/30 font-black';
+                    } else {
+                      // Initial submission (before Chairman approval): Neutral Dark Gray
+                      containerBg = 'bg-[#525252]';
+                      textColor = 'text-white';
+                      subtitleColor = 'text-gray-300';
+                      iconStyle = 'bg-white/10 text-white/80';
+                      badgeStyle = 'bg-white/10 text-white/90 border border-white/20';
+                    }
 
-                  return (
-                    <div
-                      key={idx}
-                      onClick={() => {
-                        setPreviewFile(file);
-                        setReviewAction('');
-                        setReviewComments('');
-                      }}
-                      className={`${containerBg} rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 group hover:brightness-110 transition-all cursor-pointer overflow-hidden`}
-                    >
-                      <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1 w-full sm:w-auto">
-                        <div className={`w-9 h-9 sm:w-10 sm:h-10 ${iconStyle} rounded-lg flex items-center justify-center shrink-0`}>
-                          <Paperclip size={18} />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                            <p className={`${textColor} font-semibold text-xs sm:text-sm break-all line-clamp-2 max-w-full sm:max-w-md`} title={fileName}>{fileName}</p>
-                            <span className={`text-[8px] sm:text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${badgeStyle}`}>
-                              {isOsas ? 'OSAS Requirement' : 'LOCAL Requirement'}
-                            </span>
+                    return (
+                      <div
+                        key={idx}
+                        onClick={() => {
+                          setPreviewFile(file);
+                          setReviewAction('');
+                          setReviewComments('');
+                        }}
+                        className={`${containerBg} rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 group hover:brightness-110 transition-all cursor-pointer overflow-hidden`}
+                      >
+                        <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1 w-full sm:w-auto">
+                          <div className={`w-9 h-9 sm:w-10 sm:h-10 ${iconStyle} rounded-lg flex items-center justify-center shrink-0`}>
+                            <Paperclip size={18} />
                           </div>
-                          <p className={`${subtitleColor} text-[9px] sm:text-[10px] uppercase font-bold mt-0.5`}>
-                            {isForwardedItem ? '✓ Forwarded to Main Campus' : 'Attached Document'}
-                          </p>
-                          {returnedForDisplay && (locallyReturned[file.id]?.comment || fileLog?.comment) && (
-                            <p className="mt-1 text-[11px] sm:text-xs italic font-medium opacity-90 max-w-lg">
-                              {(fileLog?.users?.full_name || fileLog?.users?.role || user?.role || 'Reviewer')}'s Comment: "{locallyReturned[file.id]?.comment || fileLog?.comment}"
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                              <p className={`${textColor} font-semibold text-xs sm:text-sm break-all line-clamp-2 max-w-full sm:max-w-md`} title={fileName}>{fileName}</p>
+                              <span className={`text-[8px] sm:text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${badgeStyle}`}>
+                                {isOsas ? 'OSAS Requirement' : 'LOCAL Requirement'}
+                              </span>
+                            </div>
+                            <p className={`${subtitleColor} text-[9px] sm:text-[10px] uppercase font-bold mt-0.5`}>
+                              {isForwardedItem ? '✓ Forwarded to Main Campus' : 'Attached Document'}
                             </p>
-                          )}
+                            {returnedForDisplay && (locallyReturned[file.id]?.comment || fileLog?.comment) && (
+                              <p className="mt-1 text-[11px] sm:text-xs italic font-medium opacity-90 max-w-lg">
+                                {(fileLog?.users?.full_name || fileLog?.users?.role || user?.role || 'Reviewer')}'s Comment: "{locallyReturned[file.id]?.comment || fileLog?.comment}"
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 sm:mt-0 shrink-0 w-full sm:w-auto justify-end opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPreviewFile(file);
+                              setReviewAction('');
+                              setReviewComments('');
+                            }}
+                            className="bg-secondary-gold text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-bold hover:brightness-110 transition-all shadow-md text-center shrink-0"
+                          >
+                            view
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDownload(file.file_url, fileName);
+                            }}
+                            className="bg-secondary-gold text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-bold hover:brightness-110 transition-all shadow-md text-center shrink-0"
+                          >
+                            Download
+                          </button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 mt-1 sm:mt-0 shrink-0 w-full sm:w-auto justify-end opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setPreviewFile(file);
-                            setReviewAction('');
-                            setReviewComments('');
-                          }}
-                          className="bg-secondary-gold text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-bold hover:brightness-110 transition-all shadow-md text-center shrink-0"
-                        >
-                          view
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDownload(file.file_url, fileName);
-                          }}
-                          className="bg-secondary-gold text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-bold hover:brightness-110 transition-all shadow-md text-center shrink-0"
-                        >
-                          Download
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })
+                    );
+                  })
               ) : (
                 <div className="text-center py-6 text-gray-500 text-sm italic">
                   No dynamic attachments uploaded for this submission.
@@ -3982,7 +4069,7 @@ export const MyDocuments = () => {
                 </button>
               );
             }
-          } else if (isSdsStage && currentStage === 'SDS_REVIEW') {
+          } else if (isSdsStage || (currentPhase === 1 && (isEffectiveReadyForRetrieval || isSdsApprovedLog))) {
             if (!isSdsApprovedLog) {
               if (userRoleNorm === 'admin' || userRoleNorm === 'oso-staff') {
                 buttons.push(
@@ -4026,19 +4113,17 @@ export const MyDocuments = () => {
               }
             } else if (!isSdsConfirmedRetrievalLog) {
               if (!sdsRetrievalLog) {
-                if (userRoleNorm === 'org-president') {
-                  buttons.push(
-                    <button
-                      key="sds-retrieved"
-                      onClick={() => handleDocumentRetrieved('Document retrieved')}
-                      disabled={loading}
-                      className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-green-700 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-tight sm:tracking-widest disabled:opacity-50 shrink-0"
-                    >
-                      <CheckCircle size={15} />
-                      <span>Document Retrieved</span>
-                    </button>
-                  );
-                }
+                buttons.push(
+                  <button
+                    key="sds-retrieved"
+                    onClick={() => handleDocumentRetrieved('Document retrieved')}
+                    disabled={loading}
+                    className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-green-700 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-tight sm:tracking-widest disabled:opacity-50 shrink-0"
+                  >
+                    <CheckCircle size={15} />
+                    <span>Document Retrieved</span>
+                  </button>
+                );
               } else if (sdsRetrievalLog && isFirstSdsRetriever) {
                 buttons.push(
                   <button
@@ -4051,19 +4136,17 @@ export const MyDocuments = () => {
                   </button>
                 );
               } else if (sdsRetrievalLog && !isFirstSdsRetriever) {
-                if (userRoleNorm === 'admin' || userRoleNorm === 'oso-staff' || userRoleNorm === 'sds-coordinator') {
-                  buttons.push(
-                    <button
-                      key="sds-confirm"
-                      onClick={() => handleConfirmRetrieval('Retrieval confirmed by SDS Coordinator')}
-                      disabled={loading}
-                      className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-purple-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-tight sm:tracking-widest disabled:opacity-50 shrink-0"
-                    >
-                      <CheckCircle size={15} />
-                      <span>Confirm Document Retrieval</span>
-                    </button>
-                  );
-                }
+                buttons.push(
+                  <button
+                    key="sds-confirm"
+                    onClick={() => handleConfirmRetrieval(userRoleNorm === 'org-president' ? 'Retrieval confirmed by Organization President' : 'Retrieval confirmed by SDS Coordinator')}
+                    disabled={loading}
+                    className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-purple-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-tight sm:tracking-widest disabled:opacity-50 shrink-0"
+                  >
+                    <CheckCircle size={15} />
+                    <span>Confirm Document Retrieval</span>
+                  </button>
+                );
               }
             }
           } else if (isDeanApprovedDoc || currentStage === 'FINAL_LOCAL_CAMPUS_REVIEW') {
@@ -4082,27 +4165,24 @@ export const MyDocuments = () => {
                 <span>Sent to main campus</span>
               </button>
             );
-          } else if (currentStage === 'DOCUMENT_RETRIEVAL' || ((isApprovedDoc || docStatusLower === 'document retrieval' || docStatusLower === 'ready for retrieval' || docStatusLower === 'document_retrieval') && currentStage !== 'MAIN_CAMPUS_REVIEW' && currentStage !== 'FINAL_LOCAL_CAMPUS_REVIEW')) {
-            const activePhase = (phase2TransitionLogIndex >= 0 || isPhase2) ? 2 : 1;
-            const activeRetrievalLog = activePhase === 1 ? sdsRetrievalLog : mainRetrievalLog;
-            const activeIsFirstRetriever = activePhase === 1 ? isFirstSdsRetriever : isFirstRetriever;
-            const isConfirmed = activePhase === 1 ? isSdsConfirmedRetrievalLog : isMainConfirmedRetrievalLog;
+          } else if (!isSdsStage && currentPhase === 2 && (currentStage === 'DOCUMENT_RETRIEVAL' || ((isApprovedDoc || docStatusLower === 'document retrieval' || docStatusLower === 'document_retrieval') && currentStage !== 'MAIN_CAMPUS_REVIEW' && currentStage !== 'FINAL_LOCAL_CAMPUS_REVIEW'))) {
+            const activeRetrievalLog = mainRetrievalLog;
+            const activeIsFirstRetriever = isFirstRetriever;
+            const isConfirmed = isMainConfirmedRetrievalLog;
 
             if (!isConfirmed) {
               if (!activeRetrievalLog) {
-                if (userRoleNorm === 'org-president') {
-                  buttons.push(
-                    <button
-                      key="main-retrieved"
-                      onClick={() => handleDocumentRetrieved('Document retrieved')}
-                      disabled={loading}
-                      className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-green-700 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-tight sm:tracking-widest disabled:opacity-50 shrink-0"
-                    >
-                      <CheckCircle size={15} />
-                      <span>Document Retrieved</span>
-                    </button>
-                  );
-                }
+                buttons.push(
+                  <button
+                    key="main-retrieved"
+                    onClick={() => handleDocumentRetrieved('Document retrieved')}
+                    disabled={loading}
+                    className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-green-700 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-tight sm:tracking-widest disabled:opacity-50 shrink-0"
+                  >
+                    <CheckCircle size={15} />
+                    <span>Document Retrieved</span>
+                  </button>
+                );
               } else if (activeRetrievalLog && activeIsFirstRetriever) {
                 buttons.push(
                   <button
@@ -4115,19 +4195,17 @@ export const MyDocuments = () => {
                   </button>
                 );
               } else if (activeRetrievalLog && !activeIsFirstRetriever) {
-                if (userRoleNorm === 'admin' || userRoleNorm === 'oso-staff' || userRoleNorm === 'sds-coordinator') {
-                  buttons.push(
-                    <button
-                      key="main-confirm"
-                      onClick={() => handleConfirmRetrieval('Retrieval confirmed by Admin')}
-                      disabled={loading}
-                      className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-purple-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-tight sm:tracking-widest disabled:opacity-50 shrink-0"
-                    >
-                      <CheckCircle size={15} />
-                      <span>Confirm Document Retrieval</span>
-                    </button>
-                  );
-                }
+                buttons.push(
+                  <button
+                    key="main-confirm"
+                    onClick={() => handleConfirmRetrieval(userRoleNorm === 'org-president' ? 'Retrieval confirmed by Organization President' : 'Retrieval confirmed by SDS Coordinator')}
+                    disabled={loading}
+                    className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-purple-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-tight sm:tracking-widest disabled:opacity-50 shrink-0"
+                  >
+                    <CheckCircle size={15} />
+                    <span>Confirm Document Retrieval</span>
+                  </button>
+                );
               }
             }
           }
@@ -4179,9 +4257,8 @@ export const MyDocuments = () => {
                 }}
                 disabled={allFilesApproved}
                 title={allFilesApproved ? "All attachments are approved. Click Approve to proceed." : ""}
-                className={`flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-amber-500 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl transition-all shadow-lg shadow-amber-500/20 uppercase tracking-tight sm:tracking-widest shrink-0 ${
-                  allFilesApproved ? 'opacity-40 cursor-not-allowed' : 'hover:scale-105 active:scale-95'
-                }`}
+                className={`flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-amber-500 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl transition-all shadow-lg shadow-amber-500/20 uppercase tracking-tight sm:tracking-widest shrink-0 ${allFilesApproved ? 'opacity-40 cursor-not-allowed' : 'hover:scale-105 active:scale-95'
+                  }`}
               >
                 <RotateCcw size={15} />
                 <span>Return</span>
@@ -4223,9 +4300,8 @@ export const MyDocuments = () => {
                 }}
                 disabled={allFilesApproved}
                 title={allFilesApproved ? "All attachments are approved. Click Approve to proceed." : ""}
-                className={`flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-amber-500 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl transition-all shadow-lg shadow-amber-500/20 uppercase tracking-tight sm:tracking-widest shrink-0 ${
-                  allFilesApproved ? 'opacity-40 cursor-not-allowed' : 'hover:scale-105 active:scale-95'
-                }`}
+                className={`flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-amber-500 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl transition-all shadow-lg shadow-amber-500/20 uppercase tracking-tight sm:tracking-widest shrink-0 ${allFilesApproved ? 'opacity-40 cursor-not-allowed' : 'hover:scale-105 active:scale-95'
+                  }`}
               >
                 <RotateCcw size={15} />
                 <span>Return</span>
@@ -4547,10 +4623,9 @@ export const MyDocuments = () => {
 
           return (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-300 overflow-y-auto">
-              <div className={`bg-white rounded-3xl w-full ${
-                decisionType === 'send_to_external' ? 'max-w-4xl' : 'max-w-md'
-              } max-h-[90vh] flex flex-col shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300 overflow-hidden my-auto`}>
-                
+              <div className={`bg-white rounded-3xl w-full ${decisionType === 'send_to_external' ? 'max-w-4xl' : 'max-w-md'
+                } max-h-[90vh] flex flex-col shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300 overflow-hidden my-auto`}>
+
                 {/* Header (Sticky / Fixed) */}
                 <div className="p-6 border-b border-gray-100 flex items-start justify-between gap-4 shrink-0 bg-white">
                   <div className="flex items-center gap-4">
@@ -4603,7 +4678,7 @@ export const MyDocuments = () => {
                               : [selectedDoc?.raw?.submission_versions].filter(Boolean);
                             const activeVer = allVer.find(v => v.id === (selectedVersionId || selectedDoc?.raw?.current_version_id)) || allVer[0];
                             const rawAtts = activeVer?.submission_attachments || selectedDoc?.attachments || [];
-                            
+
                             const forwardedAtts = rawAtts.filter(att => {
                               const req = att.requirements || att.requirement;
                               const scope = (req?.requirement_scope || 'OSAS').toString().trim().toUpperCase();
@@ -4889,11 +4964,11 @@ export const MyDocuments = () => {
     <div className="animate-in fade-in slide-in-from-bottom-6 duration-1000">
       {/* Page Header - Matching Inbox */}
       <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between mb-6 sm:mb-8 border-b border-gray-100 pb-4 sm:pb-6 gap-4">
-        <PageHeader 
-          title="My Documents" 
-          subtitle="Track your handled and reviewed document status" 
-          icon={FileText} 
-          iconColor="blue" 
+        <PageHeader
+          title="My Documents"
+          subtitle="Track your handled and reviewed document status"
+          icon={FileText}
+          iconColor="blue"
         />
 
         <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -4974,162 +5049,162 @@ export const MyDocuments = () => {
                 {filteredDocs.map((doc) => {
                   const isUnread = user?.role === 'org-president' && (!viewedDocs[doc.id] || new Date(doc.latestLogDate || doc.raw.updated_at) > new Date(viewedDocs[doc.id]));
                   return (
-                  <tr
-                    key={doc.id}
-                    className={`group transition-all duration-300 hover:bg-gray-50/50 ${doc.id === highlightedDocId ? 'newly-added-glow' : ''} ${isUnread ? 'unread-glow' : ''}`}
-                  >
-                    <td
-                      className="px-3 sm:px-6 py-4 sm:py-5 cursor-pointer"
-                      onClick={() => {
-                        setSelectedDoc(doc);
-                        if (user?.role === 'org-president') {
-                          const updatedViewed = { ...viewedDocs, [doc.id]: new Date().toISOString() };
-                          setViewedDocs(updatedViewed);
-                          localStorage.setItem(`my_docs_viewed_${user.id}`, JSON.stringify(updatedViewed));
-                          window.dispatchEvent(new CustomEvent('my-docs-updated'));
-                        }
-                      }}
+                    <tr
+                      key={doc.id}
+                      className={`group transition-all duration-300 hover:bg-gray-50/50 ${doc.id === highlightedDocId ? 'newly-added-glow' : ''} ${isUnread ? 'unread-glow' : ''}`}
                     >
-                      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                        <FileText className="text-secondary-gold opacity-50 shrink-0" size={18} />
-                        <div className="min-w-0 flex-1">
-                          {(() => {
-                            const fullTitle = doc.isActivityProposal ? doc.title : `${doc.sender} ${doc.type} ${activeSy ? activeSy.name : ''}`.toUpperCase();
-                            return (
-                              <p 
-                                className="font-semibold text-gray-800 group-hover:text-primary-green transition-colors uppercase text-xs sm:text-sm leading-tight line-clamp-2 max-w-[180px] min-[400px]:max-w-[240px] sm:max-w-sm md:max-w-md lg:max-w-lg"
-                                title={fullTitle}
-                              >
-                                {fullTitle}
-                              </p>
-                            );
-                          })()}
-                          <p className="text-[10px] text-gray-400 font-mono mt-0.5 tracking-tighter uppercase truncate">{doc.ref}</p>
+                      <td
+                        className="px-3 sm:px-6 py-4 sm:py-5 cursor-pointer"
+                        onClick={() => {
+                          setSelectedDoc(doc);
+                          if (user?.role === 'org-president') {
+                            const updatedViewed = { ...viewedDocs, [doc.id]: new Date().toISOString() };
+                            setViewedDocs(updatedViewed);
+                            localStorage.setItem(`my_docs_viewed_${user.id}`, JSON.stringify(updatedViewed));
+                            window.dispatchEvent(new CustomEvent('my-docs-updated'));
+                          }
+                        }}
+                      >
+                        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                          <FileText className="text-secondary-gold opacity-50 shrink-0" size={18} />
+                          <div className="min-w-0 flex-1">
+                            {(() => {
+                              const fullTitle = doc.isActivityProposal ? doc.title : `${doc.sender} ${doc.type} ${activeSy ? activeSy.name : ''}`.toUpperCase();
+                              return (
+                                <p
+                                  className="font-semibold text-gray-800 group-hover:text-primary-green transition-colors uppercase text-xs sm:text-sm leading-tight line-clamp-2 max-w-[180px] min-[400px]:max-w-[240px] sm:max-w-sm md:max-w-md lg:max-w-lg"
+                                  title={fullTitle}
+                                >
+                                  {fullTitle}
+                                </p>
+                              );
+                            })()}
+                            <p className="text-[10px] text-gray-400 font-mono mt-0.5 tracking-tighter uppercase truncate">{doc.ref}</p>
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="hidden sm:table-cell px-6 py-5">
-                      <span className="text-sm font-medium text-gray-600 uppercase tracking-tight">{doc.sender}</span>
-                    </td>
-                    <td className="hidden md:table-cell px-6 py-5 text-center">
-                      <span className="inline-block px-4 py-1 border border-gray-100 text-gray-500 text-[10px] font-semibold rounded-lg bg-white shadow-sm group-hover:border-primary-green/20 group-hover:text-primary-green transition-all uppercase">
-                        {doc.type}
-                      </span>
-                      {doc.proposal_type && doc.proposal_type !== '-' && (
-                        <span className="block text-[9px] font-bold text-primary-green mt-1 uppercase tracking-tight">
-                          {doc.proposal_type}
+                      </td>
+                      <td className="hidden sm:table-cell px-6 py-5">
+                        <span className="text-sm font-medium text-gray-600 uppercase tracking-tight">{doc.sender}</span>
+                      </td>
+                      <td className="hidden md:table-cell px-6 py-5 text-center">
+                        <span className="inline-block px-4 py-1 border border-gray-100 text-gray-500 text-[10px] font-semibold rounded-lg bg-white shadow-sm group-hover:border-primary-green/20 group-hover:text-primary-green transition-all uppercase">
+                          {doc.type}
                         </span>
-                      )}
-                    </td>
-                    <td className="hidden lg:table-cell px-6 py-5 text-sm text-gray-500 font-medium">
-                      {doc.submittedDate}
-                    </td>
-                    <td className="px-3 sm:px-6 py-4 sm:py-5 text-center">
-                      {(() => {
-                        const rawStatusLower = (doc.raw?.status || doc.status || '').toLowerCase().trim();
-                        
-                        let stageText = doc.category || 'SDS Review';
-                        if (stageText === 'Hard Copy Submission' || stageText === 'For Retrieval') {
-                          stageText = 'SDS Review';
-                        }
+                        {doc.proposal_type && doc.proposal_type !== '-' && (
+                          <span className="block text-[9px] font-bold text-primary-green mt-1 uppercase tracking-tight">
+                            {doc.proposal_type}
+                          </span>
+                        )}
+                      </td>
+                      <td className="hidden lg:table-cell px-6 py-5 text-sm text-gray-500 font-medium">
+                        {doc.submittedDate}
+                      </td>
+                      <td className="px-3 sm:px-6 py-4 sm:py-5 text-center">
+                        {(() => {
+                          const rawStatusLower = (doc.raw?.status || doc.status || '').toLowerCase().trim();
 
-                        let subLabelText = 'PENDING';
-                        let subLabelColorClass = 'text-amber-500 animate-pulse';
-
-                        // Retrieval and hard copy sub-labels ONLY apply when in SDS Review stage!
-                        if (stageText === 'SDS Review') {
-                          const isDocRetrieved = Boolean(
-                            doc.hasDocumentRetrievedLog ||
-                            rawStatusLower === 'document retrieved' ||
-                            rawStatusLower === 'document_retrieved' ||
-                            doc.status === 'DOCUMENT RETRIEVED'
-                          );
-
-                          const isForRetrievalCat = !isDocRetrieved && (rawStatusLower.includes('ready for retrieval') || rawStatusLower.includes('retriev') || doc.status === 'READY FOR RETRIEVAL' || doc.status === 'FOR RETRIEVAL');
-                          const isHardCopyCat = !isDocRetrieved && !isForRetrievalCat && (rawStatusLower === 'to forward' || rawStatusLower.includes('hardcopy') || doc.status === 'HARDCOPY SUBMISSION' || doc.status === 'PENDING HARD COPY');
-
-                          if (isDocRetrieved) {
-                            subLabelText = 'CONFIRM RETRIEVAL';
-                          } else if (isForRetrievalCat) {
-                            subLabelText = 'FOR RETRIEVAL';
-                          } else if (isHardCopyCat) {
-                            subLabelText = 'HARD COPY SUBMISSION';
+                          let stageText = doc.category || 'SDS Review';
+                          if (stageText === 'Hard Copy Submission' || stageText === 'For Retrieval') {
+                            stageText = 'SDS Review';
                           }
-                        } else if (stageText === 'Hard Copy') {
-                          const isForRetrievalCat = (rawStatusLower.includes('ready for retrieval') || rawStatusLower.includes('retriev') || doc.status === 'READY FOR RETRIEVAL' || doc.status === 'FOR RETRIEVAL');
-                          
-                          if (isForRetrievalCat) {
-                            subLabelText = 'FOR RETRIEVAL';
-                            subLabelColorClass = 'text-amber-500 animate-pulse';
-                          } else if (rawStatusLower.includes('returned')) {
-                            subLabelText = null;
-                          } else {
-                            subLabelText = 'PENDING';
-                            subLabelColorClass = 'text-amber-500 animate-pulse';
-                          }
-                        } else if (stageText === 'Final In-Campus review') {
-                          if (rawStatusLower.includes('dean approved') || rawStatusLower.includes('approved')) {
-                            subLabelText = 'READY FOR MAIN CAMPUS';
-                            subLabelColorClass = 'text-amber-500 animate-pulse';
-                          } else if (rawStatusLower.includes('returned')) {
-                            subLabelText = null;
-                          } else {
-                            subLabelText = 'PENDING';
-                            subLabelColorClass = 'text-amber-500 animate-pulse';
-                          }
-                        } else if (stageText === 'Approved') {
-                          if (rawStatusLower.includes('returned')) {
-                            subLabelText = null;
-                          } else if (doc.hasDocumentRetrievedLog && doc.firstRetrievedLog) {
-                            const myRoleNorm = String(user?.role || '').toLowerCase();
-                            const myUserId = String(user?.id || '');
-                            const isRetrieverMe = Boolean(doc.retrieverUserId && String(doc.retrieverUserId) === myUserId);
 
-                            if (isRetrieverMe) {
+                          let subLabelText = 'PENDING';
+                          let subLabelColorClass = 'text-amber-500 animate-pulse';
+
+                          // Retrieval and hard copy sub-labels ONLY apply when in SDS Review stage!
+                          if (stageText === 'SDS Review') {
+                            const isDocRetrieved = Boolean(
+                              doc.hasDocumentRetrievedLog ||
+                              rawStatusLower === 'document retrieved' ||
+                              rawStatusLower === 'document_retrieved' ||
+                              doc.status === 'DOCUMENT RETRIEVED'
+                            );
+
+                            const isForRetrievalCat = !isDocRetrieved && (rawStatusLower.includes('ready for retrieval') || rawStatusLower.includes('retriev') || doc.status === 'READY FOR RETRIEVAL' || doc.status === 'FOR RETRIEVAL');
+                            const isHardCopyCat = !isDocRetrieved && !isForRetrievalCat && (rawStatusLower === 'to forward' || rawStatusLower.includes('hardcopy') || doc.status === 'HARDCOPY SUBMISSION' || doc.status === 'PENDING HARD COPY');
+
+                            if (isDocRetrieved) {
+                              subLabelText = 'CONFIRM RETRIEVAL';
+                            } else if (isForRetrievalCat) {
+                              subLabelText = 'FOR RETRIEVAL';
+                            } else if (isHardCopyCat) {
+                              subLabelText = 'HARD COPY SUBMISSION';
+                            }
+                          } else if (stageText === 'Hard Copy') {
+                            const isForRetrievalCat = (rawStatusLower.includes('ready for retrieval') || rawStatusLower.includes('retriev') || doc.status === 'READY FOR RETRIEVAL' || doc.status === 'FOR RETRIEVAL');
+
+                            if (isForRetrievalCat) {
                               subLabelText = 'FOR RETRIEVAL';
                               subLabelColorClass = 'text-amber-500 animate-pulse';
+                            } else if (rawStatusLower.includes('returned')) {
+                              subLabelText = null;
                             } else {
-                              subLabelText = 'CONFIRM RETRIEVAL';
+                              subLabelText = 'PENDING';
+                              subLabelColorClass = 'text-amber-500 animate-pulse';
+                            }
+                          } else if (stageText === 'Final In-Campus review') {
+                            if (rawStatusLower.includes('dean approved') || rawStatusLower.includes('approved')) {
+                              subLabelText = 'READY FOR MAIN CAMPUS';
+                              subLabelColorClass = 'text-amber-500 animate-pulse';
+                            } else if (rawStatusLower.includes('returned')) {
+                              subLabelText = null;
+                            } else {
+                              subLabelText = 'PENDING';
+                              subLabelColorClass = 'text-amber-500 animate-pulse';
+                            }
+                          } else if (stageText === 'Approved') {
+                            if (rawStatusLower.includes('returned')) {
+                              subLabelText = null;
+                            } else if (doc.hasDocumentRetrievedLog && doc.firstRetrievedLog) {
+                              const myRoleNorm = String(user?.role || '').toLowerCase();
+                              const myUserId = String(user?.id || '');
+                              const isRetrieverMe = Boolean(doc.retrieverUserId && String(doc.retrieverUserId) === myUserId);
+
+                              if (isRetrieverMe) {
+                                subLabelText = 'FOR RETRIEVAL';
+                                subLabelColorClass = 'text-amber-500 animate-pulse';
+                              } else {
+                                subLabelText = 'CONFIRM RETRIEVAL';
+                                subLabelColorClass = 'text-amber-500 animate-pulse';
+                              }
+                            } else {
+                              subLabelText = 'FOR RETRIEVAL';
                               subLabelColorClass = 'text-amber-500 animate-pulse';
                             }
                           } else {
-                            subLabelText = 'FOR RETRIEVAL';
-                            subLabelColorClass = 'text-amber-500 animate-pulse';
+                            // For all other stage tabs (e.g. Main Campus Review, OSO Staff review, etc.)
+                            if (rawStatusLower.includes('approved') || rawStatusLower.includes('vice chairman approved')) {
+                              subLabelText = 'APPROVED';
+                              subLabelColorClass = 'text-emerald-600';
+                            } else if (rawStatusLower.includes('returned')) {
+                              subLabelText = null;
+                            } else {
+                              subLabelText = 'PENDING';
+                              subLabelColorClass = 'text-amber-500 animate-pulse';
+                            }
                           }
-                        } else {
-                          // For all other stage tabs (e.g. Main Campus Review, OSO Staff review, etc.)
-                          if (rawStatusLower.includes('approved') || rawStatusLower.includes('vice chairman approved')) {
-                            subLabelText = 'APPROVED';
-                            subLabelColorClass = 'text-emerald-600';
-                          } else if (rawStatusLower.includes('returned')) {
-                            subLabelText = null;
-                          } else {
-                            subLabelText = 'PENDING';
-                            subLabelColorClass = 'text-amber-500 animate-pulse';
-                          }
-                        }
 
-                        const badgeColor = getStatusColor(stageText);
+                          const badgeColor = getStatusColor(stageText);
 
-                        return (
-                          <div className="flex flex-col items-center justify-center gap-0.5">
-                            <span
-                              style={{ backgroundColor: badgeColor }}
-                              className="px-3 sm:px-4 py-1.5 rounded-full text-[9px] sm:text-[10px] font-bold shadow-sm inline-block uppercase text-white transition-all min-w-[90px] sm:min-w-[120px]"
-                            >
-                              {stageText}
-                            </span>
-                            {subLabelText && (
-                              <span className={`block text-[9px] font-semibold mt-1 uppercase tracking-tight ${subLabelColorClass}`}>
-                                {subLabelText}
+                          return (
+                            <div className="flex flex-col items-center justify-center gap-0.5">
+                              <span
+                                style={{ backgroundColor: badgeColor }}
+                                className="px-3 sm:px-4 py-1.5 rounded-full text-[9px] sm:text-[10px] font-bold shadow-sm inline-block uppercase text-white transition-all min-w-[90px] sm:min-w-[120px]"
+                              >
+                                {stageText}
                               </span>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </td>
-                    <td className="hidden lg:table-cell px-6 py-5 text-right text-sm text-gray-500 font-medium">{doc.lastAction}</td>
-                  </tr>
+                              {subLabelText && (
+                                <span className={`block text-[9px] font-semibold mt-1 uppercase tracking-tight ${subLabelColorClass}`}>
+                                  {subLabelText}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </td>
+                      <td className="hidden lg:table-cell px-6 py-5 text-right text-sm text-gray-500 font-medium">{doc.lastAction}</td>
+                    </tr>
                   );
                 })}
               </tbody>
