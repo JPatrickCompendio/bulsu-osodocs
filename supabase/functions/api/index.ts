@@ -3339,6 +3339,37 @@ export function getAllowedActionsForStage(cfgKey: string, stage: WorkflowStageKe
   return Object.keys(stageTransitions);
 }
 
+export async function resolveActivityProposalRetrievalPhase(
+  supabase: any,
+  submissionId: string
+): Promise<number> {
+  const { data: logs, error } = await supabase
+    .from('submission_logs')
+    .select('workflow_phase, action_type, description, created_at')
+    .eq('submission_id', submissionId)
+    .order('created_at', { ascending: true });
+
+  if (error || !logs || logs.length === 0) {
+    return 1;
+  }
+
+  const hasMainCampusTransition = logs.some((l: any) => {
+    const phase = String(l.workflow_phase || '').toLowerCase();
+    const actionType = String(l.action_type || '').toLowerCase();
+    const desc = String(l.description || '').toLowerCase();
+
+    return (
+      phase.includes('main-campus') ||
+      phase.includes('main campus') ||
+      desc.includes('main campus') ||
+      desc.includes('sent to main campus') ||
+      (actionType === 'forwarded' && desc.includes('main'))
+    );
+  });
+
+  return hasMainCampusTransition ? 2 : 1;
+}
+
 export function generateDescriptiveLogMessage(
   currentStage: WorkflowStageKey,
   nextStage: WorkflowStageKey,
@@ -3490,9 +3521,35 @@ async function handleSubmissionTransition(body: Record<string, unknown>) {
     }, 400);
   }
 
-  const nextStage = cfg.transitions[currentStage]?.[action];
+  let nextStage = cfg.transitions[currentStage]?.[action];
   if (!nextStage) {
     return jsonResponse({ error: `No transition defined for action '${action}' from stage '${currentStage}'` }, 400);
+  }
+
+  if (
+    docTypeKey === 'ACTIVITY_PROPOSAL' &&
+    currentStage === 'DOCUMENT_RETRIEVAL' &&
+    action === 'confirm_retrieval'
+  ) {
+    const retrievalPhase = await resolveActivityProposalRetrievalPhase(supabase, submissionId);
+    const hasMainCampusTransition = retrievalPhase === 2;
+
+    if (retrievalPhase === 1) {
+      nextStage = 'FINAL_LOCAL_CAMPUS_REVIEW';
+    } else {
+      nextStage = 'ACCOMPLISHMENT_REPORT';
+    }
+
+    console.log('ACTIVITY RETRIEVAL PHASE RESOLUTION', {
+      submissionId,
+      docTypeKey,
+      currentStage,
+      action,
+      retrievalPhase,
+      hasMainCampusTransition,
+      nextStage,
+      nextStatus: stageToDbStatus(nextStage),
+    });
   }
 
   let newDbStatus = stageToDbStatus(nextStage);
