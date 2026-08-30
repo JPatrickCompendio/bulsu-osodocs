@@ -3271,6 +3271,7 @@ export const WORKFLOW_CONFIGS: Record<string, {
       'HARDCOPY_SUBMISSION',
       'FINAL_LOCAL_CAMPUS_REVIEW',
       'MAIN_CAMPUS_REVIEW',
+      'DOCUMENT_RETRIEVAL',
       'COMPLETED'
     ],
     allowedRoles: {
@@ -3281,6 +3282,7 @@ export const WORKFLOW_CONFIGS: Record<string, {
       HARDCOPY_SUBMISSION: ['admin', 'chairman', 'vice-chairman', 'oso-staff', 'org-president'],
       FINAL_LOCAL_CAMPUS_REVIEW: ['admin', 'chairman', 'vice-chairman', 'oso-staff'],
       MAIN_CAMPUS_REVIEW: ['admin', 'chairman', 'vice-chairman', 'oso-staff'],
+      DOCUMENT_RETRIEVAL: ['admin', 'chairman', 'vice-chairman', 'oso-staff', 'org-president'],
       RETURNED: ['org-president'],
     },
     transitions: {
@@ -3289,8 +3291,8 @@ export const WORKFLOW_CONFIGS: Record<string, {
       SDS_REVIEW: { approve: 'HARDCOPY_SUBMISSION', return: 'RETURNED', disapprove: 'DISAPPROVED' },
       HARDCOPY_SUBMISSION: { approve: 'DOCUMENT_RETRIEVAL', ready_for_retrieval: 'DOCUMENT_RETRIEVAL', document_retrieved: 'DOCUMENT_RETRIEVAL', confirm_retrieval: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'FINAL_LOCAL_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
       FINAL_LOCAL_CAMPUS_REVIEW: { approve: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'MAIN_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
-      // Year-End COMPLETES immediately after Main Campus approval
-      MAIN_CAMPUS_REVIEW: { approve: 'COMPLETED', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      MAIN_CAMPUS_REVIEW: { approve: 'DOCUMENT_RETRIEVAL', ready_for_retrieval: 'DOCUMENT_RETRIEVAL', forward: 'DOCUMENT_RETRIEVAL', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      DOCUMENT_RETRIEVAL: { ready_for_retrieval: 'DOCUMENT_RETRIEVAL', document_retrieved: 'DOCUMENT_RETRIEVAL', confirm_retrieval: 'COMPLETED', approve: 'COMPLETED', return: 'RETURNED' },
       RETURNED: { resubmit: 'OSO_REVIEW' }
     }
   },
@@ -3302,6 +3304,7 @@ export const WORKFLOW_CONFIGS: Record<string, {
       'HARDCOPY_SUBMISSION',
       'FINAL_LOCAL_CAMPUS_REVIEW',
       'MAIN_CAMPUS_REVIEW',
+      'DOCUMENT_RETRIEVAL',
       'COMPLETED'
     ],
     allowedRoles: {
@@ -3312,6 +3315,7 @@ export const WORKFLOW_CONFIGS: Record<string, {
       HARDCOPY_SUBMISSION: ['admin', 'chairman', 'vice-chairman', 'oso-staff', 'org-president'],
       FINAL_LOCAL_CAMPUS_REVIEW: ['admin', 'chairman', 'vice-chairman', 'oso-staff'],
       MAIN_CAMPUS_REVIEW: ['admin', 'chairman', 'vice-chairman', 'oso-staff'],
+      DOCUMENT_RETRIEVAL: ['admin', 'chairman', 'vice-chairman', 'oso-staff', 'org-president'],
       RETURNED: ['org-president'],
     },
     transitions: {
@@ -3320,8 +3324,8 @@ export const WORKFLOW_CONFIGS: Record<string, {
       SDS_REVIEW: { approve: 'HARDCOPY_SUBMISSION', return: 'RETURNED', disapprove: 'DISAPPROVED' },
       HARDCOPY_SUBMISSION: { approve: 'DOCUMENT_RETRIEVAL', ready_for_retrieval: 'DOCUMENT_RETRIEVAL', document_retrieved: 'DOCUMENT_RETRIEVAL', confirm_retrieval: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'FINAL_LOCAL_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
       FINAL_LOCAL_CAMPUS_REVIEW: { approve: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'MAIN_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
-      // Renewal COMPLETES immediately after Main Campus approval
-      MAIN_CAMPUS_REVIEW: { approve: 'COMPLETED', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      MAIN_CAMPUS_REVIEW: { approve: 'DOCUMENT_RETRIEVAL', ready_for_retrieval: 'DOCUMENT_RETRIEVAL', forward: 'DOCUMENT_RETRIEVAL', return: 'RETURNED', disapprove: 'DISAPPROVED' },
+      DOCUMENT_RETRIEVAL: { ready_for_retrieval: 'DOCUMENT_RETRIEVAL', document_retrieved: 'DOCUMENT_RETRIEVAL', confirm_retrieval: 'COMPLETED', approve: 'COMPLETED', return: 'RETURNED' },
       RETURNED: { resubmit: 'OSO_REVIEW' }
     }
   }
@@ -3527,7 +3531,6 @@ async function handleSubmissionTransition(body: Record<string, unknown>) {
   }
 
   if (
-    docTypeKey === 'ACTIVITY_PROPOSAL' &&
     currentStage === 'DOCUMENT_RETRIEVAL' &&
     action === 'confirm_retrieval'
   ) {
@@ -3537,10 +3540,14 @@ async function handleSubmissionTransition(body: Record<string, unknown>) {
     if (retrievalPhase === 1) {
       nextStage = 'FINAL_LOCAL_CAMPUS_REVIEW';
     } else {
-      nextStage = 'ACCOMPLISHMENT_REPORT';
+      if (docTypeKey === 'ACTIVITY_PROPOSAL') {
+        nextStage = 'ACCOMPLISHMENT_REPORT';
+      } else {
+        nextStage = 'COMPLETED';
+      }
     }
 
-    console.log('ACTIVITY RETRIEVAL PHASE RESOLUTION', {
+    console.log('RETRIEVAL PHASE RESOLUTION', {
       submissionId,
       docTypeKey,
       currentStage,
