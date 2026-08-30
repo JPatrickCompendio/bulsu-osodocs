@@ -1,4 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.48.1';
+﻿import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.48.1';
 
 export const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -132,7 +132,7 @@ async function syncSubmissionWindowAnnouncements(supabase: ReturnType<typeof get
 
     for (const w of windows) {
       const windowTitle = w.title || 'Document Submission';
-      const openTitle = `📢 Submission Window Opened: ${windowTitle}`;
+      const openTitle = `≡ƒôó Submission Window Opened: ${windowTitle}`;
       const startDate = w.start_date ? new Date(w.start_date) : null;
       const endDate = w.end_date ? new Date(w.end_date) : null;
       const startFormatted = startDate ? startDate.toLocaleDateString() : '';
@@ -165,7 +165,7 @@ async function syncSubmissionWindowAnnouncements(supabase: ReturnType<typeof get
       if (endDate) {
         const diffMs = endDate.getTime() - now.getTime();
         if (diffMs > 0 && diffMs <= oneDayMs * 1.5) {
-          const closingTitle = `⚠️ Submission Window Closing Soon: ${windowTitle}`;
+          const closingTitle = `ΓÜá∩╕Å Submission Window Closing Soon: ${windowTitle}`;
           const { data: existingClosing } = await supabase
             .from('announcements')
             .select('id')
@@ -1045,7 +1045,7 @@ function formatWorkflowNotificationTitle(
   log: Record<string, unknown> | null = null,
   maxTitleLength = 32,
 ) {
-  if (!submission) return `Document — ${actionLabel || 'UPDATE'}`;
+  if (!submission) return `Document ΓÇö ${actionLabel || 'UPDATE'}`;
 
   const docType = (submission.documentType as Record<string, unknown> | undefined)?.name
     || (submission.document_type as Record<string, unknown> | undefined)?.name
@@ -1078,7 +1078,7 @@ function formatWorkflowNotificationTitle(
     formattedTitle = `${docType}: "${truncatedActivity}"`;
   }
 
-  return `${formattedTitle}${finalAction ? ` — ${finalAction}` : ''}`;
+  return `${formattedTitle}${finalAction ? ` ΓÇö ${finalAction}` : ''}`;
 }
 
 async function handleGetNotifications(url: URL) {
@@ -1168,7 +1168,7 @@ async function handleGetNotifications(url: URL) {
       return {
         id: `queue_${sub.id}`,
         type: 'workflow',
-        title: `${docTitle} — Pending Review`,
+        title: `${docTitle} ΓÇö Pending Review`,
         message: `${orgName} submitted ${docType} for review.`,
         timestamp: sub.updated_at || sub.created_at,
         source: {
@@ -2000,7 +2000,7 @@ async function handlePostAcademicEvents(body: Record<string, unknown>) {
       const windowTitle = createdEv.title || title || 'Document Submission Window';
       const startFormatted = start_date ? new Date(start_date as string).toLocaleDateString() : '';
       const endFormatted = end_date ? new Date(end_date as string).toLocaleDateString() : '';
-      const announceTitle = `📢 Submission Window Opened: ${windowTitle}`;
+      const announceTitle = `≡ƒôó Submission Window Opened: ${windowTitle}`;
       const announceContent = `The submission window for ${windowTitle} is now OPEN${startFormatted && endFormatted ? ` from ${startFormatted} to ${endFormatted}` : ''}. Organizations can submit required documents via the Submit New Document page.`;
 
       const annObj: Record<string, unknown> = {
@@ -2055,7 +2055,7 @@ async function handlePutAcademicEvents(id: string, body: Record<string, unknown>
       const windowTitle = updatedEv.title || title || 'Document Submission Window';
       const startFormatted = start_date ? new Date(start_date as string).toLocaleDateString() : '';
       const endFormatted = end_date ? new Date(end_date as string).toLocaleDateString() : '';
-      const announceTitle = `📢 Submission Window Opened: ${windowTitle}`;
+      const announceTitle = `≡ƒôó Submission Window Opened: ${windowTitle}`;
       const announceContent = `The submission window for ${windowTitle} is now OPEN${startFormatted && endFormatted ? ` from ${startFormatted} to ${endFormatted}` : ''}. Organizations can submit required documents via the Submit New Document page.`;
 
       const { data: existingAnn } = await supabase
@@ -3392,8 +3392,8 @@ export function generateDescriptiveLogMessage(
       case 'OSO_REVIEW':
         return `Approved by OSO Staff`;
       case 'SDS_REVIEW':
-        return userComment && userComment.trim()
-          ? `Approved by SDS Coordinator\n\nRemarks: "${userComment.trim()}"`
+        return comment && comment.trim()
+          ? `Approved by SDS Coordinator\n\nRemarks: "${comment.trim()}"`
           : `Approved by SDS Coordinator`;
       case 'HARDCOPY_SUBMISSION':
         return `Hard copy verified and approved by ${roleTitle}`;

@@ -60,6 +60,22 @@ const extractIncrementNumber = (val) => {
   return str;
 };
 
+const fetchHistoricalAySnapshot = async (orgId, schoolYearId) => {
+  if (!orgId || !schoolYearId) return null;
+  try {
+    const { data, error } = await supabase
+      .from('organization_academic_years')
+      .select('president_name, student_no, contact_no, adviser_name, co_advisers, no_member')
+      .eq('organization_id', orgId)
+      .eq('school_year_id', schoolYearId)
+      .maybeSingle();
+    if (!error && data) return data;
+  } catch (err) {
+    console.warn('Failed to fetch historical AY snapshot:', err);
+  }
+  return null;
+};
+
 const renderSignatureBlocksHtml = (proposalDetails, user, orgName) => {
   const allPeople = [];
 
@@ -1245,6 +1261,10 @@ const SubmitNewDocument = () => {
         setIsNewDraftThisSession(false);
         populateDraftFields(details);
 
+        const aySnapshot = (draft?.submission?.school_year_id && user?.organization_id)
+          ? await fetchHistoricalAySnapshot(user.organization_id, draft.submission.school_year_id)
+          : null;
+
         if (isProposal) {
           const scheds = details.activity_schedules || [];
           let inferredMode = 'single';
@@ -1268,20 +1288,20 @@ const SubmitNewDocument = () => {
             })).filter(s => s.activity_date) : []),
             activity_dates: details.target_date ? details.target_date.split(',').map(d => d.trim()).filter(Boolean) : [],
             activity_number: extractIncrementNumber(details.activity_number) || await fetchNextActivityNumber(),
-            organization_name: details.organization_name || user?.org_name || '',
-            adviser_name: details.adviser_name || user?.adviser_name || '',
-            person_in_charge: details.person_in_charge || user?.full_name || '',
-            student_id_no: details.student_id_no || user?.student_no || '',
-            contact_number: details.contact_number || user?.contact_no || ''
+            organization_name: details.organization_name || aySnapshot?.org_name || user?.org_name || '',
+            adviser_name: details.adviser_name || aySnapshot?.adviser_name || user?.adviser_name || '',
+            person_in_charge: details.person_in_charge || aySnapshot?.president_name || user?.full_name || '',
+            student_id_no: details.student_id_no || aySnapshot?.student_no || user?.student_no || '',
+            contact_number: details.contact_number || aySnapshot?.contact_no || user?.contact_no || ''
           });
         } else {
           setProposalDetails({
             ...defaultForm,
-            organization_name: user?.org_name || '',
-            adviser_name: user?.adviser_name || '',
-            person_in_charge: user?.full_name || '',
-            student_id_no: user?.student_no || '',
-            contact_number: user?.contact_no || ''
+            organization_name: details.organization_name || aySnapshot?.org_name || user?.org_name || '',
+            adviser_name: details.adviser_name || aySnapshot?.adviser_name || user?.adviser_name || '',
+            person_in_charge: details.person_in_charge || aySnapshot?.president_name || user?.full_name || '',
+            student_id_no: details.student_id_no || aySnapshot?.student_no || user?.student_no || '',
+            contact_number: details.contact_number || aySnapshot?.contact_no || user?.contact_no || ''
           });
         }
       } else {

@@ -171,13 +171,27 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy, subtypesMap =
   const wpNorm = normalizeText(wp);
 
   let category = 'All';
+  const subLogs = submission.submission_logs || [];
+  const hasPhase2Log = subLogs.some(l => {
+    const wp = String(l.workflow_phase || '').toLowerCase().replace(/[_-]/g, ' ').trim();
+    const desc = String(l.description || '').toLowerCase();
+    const at = String(l.action_type || '').toLowerCase();
+    return (
+      wp === 'main campus review' ||
+      desc.includes('approved by main campus') ||
+      desc.includes('sent to main campus') ||
+      at === 'forward' ||
+      at === 'send_to_external'
+    );
+  });
+
   if (subStatus === 'returned') category = 'Returned';
   else if (subStatus === 'to forward') category = user?.role === 'org-president' ? 'SDS Review' : 'Hard Copy';
   else if (subStatus === 'submitted' || subStatus === 'pending') category = 'OSO Staff review';
   else if (subStatus.includes('sds')) category = 'SDS Review';
   else if (subStatus.includes('dean approved') || subStatus.includes('dean review') || subStatus.includes('external approved')) category = 'Final In-Campus review';
   else if (subStatus.includes('main campus review') || subStatus.includes('external review') || subStatus.includes('vice chairman approved')) category = 'Main Campus Review';
-  else if (subStatus.includes('ready for retrieval') || subStatus.includes('document retrieval') || subStatus.includes('document retrieved') || subStatus.includes('retriev')) category = user?.role === 'org-president' ? 'SDS Review' : 'Hard Copy';
+  else if (subStatus.includes('ready for retrieval') || subStatus.includes('document retrieval') || subStatus.includes('document retrieved') || subStatus.includes('retriev')) category = hasPhase2Log ? 'Approved' : (user?.role === 'org-president' ? 'SDS Review' : 'Hard Copy');
   else if (subStatus.includes('waiting for accomplishment report')) category = 'Approved';
   else if (subStatus === 'approved') category = 'Approved';
   else if (subStatus === 'completed') category = 'Completed';
@@ -188,7 +202,7 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy, subtypesMap =
     else if (wpNorm === 'main campus review' || wpNorm === 'external review') category = 'Main Campus Review';
     else if (wpNorm === 'chairman review') category = 'Chairman Review';
     else if (ra === 'ready-for-hardcopy') category = user?.role === 'org-president' ? 'SDS Review' : 'Hard Copy';
-    else if (ra === 'ready-for-retrieval' || ra === 'document-retrieved' || ra === 'retrieval-confirmed') category = user?.role === 'org-president' ? 'SDS Review' : 'Hard Copy';
+    else if (ra === 'ready-for-retrieval' || ra === 'document-retrieved' || ra === 'retrieval-confirmed') category = hasPhase2Log ? 'Approved' : (user?.role === 'org-president' ? 'SDS Review' : 'Hard Copy');
     else if (ra === 'approved') category = 'Approved';
     else if (ra === 'returned') category = 'Returned';
   }
@@ -1721,7 +1735,19 @@ export const MyDocuments = () => {
     } else if (subStatus.includes('main campus review') || subStatus.includes('external review') || subStatus.includes('vice chairman approved')) {
       category = 'Main Campus Review';
     } else if (subStatus.includes('ready for retrieval') || subStatus.includes('document retrieval') || subStatus.includes('document retrieved') || subStatus.includes('retriev')) {
-      category = user?.role === 'org-president' ? 'SDS Review' : 'Hard Copy';
+      const hasPhase2Log = (subLogs || []).some(l => {
+        const wp = String(l.workflow_phase || '').toLowerCase().replace(/[_-]/g, ' ').trim();
+        const desc = String(l.description || '').toLowerCase();
+        const at = String(l.action_type || '').toLowerCase();
+        return (
+          wp === 'main campus review' ||
+          desc.includes('approved by main campus') ||
+          desc.includes('sent to main campus') ||
+          at === 'forward' ||
+          at === 'send_to_external'
+        );
+      });
+      category = hasPhase2Log ? 'Approved' : (user?.role === 'org-president' ? 'SDS Review' : 'Hard Copy');
     } else if (subStatus.includes('waiting for accomplishment report')) {
       category = 'Approved';
     } else if (subStatus === 'approved') {
@@ -1732,12 +1758,24 @@ export const MyDocuments = () => {
       category = 'Disapproved';
     } else {
       // Fallback to logs only when status is missing/unknown
+      const hasPhase2Log = (subLogs || []).some(l => {
+        const wp = String(l.workflow_phase || '').toLowerCase().replace(/[_-]/g, ' ').trim();
+        const desc = String(l.description || '').toLowerCase();
+        const at = String(l.action_type || '').toLowerCase();
+        return (
+          wp === 'main campus review' ||
+          desc.includes('approved by main campus') ||
+          desc.includes('sent to main campus') ||
+          at === 'forward' ||
+          at === 'send_to_external'
+        );
+      });
       if (wpNorm === 'sds review') category = 'SDS Review';
       else if (wpNorm === 'dean review' || wpNorm === 'external approved') category = 'Final In-Campus review';
       else if (wpNorm === 'main campus review' || wpNorm === 'external review') category = 'Main Campus Review';
       else if (wpNorm === 'chairman review') category = 'Chairman Review';
       else if (ra === 'ready-for-hardcopy') category = user?.role === 'org-president' ? 'SDS Review' : 'Hard Copy';
-      else if (ra === 'ready-for-retrieval' || ra === 'document-retrieved' || ra === 'retrieval-confirmed') category = user?.role === 'org-president' ? 'SDS Review' : 'Hard Copy';
+      else if (ra === 'ready-for-retrieval' || ra === 'document-retrieved' || ra === 'retrieval-confirmed') category = hasPhase2Log ? 'Approved' : (user?.role === 'org-president' ? 'SDS Review' : 'Hard Copy');
       else if (ra === 'approved') category = 'Approved';
       else if (ra === 'returned') category = 'Returned';
     }
@@ -2005,7 +2043,30 @@ export const MyDocuments = () => {
     const isReadyForOrgPickup = isReadyForOrgRetrieval(selectedDoc);
     const isWaitingForAccomplishment = isWaitingForAccomplishmentReport(selectedDoc);
 
-    const isSdsStage = (docStatusLower === 'sds coordinator review' || docStatusLower.includes('sds') || docStatusLower === 'to forward' || docStatusLower.includes('hardcopy') || selectedDoc?.category === 'SDS Review' || selectedDoc?.category === 'Pending Hard Copy' || selectedDoc?.category === 'Hard Copy') && selectedDoc?.category !== 'Approved' && selectedDoc?.category !== 'Main Campus Review' && selectedDoc?.category !== 'Final In-Campus review';
+    // Determine CURRENT retrieval phase based on workflow context
+    const isPhase2 = 
+      docStatusLower === 'approved' ||
+      docStatusLower === 'dean approved' ||
+      docStatusLower === 'external approved' ||
+      docStatusLower.includes('dean approved') ||
+      docStatusLower.includes('external approved') ||
+      docStatusLower.includes('main campus review') ||
+      docStatusLower.includes('waiting for accomplishment report') ||
+      selectedDoc?.category === 'Main Campus Review' ||
+      selectedDoc?.category === 'Final In-Campus review' ||
+      selectedDoc?.category === 'Approved';
+
+    const currentPhase = isPhase2 ? 2 : 1;
+
+    const isSdsStage = !isPhase2 && (docStatusLower === 'sds coordinator review' || docStatusLower.includes('sds') || docStatusLower === 'to forward' || docStatusLower.includes('hardcopy') || selectedDoc?.category === 'SDS Review' || selectedDoc?.category === 'Pending Hard Copy' || selectedDoc?.category === 'Hard Copy') && selectedDoc?.category !== 'Approved' && selectedDoc?.category !== 'Main Campus Review' && selectedDoc?.category !== 'Final In-Campus review';
+
+    console.log('GELLIE CATEGORY CLASSIFICATION', {
+      submissionId: selectedDoc?.id,
+      status: selectedDoc?.status,
+      category: selectedDoc?.category,
+      isSdsStage,
+      isApprovedDoc,
+    });
 
     const sdsPhaseLogs = (timelineLogs || []).filter(l => {
       const wp = String(l.workflow_phase || '').toLowerCase().replace(/[_-]/g, ' ').trim();
@@ -2047,18 +2108,9 @@ export const MyDocuments = () => {
       docStatusLower === 'ready_for_retrieval' ||
       ( (docStatusLower === 'to forward' || docStatusLower.includes('hardcopy') || docStatusLower.includes('forward')) && hasHardcopyVerifiedInTimeline );
 
-    const sameRole = (r1, r2) => {
-      const a = String(r1 || '').toLowerCase().replace(/[^a-z]/g, '');
-      const b = String(r2 || '').toLowerCase().replace(/[^a-z]/g, '');
-      if (!a || !b) return false;
-      if (a === b) return true;
-      if ((a.includes('admin') || a.includes('sds')) && (b.includes('admin') || b.includes('sds'))) return true;
-      if (a.includes('org') && b.includes('org')) return true;
-      return false;
-    };
-
-    // Separate logs for SDS Hardcopy Stage vs Main Campus Stage
-    const mainCampusReviewLogIndex = (timelineLogs || []).findIndex(l => {
+    // Timeline logs are NEWEST FIRST (descending).
+    // Find the transition log when document moved to Phase #2 (e.g. forward/sent to main campus)
+    const phase2TransitionLogIndex = (timelineLogs || []).findIndex(l => {
       const wp = String(l.workflow_phase || '').toLowerCase().replace(/[_-]/g, ' ').trim();
       const desc = String(l.description || '').toLowerCase();
       const at = String(l.action_type || '').toLowerCase();
@@ -2071,10 +2123,18 @@ export const MyDocuments = () => {
       );
     });
 
-    const mainCampusLogs = mainCampusReviewLogIndex >= 0 ? (timelineLogs || []).slice(0, mainCampusReviewLogIndex + 1) : (timelineLogs || []);
-    const sdsLogs = mainCampusReviewLogIndex >= 0 ? (timelineLogs || []).slice(mainCampusReviewLogIndex + 1) : (timelineLogs || []);
+    const phase1Logs = phase2TransitionLogIndex >= 0 
+      ? (timelineLogs || []).slice(phase2TransitionLogIndex) 
+      : (currentPhase === 1 ? (timelineLogs || []) : []);
+    const phase2Logs = phase2TransitionLogIndex >= 0 
+      ? (timelineLogs || []).slice(0, phase2TransitionLogIndex) 
+      : (currentPhase === 2 ? (timelineLogs || []) : []);
 
-    const sdsRetrievalLog = sdsLogs.find(l => {
+    const sdsLogs = phase1Logs;
+    const mainCampusLogs = phase2Logs;
+
+    // Phase 1 Retrieval Log & Confirmation
+    const sdsRetrievalLog = phase1Logs.find(l => {
       const at = String(l.action_type || '').toLowerCase();
       const ra = String(l.review_action || '').toLowerCase();
       const desc = String(l.description || '').toLowerCase();
@@ -2087,19 +2147,17 @@ export const MyDocuments = () => {
       ) && !at.includes('confirm') && !ra.includes('confirm') && !desc.includes('confirm');
     });
 
-    const isFirstSdsRetriever = Boolean(
-      sdsRetrievalLog && (
-        (sdsRetrievalLog.user_id && String(sdsRetrievalLog.user_id) === String(user?.id)) ||
-        (sdsRetrievalLog.users?.role && sameRole(sdsRetrievalLog.users.role, user?.role))
-      )
-    );
-
-    const isSdsConfirmedRetrievalLog = sdsLogs.some(l => {
+    const isSdsConfirmedRetrievalLog = phase1Logs.some(l => {
       const at = String(l.action_type || '').toLowerCase();
       const ra = String(l.review_action || '').toLowerCase();
       const desc = String(l.description || '').toLowerCase();
       return at === 'confirm_retrieval' || ra === 'confirm_retrieval' || ra === 'confirm-retrieval' || desc.includes('retrieval confirmed') || desc.includes('confirmed retrieval');
     });
+
+    const isFirstSdsRetriever = Boolean(
+      sdsRetrievalLog &&
+      String(sdsRetrievalLog.user_id) === String(user?.id)
+    );
 
     const isMainReadyForRetrievalLog = (timelineLogs || []).some(l => {
       const at = String(l.action_type || '').toLowerCase();
@@ -2114,7 +2172,11 @@ export const MyDocuments = () => {
       );
     });
 
-    const mainRetrievalLog = mainCampusLogs.find(l => {
+    const isSdsReadyForRetrieval = isEffectiveReadyForRetrieval || isSdsReadyForRetrievalLog;
+    const isMainReadyForRetrieval = isReadyForOrgPickup || docStatusLower.includes('ready for retrieval') || docStatusLower.includes('ready_for_retrieval') || isMainReadyForRetrievalLog;
+
+    // Phase 2 Retrieval Log & Confirmation
+    const mainRetrievalLog = phase2Logs.find(l => {
       const at = String(l.action_type || '').toLowerCase();
       const ra = String(l.review_action || '').toLowerCase();
       const desc = String(l.description || '').toLowerCase();
@@ -2127,18 +2189,45 @@ export const MyDocuments = () => {
       ) && !at.includes('confirm') && !ra.includes('confirm') && !desc.includes('confirm');
     });
 
-    const isFirstRetriever = Boolean(
-      mainRetrievalLog && (
-        (mainRetrievalLog.user_id && String(mainRetrievalLog.user_id) === String(user?.id)) ||
-        (mainRetrievalLog.users?.role && sameRole(mainRetrievalLog.users.role, user?.role))
-      )
-    );
-
-    const isMainConfirmedRetrievalLog = mainCampusLogs.some(l => {
+    const isMainConfirmedRetrievalLog = phase2Logs.some(l => {
       const at = String(l.action_type || '').toLowerCase();
       const ra = String(l.review_action || '').toLowerCase();
       const desc = String(l.description || '').toLowerCase();
       return at === 'confirm_retrieval' || ra === 'confirm_retrieval' || ra === 'confirm-retrieval' || desc.includes('retrieval confirmed') || desc.includes('confirmed retrieval');
+    });
+
+    const isFirstRetriever = Boolean(
+      mainRetrievalLog &&
+      String(mainRetrievalLog.user_id) === String(user?.id)
+    );
+
+    // Unified Phase-Aware Retrieval State
+    const activeRetrievalLog = currentPhase === 1 ? sdsRetrievalLog : mainRetrievalLog;
+    const currentRetrievalConfirmed = currentPhase === 1 ? isSdsConfirmedRetrievalLog : isMainConfirmedRetrievalLog;
+    const currentUserIsRetriever = Boolean(
+      activeRetrievalLog && String(activeRetrievalLog.user_id) === String(user?.id)
+    );
+
+    console.log('GELLIE RETRIEVAL STATE', {
+      submissionId: selectedDoc?.id,
+      status: selectedDoc?.status,
+      category: selectedDoc?.category,
+
+      activeRetrievalLogId: activeRetrievalLog?.id,
+      activeRetrievalUserId: activeRetrievalLog?.user_id,
+      currentUserId: user?.id,
+
+      currentUserIsRetriever,
+      currentRetrievalConfirmed,
+
+      buttonDecision:
+        !activeRetrievalLog
+          ? 'DOCUMENT_RETRIEVED'
+          : currentUserIsRetriever
+            ? 'AWAITING_CONFIRMATION'
+            : currentRetrievalConfirmed
+              ? 'NONE'
+              : 'CONFIRM_RETRIEVAL'
     });
 
     const formatDuration = (val) => {
@@ -2870,7 +2959,7 @@ export const MyDocuments = () => {
                     </div>
                   ) : null
                 ) : !isSdsConfirmedRetrievalLog ? (
-                  !isSdsReadyForRetrievalLog ? (
+                  !isSdsReadyForRetrieval ? (
                     (user?.role === 'admin' || user?.role === 'oso-staff' || user?.role === 'sds-coordinator') ? (
                       <button
                         onClick={() => {
@@ -2919,7 +3008,7 @@ export const MyDocuments = () => {
               {/* Final Approval Retrieval (Approved / Main Campus Approved) */}
               {(isReadyForOrgPickup || isApprovedDoc || docStatusLower === 'document retrieval' || docStatusLower === 'document_retrieval') && !isSdsStage && (
                 !isMainConfirmedRetrievalLog ? (
-                  !isMainReadyForRetrievalLog ? (
+                  !isMainReadyForRetrieval ? (
                     (user?.role === 'admin' || user?.role === 'oso-staff') ? (
                       <button
                         onClick={() => {
@@ -5014,12 +5103,7 @@ export const MyDocuments = () => {
                           } else if (doc.hasDocumentRetrievedLog && doc.firstRetrievedLog) {
                             const myRoleNorm = String(user?.role || '').toLowerCase();
                             const myUserId = String(user?.id || '');
-                            const isRetrieverMe =
-                              (doc.retrieverUserId && doc.retrieverUserId === myUserId) ||
-                              (doc.retrieverUserRole && (
-                                (doc.retrieverUserRole === 'org-president' && myRoleNorm === 'org-president') ||
-                                (doc.retrieverUserRole !== 'org-president' && myRoleNorm !== 'org-president')
-                              ));
+                            const isRetrieverMe = Boolean(doc.retrieverUserId && String(doc.retrieverUserId) === myUserId);
 
                             if (isRetrieverMe) {
                               subLabelText = 'FOR RETRIEVAL';
