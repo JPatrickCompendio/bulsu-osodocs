@@ -2033,9 +2033,8 @@ export const MyDocuments = () => {
     );
 
     const isDeanApprovedDoc = docStatusLower === 'dean approved' || docStatusLower === 'external approved' || docStatusLower.includes('dean approved') || docStatusLower.includes('external approved');
-    const isMainCampusReviewDoc = docStatusLower === 'main campus review' || docStatusLower.includes('main campus') || selectedDoc?.category === 'Main Campus Review';
+    const isMainCampusReviewDoc = docStatusLower === 'main campus review' || docStatusLower.includes('main campus') || docStatusLower.includes('external') || docStatusLower === 'external approved' || docStatusLower === 'vice chairman approved' || selectedDoc?.category === 'Main Campus Review';
     const isApprovedDoc =
-      docStatusLower === 'approved' ||
       docStatusLower === 'ready for retrieval' ||
       docStatusLower === 'document retrieval' ||
       docStatusLower === 'document_retrieval' ||
@@ -2046,8 +2045,8 @@ export const MyDocuments = () => {
     const currentStage = (() => {
       if (docStatusLower === 'completed') return 'COMPLETED';
       if (docStatusLower === 'returned' || docStatusLower.includes('returned') || selectedDoc?.category === 'Returned') return 'RETURNED';
-      if (docStatusLower === 'main campus review' || docStatusLower.includes('main campus') || selectedDoc?.category === 'Main Campus Review') return 'MAIN_CAMPUS_REVIEW';
-      if (docStatusLower === 'ready for retrieval' || docStatusLower === 'ready_for_retrieval' || docStatusLower === 'document retrieval' || docStatusLower === 'document_retrieval' || docStatusLower === 'approved' || isReadyForOrgPickup) return 'DOCUMENT_RETRIEVAL';
+      if (isMainCampusReviewDoc) return 'MAIN_CAMPUS_REVIEW';
+      if (docStatusLower === 'ready for retrieval' || docStatusLower === 'ready_for_retrieval' || docStatusLower === 'document retrieval' || docStatusLower === 'document_retrieval' || isReadyForOrgPickup) return 'DOCUMENT_RETRIEVAL';
       if (docStatusLower === 'waiting for accomplishment report' || isWaitingForAccomplishment) return 'ACCOMPLISHMENT_REPORT';
       if (docStatusLower === 'dean review' || docStatusLower.includes('dean review') || docStatusLower === 'final local campus review' || selectedDoc?.category === 'Final In-Campus review') return 'FINAL_LOCAL_CAMPUS_REVIEW';
       if (docStatusLower === 'sds coordinator review' || docStatusLower.includes('sds') || docStatusLower === 'to forward' || docStatusLower.includes('hardcopy') || selectedDoc?.category === 'SDS Review' || selectedDoc?.category === 'Pending Hard Copy' || selectedDoc?.category === 'Hard Copy') return 'SDS_REVIEW';

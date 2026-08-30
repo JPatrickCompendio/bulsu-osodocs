@@ -147,9 +147,9 @@ const mapInboxSubmission = (sub, viewer, subtypesMap = {}) => {
     statusLabel = viewer?.role === 'org-president' ? 'Hardcopy Submission' : 'Pending Hard Copy';
   } else if (rawStatus === 'sds coordinator review' || rawStatus === 'oso approved') {
     statusLabel = 'SDS coordinator review';
-  } else if (rawStatus === 'dean review' || rawStatus === 'external approved') {
+  } else if (rawStatus === 'dean review' || rawStatus === 'dean approved') {
     statusLabel = 'Final In-Campus review';
-  } else if (rawStatus === 'main campus review' || rawStatus === 'vice chairman approved') {
+  } else if (rawStatus === 'main campus review' || rawStatus === 'external approved' || rawStatus === 'vice chairman approved') {
     statusLabel = 'Main Campus Review';
   } else if (rawStatus === 'sds approved' || rawStatus === 'chairman approved') {
     statusLabel = 'Chairman Review';
