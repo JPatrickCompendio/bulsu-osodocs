@@ -2043,6 +2043,18 @@ export const MyDocuments = () => {
     const isReadyForOrgPickup = isReadyForOrgRetrieval(selectedDoc);
     const isWaitingForAccomplishment = isWaitingForAccomplishmentReport(selectedDoc);
 
+    const currentStage = (() => {
+      if (docStatusLower === 'completed') return 'COMPLETED';
+      if (docStatusLower === 'returned' || docStatusLower.includes('returned') || selectedDoc?.category === 'Returned') return 'RETURNED';
+      if (docStatusLower === 'main campus review' || docStatusLower.includes('main campus') || selectedDoc?.category === 'Main Campus Review') return 'MAIN_CAMPUS_REVIEW';
+      if (docStatusLower === 'ready for retrieval' || docStatusLower === 'ready_for_retrieval' || docStatusLower === 'document retrieval' || docStatusLower === 'document_retrieval' || docStatusLower === 'approved' || isReadyForOrgPickup) return 'DOCUMENT_RETRIEVAL';
+      if (docStatusLower === 'waiting for accomplishment report' || isWaitingForAccomplishment) return 'ACCOMPLISHMENT_REPORT';
+      if (docStatusLower === 'dean review' || docStatusLower.includes('dean review') || docStatusLower === 'final local campus review' || selectedDoc?.category === 'Final In-Campus review') return 'FINAL_LOCAL_CAMPUS_REVIEW';
+      if (docStatusLower === 'sds coordinator review' || docStatusLower.includes('sds') || docStatusLower === 'to forward' || docStatusLower.includes('hardcopy') || selectedDoc?.category === 'SDS Review' || selectedDoc?.category === 'Pending Hard Copy' || selectedDoc?.category === 'Hard Copy') return 'SDS_REVIEW';
+      if (docStatusLower === 'oso review' || docStatusLower.includes('oso')) return 'OSO_REVIEW';
+      return 'UNKNOWN';
+    })();
+
     // Determine CURRENT retrieval phase based on workflow context
     const isPhase2 = 
       docStatusLower === 'approved' ||
@@ -2915,7 +2927,7 @@ export const MyDocuments = () => {
                 </button>
               )}
 
-              {/* SDS Stage Retrieval Buttons */}
+              {/* SDS Stage Verification Buttons (Review decisions only; retrieval actions handled via floating action bar) */}
               {isSdsStage && (
                 !isSdsHardcopyApprovedLog ? (
                   (user?.role === 'admin' || user?.role === 'oso-staff' || user?.role === 'sds-coordinator') ? (
@@ -2958,99 +2970,6 @@ export const MyDocuments = () => {
                       </button>
                     </div>
                   ) : null
-                ) : !isSdsConfirmedRetrievalLog ? (
-                  !isSdsReadyForRetrieval ? (
-                    (user?.role === 'admin' || user?.role === 'oso-staff' || user?.role === 'sds-coordinator') ? (
-                      <button
-                        onClick={() => {
-                          setDecisionType('ready_for_retrieval');
-                          setReturnComments('');
-                          setExternalProofFile(null);
-                          setIsReturnModalOpen(true);
-                        }}
-                        disabled={loading}
-                        className="w-full px-5 py-3.5 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
-                      >
-                        <CheckCircle size={16} />
-                        <span>Ready for retrieval</span>
-                      </button>
-                    ) : null
-                  ) : !sdsRetrievalLog ? (
-                    <button
-                      onClick={() => handleDocumentRetrieved('Document retrieved')}
-                      disabled={loading}
-                      className="w-full px-5 py-3.5 bg-green-700 text-white rounded-xl text-sm font-semibold hover:bg-green-800 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                      <CheckCircle size={16} />
-                      <span>Document Retrieved</span>
-                    </button>
-                  ) : isFirstSdsRetriever ? (
-                    <button
-                      disabled
-                      className="w-full px-5 py-3.5 bg-purple-600/50 text-white rounded-xl text-sm font-semibold cursor-not-allowed shadow-sm mt-2 flex items-center justify-center gap-2 opacity-80"
-                    >
-                      <CheckCircle size={16} />
-                      <span>Awaiting retrieval confirmation</span>
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => handleConfirmRetrieval(user?.role === 'org-president' ? 'Retrieval confirmed by Organization President' : 'Retrieval confirmed by SDS Coordinator')}
-                      disabled={loading}
-                      className="w-full px-5 py-3.5 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                      <CheckCircle size={16} />
-                      <span>Confirm Document Retrieval</span>
-                    </button>
-                  )
-                ) : null
-              )}
-
-              {/* Final Approval Retrieval (Approved / Main Campus Approved) */}
-              {(isReadyForOrgPickup || isApprovedDoc || docStatusLower === 'document retrieval' || docStatusLower === 'document_retrieval') && !isSdsStage && (
-                !isMainConfirmedRetrievalLog ? (
-                  !isMainReadyForRetrieval ? (
-                    (user?.role === 'admin' || user?.role === 'oso-staff') ? (
-                      <button
-                        onClick={() => {
-                          setDecisionType('ready_for_retrieval');
-                          setReturnComments('');
-                          setExternalProofFile(null);
-                          setIsReturnModalOpen(true);
-                        }}
-                        disabled={loading}
-                        className="w-full px-5 py-3.5 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
-                      >
-                        <CheckCircle size={16} />
-                        <span>Ready for retrieval</span>
-                      </button>
-                    ) : null
-                  ) : !mainRetrievalLog ? (
-                    <button
-                      onClick={() => handleDocumentRetrieved('Document retrieved')}
-                      disabled={loading}
-                      className="w-full px-5 py-3.5 bg-green-700 text-white rounded-xl text-sm font-semibold hover:bg-green-800 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                      <CheckCircle size={16} />
-                      <span>Document Retrieved</span>
-                    </button>
-                  ) : isFirstRetriever ? (
-                    <button
-                      disabled
-                      className="w-full px-5 py-3.5 bg-purple-600/50 text-white rounded-xl text-sm font-semibold cursor-not-allowed shadow-sm mt-2 flex items-center justify-center gap-2 opacity-80"
-                    >
-                      <CheckCircle size={16} />
-                      <span>Awaiting retrieval confirmation</span>
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => handleConfirmRetrieval(user?.role === 'org-president' ? 'Retrieval confirmed by Organization President' : 'Retrieval confirmed by Admin')}
-                      disabled={loading}
-                      className="w-full px-5 py-3.5 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                      <CheckCircle size={16} />
-                      <span>Confirm Document Retrieval</span>
-                    </button>
-                  )
                 ) : null
               )}
 
@@ -4015,15 +3934,57 @@ export const MyDocuments = () => {
           const userRoleNorm = (user?.role || '').toLowerCase();
           const canViewActions =
             userRoleNorm === 'admin' ||
-            (userRoleNorm === 'org-president' && (isApprovedDoc || isSdsStage));
+            userRoleNorm === 'oso-staff' ||
+            (userRoleNorm === 'org-president' && (isApprovedDoc || isSdsStage || currentStage === 'DOCUMENT_RETRIEVAL'));
 
           if (!canViewActions) return null;
 
           const buttons = [];
 
-          if (isSdsStage) {
+          if (currentStage === 'MAIN_CAMPUS_REVIEW') {
+            if (userRoleNorm === 'admin' || userRoleNorm === 'oso-staff') {
+              buttons.push(
+                <button
+                  key="main-approve"
+                  onClick={() => {
+                    setDecisionType('approve');
+                    setReturnComments('');
+                    setIsReturnModalOpen(true);
+                  }}
+                  className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-green-700 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-tight sm:tracking-widest shrink-0"
+                >
+                  <CheckCircle size={15} />
+                  <span>Approve</span>
+                </button>,
+                <button
+                  key="main-return"
+                  onClick={() => {
+                    setDecisionType('return');
+                    setReturnComments('');
+                    setIsReturnModalOpen(true);
+                  }}
+                  className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-amber-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-amber-600/20 uppercase tracking-tight sm:tracking-widest shrink-0"
+                >
+                  <RotateCcw size={15} />
+                  <span>Return</span>
+                </button>,
+                <button
+                  key="main-disapprove"
+                  onClick={() => {
+                    setDecisionType('disapprove');
+                    setReturnComments('');
+                    setIsReturnModalOpen(true);
+                  }}
+                  className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-red-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-red-600/20 uppercase tracking-tight sm:tracking-widest shrink-0"
+                >
+                  <X size={15} />
+                  <span>Disapprove</span>
+                </button>
+              );
+            }
+          } else if (isSdsStage && currentStage === 'SDS_REVIEW') {
             if (!isSdsApprovedLog) {
-              if (userRoleNorm === 'admin') {
+              if (userRoleNorm === 'admin' || userRoleNorm === 'oso-staff') {
                 buttons.push(
                   <button
                     key="verify-approve"
@@ -4065,17 +4026,19 @@ export const MyDocuments = () => {
               }
             } else if (!isSdsConfirmedRetrievalLog) {
               if (!sdsRetrievalLog) {
-                buttons.push(
-                  <button
-                    key="sds-retrieved"
-                    onClick={() => handleDocumentRetrieved('Document retrieved')}
-                    disabled={loading}
-                    className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-green-700 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-tight sm:tracking-widest disabled:opacity-50 shrink-0"
-                  >
-                    <CheckCircle size={15} />
-                    <span>Document Retrieved</span>
-                  </button>
-                );
+                if (userRoleNorm === 'org-president') {
+                  buttons.push(
+                    <button
+                      key="sds-retrieved"
+                      onClick={() => handleDocumentRetrieved('Document retrieved')}
+                      disabled={loading}
+                      className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-green-700 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-tight sm:tracking-widest disabled:opacity-50 shrink-0"
+                    >
+                      <CheckCircle size={15} />
+                      <span>Document Retrieved</span>
+                    </button>
+                  );
+                }
               } else if (sdsRetrievalLog && isFirstSdsRetriever) {
                 buttons.push(
                   <button
@@ -4088,20 +4051,22 @@ export const MyDocuments = () => {
                   </button>
                 );
               } else if (sdsRetrievalLog && !isFirstSdsRetriever) {
-                buttons.push(
-                  <button
-                    key="sds-confirm"
-                    onClick={() => handleConfirmRetrieval(userRoleNorm === 'org-president' ? 'Retrieval confirmed by Organization President' : 'Retrieval confirmed by SDS Coordinator')}
-                    disabled={loading}
-                    className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-purple-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-tight sm:tracking-widest disabled:opacity-50 shrink-0"
-                  >
-                    <CheckCircle size={15} />
-                    <span>Confirm Document Retrieval</span>
-                  </button>
-                );
+                if (userRoleNorm === 'admin' || userRoleNorm === 'oso-staff' || userRoleNorm === 'sds-coordinator') {
+                  buttons.push(
+                    <button
+                      key="sds-confirm"
+                      onClick={() => handleConfirmRetrieval('Retrieval confirmed by SDS Coordinator')}
+                      disabled={loading}
+                      className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-purple-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-tight sm:tracking-widest disabled:opacity-50 shrink-0"
+                    >
+                      <CheckCircle size={15} />
+                      <span>Confirm Document Retrieval</span>
+                    </button>
+                  );
+                }
               }
             }
-          } else if (isDeanApprovedDoc) {
+          } else if (isDeanApprovedDoc || currentStage === 'FINAL_LOCAL_CAMPUS_REVIEW') {
             buttons.push(
               <button
                 key="send-external"
@@ -4117,24 +4082,27 @@ export const MyDocuments = () => {
                 <span>Sent to main campus</span>
               </button>
             );
-          } else if (isApprovedDoc || docStatusLower === 'document retrieval' || docStatusLower === 'ready for retrieval' || docStatusLower === 'document_retrieval' || isSdsHardcopyApprovedLog) {
-            const activeRetrievalLog = mainRetrievalLog;
-            const activeIsFirstRetriever = isFirstRetriever;
-            const isConfirmed = isMainConfirmedRetrievalLog;
+          } else if (currentStage === 'DOCUMENT_RETRIEVAL' || ((isApprovedDoc || docStatusLower === 'document retrieval' || docStatusLower === 'ready for retrieval' || docStatusLower === 'document_retrieval') && currentStage !== 'MAIN_CAMPUS_REVIEW' && currentStage !== 'FINAL_LOCAL_CAMPUS_REVIEW')) {
+            const activePhase = (phase2TransitionLogIndex >= 0 || isPhase2) ? 2 : 1;
+            const activeRetrievalLog = activePhase === 1 ? sdsRetrievalLog : mainRetrievalLog;
+            const activeIsFirstRetriever = activePhase === 1 ? isFirstSdsRetriever : isFirstRetriever;
+            const isConfirmed = activePhase === 1 ? isSdsConfirmedRetrievalLog : isMainConfirmedRetrievalLog;
 
             if (!isConfirmed) {
               if (!activeRetrievalLog) {
-                buttons.push(
-                  <button
-                    key="main-retrieved"
-                    onClick={() => handleDocumentRetrieved('Document retrieved')}
-                    disabled={loading}
-                    className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-green-700 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-tight sm:tracking-widest disabled:opacity-50 shrink-0"
-                  >
-                    <CheckCircle size={15} />
-                    <span>Document Retrieved</span>
-                  </button>
-                );
+                if (userRoleNorm === 'org-president') {
+                  buttons.push(
+                    <button
+                      key="main-retrieved"
+                      onClick={() => handleDocumentRetrieved('Document retrieved')}
+                      disabled={loading}
+                      className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-green-700 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-tight sm:tracking-widest disabled:opacity-50 shrink-0"
+                    >
+                      <CheckCircle size={15} />
+                      <span>Document Retrieved</span>
+                    </button>
+                  );
+                }
               } else if (activeRetrievalLog && activeIsFirstRetriever) {
                 buttons.push(
                   <button
@@ -4147,20 +4115,32 @@ export const MyDocuments = () => {
                   </button>
                 );
               } else if (activeRetrievalLog && !activeIsFirstRetriever) {
-                buttons.push(
-                  <button
-                    key="main-confirm"
-                    onClick={() => handleConfirmRetrieval(userRoleNorm === 'org-president' ? 'Retrieval confirmed by Organization President' : 'Retrieval confirmed by SDS Coordinator')}
-                    disabled={loading}
-                    className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-purple-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-tight sm:tracking-widest disabled:opacity-50 shrink-0"
-                  >
-                    <CheckCircle size={15} />
-                    <span>Confirm Document Retrieval</span>
-                  </button>
-                );
+                if (userRoleNorm === 'admin' || userRoleNorm === 'oso-staff' || userRoleNorm === 'sds-coordinator') {
+                  buttons.push(
+                    <button
+                      key="main-confirm"
+                      onClick={() => handleConfirmRetrieval('Retrieval confirmed by Admin')}
+                      disabled={loading}
+                      className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-purple-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-tight sm:tracking-widest disabled:opacity-50 shrink-0"
+                    >
+                      <CheckCircle size={15} />
+                      <span>Confirm Document Retrieval</span>
+                    </button>
+                  );
+                }
               }
             }
           }
+
+          console.log('GELLIE MAIN CAMPUS ACTION STATE', {
+            submissionId: selectedDoc?.id,
+            status: selectedDoc?.status,
+            category: selectedDoc?.category,
+            currentStage,
+            isMainCampusReview: currentStage === 'MAIN_CAMPUS_REVIEW',
+            retrievalActionsAllowed: currentStage === 'DOCUMENT_RETRIEVAL',
+            buttonLabels: buttons.map(b => b?.key || 'button'),
+          });
 
           const currentAttachments = attachments || selectedDoc?.attachments || currentVersion?.submission_attachments || [];
           const allFilesApproved = currentAttachments.length > 0 && currentAttachments.every((file) => {
