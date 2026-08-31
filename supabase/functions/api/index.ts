@@ -427,17 +427,55 @@ async function handleGetUsers() {
   if (error) {
     return jsonResponse({ error: 'Failed to fetch users', details: error.message }, 500);
   }
+
+  const { data: submissionRecords } = await supabase
+    .from('submissions')
+    .select('user_id, created_by, submitted_by, organization_id')
+    .limit(10000);
+
+  const { data: logRecords } = await supabase
+    .from('submission_logs')
+    .select('user_id')
+    .limit(10000);
+
+  const usersWithSubmissions = new Set<string>();
+  (submissionRecords || []).forEach((s: any) => {
+    if (s.user_id) usersWithSubmissions.add(String(s.user_id));
+    if (s.created_by) usersWithSubmissions.add(String(s.created_by));
+    if (s.submitted_by) usersWithSubmissions.add(String(s.submitted_by));
+    if (s.organization_id) usersWithSubmissions.add(String(s.organization_id));
+  });
+  (logRecords || []).forEach((l: any) => {
+    if (l.user_id) usersWithSubmissions.add(String(l.user_id));
+  });
+
   const emailMap = await getAuthEmailsMap();
-  const enriched = (data || []).map((u) => ({ ...u, email: emailMap.get(u.id) || null }));
+  const enriched = (data || []).map((u) => ({
+    ...u,
+    email: emailMap.get(u.id) || null,
+    has_submissions: usersWithSubmissions.has(String(u.id)) || (u.organization_id ? usersWithSubmissions.has(String(u.organization_id)) : false),
+  }));
   return jsonResponse(enriched);
 }
 
-async function handleGetUserDetail(id: string) {
+async function handleGetUserDetail(id: string, url?: URL) {
   const supabase = getAdminClient();
+  const reqSyId = url ? url.searchParams.get('syId') : null;
+
   const { data: user, error } = await supabase.from('users').select('*').eq('id', id).single();
   if (error || !user) {
     return jsonResponse({ error: 'User not found' }, 404);
   }
+
+  const orgId = user.organization_id;
+  const { data: submissionRecords } = await supabase
+    .from('submissions')
+    .select('id')
+    .or(`user_id.eq.${id},created_by.eq.${id},submitted_by.eq.${id}${orgId ? `,organization_id.eq.${orgId}` : ''}`)
+    .limit(1);
+
+  const hasSubmissions = (submissionRecords && submissionRecords.length > 0) || false;
+  user.has_submissions = hasSubmissions;
 
   let email = null;
   try {
@@ -447,11 +485,41 @@ async function handleGetUserDetail(id: string) {
     console.error('Error fetching auth user by id:', err);
   }
 
-  const { data: activeSy } = await supabase
-    .from('school_years')
-    .select('*')
-    .eq('is_active', true)
-    .maybeSingle();
+  let targetSy: any = null;
+  if (reqSyId) {
+    const { data: sy } = await supabase
+      .from('school_years')
+      .select('*')
+      .eq('id', reqSyId)
+      .maybeSingle();
+    targetSy = sy;
+  }
+  if (!targetSy) {
+    const { data: activeSy } = await supabase
+      .from('school_years')
+      .select('*')
+      .eq('is_active', true)
+      .maybeSingle();
+    targetSy = activeSy;
+  }
+
+  if (user.role === 'org-president' && targetSy?.id && user.organization_id) {
+    const { data: snap } = await supabase
+      .from('organization_academic_years')
+      .select('*')
+      .eq('organization_id', user.organization_id)
+      .eq('school_year_id', targetSy.id)
+      .maybeSingle();
+
+    if (snap) {
+      user.full_name = snap.president_name || user.full_name;
+      user.student_no = snap.student_no ?? user.student_no;
+      user.contact_no = snap.contact_no ?? user.contact_no;
+      user.adviser_name = snap.adviser_name ?? user.adviser_name;
+      user.co_advisers = snap.co_advisers ?? user.co_advisers;
+      user.no_member = snap.no_member ?? user.no_member;
+    }
+  }
 
   let submissions: Array<Record<string, unknown>> = [];
   let activityHistory: Array<Record<string, unknown>> = [];
@@ -512,7 +580,7 @@ async function handleGetUserDetail(id: string) {
   };
 
   if (user.role === 'org-president') {
-    const { data: subs, error: subsError } = await supabase
+    const { data: subs } = await supabase
       .from('submissions')
       .select(
         'id, tracking_number, status, created_at, school_year_id, documentType:document_type_id(name), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title, target_venue, person_in_charge, contact_number))',
@@ -522,24 +590,22 @@ async function handleGetUserDetail(id: string) {
       .order('created_at', { ascending: false });
     submissions = subs || [];
 
-    const currentSySubmissions = activeSy
-      ? submissions.filter((s) => !s.school_year_id || s.school_year_id === activeSy.id)
+    const currentSySubmissions = targetSy
+      ? submissions.filter((s) => !s.school_year_id || s.school_year_id === targetSy.id)
       : submissions;
-
-    const validSubIds = submissions.map((s) => s.id);
 
     let logsQuery = supabase
       .from('submission_logs')
       .select('*, submissions(tracking_number, school_year_id, documentType:document_type_id(name), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title)))')
       .eq('user_id', id)
       .order('created_at', { ascending: false })
-      .limit(25);
+      .limit(50);
 
     const { data: logs } = await logsQuery;
     activityHistory = (logs || [])
       .filter((log) => {
         const sub = log.submissions as Record<string, unknown> | null;
-        return !activeSy || !sub?.school_year_id || sub.school_year_id === activeSy.id;
+        return !targetSy || !sub?.school_year_id || sub.school_year_id === targetSy.id;
       })
       .map((log) => {
         const sub = log.submissions as Record<string, unknown> | null;
@@ -568,6 +634,42 @@ async function handleGetUserDetail(id: string) {
           trackingNumber: sub?.tracking_number || null,
         };
       });
+
+    let hasMidYear = false;
+    let hasYearEnd = false;
+    if (targetSy && submissions) {
+      submissions.forEach((sub) => {
+        if (sub.status === 'completed' && sub.school_year_id === targetSy.id) {
+          const docName = (sub.documentType as Record<string, unknown>)?.name;
+          const name = typeof docName === 'string' ? docName.toLowerCase() : '';
+          if (name.includes('mid-year') || name.includes('mid year')) hasMidYear = true;
+          if (name.includes('year-end') || name.includes('year end')) hasYearEnd = true;
+        }
+      });
+    }
+
+    const pendingReviewCount = (submissions || []).filter((s) => {
+      const status = String(s.status || '').toLowerCase().trim();
+      return !['completed', 'disapproved', 'rejected', 'approved', 'ready for retrieval', 'document retrieval', 'waiting for accomplishment report', 'ready for org pickup', 'draft'].includes(status);
+    }).length;
+
+    const documentLogs = currentSySubmissions.map(formatDocumentLog);
+
+    return jsonResponse({
+      success: true,
+      data: {
+        user: { ...user, email },
+        documentLogs,
+        activityHistory,
+        pendingReviewCount,
+        renewal: {
+          isEligible: hasMidYear && hasYearEnd,
+          hasMidYear,
+          hasYearEnd,
+        },
+        activeSchoolYear: targetSy,
+      },
+    });
   } else {
     const submissionSelect =
       'id, status, created_at, school_year_id, documentType:document_type_id(name), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title, target_venue, person_in_charge, contact_number))';
@@ -610,7 +712,7 @@ async function handleGetUserDetail(id: string) {
 
       pipelineDocs.push(
         ...(pipelineSubs || []).filter(
-          (s) => !activeSy || s.school_year_id === activeSy.id || !s.school_year_id,
+          (s) => !targetSy || s.school_year_id === targetSy.id || !s.school_year_id,
         ),
       );
     }
@@ -626,7 +728,7 @@ async function handleGetUserDetail(id: string) {
       .map((log) => log.submissions as Record<string, unknown> | null)
       .filter(
         (sub): sub is Record<string, unknown> =>
-          Boolean(sub) && (!activeSy || !sub.school_year_id || sub.school_year_id === activeSy.id),
+          Boolean(sub) && (!targetSy || !sub.school_year_id || sub.school_year_id === targetSy.id),
       );
 
     const reviewedMap = new Map<string, Record<string, unknown>>();
@@ -637,7 +739,7 @@ async function handleGetUserDetail(id: string) {
 
     let logsQuery = supabase
       .from('submission_logs')
-      .select('*, submissions(tracking_number,  status, school_year_id, documentType:document_type_id(name), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title)))')
+      .select('*, submissions(tracking_number, status, school_year_id, documentType:document_type_id(name), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title)))')
       .eq('user_id', id)
       .order('created_at', { ascending: false })
       .limit(50);
@@ -645,54 +747,20 @@ async function handleGetUserDetail(id: string) {
     const { data: logs } = await logsQuery;
     activityHistory = (logs || []).filter((log) => {
       const sub = log.submissions as Record<string, unknown> | null;
-      return !activeSy || !sub?.school_year_id || sub.school_year_id === activeSy.id;
+      return !targetSy || !sub?.school_year_id || sub.school_year_id === targetSy.id;
     });
-  }
 
-  const currentSySubmissions = activeSy
-    ? submissions.filter((s) => !s.school_year_id || s.school_year_id === activeSy.id)
-    : submissions;
-
-  let hasMidYear = false;
-  let hasYearEnd = false;
-  if (activeSy && submissions) {
-    submissions.forEach((sub) => {
-      if (sub.status === 'completed' && sub.school_year_id === activeSy.id) {
-        const docName = (sub.documentType as Record<string, unknown>)?.name;
-        const name = typeof docName === 'string' ? docName.toLowerCase() : '';
-        if (name.includes('mid-year') || name.includes('mid year')) hasMidYear = true;
-        if (name.includes('year-end') || name.includes('year end')) hasYearEnd = true;
-      }
-    });
-  }
-
-  const pendingReviewCount = user.role === 'org-president'
-    ? (submissions || []).filter((s) => {
-      const status = String(s.status || '').toLowerCase().trim();
-      return !['completed', 'disapproved', 'rejected', 'approved', 'ready for retrieval', 'document retrieval', 'waiting for accomplishment report', 'ready for org pickup', 'draft'].includes(status);
-    }).length
-    : reviewedDocuments.length;
-
-  const documentLogs =
-    user.role === 'org-president'
-      ? currentSySubmissions.map(formatDocumentLog)
-      : reviewedDocuments;
-
-  return jsonResponse({
-    success: true,
-    data: {
-      user: { ...user, email },
-      documentLogs,
-      activityHistory,
-      pendingReviewCount,
-      renewal: {
-        isEligible: hasMidYear && hasYearEnd,
-        hasMidYear,
-        hasYearEnd,
+    return jsonResponse({
+      success: true,
+      data: {
+        user: { ...user, email },
+        documentLogs: reviewedDocuments,
+        activityHistory,
+        pendingReviewCount: reviewedDocuments.length,
+        activeSchoolYear: targetSy,
       },
-      activeSchoolYear: activeSy,
-    },
-  });
+    });
+  }
 }
 
 async function handlePostUsers(body: Record<string, unknown>) {
@@ -727,28 +795,84 @@ async function handlePostUsers(body: Record<string, unknown>) {
     return jsonResponse({ error: authError.message }, 500);
   }
 
+  let organizationId: string | null = null;
+  if (role === 'org-president') {
+    try {
+      const { data: orgData, error: orgErr } = await supabase
+        .from('organizations')
+        .insert([
+          {
+            name: org_name || full_name,
+            abbreviation: null,
+          },
+        ])
+        .select();
+
+      if (!orgErr && orgData?.[0]?.id) {
+        organizationId = orgData[0].id;
+      }
+    } catch (err) {
+      console.warn('Could not insert into organizations table:', err);
+    }
+  }
+
+  const userPayload: Record<string, unknown> = {
+    id: authData.user.id,
+    full_name,
+    role,
+    status: status || 'Active',
+    profile_image: profile_image || null,
+    org_name: org_name || null,
+    no_member: no_member || null,
+    adviser_name: adviser_name || null,
+    co_advisers: co_advisers || [],
+    joined_date: joined_date || null,
+    contact_no: contact_no != null && contact_no !== '' ? String(contact_no) : null,
+    student_no: student_no || null,
+  };
+
+  if (role === 'org-president') {
+    userPayload.organization_id = organizationId || authData.user.id;
+  }
+
   const { data: profileData, error: profileError } = await supabase
     .from('users')
-    .insert([
-      {
-        id: authData.user.id,
-        full_name,
-        role,
-        status: status || 'Active',
-        profile_image: profile_image || null,
-        org_name: org_name || null,
-        no_member: no_member || null,
-        adviser_name: adviser_name || null,
-        co_advisers: co_advisers || [],
-        joined_date: joined_date || null,
-        contact_no: contact_no != null && contact_no !== '' ? String(contact_no) : null,
-        student_no: student_no || null,
-      },
-    ])
+    .insert([userPayload])
     .select();
 
   if (profileError) {
     return jsonResponse({ error: 'Failed to create user', details: profileError.message }, 500);
+  }
+
+  if (role === 'org-president') {
+    const { data: activeSy } = await supabase
+      .from('school_years')
+      .select('id')
+      .eq('is_active', true)
+      .maybeSingle();
+
+    const currentSyId = activeSy?.id;
+    if (currentSyId) {
+      const targetOrgId = organizationId || authData.user.id;
+      const { error: ayInsErr } = await supabase
+        .from('organization_academic_years')
+        .insert([
+          {
+            organization_id: targetOrgId,
+            school_year_id: currentSyId,
+            status: 'active',
+            president_name: full_name,
+            student_no: student_no || null,
+            contact_no: contact_no != null && contact_no !== '' ? String(contact_no) : null,
+            adviser_name: adviser_name || null,
+            co_advisers: co_advisers || [],
+            no_member: no_member ? Number(no_member) : 0,
+          },
+        ]);
+      if (ayInsErr) {
+        console.warn('Failed to insert initial organization_academic_years record:', ayInsErr.message);
+      }
+    }
   }
 
   return jsonResponse({ success: true, user: profileData?.[0] });
@@ -769,11 +893,12 @@ async function handlePutUsers(id: string, body: Record<string, unknown>) {
     contact_no,
     student_no,
     email,
+    school_year_id,
   } = body as Record<string, string | null | undefined | string[]>;
 
   const { data: existingUser, error: existingError } = await supabase
     .from('users')
-    .select('profile_image')
+    .select('profile_image, organization_id, role')
     .eq('id', id)
     .maybeSingle();
 
@@ -817,6 +942,37 @@ async function handlePutUsers(id: string, body: Record<string, unknown>) {
     return jsonResponse({ error: 'Failed to update user', details: error.message }, 500);
   }
 
+  // Synchronize changes to organization_academic_years table for current/selected AY
+  const isOrg = (role || existingUser?.role) === 'org-president';
+  const orgId = existingUser?.organization_id || id;
+
+  if (isOrg && orgId) {
+    let targetSyId = school_year_id;
+    if (!targetSyId) {
+      const { data: activeSy } = await supabase
+        .from('school_years')
+        .select('id')
+        .eq('is_active', true)
+        .maybeSingle();
+      targetSyId = activeSy?.id;
+    }
+
+    if (targetSyId) {
+      await supabase
+        .from('organization_academic_years')
+        .update({
+          president_name: full_name || null,
+          adviser_name: adviser_name || null,
+          co_advisers: co_advisers || [],
+          no_member: no_member ? Number(no_member) : 0,
+          student_no: student_no || null,
+          contact_no: contact_no != null && contact_no !== '' ? String(contact_no) : null,
+        })
+        .eq('organization_id', orgId)
+        .eq('school_year_id', targetSyId);
+    }
+  }
+
   return jsonResponse({ success: true, user: data?.[0] });
 }
 
@@ -857,6 +1013,27 @@ async function handleDeleteUsers(id: string, body: Record<string, unknown>) {
     return jsonResponse({ error: 'Incorrect admin password' }, 401);
   }
 
+  const { data: userRec } = await supabase.from('users').select('organization_id').eq('id', id).maybeSingle();
+  const orgId = userRec?.organization_id;
+
+  let orFilter = `user_id.eq.${id},created_by.eq.${id},submitted_by.eq.${id}`;
+  if (orgId) {
+    orFilter += `,organization_id.eq.${orgId}`;
+  }
+
+  // Check if account has any document submissions
+  const { count: submissionCount } = await supabase
+    .from('submissions')
+    .select('id', { count: 'exact', head: true })
+    .or(orFilter);
+
+  if (submissionCount && submissionCount > 0) {
+    return jsonResponse(
+      { error: 'Cannot delete account: This user/organization has active historical submissions in the system.' },
+      400
+    );
+  }
+
   const { error: deleteAuthError } = await supabase.auth.admin.deleteUser(id);
   if (deleteAuthError) {
     return jsonResponse({ error: 'Failed to delete user', details: deleteAuthError.message }, 500);
@@ -868,6 +1045,238 @@ async function handleDeleteUsers(id: string, body: Record<string, unknown>) {
   }
 
   return jsonResponse({ success: true, message: 'User deleted successfully' });
+}
+
+async function handleRenewOrganization(body: Record<string, unknown>) {
+  const supabase = getAdminClient();
+  const {
+    organization_id,
+    school_year_id,
+    president_name,
+    student_no,
+    contact_no,
+    adviser_name,
+    co_advisers,
+    no_member,
+  } = body as {
+    organization_id?: string;
+    school_year_id?: string;
+    president_name?: string;
+    student_no?: string;
+    contact_no?: string;
+    adviser_name?: string;
+    co_advisers?: string[];
+    no_member?: number;
+  };
+
+  if (!organization_id || !school_year_id) {
+    return jsonResponse({ error: 'organization_id and school_year_id are required' }, 400);
+  }
+
+  // 1. Check if organization_academic_years record already exists for this school year
+  const { data: existingAyRec } = await supabase
+    .from('organization_academic_years')
+    .select('*')
+    .eq('organization_id', organization_id)
+    .eq('school_year_id', school_year_id)
+    .maybeSingle();
+
+  if (existingAyRec) {
+    return jsonResponse({ error: 'Organization is already renewed for this Academic Year' }, 400);
+  }
+
+  // 2. Fetch the user profile associated with this organization
+  const { data: userRec } = await supabase
+    .from('users')
+    .select('*')
+    .eq('organization_id', organization_id)
+    .maybeSingle();
+
+  const presName = president_name || userRec?.full_name || 'Organization President';
+  const stdNo = student_no !== undefined ? student_no : (userRec?.student_no || null);
+  const cntNo = contact_no !== undefined ? contact_no : (userRec?.contact_no || null);
+  const advName = adviser_name !== undefined ? adviser_name : (userRec?.adviser_name || null);
+  const coAdvs = co_advisers !== undefined ? co_advisers : (userRec?.co_advisers || []);
+  const mbrs = no_member !== undefined ? no_member : (userRec?.no_member || 0);
+
+  // Update active user profile in users table
+  if (userRec?.id) {
+    await supabase
+      .from('users')
+      .update({
+        full_name: presName,
+        student_no: stdNo,
+        contact_no: cntNo,
+        adviser_name: advName,
+        co_advisers: coAdvs,
+        no_member: mbrs,
+        status: 'Active',
+      })
+      .eq('id', userRec.id);
+  }
+
+  // 3. Create new AY snapshot
+  const { data: newAyData, error: ayErr } = await supabase
+    .from('organization_academic_years')
+    .insert([
+      {
+        organization_id,
+        school_year_id,
+        status: 'active',
+        president_name: presName,
+        student_no: stdNo,
+        contact_no: cntNo,
+        adviser_name: advName,
+        co_advisers: coAdvs,
+        no_member: mbrs,
+      },
+    ])
+    .select();
+
+  if (ayErr) {
+    return jsonResponse({ error: 'Failed to create organization academic year record', details: ayErr.message }, 500);
+  }
+
+  return jsonResponse({
+    success: true,
+    message: 'Organization successfully renewed for the selected Academic Year!',
+    data: newAyData?.[0],
+  });
+}
+
+async function handleGetOrganizationsByAy(url: URL) {
+  const supabase = getAdminClient();
+  const syId = url.searchParams.get('syId');
+
+  const { data: allSchoolYears } = await supabase
+    .from('school_years')
+    .select('id, name, is_active, created_at, start_date')
+    .order('created_at', { ascending: true });
+
+  const syList = allSchoolYears || [];
+  const syIndexMap = new Map<string, number>();
+  syList.forEach((sy: any, idx: number) => syIndexMap.set(sy.id, idx));
+
+  const activeSyObj = syList.find((s: any) => s.is_active);
+  const targetSyId = syId || activeSyObj?.id || syList[0]?.id;
+  const targetSyIdx = syIndexMap.get(targetSyId) ?? 0;
+
+  const { data: usersData, error: usersErr } = await supabase
+    .from('users')
+    .select('*')
+    .eq('role', 'org-president');
+
+  if (usersErr) {
+    return jsonResponse({ error: 'Failed to fetch organization users', details: usersErr.message }, 500);
+  }
+
+  const { data: allSnapshots } = await supabase
+    .from('organization_academic_years')
+    .select('*');
+
+  const orgSnapshotsMap = new Map<string, any[]>();
+  (allSnapshots || []).forEach((snap: any) => {
+    if (snap.organization_id) {
+      if (!orgSnapshotsMap.has(snap.organization_id)) {
+        orgSnapshotsMap.set(snap.organization_id, []);
+      }
+      orgSnapshotsMap.get(snap.organization_id)!.push(snap);
+    }
+  });
+
+  const { data: submissionRecords } = await supabase
+    .from('submissions')
+    .select('user_id, created_by, submitted_by, organization_id')
+    .limit(10000);
+
+  const { data: logRecords } = await supabase
+    .from('submission_logs')
+    .select('user_id')
+    .limit(10000);
+
+  const usersWithSubmissions = new Set<string>();
+  (submissionRecords || []).forEach((s: any) => {
+    if (s.user_id) usersWithSubmissions.add(String(s.user_id));
+    if (s.created_by) usersWithSubmissions.add(String(s.created_by));
+    if (s.submitted_by) usersWithSubmissions.add(String(s.submitted_by));
+    if (s.organization_id) usersWithSubmissions.add(String(s.organization_id));
+  });
+  (logRecords || []).forEach((l: any) => {
+    if (l.user_id) usersWithSubmissions.add(String(l.user_id));
+  });
+
+  const emailMap = await getAuthEmailsMap();
+
+  const enriched: any[] = [];
+
+  (usersData || []).forEach((u: any) => {
+    const orgId = u.organization_id || u.id;
+    const orgSnaps = orgSnapshotsMap.get(orgId) || (u.organization_id ? orgSnapshotsMap.get(u.id) : []) || [];
+    
+    const currentSnap = orgSnaps.find((s: any) => s.school_year_id === targetSyId);
+    const isRenewed = Boolean(currentSnap);
+
+    let earliestSyIdx = Infinity;
+    orgSnaps.forEach((s: any) => {
+      const idx = syIndexMap.get(s.school_year_id);
+      if (idx !== undefined && idx < earliestSyIdx) {
+        earliestSyIdx = idx;
+      }
+    });
+
+    if (earliestSyIdx === Infinity) {
+      const createdDate = u.joined_date || u.created_at;
+      if (createdDate) {
+        const createdTime = new Date(createdDate).getTime();
+        let matchedIdx = syList.findIndex((sy: any) => {
+          const syTime = new Date(sy.created_at || sy.start_date).getTime();
+          return createdTime <= syTime + (365 * 24 * 60 * 60 * 1000);
+        });
+        earliestSyIdx = matchedIdx !== -1 ? matchedIdx : targetSyIdx;
+      } else {
+        earliestSyIdx = targetSyIdx;
+      }
+    }
+
+    // Exclude organizations that did not exist yet in targetSyId
+    if (targetSyIdx < earliestSyIdx && !currentSnap) {
+      return;
+    }
+
+    let tabCategory = 'new';
+    let statusLabel = 'New';
+    if (targetSyIdx === earliestSyIdx) {
+      tabCategory = 'new';
+      statusLabel = 'New';
+    } else {
+      if (isRenewed) {
+        tabCategory = 'renewed';
+        statusLabel = 'Renewed';
+      } else {
+        tabCategory = 'not_renewed';
+        statusLabel = 'Pending Renewal';
+      }
+    }
+
+    const hasSubmissions = usersWithSubmissions.has(String(u.id)) || usersWithSubmissions.has(String(orgId)) || (u.organization_id ? usersWithSubmissions.has(String(u.organization_id)) : false);
+
+    enriched.push({
+      ...u,
+      email: emailMap.get(u.id) || null,
+      ay_snapshot: currentSnap || null,
+      renewal_status: statusLabel === 'Renewed' ? 'RENEWED' : (statusLabel === 'New' ? 'NEW' : 'NOT_RENEWED'),
+      status_label: statusLabel,
+      tab_category: tabCategory,
+      has_submissions: hasSubmissions,
+      president_name: currentSnap ? currentSnap.president_name : u.full_name,
+      student_no: currentSnap ? currentSnap.student_no : u.student_no,
+      contact_no: currentSnap ? currentSnap.contact_no : u.contact_no,
+      adviser_name: currentSnap ? currentSnap.adviser_name : u.adviser_name,
+      no_member: currentSnap ? currentSnap.no_member : u.no_member,
+    });
+  });
+
+  return jsonResponse({ success: true, data: enriched });
 }
 
 async function handleGetAnnouncements() {
@@ -3727,8 +4136,11 @@ async function routeRequest(req: Request): Promise<Response> {
   if (method === 'GET' && path === '/users') return handleGetUsers();
   if (method === 'GET' && path === '/users/check-email') return handleCheckEmail(url);
   if (method === 'GET' && /^\/users\/[^/]+\/detail$/.test(path)) {
-    return handleGetUserDetail(path.split('/')[2]);
+    return handleGetUserDetail(path.split('/')[2], url);
   }
+
+  if (method === 'POST' && path === '/organizations/renew') return handleRenewOrganization(body);
+  if (method === 'GET' && path === '/organizations/by-ay') return handleGetOrganizationsByAy(url);
 
   if (method === 'POST' && path === '/users') return handlePostUsers(body);
   if (method === 'POST' && path === '/auth/verify-password') return handleVerifyPassword(body);
