@@ -53,7 +53,7 @@ const getStatusColor = (status) => {
     return '#d76b0d';
   }
   if (s.includes('waiting for accomplishment report')) {
-    return '#0ea5e9';
+    return '#105220';
   }
   if (s === 'approved') {
     return '#105220';
@@ -1791,7 +1791,9 @@ export const MyDocuments = () => {
 
     // STATUS-FIRST mapping (authoritative): prevents stale workflow_phase values
     // from forcing wrong tabs on admin side.
-    if (subStatus === 'returned') {
+    if (subStatus === 'draft') {
+      category = 'Draft';
+    } else if (subStatus === 'returned') {
       category = 'Returned';
     } else if (subStatus === 'to forward') {
       category = user?.role === 'org-president' ? 'SDS Review' : 'Hard Copy';
@@ -1876,17 +1878,21 @@ export const MyDocuments = () => {
       sender: senderAbbr,
       type: docTypeName,
       submittedDate,
-      status: subStatus === 'submitted'
-        ? 'OSO STAFF REVIEW'
-        : (subStatus === 'to forward'
-          ? (user?.role === 'org-president' ? 'HARDCOPY SUBMISSION' : 'PENDING HARD COPY')
-          : (subStatus === 'dean review'
-            ? 'FINAL IN-CAMPUS REVIEW'
-            : (subStatus === 'ready for retrieval'
-              ? 'READY FOR RETRIEVAL'
-              : (subStatus === 'document retrieved'
-                ? 'DOCUMENT RETRIEVED'
-                : (submission.status ? submission.status.toUpperCase() : 'PENDING'))))),
+      status: subStatus === 'draft'
+        ? 'DRAFT'
+        : (subStatus === 'submitted'
+          ? 'OSO STAFF REVIEW'
+          : (subStatus === 'to forward'
+            ? (user?.role === 'org-president' ? 'HARDCOPY SUBMISSION' : 'PENDING HARD COPY')
+            : (subStatus === 'dean review'
+              ? 'FINAL IN-CAMPUS REVIEW'
+              : (subStatus === 'ready for retrieval'
+                ? 'READY FOR RETRIEVAL'
+                : (subStatus === 'document retrieved'
+                  ? 'DOCUMENT RETRIEVED'
+                  : (subStatus === 'waiting for accomplishment report'
+                    ? 'APPROVED'
+                    : (submission.status ? submission.status.toUpperCase() : 'PENDING'))))))),
       lastAction: lastActionDate,
       category,
 
@@ -1948,6 +1954,7 @@ export const MyDocuments = () => {
 
   const tabs = [
     { name: 'All', count: visibleDocs.length },
+    ...(user?.role === 'org-president' ? [{ name: 'Draft', count: countByTab('Draft') }] : []),
     ...(user?.role === 'org-president' ? [{ name: 'OSO Staff review', count: countByTab('OSO Staff review') }] : []),
     ...(user?.role !== 'admin' ? [{ name: 'SDS Review', count: countByTab('SDS Review') }] : []),
     { name: 'Final In-Campus review', count: countByTab('Final In-Campus review') },
@@ -5225,6 +5232,9 @@ export const MyDocuments = () => {
                           } else if (stageText === 'Approved') {
                             if (rawStatusLower.includes('returned')) {
                               subLabelText = null;
+                            } else if (rawStatusLower === 'waiting for accomplishment report' || rawStatusLower.includes('waiting for accomplishment')) {
+                              subLabelText = 'REPORT SUBMISSION';
+                              subLabelColorClass = 'text-blue-600 font-bold';
                             } else if (doc.hasDocumentRetrievedLog && doc.firstRetrievedLog) {
                               const myRoleNorm = String(user?.role || '').toLowerCase();
                               const myUserId = String(user?.id || '');

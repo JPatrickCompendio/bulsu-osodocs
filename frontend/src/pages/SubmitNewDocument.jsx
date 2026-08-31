@@ -578,7 +578,6 @@ const SubmitNewDocument = () => {
       } else {
         if (!sched.start_time) return false;
         if (!sched.is_indefinite && !sched.end_time) return false;
-        if (!sched.is_indefinite && (sched.duration_minutes === undefined || sched.duration_minutes <= 0)) return false;
       }
     }
 

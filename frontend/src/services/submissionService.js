@@ -507,13 +507,6 @@ export const createNewVersion = async (submissionId, oldVersionId, userId) => {
 
   if (updateSubErr) throw updateSubErr;
 
-  // Trigger backend workflow transition for resubmission
-  try {
-    await transitionSubmission(submissionId, 'resubmit', `Resubmitted as Version ${newVersionNumber}`, [], userId);
-  } catch (tErr) {
-    console.warn('Backend transition notice in createNewVersion:', tErr);
-  }
-
   // Automatically update the user account status to 'Active' upon resubmission
   const { error: userErr } = await supabase
     .from('users')
@@ -523,16 +516,6 @@ export const createNewVersion = async (submissionId, oldVersionId, userId) => {
   if (userErr) {
     console.error('Failed to update user status to Active on resubmission:', userErr);
   }
-
-  // 5. Log the resubmission
-  await createLog(
-    submissionId,
-    userId,
-    `Document resubmitted as Version ${newVersionNumber}.`,
-    newVersion.id,
-    'submission',
-    'resubmitted'
-  );
 
   return newVersion;
 };

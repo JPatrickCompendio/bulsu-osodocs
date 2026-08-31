@@ -69,7 +69,7 @@ const getStatusDisplayMeta = (status) => {
     return { label: 'Main Campus Review', badgeClass: 'bg-cyan-700' };
   }
   if (s.includes('waiting for accomplishment')) {
-    return { label: 'Waiting for Accomplishment Report', badgeClass: 'bg-purple-600' };
+    return { label: 'Approved', subtitle: 'Report Submission', badgeClass: 'bg-emerald-600' };
   }
   if (s === 'approved') {
     return { label: 'Approved', badgeClass: 'bg-purple-600' };
@@ -505,11 +505,18 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
           {
             label: 'Status',
             value: (
-              <span
-                className={`inline-block px-4 py-1 rounded-full text-[10px] font-bold uppercase text-white ${statusMeta.badgeClass}`}
-              >
-                {statusMeta.label}
-              </span>
+              <div>
+                <span
+                  className={`inline-block px-4 py-1 rounded-full text-[10px] font-bold uppercase text-white ${statusMeta.badgeClass}`}
+                >
+                  {statusMeta.label}
+                </span>
+                {statusMeta.subtitle && (
+                  <span className="block text-[9px] font-bold text-gray-500 uppercase tracking-tight mt-1">
+                    {statusMeta.subtitle}
+                  </span>
+                )}
+              </div>
             ),
             icon: <Clock size={18} className="text-gray-400" />,
             valueClass: ''
