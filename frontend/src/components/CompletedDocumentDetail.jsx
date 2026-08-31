@@ -318,8 +318,75 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
           .eq('submission_id', submissionId)
           .order('created_at', { ascending: false });
 
-        if (!logsErr) setTimelineLogs(logs || []);
-        else console.error('Error fetching timeline logs:', logsErr);
+        if (!logsErr) {
+          let resolvedLogs = logs || [];
+          if (submissionId && resolvedLogs.length > 0) {
+            const schoolYearId = data?.school_year_id;
+            let orgId = data?.organization_id;
+
+            if (!orgId && data?.user_id) {
+              const { data: submitterUser } = await supabase
+                .from('users')
+                .select('organization_id')
+                .eq('id', data.user_id)
+                .maybeSingle();
+              orgId = submitterUser?.organization_id;
+            }
+
+            if (schoolYearId) {
+              let aySnapshot = null;
+              if (orgId) {
+                const { data: res } = await supabase
+                  .from('organization_academic_years')
+                  .select('president_name')
+                  .eq('organization_id', orgId)
+                  .eq('school_year_id', schoolYearId)
+                  .maybeSingle();
+                aySnapshot = res;
+              }
+
+              if (!aySnapshot?.president_name) {
+                const { data: fallbackRes } = await supabase
+                  .from('organization_academic_years')
+                  .select('president_name')
+                  .eq('school_year_id', schoolYearId)
+                  .maybeSingle();
+                aySnapshot = fallbackRes;
+              }
+
+              console.log('[Timeline Log Fetcher - CompletedDocumentDetail]', {
+                submissionId,
+                schoolYearId,
+                orgId,
+                aySnapshot
+              });
+
+              if (aySnapshot?.president_name) {
+                const histPresName = aySnapshot.president_name;
+                resolvedLogs = resolvedLogs.map((log) => {
+                  const rawRole = String(log.users?.role || '').toLowerCase().trim();
+                  const isOrgPresRole = rawRole.includes('org-president') || rawRole.includes('org president') || rawRole.includes('org_president');
+                  const isSubmitter = data.user_id && log.user_id === data.user_id;
+
+                  if (isOrgPresRole || isSubmitter) {
+                    return {
+                      ...log,
+                      users: {
+                        ...(log.users || {}),
+                        full_name: histPresName,
+                        role: log.users?.role || 'org-president'
+                      }
+                    };
+                  }
+                  return log;
+                });
+              }
+            }
+          }
+          setTimelineLogs(resolvedLogs);
+        } else {
+          console.error('Error fetching timeline logs:', logsErr);
+        }
       } catch (err) {
         console.error('Error loading completed document:', err);
       } finally {

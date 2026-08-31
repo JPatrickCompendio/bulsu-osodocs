@@ -877,7 +877,78 @@ export const MyDocuments = () => {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setTimelineLogs(data || []);
+
+      let logs = data || [];
+
+      if (submissionId && logs.length > 0) {
+        const { data: sub } = await supabase
+          .from('submissions')
+          .select('school_year_id, organization_id, user_id')
+          .eq('id', submissionId)
+          .maybeSingle();
+
+        if (sub?.school_year_id) {
+          let orgId = sub.organization_id;
+          if (!orgId && sub.user_id) {
+            const { data: submitterUser } = await supabase
+              .from('users')
+              .select('organization_id')
+              .eq('id', sub.user_id)
+              .maybeSingle();
+            orgId = submitterUser?.organization_id;
+          }
+
+          let aySnapshot = null;
+          if (orgId) {
+            const { data: res } = await supabase
+              .from('organization_academic_years')
+              .select('president_name')
+              .eq('organization_id', orgId)
+              .eq('school_year_id', sub.school_year_id)
+              .maybeSingle();
+            aySnapshot = res;
+          }
+
+          if (!aySnapshot?.president_name) {
+            const { data: fallbackRes } = await supabase
+              .from('organization_academic_years')
+              .select('president_name')
+              .eq('school_year_id', sub.school_year_id)
+              .maybeSingle();
+            aySnapshot = fallbackRes;
+          }
+
+          console.log('[Timeline Log Fetcher - MyDocument]', {
+            submissionId,
+            schoolYearId: sub.school_year_id,
+            orgId,
+            aySnapshot
+          });
+
+          if (aySnapshot?.president_name) {
+            const histPresName = aySnapshot.president_name;
+            logs = logs.map((log) => {
+              const rawRole = String(log.users?.role || '').toLowerCase().trim();
+              const isOrgPresRole = rawRole.includes('org-president') || rawRole.includes('org president') || rawRole.includes('org_president');
+              const isSubmitter = sub.user_id && log.user_id === sub.user_id;
+
+              if (isOrgPresRole || isSubmitter) {
+                return {
+                  ...log,
+                  users: {
+                    ...(log.users || {}),
+                    full_name: histPresName,
+                    role: log.users?.role || 'org-president'
+                  }
+                };
+              }
+              return log;
+            });
+          }
+        }
+      }
+
+      setTimelineLogs(logs);
     } catch (err) {
       console.error('Error fetching timeline logs:', err);
       setTimelineLogs([]);
