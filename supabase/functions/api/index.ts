@@ -3357,7 +3357,19 @@ export async function resolveActivityProposalRetrievalPhase(
     return 1;
   }
 
-  const hasMainCampusTransition = logs.some((l: any) => {
+  // Find latest resubmission index in chronological order
+  const resubmitIndices = logs
+    .map((l: any, idx: number) => {
+      const at = String(l.action_type || '').toLowerCase();
+      const desc = String(l.description || '').toLowerCase();
+      return (at === 'resubmitted' || at === 'resubmit' || desc.includes('resubmitted')) ? idx : -1;
+    })
+    .filter((idx: number) => idx !== -1);
+
+  const latestResubmitIdx = resubmitIndices.length > 0 ? resubmitIndices[resubmitIndices.length - 1] : -1;
+  const currentCycleLogs = latestResubmitIdx >= 0 ? logs.slice(latestResubmitIdx) : logs;
+
+  const hasMainCampusTransition = currentCycleLogs.some((l: any) => {
     const phase = String(l.workflow_phase || '').toLowerCase();
     const actionType = String(l.action_type || '').toLowerCase();
     const desc = String(l.description || '').toLowerCase();

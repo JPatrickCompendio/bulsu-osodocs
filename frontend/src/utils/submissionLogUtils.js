@@ -351,7 +351,14 @@ const isTerminalStatus = (status) => {
 export const appendPendingTimelinePhase = (realLogs, { submissionStatus, isViewingLatestVersion = true } = {}) => {
   if (!isViewingLatestVersion || !realLogs) return realLogs || [];
 
-  const hasHardcopyVerifiedLog = (realLogs || []).some(log => {
+  const latestResubmitIdx = (realLogs || []).findIndex(l => {
+    const at = norm(l.action_type);
+    const desc = norm(l.description);
+    return at === 'resubmitted' || at === 'resubmit' || desc.includes('resubmitted');
+  });
+  const cycleLogs = latestResubmitIdx >= 0 ? (realLogs || []).slice(0, latestResubmitIdx + 1) : (realLogs || []);
+
+  const hasHardcopyVerifiedLog = cycleLogs.some(log => {
     const text = logText(log);
     return text.includes('hard copy verified') || text.includes('hardcopy verified');
   });
@@ -364,14 +371,14 @@ export const appendPendingTimelinePhase = (realLogs, { submissionStatus, isViewi
   if (isTerminalStatus(status)) return realLogs;
 
   // Special check for Document Retrieval confirmation pending step
-  const hasDocumentRetrievedLog = (realLogs || []).some(log => {
+  const hasDocumentRetrievedLog = cycleLogs.some(log => {
     const text = logText(log);
     const at = norm(log.action_type);
     const ra = norm(log.review_action);
     return text.includes('document retrieved') || at === 'document_retrieved' || ra === 'document_retrieved';
   });
 
-  const hasConfirmRetrievalLog = (realLogs || []).some(log => {
+  const hasConfirmRetrievalLog = cycleLogs.some(log => {
     const text = logText(log);
     const at = norm(log.action_type);
     const ra = norm(log.review_action);

@@ -1762,13 +1762,21 @@ export const MyDocuments = () => {
       ...(Array.isArray(submission.submission_logs) ? submission.submission_logs : []),
       ...(allLogs || []),
       ...(logsData || []).filter(l => String(l.submission_id || l.submissionId || l.submissions?.id) === String(submission.id))
-    ];
-    const hasHardcopyVerifiedLog = (subLogs || []).some(log => {
+    ].sort((a, b) => new Date(b.created_at || b.createdAt || 0) - new Date(a.created_at || a.createdAt || 0));
+
+    const latestResubmitIdxInSubLogs = (subLogs || []).findIndex(log => {
+      const at = String(log.action_type || '').toLowerCase();
+      const desc = String(log.description || '').toLowerCase();
+      return at === 'resubmitted' || at === 'resubmit' || desc.includes('resubmitted');
+    });
+    const cycleSubLogs = latestResubmitIdxInSubLogs >= 0 ? (subLogs || []).slice(0, latestResubmitIdxInSubLogs + 1) : (subLogs || []);
+
+    const hasHardcopyVerifiedLog = cycleSubLogs.some(log => {
       const text = [log.action_type, log.review_action, log.description, log.comment].map(s => String(s || '').toLowerCase()).join(' ');
       return text.includes('hard copy verified') || text.includes('hardcopy verified');
     });
 
-    const firstRetrievedLog = (subLogs || []).find(log => {
+    const firstRetrievedLog = cycleSubLogs.find(log => {
       const text = [log.action_type, log.review_action, log.description, log.comment].map(s => String(s || '').toLowerCase()).join(' ');
       return (text.includes('document retrieved') || text.includes('document_retrieved') || text.includes('retrieved by')) && !text.includes('confirm');
     });
@@ -1776,7 +1784,7 @@ export const MyDocuments = () => {
     const retrieverUserRole = String(firstRetrievedLog?.users?.role || firstRetrievedLog?.user_role || '').toLowerCase();
     const retrieverUserId = String(firstRetrievedLog?.user_id || firstRetrievedLog?.userId || '');
 
-    const hasDocumentRetrievedLog = Boolean(firstRetrievedLog) && !(subLogs || []).some(log => {
+    const hasDocumentRetrievedLog = Boolean(firstRetrievedLog) && !cycleSubLogs.some(log => {
       const text = [log.action_type, log.review_action, log.description, log.comment].map(s => String(s || '').toLowerCase()).join(' ');
       return text.includes('confirm_retrieval') || text.includes('retrieval confirmed') || text.includes('confirmed retrieval');
     });
@@ -1808,7 +1816,14 @@ export const MyDocuments = () => {
     } else if (subStatus.includes('main campus review') || subStatus.includes('external review') || subStatus.includes('vice chairman approved')) {
       category = 'Main Campus Review';
     } else if (subStatus.includes('ready for retrieval') || subStatus.includes('document retrieval') || subStatus.includes('document retrieved') || subStatus.includes('retriev')) {
-      const hasPhase2Log = (subLogs || []).some(l => {
+      const latestResubmitIdx = (subLogs || []).findIndex(l => {
+        const at = String(l.action_type || '').toLowerCase();
+        const desc = String(l.description || '').toLowerCase();
+        return at === 'resubmitted' || at === 'resubmit' || desc.includes('resubmitted');
+      });
+      const cycleSubLogs = latestResubmitIdx >= 0 ? (subLogs || []).slice(0, latestResubmitIdx + 1) : (subLogs || []);
+
+      const hasPhase2Log = cycleSubLogs.some(l => {
         const wp = String(l.workflow_phase || '').toLowerCase().replace(/[_-]/g, ' ').trim();
         const desc = String(l.description || '').toLowerCase();
         const at = String(l.action_type || '').toLowerCase();
@@ -1831,7 +1846,14 @@ export const MyDocuments = () => {
       category = 'Disapproved';
     } else {
       // Fallback to logs only when status is missing/unknown
-      const hasPhase2Log = (subLogs || []).some(l => {
+      const latestResubmitIdx = (subLogs || []).findIndex(l => {
+        const at = String(l.action_type || '').toLowerCase();
+        const desc = String(l.description || '').toLowerCase();
+        return at === 'resubmitted' || at === 'resubmit' || desc.includes('resubmitted');
+      });
+      const cycleSubLogs = latestResubmitIdx >= 0 ? (subLogs || []).slice(0, latestResubmitIdx + 1) : (subLogs || []);
+
+      const hasPhase2Log = cycleSubLogs.some(l => {
         const wp = String(l.workflow_phase || '').toLowerCase().replace(/[_-]/g, ' ').trim();
         const desc = String(l.description || '').toLowerCase();
         const at = String(l.action_type || '').toLowerCase();
@@ -2157,12 +2179,22 @@ export const MyDocuments = () => {
       isApprovedDoc,
     });
 
-    const sdsPhaseLogs = (timelineLogs || []).filter(l => {
+    const latestResubmitIndex = (timelineLogs || []).findIndex(l => {
+      const at = String(l.action_type || '').toLowerCase();
+      const desc = String(l.description || '').toLowerCase();
+      return at === 'resubmitted' || at === 'resubmit' || desc.includes('resubmitted');
+    });
+
+    const currentCycleTimelineLogs = latestResubmitIndex >= 0
+      ? (timelineLogs || []).slice(0, latestResubmitIndex + 1)
+      : (timelineLogs || []);
+
+    const sdsPhaseLogs = currentCycleTimelineLogs.filter(l => {
       const wp = String(l.workflow_phase || '').toLowerCase().replace(/[_-]/g, ' ').trim();
       return wp === 'sds review' || wp === 'hardcopy submission';
     });
 
-    const isSdsHardcopyApprovedLog = (timelineLogs || []).some(l => {
+    const isSdsHardcopyApprovedLog = currentCycleTimelineLogs.some(l => {
       const desc = String(l.description || '').toLowerCase();
       const at = String(l.action_type || '').toLowerCase();
       return (
@@ -2174,7 +2206,7 @@ export const MyDocuments = () => {
 
     const isSdsApprovedLog = isSdsHardcopyApprovedLog;
 
-    const isSdsReadyForRetrievalLog = (timelineLogs || []).some(l => {
+    const isSdsReadyForRetrievalLog = currentCycleTimelineLogs.some(l => {
       const at = String(l.action_type || '').toLowerCase();
       const ra = String(l.review_action || '').toLowerCase();
       const desc = String(l.description || '').toLowerCase().trim();
@@ -2187,7 +2219,7 @@ export const MyDocuments = () => {
       );
     });
 
-    const hasHardcopyVerifiedInTimeline = (timelineLogs || []).some(l => {
+    const hasHardcopyVerifiedInTimeline = currentCycleTimelineLogs.some(l => {
       const text = [l.action_type, l.review_action, l.description, l.comment].map(s => String(s || '').toLowerCase()).join(' ');
       return text.includes('hard copy verified') || text.includes('hardcopy verified');
     });
@@ -2199,25 +2231,23 @@ export const MyDocuments = () => {
 
     // Timeline logs are NEWEST FIRST (descending).
     // Find the transition log when document moved to Phase #2 (e.g. forward/sent to main campus)
-    const phase2TransitionLogIndex = (timelineLogs || []).findIndex(l => {
-      const wp = String(l.workflow_phase || '').toLowerCase().replace(/[_-]/g, ' ').trim();
+    const phase2TransitionLogIndex = currentCycleTimelineLogs.findIndex(l => {
       const desc = String(l.description || '').toLowerCase();
       const at = String(l.action_type || '').toLowerCase();
       return (
-        wp === 'main campus review' ||
-        desc.includes('approved by main campus') ||
         desc.includes('sent to main campus') ||
         at === 'forward' ||
-        at === 'send_to_external'
+        at === 'send_to_external' ||
+        (at === 'forwarded' && desc.includes('main'))
       );
     });
 
     const phase1Logs = phase2TransitionLogIndex >= 0
-      ? (timelineLogs || []).slice(phase2TransitionLogIndex)
-      : (currentPhase === 1 ? (timelineLogs || []) : []);
+      ? currentCycleTimelineLogs.slice(phase2TransitionLogIndex)
+      : (currentPhase === 1 ? currentCycleTimelineLogs : []);
     const phase2Logs = phase2TransitionLogIndex >= 0
-      ? (timelineLogs || []).slice(0, phase2TransitionLogIndex)
-      : (currentPhase === 2 ? (timelineLogs || []) : []);
+      ? currentCycleTimelineLogs.slice(0, phase2TransitionLogIndex)
+      : (currentPhase === 2 ? currentCycleTimelineLogs : []);
 
     const sdsLogs = phase1Logs;
     const mainCampusLogs = phase2Logs;
@@ -2248,7 +2278,7 @@ export const MyDocuments = () => {
       String(sdsRetrievalLog.user_id) === String(user?.id)
     );
 
-    const isMainReadyForRetrievalLog = (timelineLogs || []).some(l => {
+    const isMainReadyForRetrievalLog = currentCycleTimelineLogs.some(l => {
       const at = String(l.action_type || '').toLowerCase();
       const ra = String(l.review_action || '').toLowerCase();
       const desc = String(l.description || '').toLowerCase().trim();
