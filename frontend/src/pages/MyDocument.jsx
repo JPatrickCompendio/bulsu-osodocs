@@ -883,13 +883,13 @@ export const MyDocuments = () => {
       if (submissionId && logs.length > 0) {
         const { data: sub } = await supabase
           .from('submissions')
-          .select('school_year_id, organization_id, user_id')
+          .select('school_year_id, user_id')
           .eq('id', submissionId)
           .maybeSingle();
 
         if (sub?.school_year_id) {
-          let orgId = sub.organization_id;
-          if (!orgId && sub.user_id) {
+          let orgId = null;
+          if (sub.user_id) {
             const { data: submitterUser } = await supabase
               .from('users')
               .select('organization_id')
@@ -1110,60 +1110,41 @@ export const MyDocuments = () => {
         return;
       }
 
-      const { data: primaryData, error } = await supabase
-        .from('submission_logs')
+      const { data: subs, error: subsErr } = await supabase
+        .from('submissions')
         .select(`
           *,
-          submissions (
+          users (org_name, abbreviation, student_no, full_name, role),
+          documentType (name),
+          document_subtypes (name),
+          submission_logs (created_at, action_type, review_action, description, comment),
+          submission_versions!submission_id (
             *,
-            users (org_name, abbreviation, student_no),
-            documentType (name),
-            document_subtypes (name),
-            submission_logs (created_at, action_type, review_action, description, comment),
-            submission_versions!submission_id (
-              *,
-              activity_proposal_details (*, activity_schedules (*)),
-              submission_attachments (*, requirements(*))
-            )
+            activity_proposal_details (*, activity_schedules (*)),
+            submission_attachments (*, requirements(*))
           )
         `)
-        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.warn("Attempting fallback query due to join error:", error.message);
-        const fallbackRes = await supabase
-          .from('submission_logs')
-          .select(`
-            *,
-            submissions (
-              *,
-              users (org_name, abbreviation, student_no),
-              documentType (name),
-              document_subtypes (name),
-              submission_logs (created_at, action_type, review_action, description, comment),
-              submission_versions!submission_id (
-                *,
-                activity_proposal_details (*, activity_schedules (*)),
-                submission_attachments (*, requirements(*))
-              )
-            )
-          `)
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
+      if (subsErr) throw subsErr;
 
-        if (fallbackRes.error) throw fallbackRes.error;
-        data = fallbackRes.data;
-      } else {
-        data = primaryData;
-      }
+      const activeSubs = (subs || []).filter((sub) => String(sub.status || '').toLowerCase() !== 'completed');
 
-      const filteredData = (data || []).filter(item => {
-        const subStatus = String(item.submissions?.status || '').toLowerCase();
-        return subStatus !== 'completed';
+      data = activeSubs.map((sub) => {
+        const logs = (sub.submission_logs || []).filter(l => l.action_type !== 'viewed');
+        const maxLogDate = logs.length > 0 ? new Date(Math.max(...logs.map(l => new Date(l.created_at)))).toISOString() : null;
+        return {
+          id: `sub-${sub.id}`,
+          submission_id: sub.id,
+          created_at: maxLogDate || sub.updated_at || sub.created_at,
+          workflow_phase: null,
+          review_action: null,
+          action_type: null,
+          submissions: sub
+        };
       });
 
-      setLogsData(filteredData);
+      setLogsData(data);
     } catch (err) {
       console.error('Error fetching My Documents logs:', err);
     } finally {

@@ -517,13 +517,13 @@ export const Inbox = () => {
       if (submissionId && logs.length > 0) {
         const { data: sub } = await supabase
           .from('submissions')
-          .select('school_year_id, organization_id, user_id')
+          .select('school_year_id, user_id')
           .eq('id', submissionId)
           .maybeSingle();
 
         if (sub?.school_year_id) {
-          let orgId = sub.organization_id;
-          if (!orgId && sub.user_id) {
+          let orgId = null;
+          if (sub.user_id) {
             const { data: submitterUser } = await supabase
               .from('users')
               .select('organization_id')

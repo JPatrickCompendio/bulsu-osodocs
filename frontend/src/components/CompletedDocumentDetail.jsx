@@ -322,9 +322,9 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
           let resolvedLogs = logs || [];
           if (submissionId && resolvedLogs.length > 0) {
             const schoolYearId = data?.school_year_id;
-            let orgId = data?.organization_id;
+            let orgId = null;
 
-            if (!orgId && data?.user_id) {
+            if (data?.user_id) {
               const { data: submitterUser } = await supabase
                 .from('users')
                 .select('organization_id')
