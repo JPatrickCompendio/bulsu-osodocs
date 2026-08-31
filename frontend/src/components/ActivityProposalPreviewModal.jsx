@@ -316,59 +316,14 @@ const ActivityProposalPreviewModal = ({
   if (!isOpen && !inline) return null;
 
   const handlePrint = () => {
-    try {
-      const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        printWindow.document.write(`
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <title>Activity Proposal Form</title>
-              <style>
-                @media print {
-                  html, body { height: 100%; margin: 0; padding: 0; background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-                  @page { margin: 4mm 6mm; size: A4 portrait; }
-                  .print-wrapper { display: flex; flex-direction: column; min-height: 280mm; box-sizing: border-box; position: relative; }
-                  .official-document-footer {
-                    position: fixed !important;
-                    bottom: 2mm !important;
-                    left: 6mm !important;
-                    right: 6mm !important;
-                    width: auto !important;
-                    background: white !important;
-                  }
-                }
-                body { font-family: Arial, Helvetica, sans-serif; color: black; background: white; margin: 0; font-size: 11.5px; padding: 15px; }
-                .form-row { display: flex; align-items: flex-end; margin-bottom: 7px; }
-                .form-label { font-weight: bold; font-size: 11.5px; margin-right: 5px; white-space: nowrap; }
-                .form-line { flex-grow: 1; border-bottom: 1.5px solid black; min-height: 14px; font-size: 11.5px; font-weight: normal; padding-bottom: 1px; text-align: left; padding-left: 8px; }
-                .section-title { font-weight: bold; font-size: 11.5px; margin-top: 8px; margin-bottom: 4px; }
-              </style>
-            </head>
-            <body>
-              <div class="print-wrapper">
-                ${content}
-              </div>
-            </body>
-          </html>
-        `);
-        printWindow.document.close();
-        printWindow.focus();
-        setTimeout(() => {
-          printWindow.print();
-          if (onDownload) onDownload();
-        }, 500);
-        return;
-      }
-    } catch (e) {
-      console.warn('Window open fallback triggered:', e);
-    }
-
     const printIframe = document.createElement('iframe');
-    printIframe.style.position = 'absolute';
+    printIframe.style.position = 'fixed';
+    printIframe.style.right = '0';
+    printIframe.style.bottom = '0';
     printIframe.style.width = '0px';
     printIframe.style.height = '0px';
     printIframe.style.border = 'none';
+    printIframe.style.visibility = 'hidden';
     document.body.appendChild(printIframe);
 
     const doc = printIframe.contentWindow.document;
@@ -418,11 +373,11 @@ const ActivityProposalPreviewModal = ({
       
       if (onDownload) onDownload();
       setTimeout(() => {
-        if (printIframe.parentNode) {
+        if (printIframe && printIframe.parentNode) {
           document.body.removeChild(printIframe);
         }
       }, 2000);
-    }, 500);
+    }, 400);
   };
 
   return (

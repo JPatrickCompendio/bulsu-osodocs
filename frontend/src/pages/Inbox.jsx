@@ -32,7 +32,9 @@ import {
   List,
   Calendar,
   Paperclip,
-  X
+  X,
+  Download,
+  ExternalLink
 } from 'lucide-react';
 
 const getStatusColor = (status) => {
@@ -730,9 +732,22 @@ export const Inbox = () => {
     try {
       setLoading(true);
       
-      const statusFilter = user?.role === 'admin'
-        ? ['sds coordinator review', 'SDS coordinator review', 'SDS Coordinator Review', 'oso approved', 'OSO Approved', 'OSO approved']
-        : ['submitted', 'pending', 'oso staff review', 'OSO Staff Review'];
+      const normUserRole = String(user?.role || '').toLowerCase().trim();
+      const isAdmin = normUserRole === 'admin' || normUserRole.includes('sds');
+
+      const statusFilter = isAdmin
+        ? [
+            'sds coordinator review', 'SDS coordinator review', 'SDS Coordinator Review', 'sds_coordinator_review',
+            'sds review', 'SDS review', 'SDS Review', 'sds_review',
+            'oso approved', 'OSO Approved', 'OSO approved', 'oso_approved',
+            'pending hard copy', 'Pending Hard Copy', 'pending_hard_copy', 'hard copy', 'Hard Copy',
+            'to forward', 'To Forward', 'to_forward'
+          ]
+        : [
+            'submitted', 'Submitted',
+            'pending', 'Pending',
+            'oso staff review', 'OSO Staff Review', 'oso_staff_review'
+          ];
 
       // Try with submission_logs join
       let { data, error } = await supabase
@@ -767,7 +782,7 @@ export const Inbox = () => {
 
       const mapped = (data || [])
         .filter(sub => {
-          if (user?.role === 'admin') {
+          if (isAdmin) {
             const logs = sub.submission_logs || [];
             const hasApproved = logs.some(l => 
               String(l.workflow_phase || '').toLowerCase().includes('sds') && 
@@ -799,7 +814,11 @@ export const Inbox = () => {
   };
 
   React.useEffect(() => {
-    if (Object.keys(subtypesMap).length > 0 || !loading) {
+    fetchSubmissions();
+  }, []);
+
+  React.useEffect(() => {
+    if (Object.keys(subtypesMap).length > 0) {
       fetchSubmissions();
     }
   }, [subtypesMap]);
@@ -812,6 +831,7 @@ export const Inbox = () => {
     window.addEventListener('inbox-updated', handleRefresh);
     window.addEventListener('submission-submitted', handleRefresh);
     window.addEventListener('document-status-changed', handleRefresh);
+    window.addEventListener('focus', handleRefresh);
 
     const channelId = `inbox_realtime_${user.id}_${Math.random().toString(36).substring(2, 9)}`;
     const channel = supabase.channel(channelId)
@@ -824,12 +844,17 @@ export const Inbox = () => {
       .on('broadcast', { event: 'inbox-update' }, () => {
         handleRefresh();
       })
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          handleRefresh();
+        }
+      });
 
     return () => {
       window.removeEventListener('inbox-updated', handleRefresh);
       window.removeEventListener('submission-submitted', handleRefresh);
       window.removeEventListener('document-status-changed', handleRefresh);
+      window.removeEventListener('focus', handleRefresh);
       supabase.removeChannel(channel);
     };
   }, [user]);
@@ -1076,35 +1101,35 @@ export const Inbox = () => {
     return (
       <div className="animate-in fade-in slide-in-from-right-8 duration-500 pb-24 text-gray-800">
         {/* Detail Header */}
-        <div className="flex items-start justify-between mb-8">
-          <div className="flex items-start gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6 sm:mb-8">
+          <div className="flex items-start gap-2.5 sm:gap-4 min-w-0 flex-1">
             <button 
               onClick={() => { setSelectedDoc(null); setSelectedVersionId(null); }}
-              className="mt-1 p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-gray-800"
+              className="mt-1 p-1.5 sm:p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-gray-800 shrink-0"
             >
               <ChevronLeft size={24} />
             </button>
-            <div>
-              <h1 className="text-3xl font-bold text-gray-800 tracking-tight flex items-center gap-3">
-                {isActivityProposal ? (selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title) : `${selectedDoc.org || selectedDoc.sender} ${documentTypeName} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
+            <div className="min-w-0 flex-1">
+              <h1 className="text-xl sm:text-3xl font-bold text-gray-800 tracking-tight flex flex-wrap items-center gap-2 sm:gap-3 break-words">
+                <span className="break-words max-w-full">{isActivityProposal ? (selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title) : `${selectedDoc.org || selectedDoc.sender} ${documentTypeName} ${activeSy ? activeSy.name : ''}`.toUpperCase()}</span>
                 {allVersions.length > 0 && (
-                  <span className="px-3 py-1 bg-gray-100 text-gray-500 text-sm font-bold rounded-lg uppercase tracking-widest">
+                  <span className="px-2.5 py-0.5 sm:px-3 sm:py-1 bg-gray-100 text-gray-500 text-xs sm:text-sm font-bold rounded-lg uppercase tracking-widest shrink-0">
                     V{activeVersion?.version_number}
                   </span>
                 )}
               </h1>
-              <p className="text-gray-400 font-mono text-sm mt-1">{selectedDoc.ref}</p>
+              <p className="text-gray-400 font-mono text-xs sm:text-sm mt-1 break-all">{selectedDoc.ref}</p>
             </div>
           </div>
           
           {/* Version Selector */}
           {allVersions.length > 1 && (
-            <div className="flex items-center gap-3 bg-white border border-gray-100 px-4 py-2 rounded-xl shadow-sm">
-              <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Version:</span>
+            <div className="flex items-center gap-2 sm:gap-3 bg-white border border-gray-100 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl shadow-sm self-start sm:self-auto max-w-full">
+              <span className="text-[10px] sm:text-xs font-bold text-gray-400 uppercase tracking-widest shrink-0">Version:</span>
               <select 
                 value={activeVersion?.id || ''}
                 onChange={(e) => setSelectedVersionId(e.target.value)}
-                className="bg-gray-50 border-none rounded-lg px-3 py-1.5 text-sm font-bold text-gray-700 outline-none cursor-pointer focus:ring-2 focus:ring-primary-green/20"
+                className="bg-gray-50 border-none rounded-lg px-2 py-1 sm:px-3 sm:py-1.5 text-xs sm:text-sm font-bold text-gray-700 outline-none cursor-pointer focus:ring-2 focus:ring-primary-green/20 max-w-full"
               >
                 {allVersions.map(v => (
                   <option key={v.id} value={v.id}>
@@ -1549,7 +1574,13 @@ export const Inbox = () => {
               })
             : true;
 
+          const hasBlockingReturnedAttachments = attachments.some((file) => {
+            const fileLog = (timelineLogs || []).find((l) => l.attachment_id === file.id || (l.comment && l.comment.includes(file.file_name)));
+            const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
+            return RETURN_REASONS.includes(reviewActionValue);
+          });
           const hasLocallyReturnedAttachments = Object.keys(locallyReturned).length > 0;
+          const hasReturnedAttachments = hasBlockingReturnedAttachments || hasLocallyReturnedAttachments;
 
           const allFilesApproved = attachments.length > 0 && attachments.every((file) => {
             if (locallyReturned[file.id]) return false;
@@ -1571,7 +1602,7 @@ export const Inbox = () => {
           const disabledByVersion = !isLatestVersion;
           const disableActions = disabledByReview || disabledByVersion;
           const disableApprove = disableActions || hasLocallyReturnedAttachments || !isPreviewLoaded;
-          const disableReturn = disableActions || allFilesApproved;
+          const disableReturn = disableActions || !hasReturnedAttachments;
 
           if (!isLatestVersion) return null;
 
@@ -1604,7 +1635,7 @@ export const Inbox = () => {
                     setIsReturnModalOpen(true);
                   }}
                   disabled={disableReturn}
-                  title={allFilesApproved ? "All attachments are approved. Click Approve to proceed." : ""}
+                  title={!hasReturnedAttachments ? "Return is disabled because no attached file is marked as returned." : ""}
                   className={`flex items-center gap-1.5 sm:gap-3 px-2.5 sm:px-8 py-2 sm:py-3.5 bg-amber-500 text-white rounded-xl sm:rounded-2xl font-bold transition-all shadow-lg shadow-amber-500/20 group shrink-0 ${
                     disableReturn
                       ? 'opacity-40 cursor-not-allowed'
@@ -1657,54 +1688,61 @@ export const Inbox = () => {
             (RETURN_REASONS.includes(String(fileLog?.review_action || '').toLowerCase()) ? fileLog : null);
 
           return (
-            <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-300">
-              <div className="bg-white rounded-3xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300">
+            <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[9999] flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-300">
+              <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-5xl h-[92vh] md:h-[85vh] flex flex-col overflow-hidden shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300">
                 {/* Header */}
-                <div className="bg-gray-50 border-b border-gray-100 px-8 py-5 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
-                      <Paperclip size={20} />
+                <div className="bg-gray-50 border-b border-gray-100 px-4 sm:px-8 py-3.5 sm:py-5 flex items-center justify-between shrink-0">
+                  <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 pr-2">
+                    <div className="w-8 h-8 sm:w-10 sm:h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 shrink-0">
+                      <Paperclip size={18} className="sm:w-5 sm:h-5" />
                     </div>
-                    <div>
-                      <h3 className="font-bold text-gray-800 text-lg">{previewFile.file_name || 'Attached File'}</h3>
-                      <p className="text-gray-400 text-xs font-medium">Review & Verify Document</p>
+                    <div className="min-w-0">
+                      <h3 className="font-bold text-gray-800 text-sm sm:text-lg truncate">{previewFile.file_name || 'Attached File'}</h3>
+                      <p className="text-gray-400 text-[10px] sm:text-xs font-medium">Review & Verify Document</p>
                     </div>
                   </div>
                   <button 
                     onClick={() => setPreviewFile(null)}
-                    className="p-2.5 hover:bg-gray-200 rounded-full transition-colors text-gray-400 hover:text-gray-800"
+                    className="p-2 sm:p-2.5 hover:bg-gray-200 rounded-full transition-colors text-gray-400 hover:text-gray-800 shrink-0"
                   >
-                    <X size={20} />
+                    <X size={18} className="sm:w-5 sm:h-5" />
                   </button>
                 </div>
 
                 {/* Body */}
-                <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+                <div className="flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
                   {/* Left Side: Preview iframe */}
-                  <div className="flex-1 bg-gray-100 p-6 flex flex-col h-full overflow-hidden border-r border-gray-100">
-                    <div className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-200/50 relative">
+                  <div className="flex-1 bg-gray-100 p-3 sm:p-6 flex flex-col h-[65vh] md:h-full min-h-[380px] md:min-h-0 overflow-hidden border-b md:border-b-0 md:border-r border-gray-200 shrink-0 md:shrink">
+                    <div className="flex-1 bg-white rounded-xl sm:rounded-2xl overflow-y-auto -webkit-overflow-scrolling-touch touch-pan-y shadow-sm border border-gray-200/50 relative h-full w-full">
                       {previewFile.file_name?.toLowerCase().includes('.pdf') || previewFile.file_url?.toLowerCase().includes('.pdf') ? (
-                        <iframe
-                          src={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=Fit` : null}
-                          className="w-full h-full border-0 rounded-2xl"
-                          title="PDF Preview"
+                        <object
+                          data={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=FitH` : null}
+                          type="application/pdf"
+                          className="w-full h-full min-h-full border-0 rounded-xl sm:rounded-2xl relative z-10 pointer-events-auto touch-pan-y"
                           onLoad={() => setIsPreviewLoaded(true)}
-                        />
+                        >
+                          <iframe
+                            src={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=FitH` : null}
+                            className="w-full h-full min-h-full border-0 rounded-xl sm:rounded-2xl relative z-10 pointer-events-auto touch-pan-y"
+                            title="PDF Preview"
+                            onLoad={() => setIsPreviewLoaded(true)}
+                          />
+                        </object>
                       ) : previewFile.file_name?.toLowerCase().includes('.docx') || previewFile.file_url?.toLowerCase().includes('.docx') ? (
                         <iframe
                           src={filePreviewUrl ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(filePreviewUrl)}` : null}
-                          className="w-full h-full border-0 rounded-2xl"
+                          className="w-full h-full min-h-full border-0 rounded-xl sm:rounded-2xl relative z-10 pointer-events-auto touch-pan-y"
                           title="Word Preview"
                           onLoad={() => setIsPreviewLoaded(true)}
                         />
                       ) : (
                         <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
-                          <FileText size={48} className="text-gray-300 mb-4 animate-bounce" />
-                          <h4 className="font-bold text-gray-700 mb-1">Preview is not supported for this file type</h4>
-                          <p className="text-gray-400 text-xs max-w-xs mb-4">You can download it to view locally on your device.</p>
+                          <FileText size={44} className="text-gray-300 mb-3 animate-bounce" />
+                          <h4 className="font-bold text-gray-700 text-xs sm:text-sm mb-1">Preview is not supported for this file type</h4>
+                          <p className="text-gray-400 text-[10px] sm:text-xs max-w-xs mb-4">You can download it to view locally on your device.</p>
                           <button 
                             onClick={() => handleDownload(previewFile.file_url, previewFile.file_name || 'Attached File')}
-                            className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-md inline-flex items-center gap-2"
+                            className="bg-indigo-600 text-white px-5 py-2 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-md inline-flex items-center gap-2"
                           >
                             Download Attachment
                           </button>
@@ -1714,7 +1752,7 @@ export const Inbox = () => {
                   </div>
 
                   {/* Right Side: Review Controls */}
-                  <div className="w-full md:w-96 bg-white p-8 flex flex-col justify-between overflow-y-auto border-t md:border-t-0 border-gray-100">
+                  <div className="w-full md:w-96 bg-white p-4 sm:p-8 flex flex-col justify-between overflow-y-auto shrink-0 md:shrink">
                     <div className="space-y-6">
                       <div>
                         <h4 className="font-bold text-gray-800 text-base mb-1">Document Review Panel</h4>

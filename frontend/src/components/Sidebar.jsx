@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { NavLink } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -37,9 +38,19 @@ const Sidebar = ({ isOpen, onClose }) => {
 
         let statusFilters = [];
         if (isAdmin) {
-          statusFilters = ['sds coordinator review', 'SDS coordinator review', 'SDS Coordinator Review', 'oso approved', 'OSO Approved', 'OSO approved'];
+          statusFilters = [
+            'sds coordinator review', 'SDS coordinator review', 'SDS Coordinator Review', 'sds_coordinator_review',
+            'sds review', 'SDS review', 'SDS Review', 'sds_review',
+            'oso approved', 'OSO Approved', 'OSO approved', 'oso_approved',
+            'pending hard copy', 'Pending Hard Copy', 'pending_hard_copy', 'hard copy', 'Hard Copy',
+            'to forward', 'To Forward', 'to_forward'
+          ];
         } else if (isStaff) {
-          statusFilters = ['submitted', 'pending', 'oso staff review', 'OSO Staff Review', 'Submitted', 'Pending'];
+          statusFilters = [
+            'submitted', 'Submitted',
+            'pending', 'Pending',
+            'oso staff review', 'OSO Staff Review', 'oso_staff_review'
+          ];
         }
         
         if (statusFilters.length === 0) {
@@ -137,21 +148,24 @@ const Sidebar = ({ isOpen, onClose }) => {
     fetchCompletedCount();
     fetchMyDocsCount();
     
-    const handleInboxUpdate = () => fetchInboxCount();
-    const handleCompletedUpdate = () => fetchCompletedCount();
-    const handleMyDocsUpdate = () => fetchMyDocsCount();
     const handleGlobalStatusChange = () => {
+      if (!isMounted) return;
       fetchInboxCount();
       fetchCompletedCount();
       fetchMyDocsCount();
     };
 
-    window.addEventListener('inbox-updated', handleInboxUpdate);
-    window.addEventListener('completed-updated', handleCompletedUpdate);
-    window.addEventListener('my-docs-updated', handleMyDocsUpdate);
+    window.addEventListener('inbox-updated', handleGlobalStatusChange);
+    window.addEventListener('completed-updated', handleGlobalStatusChange);
+    window.addEventListener('my-docs-updated', handleGlobalStatusChange);
     window.addEventListener('document-status-changed', handleGlobalStatusChange);
     window.addEventListener('submission-submitted', handleGlobalStatusChange);
-    
+    window.addEventListener('focus', handleGlobalStatusChange);
+
+    const pollInterval = setInterval(() => {
+      handleGlobalStatusChange();
+    }, 6000);
+
     const channelId = `sidebar_realtime_${user.id}_${Math.random().toString(36).substring(2, 9)}`;
     const channel = supabase.channel(channelId)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'submissions' }, () => {
@@ -163,15 +177,21 @@ const Sidebar = ({ isOpen, onClose }) => {
       .on('broadcast', { event: 'inbox-update' }, () => {
         handleGlobalStatusChange();
       })
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          handleGlobalStatusChange();
+        }
+      });
 
     return () => {
       isMounted = false;
-      window.removeEventListener('inbox-updated', handleInboxUpdate);
-      window.removeEventListener('completed-updated', handleCompletedUpdate);
-      window.removeEventListener('my-docs-updated', handleMyDocsUpdate);
+      clearInterval(pollInterval);
+      window.removeEventListener('inbox-updated', handleGlobalStatusChange);
+      window.removeEventListener('completed-updated', handleGlobalStatusChange);
+      window.removeEventListener('my-docs-updated', handleGlobalStatusChange);
       window.removeEventListener('document-status-changed', handleGlobalStatusChange);
       window.removeEventListener('submission-submitted', handleGlobalStatusChange);
+      window.removeEventListener('focus', handleGlobalStatusChange);
       supabase.removeChannel(channel);
     };
   }, [user]);
@@ -287,38 +307,6 @@ const Sidebar = ({ isOpen, onClose }) => {
           <span className="font-medium">Logout</span>
         </button>
       </div>
-
-      {showLogoutConfirm && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl relative animate-in zoom-in-95 duration-200 text-gray-800">
-            <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-5">
-              <LogOut size={28} />
-            </div>
-            <h3 className="text-xl font-bold text-gray-800 mb-2">Confirm Logout</h3>
-            <p className="text-sm text-gray-500 mb-6">Are you sure you want to log out of your account?</p>
-            
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setShowLogoutConfirm(false)}
-                className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-600 font-bold rounded-xl hover:bg-gray-50 transition-all text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowLogoutConfirm(false);
-                  logout();
-                }}
-                className="flex-1 px-4 py-2.5 bg-red-600 text-white font-bold rounded-xl shadow-lg hover:shadow-red-600/20 transition-all text-sm"
-              >
-                Logout
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 
@@ -340,6 +328,40 @@ const Sidebar = ({ isOpen, onClose }) => {
             {sidebarContent}
           </div>
         </div>
+      )}
+
+      {/* Global Top-Level Logout Modal (Portaled to document.body) */}
+      {showLogoutConfirm && createPortal(
+        <div className="fixed inset-0 bg-slate-900/75 backdrop-blur-md z-[999999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl relative animate-in zoom-in-95 duration-200 text-gray-800 border border-gray-100">
+            <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-5 border border-red-100">
+              <LogOut size={28} />
+            </div>
+            <h3 className="text-xl font-black text-gray-800 mb-2">Confirm Logout</h3>
+            <p className="text-sm font-bold text-gray-500 mb-6">Are you sure you want to log out of your account?</p>
+            
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowLogoutConfirm(false)}
+                className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-600 font-bold rounded-xl hover:bg-gray-50 transition-all text-sm uppercase tracking-wider"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLogoutConfirm(false);
+                  logout();
+                }}
+                className="flex-1 px-4 py-2.5 bg-red-600 text-white font-bold rounded-xl shadow-lg hover:bg-red-700 hover:shadow-red-600/30 transition-all text-sm uppercase tracking-wider"
+              >
+                Logout
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </>
   );

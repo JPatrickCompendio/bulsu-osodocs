@@ -1058,8 +1058,11 @@ export const MyDocuments = () => {
       setLoading(true);
       let data = [];
 
-      // Org President view: show their own submissions (not only their logs)
-      if (String(user?.role || '').toLowerCase() === 'org-president') {
+      // Org President view: show their own submissions (including drafts)
+      const userRoleNorm = String(user?.role || '').toLowerCase().replace(/[_-]/g, ' ').trim();
+      const isOrgPres = userRoleNorm === 'org president' || userRoleNorm === 'student';
+
+      if (isOrgPres) {
         const { data: subs, error: subsErr } = await supabase
           .from('submissions')
           .select(`
@@ -1110,6 +1113,7 @@ export const MyDocuments = () => {
         return;
       }
 
+      // Reviewers (OSO Staff / Admin): exclude drafts from query entirely
       const { data: subs, error: subsErr } = await supabase
         .from('submissions')
         .select(`
@@ -1124,11 +1128,15 @@ export const MyDocuments = () => {
             submission_attachments (*, requirements(*))
           )
         `)
+        .neq('status', 'draft')
         .order('created_at', { ascending: false });
 
       if (subsErr) throw subsErr;
 
-      const activeSubs = (subs || []).filter((sub) => String(sub.status || '').toLowerCase() !== 'completed');
+      const activeSubs = (subs || []).filter((sub) => {
+        const s = String(sub.status || '').toLowerCase().trim();
+        return s !== 'completed' && !s.includes('draft');
+      });
 
       data = activeSubs.map((sub) => {
         const logs = (sub.submission_logs || []).filter(l => l.action_type !== 'viewed');
@@ -1928,14 +1936,65 @@ export const MyDocuments = () => {
   // Filter items matching activeTab & searchQuery
   const query = searchQuery.toLowerCase().trim();
   const visibleDocs = mappedDocs.filter(doc => {
-    // Chairman should handle newly resubmitted ("OSO Staff review") items in Inbox, not My Documents.
-    if (user?.role === 'chairman' && doc.category === 'OSO Staff review') {
-      return false;
-    }
     // Completed and disapproved documents live on the Completed page.
     if (doc.category === 'Completed' || doc.category === 'Disapproved') {
       return false;
     }
+
+    const rawStatusLower = String(doc.raw?.status || doc.status || '').toLowerCase().replace(/[_-]/g, ' ').trim();
+    const userRoleNorm = String(user?.role || '').toLowerCase().replace(/[_-]/g, ' ').trim();
+    const isSubmitterMe = Boolean(doc.raw?.user_id && user?.id && String(doc.raw.user_id) === String(user.id));
+    const isOsoStaffRole = userRoleNorm === 'chairman' || userRoleNorm === 'vice chairman' || userRoleNorm === 'oso staff';
+    const isAdminRole = userRoleNorm === 'admin' || userRoleNorm === 'sds coordinator';
+    const isDraftDoc =
+      rawStatusLower.includes('draft') ||
+      String(doc.category || '').toLowerCase().includes('draft') ||
+      String(doc.status || '').toLowerCase().includes('draft') ||
+      String(doc.raw?.status || '').toLowerCase().includes('draft') ||
+      doc.ref === 'DRAFT';
+
+    // Draft documents are private to the author who created them (isSubmitterMe) -> hide from OSO Staff & Admin
+    if (isDraftDoc && !isSubmitterMe) {
+      return false;
+    }
+
+    if (isOsoStaffRole) {
+      // Items pending in OSO Staff's Inbox belong in Inbox, not My Documents
+      const isOsoStaffInboxItem =
+        rawStatusLower === 'submitted' ||
+        rawStatusLower === 'pending' ||
+        rawStatusLower === 'oso staff review' ||
+        rawStatusLower === 'oso staff';
+
+      if (isOsoStaffInboxItem) {
+        return false;
+      }
+    }
+
+    if (isAdminRole) {
+      // 1. Items still under OSO Staff Review have not reached Admin yet -> hide from Admin's My Documents
+      const isPreAdminItem =
+        rawStatusLower === 'submitted' ||
+        rawStatusLower === 'pending' ||
+        rawStatusLower === 'oso staff review' ||
+        rawStatusLower === 'oso staff' ||
+        rawStatusLower === 'draft';
+
+      if (isPreAdminItem) {
+        return false;
+      }
+
+      // 2. Items currently pending in Admin's Inbox belong in Inbox, not My Documents
+      const isAdminInboxItem =
+        rawStatusLower === 'sds coordinator review' ||
+        rawStatusLower === 'sds review' ||
+        rawStatusLower === 'oso approved';
+
+      if (isAdminInboxItem) {
+        return false;
+      }
+    }
+
     return true;
   });
 
@@ -2357,6 +2416,7 @@ export const MyDocuments = () => {
       return returnedForDisplay;
     });
     const hasLocallyReturnedAttachments = Object.keys(locallyReturned).length > 0;
+    const hasReturnedAttachments = hasBlockingReturnedAttachments || hasLocallyReturnedAttachments;
     const isLatestVersion = currentVersion?.id === selectedDoc.raw?.current_version_id;
     const disableVersionActions = !isLatestVersion;
 
@@ -3023,8 +3083,9 @@ export const MyDocuments = () => {
                           setReturnComments('');
                           setIsReturnModalOpen(true);
                         }}
-                        disabled={loading}
-                        className="w-full px-5 py-3.5 bg-green-700 text-white rounded-xl text-sm font-semibold hover:bg-green-800 transition-all shadow-sm flex items-center justify-center gap-2"
+                        disabled={loading || hasBlockingReturnedAttachments || hasLocallyReturnedAttachments}
+                        title={(hasBlockingReturnedAttachments || hasLocallyReturnedAttachments) ? "Approve is disabled because one or more attached files are returned for revision." : ""}
+                        className={`w-full px-5 py-3.5 bg-green-700 text-white rounded-xl text-sm font-semibold transition-all shadow-sm flex items-center justify-center gap-2 ${(hasBlockingReturnedAttachments || hasLocallyReturnedAttachments) ? 'opacity-40 cursor-not-allowed' : 'hover:bg-green-800'}`}
                       >
                         <CheckCircle size={16} />
                         <span>Verify & Approve Hard Copy</span>
@@ -3035,8 +3096,9 @@ export const MyDocuments = () => {
                           setReturnComments('');
                           setIsReturnModalOpen(true);
                         }}
-                        disabled={loading}
-                        className="w-full px-5 py-3.5 bg-amber-600 text-white rounded-xl text-sm font-semibold hover:bg-amber-700 transition-all shadow-sm flex items-center justify-center gap-2"
+                        disabled={loading || !hasReturnedAttachments || allFilesApproved}
+                        title={allFilesApproved ? "All attachments are approved. Click Approve to proceed." : (!hasReturnedAttachments ? "Return is disabled because no attached file is marked as returned." : "")}
+                        className={`w-full px-5 py-3.5 bg-amber-600 text-white rounded-xl text-sm font-semibold transition-all shadow-sm flex items-center justify-center gap-2 ${(!hasReturnedAttachments || allFilesApproved) ? 'opacity-40 cursor-not-allowed' : 'hover:bg-amber-700'}`}
                       >
                         <RotateCcw size={16} />
                         <span>Return</span>
@@ -4114,6 +4176,22 @@ export const MyDocuments = () => {
 
           if (!canViewActions) return null;
 
+          const currentAttachments = attachments || selectedDoc?.attachments || currentVersion?.submission_attachments || [];
+          const allFilesApproved = currentAttachments.length > 0 && currentAttachments.every((file) => {
+            const { isApproved } = getAttachmentReviewDisplay(
+              file,
+              selectedDoc,
+              currentVersion,
+              allVersions,
+              timelineLogs,
+              locallyApproved,
+              locallyReturned,
+              user
+            );
+            return isApproved;
+          });
+          const canReturn = hasReturnedAttachments && !allFilesApproved;
+
           const buttons = [];
 
           if (currentStage === 'MAIN_CAMPUS_REVIEW') {
@@ -4126,7 +4204,9 @@ export const MyDocuments = () => {
                     setReturnComments('');
                     setIsReturnModalOpen(true);
                   }}
-                  className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-green-700 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-tight sm:tracking-widest shrink-0"
+                  disabled={hasBlockingReturnedAttachments || hasLocallyReturnedAttachments}
+                  title={(hasBlockingReturnedAttachments || hasLocallyReturnedAttachments) ? "Approve is disabled because one or more attached files are returned for revision." : ""}
+                  className={`flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-green-700 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl transition-all shadow-lg shadow-green-700/20 uppercase tracking-tight sm:tracking-widest shrink-0 ${(hasBlockingReturnedAttachments || hasLocallyReturnedAttachments) ? 'opacity-40 cursor-not-allowed' : 'hover:scale-105 active:scale-95'}`}
                 >
                   <CheckCircle size={15} />
                   <span>Approve</span>
@@ -4138,7 +4218,9 @@ export const MyDocuments = () => {
                     setReturnComments('');
                     setIsReturnModalOpen(true);
                   }}
-                  className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-amber-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-amber-600/20 uppercase tracking-tight sm:tracking-widest shrink-0"
+                  disabled={!canReturn}
+                  title={allFilesApproved ? "All attachments are approved. Click Approve to proceed." : (!hasReturnedAttachments ? "Return is disabled because no attached file is marked as returned." : "")}
+                  className={`flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-amber-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl transition-all shadow-lg shadow-amber-600/20 uppercase tracking-tight sm:tracking-widest shrink-0 ${!canReturn ? 'opacity-40 cursor-not-allowed' : 'hover:scale-105 active:scale-95'}`}
                 >
                   <RotateCcw size={15} />
                   <span>Return</span>
@@ -4168,7 +4250,9 @@ export const MyDocuments = () => {
                       setReturnComments('');
                       setIsReturnModalOpen(true);
                     }}
-                    className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-green-700 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-green-700/20 uppercase tracking-tight sm:tracking-widest shrink-0"
+                    disabled={hasBlockingReturnedAttachments || hasLocallyReturnedAttachments}
+                    title={(hasBlockingReturnedAttachments || hasLocallyReturnedAttachments) ? "Approve is disabled because one or more attached files are returned for revision." : ""}
+                    className={`flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-green-700 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl transition-all shadow-lg shadow-green-700/20 uppercase tracking-tight sm:tracking-widest shrink-0 ${(hasBlockingReturnedAttachments || hasLocallyReturnedAttachments) ? 'opacity-40 cursor-not-allowed' : 'hover:scale-105 active:scale-95'}`}
                   >
                     <CheckCircle size={15} />
                     <span>Verify & Approve Hard Copy</span>
@@ -4180,7 +4264,9 @@ export const MyDocuments = () => {
                       setReturnComments('');
                       setIsReturnModalOpen(true);
                     }}
-                    className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-amber-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-amber-600/20 uppercase tracking-tight sm:tracking-widest shrink-0"
+                    disabled={!canReturn}
+                    title={allFilesApproved ? "All attachments are approved. Click Approve to proceed." : (!hasReturnedAttachments ? "Return is disabled because no attached file is marked as returned." : "")}
+                    className={`flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-amber-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl transition-all shadow-lg shadow-amber-600/20 uppercase tracking-tight sm:tracking-widest shrink-0 ${!canReturn ? 'opacity-40 cursor-not-allowed' : 'hover:scale-105 active:scale-95'}`}
                   >
                     <RotateCcw size={15} />
                     <span>Return</span>
@@ -4308,19 +4394,6 @@ export const MyDocuments = () => {
             buttonLabels: buttons.map(b => b?.key || 'button'),
           });
 
-          const currentAttachments = attachments || selectedDoc?.attachments || currentVersion?.submission_attachments || [];
-          const allFilesApproved = currentAttachments.length > 0 && currentAttachments.every((file) => {
-            if (locallyReturned[file.id]) return false;
-            const fileLog = (timelineLogs || []).find((l) => l.attachment_id === file.id || (l.comment && l.comment.includes(file.file_name)));
-            const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
-            if (RETURN_REASONS.includes(reviewActionValue)) return false;
-
-            return (
-              locallyApproved.includes(file.id) ||
-              reviewActionValue === 'approved'
-            );
-          });
-
           if (!isDeanApprovedDoc && buttons.length === 0 && !isSdsHardcopyApprovedLog && docStatusLower !== 'ready for retrieval' && (selectedDoc?.category === 'Pending Hard Copy' || selectedDoc?.category === 'Hard Copy' || selectedDoc?.category === 'To Forward' || (selectedDoc?.raw?.status || selectedDoc?.status || '').toLowerCase().includes('forward'))) {
             buttons.push(
               <button
@@ -4343,9 +4416,9 @@ export const MyDocuments = () => {
                   setReturnComments('');
                   setIsReturnModalOpen(true);
                 }}
-                disabled={allFilesApproved}
-                title={allFilesApproved ? "All attachments are approved. Click Approve to proceed." : ""}
-                className={`flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-amber-500 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl transition-all shadow-lg shadow-amber-500/20 uppercase tracking-tight sm:tracking-widest shrink-0 ${allFilesApproved ? 'opacity-40 cursor-not-allowed' : 'hover:scale-105 active:scale-95'
+                disabled={!canReturn}
+                title={allFilesApproved ? "All attachments are approved. Click Approve to proceed." : (!hasReturnedAttachments ? "Return is disabled because no attached file is marked as returned." : "")}
+                className={`flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-amber-500 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl transition-all shadow-lg shadow-amber-500/20 uppercase tracking-tight sm:tracking-widest shrink-0 ${!canReturn ? 'opacity-40 cursor-not-allowed' : 'hover:scale-105 active:scale-95'
                   }`}
               >
                 <RotateCcw size={15} />
@@ -4386,9 +4459,9 @@ export const MyDocuments = () => {
                   setReturnComments('');
                   setIsReturnModalOpen(true);
                 }}
-                disabled={allFilesApproved}
-                title={allFilesApproved ? "All attachments are approved. Click Approve to proceed." : ""}
-                className={`flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-amber-500 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl transition-all shadow-lg shadow-amber-500/20 uppercase tracking-tight sm:tracking-widest shrink-0 ${allFilesApproved ? 'opacity-40 cursor-not-allowed' : 'hover:scale-105 active:scale-95'
+                disabled={!canReturn}
+                title={allFilesApproved ? "All attachments are approved. Click Approve to proceed." : (!hasReturnedAttachments ? "Return is disabled because no attached file is marked as returned." : "")}
+                className={`flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-amber-500 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl transition-all shadow-lg shadow-amber-500/20 uppercase tracking-tight sm:tracking-widest shrink-0 ${!canReturn ? 'opacity-40 cursor-not-allowed' : 'hover:scale-105 active:scale-95'
                   }`}
               >
                 <RotateCcw size={15} />
@@ -4439,52 +4512,58 @@ export const MyDocuments = () => {
             (RETURN_REASONS.includes(String(fileLog?.review_action || '').toLowerCase()) ? fileLog : null);
 
           return (
-            <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-300">
-              <div className="bg-white rounded-3xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300">
+            <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[9999] flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-300">
+              <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-5xl h-[92vh] md:h-[85vh] flex flex-col overflow-hidden shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300">
                 {/* Header */}
-                <div className="bg-gray-50 border-b border-gray-100 px-8 py-5 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
-                      <Paperclip size={20} />
+                <div className="bg-gray-50 border-b border-gray-100 px-4 sm:px-8 py-3.5 sm:py-5 flex items-center justify-between shrink-0">
+                  <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 pr-2">
+                    <div className="w-8 h-8 sm:w-10 sm:h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 shrink-0">
+                      <Paperclip size={18} className="sm:w-5 sm:h-5" />
                     </div>
-                    <div>
-                      <h3 className="font-bold text-gray-800 text-lg">{previewFile.file_name || 'Attached File'}</h3>
-                      <p className="text-gray-400 text-xs font-medium">Verify Document Attachment</p>
+                    <div className="min-w-0">
+                      <h3 className="font-bold text-gray-800 text-sm sm:text-lg truncate">{previewFile.file_name || 'Attached File'}</h3>
+                      <p className="text-gray-400 text-[10px] sm:text-xs font-medium">Verify Document Attachment</p>
                     </div>
                   </div>
                   <button
                     onClick={() => setPreviewFile(null)}
-                    className="p-2.5 hover:bg-gray-200 rounded-full transition-colors text-gray-400 hover:text-gray-800"
+                    className="p-2 sm:p-2.5 hover:bg-gray-200 rounded-full transition-colors text-gray-400 hover:text-gray-800 shrink-0"
                   >
-                    <X size={20} />
+                    <X size={18} className="sm:w-5 sm:h-5" />
                   </button>
                 </div>
 
                 {/* Body */}
-                <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+                <div className="flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
                   {/* Left Side: Preview iframe */}
-                  <div className="flex-1 bg-gray-100 p-6 flex flex-col h-full overflow-hidden border-r border-gray-100">
-                    <div className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-200/50 relative">
+                  <div className="flex-1 bg-gray-100 p-3 sm:p-6 flex flex-col h-[65vh] md:h-full min-h-[380px] md:min-h-0 overflow-hidden border-b md:border-b-0 md:border-r border-gray-200 shrink-0 md:shrink">
+                    <div className="flex-1 bg-white rounded-xl sm:rounded-2xl overflow-y-auto -webkit-overflow-scrolling-touch touch-pan-y shadow-sm border border-gray-200/50 relative h-full w-full">
                       {previewFile.file_name?.toLowerCase().includes('.pdf') || previewFile.file_url?.toLowerCase().includes('.pdf') ? (
-                        <iframe
-                          src={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=Fit` : null}
-                          className="w-full h-full border-0 rounded-2xl"
-                          title="PDF Preview"
-                        />
+                        <object
+                          data={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=FitH` : null}
+                          type="application/pdf"
+                          className="w-full h-full min-h-full border-0 rounded-xl sm:rounded-2xl relative z-10 pointer-events-auto touch-pan-y"
+                        >
+                          <iframe
+                            src={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=FitH` : null}
+                            className="w-full h-full min-h-full border-0 rounded-xl sm:rounded-2xl relative z-10 pointer-events-auto touch-pan-y"
+                            title="PDF Preview"
+                          />
+                        </object>
                       ) : previewFile.file_name?.toLowerCase().includes('.docx') || previewFile.file_url?.toLowerCase().includes('.docx') ? (
                         <iframe
                           src={filePreviewUrl ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(filePreviewUrl)}` : null}
-                          className="w-full h-full border-0 rounded-2xl"
+                          className="w-full h-full min-h-full border-0 rounded-xl sm:rounded-2xl relative z-10 pointer-events-auto touch-pan-y"
                           title="Word Preview"
                         />
                       ) : (
                         <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
-                          <FileText size={48} className="text-gray-300 mb-4 animate-bounce" />
-                          <h4 className="font-bold text-gray-700 mb-1">Preview is not supported for this file type</h4>
-                          <p className="text-gray-400 text-xs max-w-xs mb-4">You can download it to view locally on your device.</p>
+                          <FileText size={44} className="text-gray-300 mb-3 animate-bounce" />
+                          <h4 className="font-bold text-gray-700 text-xs sm:text-sm mb-1">Preview is not supported for this file type</h4>
+                          <p className="text-gray-400 text-[10px] sm:text-xs max-w-xs mb-4">You can download it to view locally on your device.</p>
                           <button
                             onClick={() => handleDownload(previewFile.file_url, previewFile.file_name || 'Attached File')}
-                            className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-md inline-flex items-center gap-2"
+                            className="bg-indigo-600 text-white px-5 py-2 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-md inline-flex items-center gap-2"
                           >
                             Download Attachment
                           </button>
@@ -4493,7 +4572,7 @@ export const MyDocuments = () => {
                     </div>
                   </div>
 
-                  <div className="w-full md:w-96 bg-white p-8 flex flex-col justify-between overflow-y-auto border-t md:border-t-0 border-gray-100">
+                  <div className="w-full md:w-96 bg-white p-4 sm:p-8 flex flex-col justify-between overflow-y-auto shrink-0 md:shrink">
                     <div className="space-y-6">
                       <div>
                         <h4 className="font-bold text-gray-800 text-base mb-1">Attachment Review Panel</h4>
@@ -5263,16 +5342,20 @@ export const MyDocuments = () => {
                               subLabelColorClass = 'text-amber-500 animate-pulse';
                             }
                           } else {
-                            // For all other stage tabs (e.g. Main Campus Review, OSO Staff review, etc.)
+                            // For all other stage tabs (e.g. Main Campus Review, OSO Staff review, Drafts, etc.)
                             if (rawStatusLower.includes('approved') || rawStatusLower.includes('vice chairman approved')) {
                               subLabelText = 'APPROVED';
                               subLabelColorClass = 'text-emerald-600';
-                            } else if (rawStatusLower.includes('returned')) {
+                            } else if (rawStatusLower.includes('returned') || rawStatusLower === 'draft' || rawStatusLower.includes('draft')) {
                               subLabelText = null;
                             } else {
                               subLabelText = 'PENDING';
                               subLabelColorClass = 'text-amber-500 animate-pulse';
                             }
+                          }
+
+                          if (rawStatusLower === 'draft' || rawStatusLower.includes('draft')) {
+                            subLabelText = null;
                           }
 
                           const badgeColor = getStatusColor(stageText);

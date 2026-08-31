@@ -18,6 +18,7 @@ import { SchoolYearModal } from '../components/academic/SchoolYearModal';
 import { SemesterModal } from '../components/academic/SemesterModal';
 import { EventModal } from '../components/academic/EventModal';
 import { ArchiveConfirmModal } from '../components/academic/ArchiveConfirmModal';
+import { CloseConfirmModal } from '../components/academic/CloseConfirmModal';
 
 const AcademicSettings = () => {
   const { user } = useAuth();
@@ -46,6 +47,7 @@ const AcademicSettings = () => {
   });
 
   const [archiveModal, setArchiveModal] = useState({ show: false, sy: null });
+  const [closeModal, setCloseModal] = useState({ show: false, sy: null });
 
   useEffect(() => {
     fetchData();
@@ -157,8 +159,12 @@ const AcademicSettings = () => {
     }
   };
 
+  const handleOpenCloseModal = (sy) => {
+    setCloseModal({ show: true, sy });
+  };
+
   const closeSchoolYearSubmissions = async (sy) => {
-    if (!window.confirm(`Are you sure you want to close submissions for ${sy.name}?`)) return;
+    if (!sy) return;
     try {
       const payload = { ...sy, is_closed: true };
       const res = await apiFetch(`/api/school-years/${sy.id}`, {
@@ -167,6 +173,7 @@ const AcademicSettings = () => {
       });
       if (res.ok) {
         showMessage(`Submissions for ${sy.name} are now CLOSED.`);
+        setCloseModal({ show: false, sy: null });
         fetchData();
       }
     } catch (err) {
@@ -488,7 +495,7 @@ const AcademicSettings = () => {
                   setSyForm(sy);
                   setShowSyModal(true);
                 }}
-                onCloseSubmissions={closeSchoolYearSubmissions}
+                onCloseSubmissions={handleOpenCloseModal}
               />
 
               <LifecycleLegend />
@@ -505,7 +512,7 @@ const AcademicSettings = () => {
                   setSyForm(sy);
                   setShowSyModal(true);
                 }}
-                onClose={closeSchoolYearSubmissions}
+                onClose={handleOpenCloseModal}
                 onArchive={(sy) => setArchiveModal({ show: true, sy })}
                 onDelete={deleteSchoolYear}
               />
@@ -595,6 +602,13 @@ const AcademicSettings = () => {
         onClose={() => setArchiveModal({ show: false, sy: null })}
         onConfirm={confirmArchiveSchoolYear}
         targetSy={archiveModal.sy}
+      />
+
+      <CloseConfirmModal
+        isOpen={closeModal.show}
+        onClose={() => setCloseModal({ show: false, sy: null })}
+        onConfirm={closeSchoolYearSubmissions}
+        targetSy={closeModal.sy}
       />
     </div>
   );

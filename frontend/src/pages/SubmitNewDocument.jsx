@@ -665,17 +665,13 @@ const SubmitNewDocument = () => {
           }
         } else {
           if (!sched.start_time) {
-            missing.push({ field: `${schedLabel} Start Time`, message: 'Please specify the start time (including hour, minute, and AM/PM).' });
+            missing.push({ field: `${schedLabel} Start Time`, message: 'Please specify the start time.' });
           }
           if (!sched.is_indefinite) {
             if (!sched.end_time) {
-              missing.push({ field: `${schedLabel} End Time`, message: 'Please specify the end time (including hour, minute, and AM/PM) or select "Indefinite".' });
-            } else if (sched.start_time && sched.end_time) {
-              const start = new Date(`1970-01-01T${sched.start_time}`);
-              const end = new Date(`1970-01-01T${sched.end_time}`);
-              if (end <= start) {
-                missing.push({ field: `${schedLabel} Time Range`, message: 'End time must be later than start time.' });
-              }
+              missing.push({ field: `${schedLabel} End Time`, message: 'Please specify the end time or select "Indefinite".' });
+            } else if (sched.start_time && sched.end_time && sched.start_time === sched.end_time) {
+              missing.push({ field: `${schedLabel} Time Range`, message: 'End time cannot be the exact same as start time.' });
             }
           }
         }
@@ -713,7 +709,8 @@ const SubmitNewDocument = () => {
     if (missing.length > 0) {
       setShowValidationHighlights(true);
       if (typeof showToast === 'function') {
-        showToast('Please fill in all highlighted required fields before proceeding.', 'error');
+        const firstErr = missing[0];
+        showToast(`${firstErr.field}: ${firstErr.message}`, 'error');
       }
       setTimeout(() => {
         const firstSkipped = document.querySelector('.skipped-field-highlight');
@@ -1392,20 +1389,8 @@ const SubmitNewDocument = () => {
     (existingAttachments || []).forEach(att => {
       if (att.requirement_id) ids.add(String(att.requirement_id));
     });
-    const isProposal = selectedType?.name?.toLowerCase().includes('activity proposal');
-    if (isProposal) {
-      const proposalReq = requirements.find(r => 
-        r.id === 78 || 
-        String(r.referenceCode || '').toLowerCase().includes('02f1') || 
-        String(r.title || '').toLowerCase().includes('02f1') || 
-        String(r.title || '').toLowerCase().includes('activity proposal form')
-      );
-      if (proposalReq) {
-        ids.add(String(proposalReq.id));
-      }
-    }
     return ids;
-  }, [localFiles, existingAttachments, selectedType, requirements]);
+  }, [localFiles, existingAttachments]);
 
   const isAllRequiredAttached = useMemo(() => {
     const docTypeName = (selectedType?.name || '').toLowerCase();
@@ -1426,18 +1411,8 @@ const SubmitNewDocument = () => {
 
     if (requiredReqs.length === 0) return true;
 
-    return requiredReqs.every(r => {
-      const code = String(r.referenceCode || '').toLowerCase();
-      const title = String(r.title || '').toLowerCase();
-      const is02F1 = r.id === 78 || code.includes('02f1') || title.includes('02f1') || title.includes('activity proposal form');
-
-      if (is02F1) {
-        return hasDownloadedProposal || Boolean(proposalDetails?.activity_title?.trim());
-      }
-
-      return attachedRequirementIds.has(String(r.id));
-    });
-  }, [selectedType, requirements, attachedRequirementIds, proposalDetails, hasDownloadedProposal]);
+    return requiredReqs.every(r => attachedRequirementIds.has(String(r.id)));
+  }, [selectedType, requirements, attachedRequirementIds]);
 
   const isResubmitDisabled = useMemo(() => {
     if (isSaving) return true;
@@ -1960,8 +1935,15 @@ const SubmitNewDocument = () => {
     <div className={`space-y-4 ${isModal ? '' : 'w-full max-w-5xl mx-auto'}`}>
       {requirements.map((req, i) => {
         const existing = existingAttachmentMap[req.id];
-        const isApprovedReq = isReturnedDocument && approvedReqIds.has(req.id);
-        const isReturnedReq = isReturnedDocument && (returnedReqIds.has(req.id) || !isApprovedReq);
+        const isApprovedReq = isReturnedDocument && (approvedReqIds.has(req.id) || approvedReqIds.has(String(req.id)) || approvedReqIds.has(Number(req.id)));
+        const isReturnedReq = isReturnedDocument && (returnedReqIds.has(req.id) || returnedReqIds.has(String(req.id)) || returnedReqIds.has(Number(req.id)));
+        const isOptionalReq =
+          req?.is_optional === true ||
+          String(req?.is_optional).toLowerCase() === 'true' ||
+          req?.is_required === false ||
+          String(req?.is_required).toLowerCase() === 'false' ||
+          String(req?.title || '').toLowerCase().includes('(optional)') ||
+          String(req?.requirement_type || '').toLowerCase() === 'optional';
 
         return (
           <div key={req.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 bg-white rounded-xl shadow-sm border border-gray-100 hover:border-amber-200 transition-all">
@@ -1988,8 +1970,10 @@ const SubmitNewDocument = () => {
                       Returned (Action Required)
                     </span>
                   )}
-                  {(req.is_optional === true || String(req.is_optional) === 'true') && !isReturnedDocument && (
-                    <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 text-[9px] font-black uppercase rounded">Optional</span>
+                  {isOptionalReq && (
+                    <span className="px-2.5 py-0.5 bg-yellow-100 text-yellow-800 text-[9px] font-black uppercase rounded border border-yellow-200">
+                      Optional
+                    </span>
                   )}
                 </div>
                 <h4 className="text-sm font-black text-gray-800 leading-tight uppercase">
