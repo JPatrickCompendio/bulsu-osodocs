@@ -4226,7 +4226,7 @@ export const MyDocuments = () => {
                 );
               }
             }
-          } else if (isDeanApprovedDoc || currentStage === 'FINAL_LOCAL_CAMPUS_REVIEW') {
+          } else if (isDeanApprovedDoc) {
             buttons.push(
               <button
                 key="send-external"
@@ -4353,7 +4353,7 @@ export const MyDocuments = () => {
                 <span>Disapprove</span>
               </button>
             );
-          } else if (!isDeanApprovedDoc && buttons.length === 0 && (selectedDoc?.category === 'Final In-Campus review' || selectedDoc?.category === 'Dean Review' || selectedDoc?.category === 'SDS Review' || selectedDoc?.category === 'Main Campus Review')) {
+          } else if (!isDeanApprovedDoc && buttons.length === 0 && (selectedDoc?.category === 'Final In-Campus review' || selectedDoc?.category === 'Dean Review' || selectedDoc?.category === 'SDS Review' || selectedDoc?.category === 'Main Campus Review' || currentStage === 'FINAL_LOCAL_CAMPUS_REVIEW')) {
             buttons.push(
               <button
                 key="review-approve"
