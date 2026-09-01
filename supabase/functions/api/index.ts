@@ -430,7 +430,7 @@ async function handleGetUsers() {
 
   const { data: submissionRecords } = await supabase
     .from('submissions')
-    .select('user_id, created_by, submitted_by, organization_id')
+    .select('user_id, organization_id')
     .limit(10000);
 
   const { data: logRecords } = await supabase
@@ -441,8 +441,6 @@ async function handleGetUsers() {
   const usersWithSubmissions = new Set<string>();
   (submissionRecords || []).forEach((s: any) => {
     if (s.user_id) usersWithSubmissions.add(String(s.user_id));
-    if (s.created_by) usersWithSubmissions.add(String(s.created_by));
-    if (s.submitted_by) usersWithSubmissions.add(String(s.submitted_by));
     if (s.organization_id) usersWithSubmissions.add(String(s.organization_id));
   });
   (logRecords || []).forEach((l: any) => {
@@ -471,7 +469,7 @@ async function handleGetUserDetail(id: string, url?: URL) {
   const { data: submissionRecords } = await supabase
     .from('submissions')
     .select('id')
-    .or(`user_id.eq.${id},created_by.eq.${id},submitted_by.eq.${id}${orgId ? `,organization_id.eq.${orgId}` : ''}`)
+    .or(`user_id.eq.${id}${orgId ? `,organization_id.eq.${orgId}` : ''}`)
     .limit(1);
 
   const hasSubmissions = (submissionRecords && submissionRecords.length > 0) || false;
@@ -1016,7 +1014,7 @@ async function handleDeleteUsers(id: string, body: Record<string, unknown>) {
   const { data: userRec } = await supabase.from('users').select('organization_id').eq('id', id).maybeSingle();
   const orgId = userRec?.organization_id;
 
-  let orFilter = `user_id.eq.${id},created_by.eq.${id},submitted_by.eq.${id}`;
+  let orFilter = `user_id.eq.${id}`;
   if (orgId) {
     orFilter += `,organization_id.eq.${orgId}`;
   }
@@ -1186,7 +1184,7 @@ async function handleGetOrganizationsByAy(url: URL) {
 
   const { data: submissionRecords } = await supabase
     .from('submissions')
-    .select('user_id, created_by, submitted_by, organization_id')
+    .select('user_id, organization_id')
     .limit(10000);
 
   const { data: logRecords } = await supabase
@@ -1197,8 +1195,6 @@ async function handleGetOrganizationsByAy(url: URL) {
   const usersWithSubmissions = new Set<string>();
   (submissionRecords || []).forEach((s: any) => {
     if (s.user_id) usersWithSubmissions.add(String(s.user_id));
-    if (s.created_by) usersWithSubmissions.add(String(s.created_by));
-    if (s.submitted_by) usersWithSubmissions.add(String(s.submitted_by));
     if (s.organization_id) usersWithSubmissions.add(String(s.organization_id));
   });
   (logRecords || []).forEach((l: any) => {
