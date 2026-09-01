@@ -241,13 +241,23 @@ const DocumentTypeSettings = () => {
           return;
         }
       } else if (target.type === 'subtype') {
-        const { count, error } = await supabase
-          .from('activity_proposal_details')
+        const { count: subCount, error: subErr } = await supabase
+          .from('submissions')
           .select('*', { count: 'exact', head: true })
           .eq('subtype_id', target.item.id);
-        if (error) throw error;
-        if (count > 0) {
-          showToast(`Cannot delete subtype because it has ${count} existing submission(s)`, 'error');
+        if (subErr) throw subErr;
+        if (subCount > 0) {
+          showToast(`Cannot delete subtype because it has ${subCount} existing submission(s)`, 'error');
+          return;
+        }
+
+        const { count: reqCount, error: reqErr } = await supabase
+          .from('requirements')
+          .select('*', { count: 'exact', head: true })
+          .eq('subtype_id', target.item.id);
+        if (reqErr) throw reqErr;
+        if (reqCount > 0) {
+          showToast(`Cannot delete subtype because it is assigned to ${reqCount} requirement(s)`, 'error');
           return;
         }
       } else {
@@ -263,8 +273,9 @@ const DocumentTypeSettings = () => {
       }
       setDeleteTarget(target);
       setAdminPassword('');
-    } catch {
-      showToast('Error checking usage', 'error');
+    } catch (err) {
+      console.error('Error checking usage:', err);
+      showToast(err?.message || 'Error checking usage', 'error');
     }
   };
 
@@ -755,7 +766,7 @@ const DocumentTypeSettings = () => {
       )}
 
       {deleteTarget && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setDeleteTarget(null)} />
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl relative z-10 overflow-hidden">
             <div className="p-8 text-center">
