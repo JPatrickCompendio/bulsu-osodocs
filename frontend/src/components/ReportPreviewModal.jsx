@@ -299,7 +299,7 @@ const ReportPreviewModal = ({
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
       doc.text('BUSTOS CAMPUS', 27, 15);
-      doc.text('OFFICE OF STUDENT ORGANIZATIONS (OSODOCS)', 27, 18.5);
+      doc.text('OFFICE OF STUDENT ORGANIZATIONS (OSOADOCS)', 27, 18.5);
       
       // Decorative Header line
       doc.setDrawColor(16, 82, 32);
@@ -312,7 +312,7 @@ const ReportPreviewModal = ({
 
       doc.setFontSize(7.5);
       doc.setTextColor(156, 163, 175);
-      doc.text('BulSU Bustos OSODOCS System-generated Report', 10, 285);
+      doc.text('BulSU Bustos OSOADOCS System-generated Report', 10, 285);
       doc.text(`Page ${i} of ${pageCount}`, 200, 285, { align: 'right' });
     }
 
@@ -387,7 +387,7 @@ const ReportPreviewModal = ({
                 <div>
                   <h1 className="text-primary-green font-black text-base uppercase tracking-wide leading-tight">Bulacan State University</h1>
                   <p className="text-gray-600 font-bold text-xs">BUSTOS CAMPUS</p>
-                  <p className="text-gray-500 font-medium text-[11px] uppercase tracking-wider">Office of Student Organizations (OSODOCS)</p>
+                  <p className="text-gray-500 font-medium text-[11px] uppercase tracking-wider">Office of Student Organizations (OSOADOCS)</p>
                 </div>
               </div>
 
@@ -433,12 +433,15 @@ const ReportPreviewModal = ({
                 </div>
               )}
 
-              <div className="mb-8">
-                <table className={`w-full text-left border-collapse text-xs border border-gray-200 ${tableHeaders.length === 2 ? 'table-fixed' : ''}`}>
+              <div className="mb-8 overflow-x-auto rounded-lg border border-gray-200">
+                <table className="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr className="bg-[#073c2d] text-white font-bold">
                       {tableHeaders.map((head, idx) => (
-                        <th key={idx} className="px-4 py-2.5 uppercase tracking-wider text-[9px] first:rounded-tl-lg last:rounded-tr-lg border-b border-[#073c2d] font-semibold text-white">
+                        <th
+                          key={idx}
+                          className="px-3.5 py-3 uppercase tracking-wider text-[10px] font-bold text-white border-b border-[#073c2d] whitespace-nowrap"
+                        >
                           {head}
                         </th>
                       ))}
@@ -452,14 +455,16 @@ const ReportPreviewModal = ({
                           {row.map((cell, cIdx) => {
                             if (isKeyValueTable && cIdx === 0) {
                               return (
-                                <td key={cIdx} className="px-4 py-2.5 text-gray-500 font-semibold text-[10px] uppercase tracking-wider bg-gray-50/50 w-1/5 select-none border-b border-gray-100">
+                                <td key={cIdx} className="px-3.5 py-3 text-gray-500 font-semibold text-[10px] uppercase tracking-wider bg-gray-50/50 border-b border-gray-100 w-1/4">
                                   {cell}
                                 </td>
                               );
                             }
-                            const isStatusCol = cIdx === row.length - 1;
                             return (
-                              <td key={cIdx} className={`px-4 py-2.5 text-gray-600 border-b border-gray-100 ${isStatusCol ? 'whitespace-nowrap font-bold text-emerald-800' : 'break-words'} ${isKeyValueTable ? 'font-normal text-xs' : 'font-medium text-xs'}`}>
+                              <td
+                                key={cIdx}
+                                className="px-3.5 py-3 text-gray-700 font-medium text-xs border-b border-gray-100 max-w-[200px] break-words align-top"
+                              >
                                 {cell}
                               </td>
                             );
@@ -477,28 +482,30 @@ const ReportPreviewModal = ({
                 <h3 className="text-xs font-bold text-primary-green uppercase tracking-wider mb-3">
                   {secondTableTitle || 'Detail Timeline Audit Logs'}
                 </h3>
-                <table className={`w-full text-left border-collapse text-xs border border-gray-200 ${secondTableHeaders.length === 2 ? 'table-fixed' : ''}`}>
-                  <thead>
-                    <tr className="bg-[#073c2d] text-white font-semibold">
-                      {secondTableHeaders.map((head, idx) => (
-                        <th key={idx} className="px-4 py-2.5 uppercase tracking-wider text-[9px] border-b border-[#073c2d] font-semibold text-white">
-                          {head}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 bg-white">
-                    {secondTableData.map((row, rIdx) => (
-                      <tr key={rIdx} className="hover:bg-gray-50 transition-colors odd:bg-gray-50/10">
-                        {row.map((cell, cIdx) => (
-                          <td key={cIdx} className="px-4 py-2.5 text-gray-600 font-normal text-xs whitespace-pre-line break-all break-words max-w-0 border-b border-gray-100">
-                            {cell}
-                          </td>
+                <div className="overflow-x-auto rounded-lg border border-gray-200">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-[#073c2d] text-white font-semibold">
+                        {secondTableHeaders.map((head, idx) => (
+                          <th key={idx} className="px-3.5 py-3 uppercase tracking-wider text-[10px] font-bold text-white border-b border-[#073c2d] whitespace-nowrap">
+                            {head}
+                          </th>
                         ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 bg-white">
+                      {secondTableData.map((row, rIdx) => (
+                        <tr key={rIdx} className="hover:bg-gray-50 transition-colors odd:bg-gray-50/10">
+                          {row.map((cell, cIdx) => (
+                            <td key={cIdx} className="px-3.5 py-3 text-gray-700 font-medium text-xs break-words max-w-[200px] align-top border-b border-gray-100">
+                              {cell}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
 
@@ -528,8 +535,8 @@ const ReportPreviewModal = ({
 
             {/* 6. Running Footer inside the simulated page */}
             <div className="mt-auto border-t border-gray-200 pt-4 flex justify-between items-center text-[10px] text-gray-400 no-print">
-              <span>CONFIDENTIAL - FOR INTERNAL BULSU OSODOCS USE ONLY</span>
-              <span>BulSU Bustos OSODOCS System Generated</span>
+              <span>CONFIDENTIAL - FOR INTERNAL BULSU OSOADOCS USE ONLY</span>
+              <span>BulSU Bustos OSOADOCS System Generated</span>
             </div>
           </div>
         </div>

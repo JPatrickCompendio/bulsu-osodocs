@@ -15,7 +15,7 @@ const Avatar = ({ profileImage, profileImg, name, className = '', fallbackClassN
             return;
         }
 
-        if (typeof rawImage === 'string' && (rawImage.startsWith('http') || rawImage.startsWith('data:'))) {
+        if (typeof rawImage === 'string' && (rawImage.startsWith('http') || rawImage.startsWith('https') || rawImage.startsWith('data:') || rawImage.startsWith('blob:'))) {
             setResolvedUrl(rawImage);
             return;
         }

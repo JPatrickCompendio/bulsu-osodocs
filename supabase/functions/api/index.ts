@@ -3219,12 +3219,16 @@ async function handleOrgDashboard(url: URL) {
       }
     }
 
+    const latestLog = logsBySubId[doc.id] || null;
+
     return {
       id: doc.id,
       title: docTitle,
       type: (doc.documentType as Record<string, unknown>)?.name || 'Unknown',
       status: doc.status,
-      lastUpdate: logsBySubId[doc.id]?.created_at || doc.created_at,
+      remarks: doc.remarks,
+      latestLog: latestLog,
+      lastUpdate: latestLog?.created_at || doc.created_at,
     };
   });
 

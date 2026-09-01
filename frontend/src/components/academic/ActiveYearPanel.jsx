@@ -13,7 +13,7 @@ export function ActiveYearPanel({ activeSy, activeSemester, blockedDaysCount, on
           <div>
             <h3 className="font-bold text-lg">No Active School Year Selected</h3>
             <p className="text-xs text-amber-700 mt-0.5">
-              Select or activate a School Year below to set the official administrative cycle for OSODOCS.
+              Select or activate a School Year below to set the official administrative cycle for OSOADOCS.
             </p>
           </div>
         </div>

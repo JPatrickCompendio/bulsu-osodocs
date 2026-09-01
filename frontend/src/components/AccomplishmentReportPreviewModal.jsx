@@ -83,9 +83,16 @@ const AccomplishmentReportPreviewModal = ({
       const sy = schoolYear || submission?.school_years?.name || '2025-2026';
       const cleanSy = sy.replace(/S\.Y\.\s*/ig, '').replace(/S\.Y\s*/ig, '').trim();
 
-      const details = Array.isArray(submission?.submission_versions?.[0]?.activity_proposal_details)
-        ? submission?.submission_versions[0].activity_proposal_details[submission.submission_versions[0].activity_proposal_details.length - 1]
-        : submission?.submission_versions?.[0]?.activity_proposal_details || {};
+      const versions = Array.isArray(submission?.submission_versions)
+        ? submission.submission_versions
+        : [submission?.submission_versions].filter(Boolean);
+
+      const latestVersion = versions.find((v) => v.id === submission?.current_version_id) ||
+        [...versions].sort((a, b) => (b?.version_number || 0) - (a?.version_number || 0))[0];
+
+      const details = Array.isArray(latestVersion?.activity_proposal_details)
+        ? latestVersion.activity_proposal_details[latestVersion.activity_proposal_details.length - 1]
+        : latestVersion?.activity_proposal_details || {};
 
       const orgName = details?.organization_name || submission?.users?.org_name || 'Organization Name';
 

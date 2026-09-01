@@ -289,7 +289,7 @@ const Login = () => {
             </div>
 
             <h2 className="login-brand-title text-2xl sm:text-3xl text-white uppercase flex justify-center gap-0.5">
-              {"OSODOCS".split("").map((letter, idx) => (
+              {"OSOADOCS".split("").map((letter, idx) => (
                 <span
                   key={idx}
                   className="inline-block animate-letter-shine"

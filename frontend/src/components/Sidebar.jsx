@@ -240,7 +240,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center p-1 shadow-sm">
             <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
           </div>
-          <span className="text-xl font-bold tracking-wider text-secondary-gold">OSODOCS</span>
+          <span className="text-xl font-bold tracking-wider text-secondary-gold">OSOADOCS</span>
         </div>
         {onClose && (
           <button

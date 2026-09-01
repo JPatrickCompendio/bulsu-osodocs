@@ -134,7 +134,7 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
   const [isFilesOpen, setIsFilesOpen] = React.useState(true);
   const [previewUrl, setPreviewUrl] = React.useState(null);
   const [scopeTab, setScopeTab] = React.useState('all');
-
+  const [selectedVersionId, setSelectedVersionId] = React.useState(null);
   const [isAccomplishmentReportOpen, setIsAccomplishmentReportOpen] = React.useState(false);
 
   const resolveExternalProofUrl = async (storagePath) => {
@@ -413,15 +413,27 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
     );
   }
 
-  const versions = Array.isArray(submission.submission_versions)
-    ? submission.submission_versions
+  const allVersions = Array.isArray(submission.submission_versions)
+    ? [...submission.submission_versions].sort((a, b) => (b?.version_number || 0) - (a?.version_number || 0))
     : [submission.submission_versions].filter(Boolean);
+
+  const latestVersion =
+    allVersions.find((v) => v.id === submission.current_version_id) ||
+    allVersions[0];
+
   const currentVersion =
-    versions.find((v) => v.id === submission.current_version_id) ||
-    versions.sort((a, b) => (b?.version_number || 0) - (a?.version_number || 0))[0];
+    allVersions.find((v) => v.id === selectedVersionId) ||
+    latestVersion;
+
+  const viewingLatestVersion =
+    !selectedVersionId ||
+    selectedVersionId === submission.current_version_id ||
+    currentVersion?.id === latestVersion?.id;
+
   const details = Array.isArray(currentVersion?.activity_proposal_details)
     ? currentVersion.activity_proposal_details[currentVersion.activity_proposal_details.length - 1]
     : currentVersion?.activity_proposal_details;
+
   const allAttachments = currentVersion?.submission_attachments || [];
   const docTypeName = submission.documentType?.name || 'Document';
   const isActivityProposal = docTypeName.toLowerCase() === 'activity proposal' || docTypeName.toLowerCase() === 'activity-proposal';
@@ -471,8 +483,24 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
         >
           <ChevronLeft size={22} />
         </button>
-        <div className="flex items-center gap-3">
-          {isActivityProposal && (
+        <div className="flex items-center gap-3 flex-wrap justify-end">
+          {allVersions.length > 1 && (
+            <div className="flex items-center gap-2 bg-white border border-gray-200 px-3 py-1.5 rounded-xl shadow-xs">
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest shrink-0">Version:</span>
+              <select
+                value={currentVersion?.id || ''}
+                onChange={(e) => setSelectedVersionId(e.target.value)}
+                className="bg-gray-50 border-none rounded-lg px-2 py-1 text-xs font-bold text-gray-700 outline-none cursor-pointer focus:ring-2 focus:ring-green-500/20 max-w-full"
+              >
+                {allVersions.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    Version {v.version_number} {v.id === submission.current_version_id ? '(Latest)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {isActivityProposal && viewingLatestVersion && (
             <button
               type="button"
               onClick={() => setIsAccomplishmentReportOpen(true)}
@@ -741,14 +769,26 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
                   const reqObj = file.requirements || file.requirement;
                   const scope = reqObj?.requirement_scope || 'OSAS';
                   const isOsas = scope === 'OSAS';
+                  const RETURN_REASONS = ['missing-requirements', 'incorrect-format', 'incomplete-information', 'returned', 'return'];
+                  const fileLog = (timelineLogs || []).find((l) => l.attachment_id === file.id || (l.comment && file.file_name && l.comment.includes(file.file_name)));
+                  const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
+                  const isReturnedAttachment = RETURN_REASONS.includes(reviewActionValue);
 
-                  const cardBg = isDisapproved
-                    ? 'bg-red-600'
-                    : 'bg-green-600 shadow-md';
+                  let cardBg = 'bg-green-600 shadow-md';
+                  let titleColor = 'text-white font-bold';
+                  let metaColor = 'text-green-100';
+                  let iconColor = 'text-white shrink-0';
+                  let badgeStyle = 'bg-white/20 text-white border border-white/30 font-black';
 
-                  const titleColor = 'text-white font-bold';
-                  const metaColor = 'text-green-100';
-                  const iconColor = 'text-white shrink-0';
+                  if (isReturnedAttachment) {
+                    cardBg = 'bg-[#f59e0b] shadow-md';
+                    titleColor = 'text-[#451a03] font-bold';
+                    metaColor = 'text-[#78350f]';
+                    iconColor = 'text-[#78350f] shrink-0';
+                    badgeStyle = 'bg-amber-100 text-amber-800 border border-amber-200 font-bold';
+                  } else if (isDisapproved) {
+                    cardBg = 'bg-red-600';
+                  }
 
                   return (
                     <div
@@ -759,12 +799,22 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
                         <CheckCircle size={18} className={`${iconColor} mt-0.5 sm:mt-0`} />
                         <div className="min-w-0 flex-1">
                           <div className="mb-1 flex flex-wrap items-center gap-2">
-                            <span className="text-[8px] sm:text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-white/20 text-white border border-white/30 font-black shrink-0">
+                            <span className={`text-[8px] sm:text-[9px] px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 ${badgeStyle}`}>
                               {isOsas ? 'OSAS Requirement' : 'LOCAL Requirement'}
                             </span>
+                            {isReturnedAttachment && (
+                              <span className="text-[8px] sm:text-[9px] px-2 py-0.5 rounded-full uppercase tracking-wider bg-amber-200 text-amber-900 font-extrabold shrink-0">
+                                {(fileLog?.review_action || 'returned').replace('-', ' ')}
+                              </span>
+                            )}
                           </div>
                           <p className={`${titleColor} font-semibold text-xs sm:text-sm break-all leading-tight`} title={fileName}>{fileName}</p>
                           {meta && <p className={`text-[9px] sm:text-[10px] uppercase font-semibold ${metaColor} mt-0.5`}>{meta}</p>}
+                          {isReturnedAttachment && (fileLog?.comment || fileLog?.description) && (
+                            <p className="mt-1 text-[11px] italic font-semibold text-[#451a03]">
+                              {(fileLog?.users?.full_name || fileLog?.users?.role || 'Reviewer')}'s Comment: "{fileLog.comment || fileLog.description}"
+                            </p>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
@@ -795,7 +845,7 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
           )}
         </div>
 
-        {accomplishmentReport && (
+        {viewingLatestVersion && accomplishmentReport && (
           <div className="rounded-2xl border border-gray-200 bg-gray-50 p-6 shadow-sm">
             <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest mb-2 border-b border-gray-200 pb-3">Accomplishment Report</h3>
             <p className="text-[10px] uppercase tracking-widest text-gray-500 mb-6">Submitted {formatSubmittedLabel(accomplishmentReport.submitted_at || accomplishmentReport.created_at)}</p>
@@ -824,9 +874,7 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
           </div>
         )}
 
-
-
-        {isActivityProposal && (
+        {viewingLatestVersion && isActivityProposal && (
           <div>
             <h3 className="text-sm font-bold text-gray-800 uppercase tracking-wider mb-4">
               Proof of Activity Implementation
@@ -863,6 +911,9 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
         <SubmissionTimeline
           timelineLogs={timelineLogs}
           submissionStatus={submission?.status}
+          allVersions={allVersions}
+          viewingVersionId={currentVersion?.id}
+          currentVersionId={submission.current_version_id}
           hasDeliveryProof={(externalProofs && externalProofs.length > 0) || !!proofStoragePath}
           onViewDeliveryProof={() => handleViewDeliveryProof(proofStoragePath)}
           className="bg-gray-50/80 rounded-3xl p-6 md:p-8 border border-gray-100"

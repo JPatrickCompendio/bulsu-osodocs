@@ -3073,7 +3073,7 @@ export const MyDocuments = () => {
               )}
 
               {/* SDS Stage Retrieval Buttons */}
-              {isSdsStage && (
+              {isSdsStage && (!selectedVersionId || selectedVersionId === selectedDoc?.raw?.current_version_id) && (
                 !isSdsHardcopyApprovedLog ? (
                   (user?.role === 'admin' || user?.role === 'oso-staff' || user?.role === 'sds-coordinator') ? (
                     <div className="flex flex-col gap-2 mt-2 w-full">
@@ -3269,16 +3269,6 @@ export const MyDocuments = () => {
               className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[100] flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-300"
               onClick={(e) => { if (e.target === e.currentTarget) setIsAccomReportModalOpen(false); }}
             >
-              {/* ALWAYS VISIBLE FLOATING RED CLOSE BUTTON */}
-              <button
-                onClick={() => setIsAccomReportModalOpen(false)}
-                className="fixed top-3 right-3 sm:top-5 sm:right-5 bg-red-600 hover:bg-red-700 text-white p-2.5 sm:p-3 rounded-full shadow-2xl z-[100001] transition-all hover:scale-110 flex items-center justify-center cursor-pointer border-2 border-white"
-                title="Close modal"
-                aria-label="Close modal"
-              >
-                <X size={22} className="stroke-[3]" />
-              </button>
-
               <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-2xl p-4 sm:p-8 flex flex-col shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300 max-h-[90vh] sm:max-h-[80vh]">
                 <div className="flex items-center justify-between mb-4 sm:mb-6 border-b border-gray-100 pb-3 sm:pb-4">
                   <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
@@ -4169,10 +4159,12 @@ export const MyDocuments = () => {
         {/* Workflow actions in My Documents */}
         {(() => {
           const userRoleNorm = (user?.role || '').toLowerCase();
+          const isLatestVersion = !selectedVersionId || selectedVersionId === selectedDoc?.raw?.current_version_id;
           const canViewActions =
-            userRoleNorm === 'admin' ||
-            userRoleNorm === 'oso-staff' ||
-            (userRoleNorm === 'org-president' && (isApprovedDoc || isSdsStage || currentStage === 'DOCUMENT_RETRIEVAL'));
+            isLatestVersion &&
+            (userRoleNorm === 'admin' ||
+             userRoleNorm === 'oso-staff' ||
+             (userRoleNorm === 'org-president' && (isApprovedDoc || isSdsStage || currentStage === 'DOCUMENT_RETRIEVAL')));
 
           if (!canViewActions) return null;
 

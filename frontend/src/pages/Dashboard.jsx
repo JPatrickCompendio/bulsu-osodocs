@@ -1695,7 +1695,19 @@ const OrgDashboardView = () => {
                             {doc.latestLog ? (
                               <div>
                                 <p className="text-xs font-semibold text-gray-600 line-clamp-2">{doc.latestLog.description || doc.latestLog.comment || 'Status updated'}</p>
-                                <p className="text-[10px] text-gray-400 font-bold mt-1">{new Date(doc.latestLog.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
+                                <p className="text-[10px] text-gray-400 font-bold mt-1">{new Date(doc.latestLog.created_at || doc.lastUpdate).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
+                              </div>
+                            ) : doc.remarks ? (
+                              <div>
+                                <p className="text-xs font-semibold text-gray-600 line-clamp-2">{doc.remarks}</p>
+                                {doc.lastUpdate && (
+                                  <p className="text-[10px] text-gray-400 font-bold mt-1">{new Date(doc.lastUpdate).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
+                                )}
+                              </div>
+                            ) : doc.lastUpdate ? (
+                              <div>
+                                <p className="text-xs font-semibold text-gray-600 line-clamp-2">Status updated</p>
+                                <p className="text-[10px] text-gray-400 font-bold mt-1">{new Date(doc.lastUpdate).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
                               </div>
                             ) : (
                               <p className="text-xs italic text-gray-400">No logs yet</p>

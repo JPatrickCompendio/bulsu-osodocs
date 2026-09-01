@@ -209,12 +209,12 @@ export default function OnboardingOverlay() {
               ))}
             </div>
 
-            {/* OSODOCS Title */}
+            {/* OSOADOCS Title */}
             <span 
               className="absolute top-[52%] login-brand-title text-6xl md:text-7xl text-white uppercase drop-shadow-[0_0_20px_rgba(255,255,255,0.4)] animate-ps-word opacity-0 text-center w-full"
               style={{ animationDelay: '0.6s', transform: 'translateY(-50%)' }}
             >
-              OSODOCS
+              OSOADOCS
             </span>
             
             {/* Subtitle */}
@@ -259,7 +259,7 @@ export default function OnboardingOverlay() {
                   <div className="w-28 h-28 rounded-full bg-gray-100 border-4 border-white shadow-lg flex items-center justify-center text-gray-400 text-3xl font-black relative overflow-hidden">
                     <Avatar 
                       profileImage={avatarUrl || user?.profile_image} 
-                      name={user?.full_name || 'O'} 
+                      name={user?.full_name || user?.org_name || orgName || 'O'} 
                       className="w-full h-full object-cover" 
                       fallbackClassName="bg-gray-100 text-gray-400 text-3xl font-black"
                     />

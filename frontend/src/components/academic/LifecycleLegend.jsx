@@ -25,7 +25,7 @@ export function LifecycleLegend() {
               <span>Active</span>
             </div>
             <p className="text-gray-600">
-              Currently operational school year for OSODOCS document submissions and reviews.
+              Currently operational school year for OSOADOCS document submissions and reviews.
             </p>
           </div>
 

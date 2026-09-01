@@ -233,20 +233,53 @@ const STATUS_TO_NEXT_PHASE = {
   submitted: 'chairman_review',
   pending: 'chairman_review',
   'oso staff review': 'chairman_review',
-  returned: 'resubmitted',
+  'oso review': 'chairman_review',
+  'oso approved': 'approved_sds',
+
   'sds coordinator review': 'approved_sds',
+  'sds review': 'approved_sds',
+  'sds approved': 'chairman_review',
+
+  'chairman review': 'approved_sds',
+  'chairman approved': 'approved_sds',
+  'chairman and vice chairman review': 'approved_sds',
+  'vice chairman approved': 'hardcopy_verification',
+
   'to forward': 'hardcopy_verification',
   'pending hard copy': 'hardcopy_verification',
   'pending hardcopy': 'hardcopy_verification',
   'hardcopy submission': 'hardcopy_verification',
+
   'dean review': 'approved_dean',
   'dean approved': 'forwarded_external',
+  'final local campus review': 'approved_dean',
+  'final in-campus review': 'approved_dean',
+
   'main campus review': 'approved_external',
+  'sent to main campus': 'approved_external',
+  'external approved': 'ready_for_retrieval',
+
   approved: 'ready_for_retrieval',
   'ready for retrieval': 'document_retrieved',
-  'ready for retrieval': 'document_retrieved',
-  'waiting for accomplishment report': 'accomplishment_report'
+  'ready-for-retrieval': 'document_retrieved',
+
+  'waiting for accomplishment report': 'accomplishment_report',
+  'accomplishment report': 'accomplishment_report',
+
+  returned: 'resubmitted'
 };
+
+const PHASE_SEQUENCE = [
+  'chairman_review',
+  'approved_sds',
+  'hardcopy_verification',
+  'approved_dean',
+  'forwarded_external',
+  'approved_external',
+  'ready_for_retrieval',
+  'document_retrieved',
+  'accomplishment_report'
+];
 
 const PENDING_PHASE_TEMPLATES = {
   chairman_review: {
@@ -436,7 +469,29 @@ export const appendPendingTimelinePhase = (realLogs, { submissionStatus, isViewi
     return [pendingConfirmLog, ...realLogs];
   }
 
-  const phaseId = STATUS_TO_NEXT_PHASE[status];
+  let phaseId = STATUS_TO_NEXT_PHASE[status];
+
+  if (!phaseId) {
+    phaseId = PHASE_SEQUENCE.find(p => {
+      const matcher = phaseMatchers[p];
+      return matcher ? !realLogs.some(matcher) : false;
+    });
+  } else if (phaseId !== 'resubmitted') {
+    let matcher = phaseMatchers[phaseId];
+    if (matcher && realLogs.some(matcher)) {
+      const idx = PHASE_SEQUENCE.indexOf(phaseId);
+      if (idx >= 0) {
+        const nextUncompleted = PHASE_SEQUENCE.slice(idx + 1).find(p => {
+          const m = phaseMatchers[p];
+          return m ? !realLogs.some(m) : false;
+        });
+        if (nextUncompleted) {
+          phaseId = nextUncompleted;
+        }
+      }
+    }
+  }
+
   if (!phaseId) return realLogs;
 
   const matcher = phaseMatchers[phaseId];
