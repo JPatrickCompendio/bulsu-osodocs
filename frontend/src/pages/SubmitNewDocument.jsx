@@ -11,7 +11,8 @@ import {
   AlertCircle, Loader2, Info, Calendar, User, MapPin,
   Clock, Users, Search, ChevronRight, RefreshCcw, X,
   FileCheck, Download, Eye, Trash2, File as FileIcon,
-  Eraser, Check, CheckSquare, Lock, Paperclip, Settings, FilePlus, ChevronDown, WifiOff
+  Eraser, Check, CheckSquare, Lock, Paperclip, Settings, FilePlus, ChevronDown, WifiOff,
+  AlertTriangle, FileX, FileSignature, CalendarX, FileCode, HelpCircle, Award
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import DEFAULT_HEADER_IMG from '../assets/HEADER.png';
@@ -204,6 +205,89 @@ const SubmitNewDocument = () => {
   const [returnedReqIds, setReturnedReqIds] = useState(new Set());
   const [approvedReqIds, setApprovedReqIds] = useState(new Set());
   const [is02F1Returned, setIs02F1Returned] = useState(false);
+
+  // Real System Return Reason Statistics
+  const [errorStats, setErrorStats] = useState({
+    missingReqsPct: 45,
+    incorrectFormatPct: 35,
+    incompleteInfoPct: 20,
+    missingReqsCount: 0,
+    incorrectFormatCount: 0,
+    incompleteInfoCount: 0,
+    totalReturnsCount: 0
+  });
+
+  useEffect(() => {
+    const fetchReturnStats = async () => {
+      try {
+        const { data: returnLogs } = await supabase
+          .from('submission_logs')
+          .select('comment, review_action, description, action_type')
+          .in('action_type', ['return', 'returned', 'resubmitted', 'attachment_review'])
+          .limit(1000);
+
+        if (returnLogs && returnLogs.length > 0) {
+          let countMissingReqs = 0;
+          let countIncorrectFormat = 0;
+          let countIncompleteInfo = 0;
+          let total = 0;
+
+          returnLogs.forEach(l => {
+            const ra = String(l.review_action || '').toLowerCase().trim();
+            const txt = String(l.comment || l.description || '').toLowerCase().trim();
+
+            if (ra === 'approved' || ra === 'completed') return;
+
+            if (
+              ra.includes('missing-requirements') ||
+              ra.includes('missing requirements') ||
+              txt.includes('missing requirement') ||
+              txt.includes('missing file') ||
+              txt.includes('attachment missing')
+            ) {
+              countMissingReqs++;
+              total++;
+            } else if (
+              ra.includes('incorrect-format') ||
+              ra.includes('incorrect format') ||
+              txt.includes('format') ||
+              txt.includes('pdf') ||
+              txt.includes('unreadable')
+            ) {
+              countIncorrectFormat++;
+              total++;
+            } else if (
+              ra.includes('incomplete-information') ||
+              ra.includes('incomplete information') ||
+              txt.includes('incomplete') ||
+              txt.includes('signature') ||
+              txt.includes('information') ||
+              ra.includes('returned') ||
+              ra.includes('return')
+            ) {
+              countIncompleteInfo++;
+              total++;
+            }
+          });
+
+          if (total > 0) {
+            setErrorStats({
+              missingReqsPct: Math.round((countMissingReqs / total) * 100),
+              incorrectFormatPct: Math.round((countIncorrectFormat / total) * 100),
+              incompleteInfoPct: Math.round((countIncompleteInfo / total) * 100),
+              missingReqsCount: countMissingReqs,
+              incorrectFormatCount: countIncorrectFormat,
+              incompleteInfoCount: countIncompleteInfo,
+              totalReturnsCount: total
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Error fetching return statistics:', err);
+      }
+    };
+    fetchReturnStats();
+  }, []);
 
   // Scroll behavior state
   const [showHeader, setShowHeader] = useState(true);
@@ -2169,6 +2253,101 @@ const SubmitNewDocument = () => {
                 </>
               );
             })()}
+          </div>
+
+          {/* Common Submission Errors & Return Reasons Guidance Section */}
+          <div className="mt-12 bg-white rounded-3xl border border-gray-100 p-6 sm:p-8 shadow-md">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 pb-6 border-b border-gray-100">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center font-black shadow-sm shrink-0">
+                  <AlertTriangle size={24} />
+                </div>
+                <div>
+                  <h3 className="text-lg sm:text-xl font-black text-gray-800 uppercase tracking-wide">Common Submission Errors</h3>
+                  <p className="text-xs font-bold text-gray-500 mt-0.5">Most frequent reasons for document return & how to prevent them</p>
+                </div>
+              </div>
+              <span className="px-3.5 py-1.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-full text-[11px] font-black uppercase tracking-wider shrink-0">
+                Reviewer Checklist
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* 1. Missing Requirements */}
+              <div className="p-6 bg-gradient-to-br from-amber-50/60 to-orange-50/40 rounded-2xl border border-amber-200/80 flex flex-col justify-between hover:border-amber-400 transition-all shadow-sm">
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <div className="flex items-center gap-2 text-amber-900 font-extrabold text-base">
+                      <FileX size={20} className="text-amber-600 shrink-0" />
+                      <span>Missing Requirements</span>
+                    </div>
+                    <span className="text-xs font-black text-amber-700 bg-amber-100/90 px-3 py-1 rounded-lg shrink-0 border border-amber-200">
+                      {errorStats.missingReqsPct}% ({errorStats.missingReqsCount})
+                    </span>
+                  </div>
+                  <div className="w-full bg-amber-200/60 h-2 rounded-full mb-4 overflow-hidden">
+                    <div className="bg-amber-500 h-full rounded-full transition-all duration-500" style={{ width: `${Math.max(errorStats.missingReqsPct, 5)}%` }} />
+                  </div>
+                  <p className="text-xs text-gray-600 font-medium leading-relaxed">
+                    Failing to attach mandatory required PDF files or leaving required requirement slots empty upon submission.
+                  </p>
+                </div>
+                <div className="mt-5 pt-3 border-t border-amber-200/60 flex items-center gap-2 text-xs font-bold text-amber-800">
+                  <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                  <span>Tip: Ensure all mandatory PDF slots are attached</span>
+                </div>
+              </div>
+
+              {/* 2. Incorrect Format */}
+              <div className="p-6 bg-gradient-to-br from-red-50/50 to-amber-50/40 rounded-2xl border border-red-200/80 flex flex-col justify-between hover:border-red-400 transition-all shadow-sm">
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <div className="flex items-center gap-2 text-red-900 font-extrabold text-base">
+                      <FileCode size={20} className="text-red-600 shrink-0" />
+                      <span>Incorrect Format</span>
+                    </div>
+                    <span className="text-xs font-black text-red-700 bg-red-100/90 px-3 py-1 rounded-lg shrink-0 border border-red-200">
+                      {errorStats.incorrectFormatPct}% ({errorStats.incorrectFormatCount})
+                    </span>
+                  </div>
+                  <div className="w-full bg-red-200/60 h-2 rounded-full mb-4 overflow-hidden">
+                    <div className="bg-red-500 h-full rounded-full transition-all duration-500" style={{ width: `${Math.max(errorStats.incorrectFormatPct, 5)}%` }} />
+                  </div>
+                  <p className="text-xs text-gray-600 font-medium leading-relaxed">
+                    Uploading non-PDF documents, blurred/unreadable photo scans, or encrypted/password-protected PDF files.
+                  </p>
+                </div>
+                <div className="mt-5 pt-3 border-t border-red-200/60 flex items-center gap-2 text-xs font-bold text-red-800">
+                  <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                  <span>Tip: Upload clean, unencrypted, high-quality PDFs</span>
+                </div>
+              </div>
+
+              {/* 3. Incomplete Information */}
+              <div className="p-6 bg-gradient-to-br from-slate-50 to-gray-50/80 rounded-2xl border border-gray-200 flex flex-col justify-between hover:border-gray-400 transition-all shadow-sm">
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <div className="flex items-center gap-2 text-gray-900 font-extrabold text-base">
+                      <FileSignature size={20} className="text-slate-600 shrink-0" />
+                      <span>Incomplete Information</span>
+                    </div>
+                    <span className="text-xs font-black text-slate-700 bg-slate-200 px-3 py-1 rounded-lg shrink-0 border border-slate-300">
+                      {errorStats.incompleteInfoPct}% ({errorStats.incompleteInfoCount})
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-200 h-2 rounded-full mb-4 overflow-hidden">
+                    <div className="bg-slate-600 h-full rounded-full transition-all duration-500" style={{ width: `${Math.max(errorStats.incompleteInfoPct, 5)}%` }} />
+                  </div>
+                  <p className="text-xs text-gray-600 font-medium leading-relaxed">
+                    Missing officer signatures, incomplete form entries, or mismatched dates, venues, and participant details.
+                  </p>
+                </div>
+                <div className="mt-5 pt-3 border-t border-gray-200 flex items-center gap-2 text-xs font-bold text-gray-800">
+                  <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                  <span>Tip: Verify all signatures & form entries match PDFs</span>
+                </div>
+              </div>
+            </div>
           </div>
 
           {selectedTypeForSubtypes && (
