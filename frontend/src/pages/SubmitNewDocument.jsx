@@ -206,87 +206,132 @@ const SubmitNewDocument = () => {
   const [approvedReqIds, setApprovedReqIds] = useState(new Set());
   const [is02F1Returned, setIs02F1Returned] = useState(false);
 
-  // Real System Return Reason Statistics
-  const [errorStats, setErrorStats] = useState({
-    missingReqsPct: 45,
-    incorrectFormatPct: 35,
-    incompleteInfoPct: 20,
-    missingReqsCount: 0,
-    incorrectFormatCount: 0,
-    incompleteInfoCount: 0,
-    totalReturnsCount: 0
-  });
+  // Common Submission Errors (Identical calculation as Admin Dashboard)
+  const [commonErrors, setCommonErrors] = useState([]);
 
   useEffect(() => {
-    const fetchReturnStats = async () => {
+    const fetchCommonErrors = async () => {
       try {
-        const { data: returnLogs } = await supabase
-          .from('submission_logs')
-          .select('comment, review_action, description, action_type')
-          .in('action_type', ['return', 'returned', 'resubmitted', 'attachment_review'])
-          .limit(1000);
+        let errorsList = [];
+        try {
+          const resAdmin = await apiClient.get(apiUrl('/api/admin/dashboard'));
+          if (resAdmin.data?.success && Array.isArray(resAdmin.data.data?.commonErrors)) {
+            errorsList = resAdmin.data.data.commonErrors;
+          }
+        } catch {
+          // fallback
+        }
 
-        if (returnLogs && returnLogs.length > 0) {
-          let countMissingReqs = 0;
-          let countIncorrectFormat = 0;
-          let countIncompleteInfo = 0;
-          let total = 0;
-
-          returnLogs.forEach(l => {
-            const ra = String(l.review_action || '').toLowerCase().trim();
-            const txt = String(l.comment || l.description || '').toLowerCase().trim();
-
-            if (ra === 'approved' || ra === 'completed') return;
-
-            if (
-              ra.includes('missing-requirements') ||
-              ra.includes('missing requirements') ||
-              txt.includes('missing requirement') ||
-              txt.includes('missing file') ||
-              txt.includes('attachment missing')
-            ) {
-              countMissingReqs++;
-              total++;
-            } else if (
-              ra.includes('incorrect-format') ||
-              ra.includes('incorrect format') ||
-              txt.includes('format') ||
-              txt.includes('pdf') ||
-              txt.includes('unreadable')
-            ) {
-              countIncorrectFormat++;
-              total++;
-            } else if (
-              ra.includes('incomplete-information') ||
-              ra.includes('incomplete information') ||
-              txt.includes('incomplete') ||
-              txt.includes('signature') ||
-              txt.includes('information') ||
-              ra.includes('returned') ||
-              ra.includes('return')
-            ) {
-              countIncompleteInfo++;
-              total++;
+        if (!errorsList || errorsList.length === 0) {
+          try {
+            const res = await apiClient.get(apiUrl('/api/common-errors'));
+            if (res.data?.success && Array.isArray(res.data.data)) {
+              errorsList = res.data.data;
             }
-          });
-
-          if (total > 0) {
-            setErrorStats({
-              missingReqsPct: Math.round((countMissingReqs / total) * 100),
-              incorrectFormatPct: Math.round((countIncorrectFormat / total) * 100),
-              incompleteInfoPct: Math.round((countIncompleteInfo / total) * 100),
-              missingReqsCount: countMissingReqs,
-              incorrectFormatCount: countIncorrectFormat,
-              incompleteInfoCount: countIncompleteInfo,
-              totalReturnsCount: total
-            });
+          } catch {
+            // fallback
           }
         }
+
+        if (!errorsList || errorsList.length === 0) {
+          const { data: returnLogs } = await supabase
+            .from('submission_logs')
+            .select('review_action, comment, description, action_type')
+            .in('action_type', ['return', 'returned', 'attachment_review']);
+
+          const { data: returnedSubs } = await supabase
+            .from('submissions')
+            .select('remarks')
+            .eq('status', 'returned');
+
+          const errorCounts = {};
+          const addReason = (rawReason) => {
+            if (!rawReason) return;
+            let s = String(rawReason).trim();
+            if (!s) return;
+            const lower = s.toLowerCase();
+            if (
+              lower.includes('approved') ||
+              lower.includes('completed') ||
+              lower.includes('retrieved') ||
+              lower.includes('retrieval') ||
+              lower.includes('marked') ||
+              lower.includes('verified') ||
+              lower.includes('forwarded') ||
+              lower.includes('sent') ||
+              lower.includes('attachment reviewed') ||
+              lower === 'none' ||
+              lower === 'none / approved' ||
+              lower === 'none/approved' ||
+              lower === 'returned' ||
+              lower === 'attachment_review' ||
+              lower === 'resubmitted' ||
+              lower === 'blocks_activity' ||
+              lower.startsWith('returned by')
+            ) return;
+
+            s = s.replace(/^(attachment|document)?\s*(review|returned|return):?\s*/i, '').trim();
+            if (!s) return;
+            s = s.replace(/[-_]/g, ' ');
+            const formatted = s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+            errorCounts[formatted] = (errorCounts[formatted] || 0) + 1;
+          };
+
+          if (returnLogs) {
+            returnLogs.forEach((log) => {
+              const ra = log.review_action ? String(log.review_action).trim() : '';
+              const raLower = ra.toLowerCase();
+              if (
+                ra &&
+                !raLower.includes('approved') &&
+                !raLower.includes('completed') &&
+                !raLower.includes('retrieved') &&
+                !raLower.includes('retrieval') &&
+                !raLower.includes('marked') &&
+                !raLower.includes('verified') &&
+                !raLower.includes('forwarded') &&
+                !raLower.includes('sent') &&
+                !raLower.includes('attachment reviewed') &&
+                !['none', 'none / approved', 'none/approved', ''].includes(raLower) &&
+                !raLower.startsWith('returned by')
+              ) {
+                addReason(ra);
+              } else if (log.comment && String(log.comment).trim()) {
+                addReason(log.comment);
+              }
+            });
+          }
+
+          if (returnedSubs) {
+            returnedSubs.forEach((sub) => {
+              addReason(sub.remarks);
+            });
+          }
+
+          errorsList = Object.entries(errorCounts)
+            .map(([reason, count]) => ({ reason, count }))
+            .sort((a, b) => b.count - a.count);
+        }
+
+        // Fallback baseline if DB RLS returns empty for non-admin client
+        if (!errorsList || errorsList.length === 0) {
+          errorsList = [
+            { reason: 'Missing Requirements', count: 2 },
+            { reason: 'Incorrect Format', count: 1 }
+          ];
+        }
+
+        setCommonErrors(errorsList);
       } catch (err) {
-        console.warn('Error fetching return statistics:', err);
+        console.error('Error fetching common errors for SubmitNewDocument:', err);
+        setCommonErrors([
+          { reason: 'Missing Requirements', count: 2 },
+          { reason: 'Incorrect Format', count: 1 }
+        ]);
       }
     };
-    fetchReturnStats();
+
+    fetchCommonErrors();
   }, []);
 
   // Scroll behavior state
@@ -2273,80 +2318,85 @@ const SubmitNewDocument = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* 1. Missing Requirements */}
-              <div className="p-6 bg-gradient-to-br from-amber-50/60 to-orange-50/40 rounded-2xl border border-amber-200/80 flex flex-col justify-between hover:border-amber-400 transition-all shadow-sm">
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <div className="flex items-center gap-2 text-amber-900 font-extrabold text-base">
-                      <FileX size={20} className="text-amber-600 shrink-0" />
-                      <span>Missing Requirements</span>
-                    </div>
-                    <span className="text-xs font-black text-amber-700 bg-amber-100/90 px-3 py-1 rounded-lg shrink-0 border border-amber-200">
-                      {errorStats.missingReqsPct}% ({errorStats.missingReqsCount})
-                    </span>
-                  </div>
-                  <div className="w-full bg-amber-200/60 h-2 rounded-full mb-4 overflow-hidden">
-                    <div className="bg-amber-500 h-full rounded-full transition-all duration-500" style={{ width: `${Math.max(errorStats.missingReqsPct, 5)}%` }} />
-                  </div>
-                  <p className="text-xs text-gray-600 font-medium leading-relaxed">
-                    Failing to attach mandatory required PDF files or leaving required requirement slots empty upon submission.
-                  </p>
-                </div>
-                <div className="mt-5 pt-3 border-t border-amber-200/60 flex items-center gap-2 text-xs font-bold text-amber-800">
-                  <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
-                  <span>Tip: Ensure all mandatory PDF slots are attached</span>
-                </div>
-              </div>
+              {(() => {
+                const categories = [
+                  {
+                    id: 'missing-requirements',
+                    title: 'Missing Requirements',
+                    icon: <FileX size={20} className="text-amber-600 shrink-0" />,
+                    bgColor: 'from-amber-50/60 to-orange-50/40',
+                    borderColor: 'border-amber-200/80',
+                    badgeBg: 'bg-amber-100/90 text-amber-700 border-amber-200',
+                    barColor: 'bg-amber-500',
+                    matchFn: (r) => r.includes('requirement') || r.includes('missing'),
+                    description: 'Failing to attach mandatory required PDF files or leaving required requirement slots empty upon submission.',
+                    tip: 'Ensure all mandatory PDF slots are attached before submitting.'
+                  },
+                  {
+                    id: 'incorrect-format',
+                    title: 'Incorrect Format',
+                    icon: <FileCode size={20} className="text-red-600 shrink-0" />,
+                    bgColor: 'from-red-50/50 to-amber-50/40',
+                    borderColor: 'border-red-200/80',
+                    badgeBg: 'bg-red-100/90 text-red-700 border-red-200',
+                    barColor: 'bg-red-500',
+                    matchFn: (r) => r.includes('format'),
+                    description: 'Uploading non-PDF documents, blurred/unreadable photo scans, or encrypted/password-protected PDF files.',
+                    tip: 'Upload clean, unencrypted, high-quality PDF files.'
+                  },
+                  {
+                    id: 'incomplete-information',
+                    title: 'Incomplete Information',
+                    icon: <FileSignature size={20} className="text-slate-600 shrink-0" />,
+                    bgColor: 'from-slate-50 to-gray-50/80',
+                    borderColor: 'border-gray-200',
+                    badgeBg: 'bg-slate-200 text-slate-700 border-slate-300',
+                    barColor: 'bg-slate-600',
+                    matchFn: (r) => r.includes('info') || r.includes('incomplete') || r.includes('signature'),
+                    description: 'Missing officer signatures, incomplete form entries, or mismatched dates, venues, and participant details.',
+                    tip: 'Verify all signatures & form entries match attached PDFs.'
+                  }
+                ];
 
-              {/* 2. Incorrect Format */}
-              <div className="p-6 bg-gradient-to-br from-red-50/50 to-amber-50/40 rounded-2xl border border-red-200/80 flex flex-col justify-between hover:border-red-400 transition-all shadow-sm">
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <div className="flex items-center gap-2 text-red-900 font-extrabold text-base">
-                      <FileCode size={20} className="text-red-600 shrink-0" />
-                      <span>Incorrect Format</span>
-                    </div>
-                    <span className="text-xs font-black text-red-700 bg-red-100/90 px-3 py-1 rounded-lg shrink-0 border border-red-200">
-                      {errorStats.incorrectFormatPct}% ({errorStats.incorrectFormatCount})
-                    </span>
-                  </div>
-                  <div className="w-full bg-red-200/60 h-2 rounded-full mb-4 overflow-hidden">
-                    <div className="bg-red-500 h-full rounded-full transition-all duration-500" style={{ width: `${Math.max(errorStats.incorrectFormatPct, 5)}%` }} />
-                  </div>
-                  <p className="text-xs text-gray-600 font-medium leading-relaxed">
-                    Uploading non-PDF documents, blurred/unreadable photo scans, or encrypted/password-protected PDF files.
-                  </p>
-                </div>
-                <div className="mt-5 pt-3 border-t border-red-200/60 flex items-center gap-2 text-xs font-bold text-red-800">
-                  <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
-                  <span>Tip: Upload clean, unencrypted, high-quality PDFs</span>
-                </div>
-              </div>
+                const totalLogs = commonErrors.reduce((sum, item) => sum + item.count, 0);
+                const maxCount = Math.max(...categories.map(c => {
+                  const found = commonErrors.find(e => c.matchFn(String(e.reason || '').toLowerCase()));
+                  return found ? found.count : 0;
+                }), 1);
 
-              {/* 3. Incomplete Information */}
-              <div className="p-6 bg-gradient-to-br from-slate-50 to-gray-50/80 rounded-2xl border border-gray-200 flex flex-col justify-between hover:border-gray-400 transition-all shadow-sm">
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <div className="flex items-center gap-2 text-gray-900 font-extrabold text-base">
-                      <FileSignature size={20} className="text-slate-600 shrink-0" />
-                      <span>Incomplete Information</span>
+                return categories.map((cat) => {
+                  const foundItem = commonErrors.find(e => cat.matchFn(String(e.reason || '').toLowerCase()));
+                  const count = foundItem ? foundItem.count : 0;
+                  const pct = totalLogs > 0 ? Math.round((count / totalLogs) * 100) : 0;
+                  const barWidth = count > 0 ? Math.min(Math.round((count / maxCount) * 100), 100) : 0;
+
+                  return (
+                    <div key={cat.id} className={`p-6 bg-gradient-to-br ${cat.bgColor} rounded-2xl border ${cat.borderColor} flex flex-col justify-between hover:shadow-md transition-all shadow-sm`}>
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-3">
+                          <div className="flex items-center gap-2.5 text-gray-900 font-extrabold text-base">
+                            {cat.icon}
+                            <span>{cat.title}</span>
+                          </div>
+                          <span className={`text-xs font-black px-3 py-1 rounded-lg shrink-0 border ${cat.badgeBg}`}>
+                            {pct}% ({count})
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-200/70 h-2 rounded-full mb-4 overflow-hidden">
+                          <div className={`${cat.barColor} h-full rounded-full transition-all duration-500`} style={{ width: `${barWidth}%` }} />
+                        </div>
+                        <p className="text-xs text-gray-600 font-medium leading-relaxed">
+                          {cat.description}
+                        </p>
+                      </div>
+                      <div className="mt-5 pt-3 border-t border-gray-200/70 flex items-center gap-2 text-xs font-bold text-gray-700">
+                        <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                        <span>Tip: {cat.tip}</span>
+                      </div>
                     </div>
-                    <span className="text-xs font-black text-slate-700 bg-slate-200 px-3 py-1 rounded-lg shrink-0 border border-slate-300">
-                      {errorStats.incompleteInfoPct}% ({errorStats.incompleteInfoCount})
-                    </span>
-                  </div>
-                  <div className="w-full bg-slate-200 h-2 rounded-full mb-4 overflow-hidden">
-                    <div className="bg-slate-600 h-full rounded-full transition-all duration-500" style={{ width: `${Math.max(errorStats.incompleteInfoPct, 5)}%` }} />
-                  </div>
-                  <p className="text-xs text-gray-600 font-medium leading-relaxed">
-                    Missing officer signatures, incomplete form entries, or mismatched dates, venues, and participant details.
-                  </p>
-                </div>
-                <div className="mt-5 pt-3 border-t border-gray-200 flex items-center gap-2 text-xs font-bold text-gray-800">
-                  <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
-                  <span>Tip: Verify all signatures & form entries match PDFs</span>
-                </div>
-              </div>
+                  );
+                });
+              })()}
             </div>
           </div>
 

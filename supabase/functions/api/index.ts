@@ -2782,6 +2782,93 @@ async function handleSubmissionDecision(url: URL) {
   }
 }
 
+async function handleGetCommonErrors() {
+  try {
+    const supabase = getAdminClient();
+    const { data: returnLogs } = await supabase
+      .from('submission_logs')
+      .select('review_action, comment, description, action_type')
+      .in('action_type', ['return', 'returned', 'attachment_review']);
+
+    const { data: returnedSubs } = await supabase
+      .from('submissions')
+      .select('remarks')
+      .eq('status', 'returned');
+
+    const errorCounts: Record<string, number> = {};
+    const addReason = (rawReason: any) => {
+      if (!rawReason) return;
+      let s = String(rawReason).trim();
+      if (!s) return;
+      const lower = s.toLowerCase();
+      if (
+        lower.includes('approved') ||
+        lower.includes('completed') ||
+        lower.includes('retrieved') ||
+        lower.includes('retrieval') ||
+        lower.includes('marked') ||
+        lower.includes('verified') ||
+        lower.includes('forwarded') ||
+        lower.includes('sent') ||
+        lower.includes('attachment reviewed') ||
+        lower === 'none' ||
+        lower === 'none / approved' ||
+        lower === 'none/approved' ||
+        lower === 'returned' ||
+        lower === 'attachment_review' ||
+        lower === 'resubmitted' ||
+        lower === 'blocks_activity' ||
+        lower.startsWith('returned by')
+      ) return;
+
+      s = s.replace(/^(attachment|document)?\s*(review|returned|return):?\s*/i, '').trim();
+      if (!s) return;
+      s = s.replace(/[-_]/g, ' ');
+      const formatted = s.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+      errorCounts[formatted] = (errorCounts[formatted] || 0) + 1;
+    };
+
+    if (returnLogs) {
+      returnLogs.forEach((log: any) => {
+        const ra = log.review_action ? String(log.review_action).trim() : '';
+        const raLower = ra.toLowerCase();
+        if (
+          ra &&
+          !raLower.includes('approved') &&
+          !raLower.includes('completed') &&
+          !raLower.includes('retrieved') &&
+          !raLower.includes('retrieval') &&
+          !raLower.includes('marked') &&
+          !raLower.includes('verified') &&
+          !raLower.includes('forwarded') &&
+          !raLower.includes('sent') &&
+          !raLower.includes('attachment reviewed') &&
+          !['none', 'none / approved', 'none/approved', ''].includes(raLower) &&
+          !raLower.startsWith('returned by')
+        ) {
+          addReason(ra);
+        } else if (log.comment && String(log.comment).trim()) {
+          addReason(log.comment);
+        }
+      });
+    }
+
+    if (returnedSubs) {
+      returnedSubs.forEach((sub: any) => {
+        addReason(sub.remarks);
+      });
+    }
+
+    const commonErrors = Object.entries(errorCounts)
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((a, b) => b.count - a.count);
+
+    return jsonResponse({ success: true, data: commonErrors });
+  } catch (err) {
+    return jsonResponse({ success: false, error: String(err) }, 500);
+  }
+}
+
 async function handleAdminDashboard() {
   const supabase = getAdminClient();
   const currentDate = new Date();
@@ -4222,6 +4309,7 @@ async function routeRequest(req: Request): Promise<Response> {
   if (method === 'GET' && path === '/system/admin-email') {
     return handleGetAdminEmail();
   }
+  if (method === 'GET' && path === '/common-errors') return handleGetCommonErrors();
   if (method === 'GET' && path === '/admin/dashboard') return handleAdminDashboard();
   if (method === 'GET' && path === '/org/dashboard') return handleOrgDashboard(url);
   if (method === 'GET' && path === '/chairman/dashboard') return handleChairmanDashboard(url);
