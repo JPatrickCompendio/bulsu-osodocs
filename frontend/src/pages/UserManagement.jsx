@@ -40,6 +40,20 @@ import CompletedDocumentDetail from '../components/CompletedDocumentDetail';
 import { useToast } from '../hooks/useToast';
 import { supabase } from '../supabaseClient';
 
+const parseCoAdvisersList = (val) => {
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'string' && val.trim()) {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed;
+      return [val];
+    } catch {
+      return val.split(',').map((s) => s.trim()).filter(Boolean);
+    }
+  }
+  return [];
+};
+
 const UserManagement = () => {
   const [users, setUsers] = useState([]);
   const { showToast, ToastComponent } = useToast();
@@ -136,14 +150,14 @@ const UserManagement = () => {
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      const response = await apiFetch('/api/users');
+      const response = await apiFetch(`/api/users?t=${Date.now()}`, { cache: 'no-store' });
       const data = await response.json();
       if (Array.isArray(data)) {
         setUsers(data);
       }
 
-      const syParam = selectedSyId ? `?syId=${selectedSyId}` : '';
-      const orgsRes = await apiFetch(`/api/organizations/by-ay${syParam}`);
+      const syParam = selectedSyId ? `&syId=${selectedSyId}` : '';
+      const orgsRes = await apiFetch(`/api/organizations/by-ay?t=${Date.now()}${syParam}`, { cache: 'no-store' });
       const orgsData = await orgsRes.json();
       if (orgsData.success && Array.isArray(orgsData.data)) {
         setOrgUsers(orgsData.data);
@@ -286,7 +300,7 @@ const UserManagement = () => {
         org_name: user.org_name || '',
         no_member: user.no_member || '',
         adviser_name: user.adviser_name || '',
-        co_advisers: user.co_advisers || [],
+        co_advisers: parseCoAdvisersList(user.co_advisers),
         joined_date: user.joined_date || '',
         contact_no: user.contact_no || '',
         student_no: user.student_no || '',
@@ -325,7 +339,7 @@ const UserManagement = () => {
       org_name: suspendUser.org_name || null,
       no_member: suspendUser.no_member || null,
       adviser_name: suspendUser.adviser_name || null,
-      co_advisers: suspendUser.co_advisers || [],
+      co_advisers: parseCoAdvisersList(suspendUser.co_advisers),
       joined_date: suspendUser.joined_date || null,
       contact_no: suspendUser.contact_no || null,
       student_no: suspendUser.student_no || null
@@ -419,12 +433,26 @@ const UserManagement = () => {
       const result = await response.json();
 
       if (response.ok && result.success) {
+        const deletedId = userToDelete.id;
+        const deletedOrgId = userToDelete.organization_id;
+
         setIsDeleteModalOpen(false);
         setAdminPassword('');
         setDeleteError('');
+
+        // Immediately update local UI state so deleted user disappears instantly
+        setUsers((prev) => prev.filter((u) => u.id !== deletedId));
+        setOrgUsers((prev) => prev.filter((o) => o.id !== deletedId && o.id !== deletedOrgId && o.user_id !== deletedId && o.organization_id !== deletedOrgId));
+        if (selectedUser?.id === deletedId || (deletedOrgId && selectedUser?.organization_id === deletedOrgId)) {
+          setSelectedUser(null);
+          setDetailData(null);
+        }
+
         setSuccessMessage('User account has been successfully deleted!');
         setIsSuccessModalOpen(true);
-        fetchUsers();
+
+        // Fetch fresh data from backend
+        await fetchUsers();
       } else {
         const errorMsg = result.error || 'Incorrect admin password';
         setDeleteError(errorMsg);
@@ -1871,13 +1899,13 @@ const UserManagement = () => {
                           <label className="block text-sm font-medium text-gray-700">Co-Advisers (Optional)</label>
                           <button
                             type="button"
-                            onClick={() => setFormData({ ...formData, co_advisers: [...(formData.co_advisers || []), ''] })}
+                            onClick={() => setFormData({ ...formData, co_advisers: [...parseCoAdvisersList(formData.co_advisers), ''] })}
                             className="text-xs font-bold text-primary-green hover:text-[#0b5c2a] flex items-center gap-1"
                           >
                             <Plus size={14} /> Add Co-Adviser
                           </button>
                         </div>
-                        {formData.co_advisers?.map((coAdviser, idx) => (
+                        {parseCoAdvisersList(formData.co_advisers).map((coAdviser, idx) => (
                           <div key={idx} className="flex gap-2 items-center animate-in fade-in zoom-in duration-200">
                             <input
                               type="text"
@@ -1885,7 +1913,7 @@ const UserManagement = () => {
                               placeholder={`Co-Adviser ${idx + 1} Name`}
                               value={coAdviser}
                               onChange={(e) => {
-                                const newCoAdvisers = [...formData.co_advisers];
+                                const newCoAdvisers = [...parseCoAdvisersList(formData.co_advisers)];
                                 newCoAdvisers[idx] = e.target.value;
                                 setFormData({ ...formData, co_advisers: newCoAdvisers });
                               }}
@@ -1893,7 +1921,7 @@ const UserManagement = () => {
                             <button
                               type="button"
                               onClick={() => {
-                                const newCoAdvisers = formData.co_advisers.filter((_, i) => i !== idx);
+                                const newCoAdvisers = parseCoAdvisersList(formData.co_advisers).filter((_, i) => i !== idx);
                                 setFormData({ ...formData, co_advisers: newCoAdvisers });
                               }}
                               className="p-2.5 text-red-500 hover:bg-red-50 rounded-xl transition-colors shrink-0"
@@ -2541,13 +2569,13 @@ const UserManagement = () => {
                       <label className="block text-xs font-semibold text-gray-700">Co-Advisers (Optional)</label>
                       <button
                         type="button"
-                        onClick={() => setRenewForm({ ...renewForm, co_advisers: [...(renewForm.co_advisers || []), ''] })}
+                        onClick={() => setRenewForm({ ...renewForm, co_advisers: [...parseCoAdvisersList(renewForm.co_advisers), ''] })}
                         className="text-xs font-bold text-primary-green hover:text-[#0b5c2a] flex items-center gap-1"
                       >
                         <Plus size={14} /> Add Co-Adviser
                       </button>
                     </div>
-                    {renewForm.co_advisers?.map((coAdviser, idx) => (
+                    {parseCoAdvisersList(renewForm.co_advisers).map((coAdviser, idx) => (
                       <div key={idx} className="flex gap-2 items-center">
                         <input
                           type="text"
@@ -2555,7 +2583,7 @@ const UserManagement = () => {
                           placeholder={`Co-Adviser ${idx + 1} Name`}
                           value={coAdviser}
                           onChange={(e) => {
-                            const newCo = [...renewForm.co_advisers];
+                            const newCo = [...parseCoAdvisersList(renewForm.co_advisers)];
                             newCo[idx] = e.target.value;
                             setRenewForm({ ...renewForm, co_advisers: newCo });
                           }}
@@ -2563,7 +2591,7 @@ const UserManagement = () => {
                         <button
                           type="button"
                           onClick={() => {
-                            const newCo = (renewForm.co_advisers || []).filter((_, i) => i !== idx);
+                            const newCo = parseCoAdvisersList(renewForm.co_advisers).filter((_, i) => i !== idx);
                             setRenewForm({ ...renewForm, co_advisers: newCo });
                           }}
                           className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0"
