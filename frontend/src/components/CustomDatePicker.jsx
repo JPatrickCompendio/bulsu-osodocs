@@ -149,7 +149,7 @@ const CustomDatePicker = ({
 
       {/* Calendar Popover */}
       {isOpen && (
-        <div className={`absolute left-0 ${dropUp ? 'bottom-full mb-1' : 'top-full mt-1'} z-[99999] bg-white border border-gray-200 rounded-2xl shadow-2xl p-4 w-[290px] animate-in fade-in-50 zoom-in-95 duration-150`}>
+        <div className={`absolute left-0 ${dropUp ? 'bottom-full mb-1' : 'top-full mt-1'} z-[100] bg-white border border-gray-200 rounded-2xl shadow-2xl p-4 w-[290px] animate-in fade-in-50 zoom-in-95 duration-150`}>
           {/* Header */}
           <div className="flex items-center justify-between pb-3 border-b border-gray-100">
             <button
@@ -224,6 +224,7 @@ const CustomDatePicker = ({
                     type="button"
                     title={`BLOCKED: ${eventTitle} (Click for details)`}
                     onClick={() => {
+                      setIsOpen(false);
                       if (onBlockedDateClick) {
                         onBlockedDateClick(dateStr, blockedEvent);
                       }

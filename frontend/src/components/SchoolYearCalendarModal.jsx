@@ -18,9 +18,12 @@ import {
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import ReportPreviewModal from './ReportPreviewModal';
 import GlobalLoader from './GlobalLoader';
+import { useAuth } from '../context/AuthContext';
 
 const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
+  const { user } = useAuth();
   const [view, setView] = useState('calendar'); // 'calendar' or 'list'
   const [currentDate, setCurrentDate] = useState(new Date());
   const [activities, setActivities] = useState([]);
@@ -28,6 +31,9 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
   const [selectedSemesterId, setSelectedSemesterId] = useState('all');
   const [loading, setLoading] = useState(true);
   const [selectedDayDetails, setSelectedDayDetails] = useState(null);
+
+  const [isReportOpen, setIsReportOpen] = useState(false);
+  const [reportData, setReportData] = useState({ title: '', stats: [], headers: [], rows: [], filename: '' });
 
   useEffect(() => {
     fetchActivities();
@@ -131,31 +137,49 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
   };
 
   const generateReport = () => {
-    const doc = new jsPDF();
-    const syTitle = activeSy ? activeSy.name : 'School Year';
-    
-    doc.setFontSize(16);
-    doc.text(`Activity Calendar Report - ${syTitle}`, 14, 20);
-    doc.setFontSize(10);
-    doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 14, 28);
+    const totalEvents = activities.length;
+    const blockedCount = activities.filter(a => a.isBlocked).length;
+    const windowsCount = activities.filter(a => a.eventType === 'submission_window').length;
+    const semesterCount = semesters.length;
 
-    const tableData = activities.map(act => [
-      act.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      act.title,
-      act.org,
-      act.date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) + (act.endDate ? ` - ${act.endDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}` : '')
-    ]);
+    const reportStats = [
+      { label: 'Total Scheduled Events', value: totalEvents },
+      { label: 'Blocked / Restricted Dates', value: blockedCount },
+      { label: 'Submission Windows', value: windowsCount },
+      { label: 'Active Semesters', value: semesterCount }
+    ];
 
-    autoTable(doc, {
-      startY: 35,
-      head: [['Date', 'Activity Title', 'Organization', 'Time']],
-      body: tableData,
-      theme: 'grid',
-      headStyles: { fillColor: [7, 60, 45] },
-      styles: { fontSize: 9 }
+    const tableHeaders = ['Event / Activity Title', 'Type / Category', 'Date / Period', 'Semester', 'Status'];
+
+    const tableData = activities.map(act => {
+      let category = 'Academic Event';
+      if (act.isBlocked) {
+        category = 'Blocked Date (Prohibited)';
+      } else if (act.eventType === 'submission_window') {
+        category = `Submission Window (${act.docTypeName || 'Documents'})`;
+      }
+
+      const dateDisplay = act.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+        (act.endDate ? ` – ${act.endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : '');
+
+      return [
+        act.title,
+        category,
+        dateDisplay,
+        act.semesterName || 'Entire School Year',
+        act.isBlocked ? 'BLOCKED' : 'ACTIVE'
+      ];
     });
 
-    doc.save(`Activity_Report_${syTitle.replace(/[^a-z0-9]/gi, '_')}.pdf`);
+    const syName = activeSy?.name || 'School Year';
+    setReportData({
+      title: `Academic Calendar & Blocked Dates Report (${syName})`,
+      stats: reportStats,
+      headers: tableHeaders,
+      rows: tableData,
+      filename: `Academic_Calendar_Report_${syName.replace(/[^a-z0-9]/gi, '_')}.pdf`
+    });
+    setIsReportOpen(true);
   };
 
   // Calendar Grid Calculations
@@ -637,6 +661,18 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
         </div>
       )}
 
+      {/* Standardized Report Preview Modal */}
+      <ReportPreviewModal
+        isOpen={isReportOpen}
+        onClose={() => setIsReportOpen(false)}
+        title={reportData.title}
+        stats={reportData.stats}
+        tableHeaders={reportData.headers}
+        tableData={reportData.rows}
+        pdfFilename={reportData.filename}
+        schoolYear={activeSy?.name || ''}
+        generatedBy={user?.full_name || 'System Administrator'}
+      />
     </div>
   );
 };

@@ -441,7 +441,7 @@ const AcademicSettings = () => {
           }`}
           onClick={() => setActiveTab('school-years')}
         >
-          <BookOpen size={16} /> 1. School Years
+          <BookOpen size={16} /> School Years
         </button>
 
         <button
@@ -452,7 +452,7 @@ const AcademicSettings = () => {
           }`}
           onClick={() => setActiveTab('semesters')}
         >
-          <Clock size={16} /> 2. Semesters & Terms
+          <Clock size={16} /> Semesters & Terms
         </button>
 
         <button
@@ -463,7 +463,7 @@ const AcademicSettings = () => {
           }`}
           onClick={() => setActiveTab('calendar')}
         >
-          <CalendarDays size={16} /> 3. Calendar & Blocked Dates
+          <CalendarDays size={16} /> Calendar & Blocked Dates
         </button>
 
         <button
@@ -474,7 +474,7 @@ const AcademicSettings = () => {
           }`}
           onClick={() => setActiveTab('submission-windows')}
         >
-          <FileText size={16} /> 4. Submission Windows
+          <FileText size={16} /> Submission Windows
         </button>
       </div>
 

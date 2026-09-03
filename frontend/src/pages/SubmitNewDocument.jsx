@@ -2448,52 +2448,52 @@ const SubmitNewDocument = () => {
       {/* FORM VIEW */}
       {view === 'form' && (
         <form ref={formRef} onSubmit={handleRegisterDocument} className="flex flex-col animate-in fade-in duration-500 relative min-h-screen">
-          {/* Header - Stretches full width, auto-hides on scroll down */}
-          <div className={`hidden md:flex fixed top-16 left-64 right-0 z-10 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between shadow-sm transition-transform duration-300 ${showHeader ? 'translate-y-0' : '-translate-y-full'}`}>
-            <div className="flex items-center gap-6">
-              <button type="button" onClick={handleBackNavigation} className="p-2 hover:bg-gray-50 rounded-lg transition-all">
-                <ArrowLeft size={24} className="text-gray-500" />
+          {/* Header - Compact header banner */}
+          <div className="hidden md:flex w-full bg-white border-b border-gray-100 px-4 py-2 items-center justify-between shadow-xs mb-0">
+            <div className="flex items-center gap-4">
+              <button type="button" onClick={handleBackNavigation} className="p-1.5 hover:bg-gray-50 rounded-lg transition-all">
+                <ArrowLeft size={20} className="text-gray-500" />
               </button>
-              <div className="flex items-center gap-4">
-                <div className="p-2 bg-primary-green rounded-lg">
-                  <FileText className="text-white" size={24} />
+              <div className="flex items-center gap-3">
+                <div className="p-1.5 bg-primary-green rounded-lg">
+                  <FileText className="text-white" size={18} />
                 </div>
                 <div>
-                  <h1 className="text-xl font-black text-gray-800 uppercase">{selectedType.name}</h1>
-                  <p className="text-gray-400 font-bold text-[10px] uppercase tracking-widest">{subType}</p>
+                  <h1 className="text-base font-black text-gray-800 uppercase leading-tight">{selectedType.name}</h1>
+                  <p className="text-gray-400 font-bold text-[9px] uppercase tracking-widest leading-none">{subType}</p>
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-100 rounded-lg shadow-sm">
+            <div className="flex items-center gap-2 px-3 py-1 bg-amber-50 border border-amber-100 rounded-lg shadow-xs">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
               </span>
-              <span className="text-xs font-black text-amber-700 uppercase tracking-widest">Draft Mode</span>
+              <span className="text-[10px] font-black text-amber-700 uppercase tracking-widest">Draft Mode</span>
             </div>
           </div>
 
-          <div className="flex-1 p-2 sm:p-4 md:p-8 pb-24 pt-4 md:pt-15 bg-gray-50/20">
-            <div className={`w-full max-w-5xl mx-auto space-y-4 sm:space-y-8`}>
+          <div className="flex-1 px-2 sm:px-4 pt-1 sm:pt-2 pb-24 bg-gray-50/20">
+            <div className={`w-full max-w-5xl mx-auto space-y-2`}>
 
               {/* Returned Document Revision Banner */}
               {isReturnedDocument && (
-                <div className="p-3.5 sm:p-5 bg-amber-50 border-2 border-amber-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm animate-in fade-in">
+                <div className="p-3 sm:p-4 bg-amber-50 border-2 border-amber-200 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs animate-in fade-in">
                   <div className="flex items-center gap-3">
-                    <div className="p-3 bg-amber-100 text-amber-700 rounded-xl shrink-0">
-                      <RefreshCcw size={22} className="animate-spin-slow" />
+                    <div className="p-2 bg-amber-100 text-amber-700 rounded-lg shrink-0">
+                      <RefreshCcw size={18} className="animate-spin-slow" />
                     </div>
                     <div>
-                      <h4 className="font-black text-amber-900 text-sm uppercase tracking-wider">Returned Document Revision</h4>
-                      <p className="text-xs text-amber-700 font-bold mt-0.5">
+                      <h4 className="font-black text-amber-900 text-xs uppercase tracking-wider">Returned Document Revision</h4>
+                      <p className="text-[11px] text-amber-700 font-bold mt-0.5">
                         {hasFormChanges
                           ? "Form changes detected! You can now click Resubmit Document to update your submission."
                           : "Edit the form content fields below to make your changes before resubmitting."}
                       </p>
                     </div>
                   </div>
-                  <span className={`px-4 py-1.5 rounded-full text-xs font-black uppercase shadow-sm tracking-wider shrink-0 ${
+                  <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase shadow-xs tracking-wider shrink-0 ${
                     hasFormChanges ? 'bg-green-600 text-white' : 'bg-amber-200 text-amber-800'
                   }`}>
                     {hasFormChanges ? 'Ready to Resubmit' : 'Awaiting Form Edits'}
@@ -2501,42 +2501,44 @@ const SubmitNewDocument = () => {
                 </div>
               )}
 
-              {/* Proposal Stepper Indicator */}
+              {/* ONLY Proposal Stepper Indicator is Sticky / Floating on Scroll (Compact Width) */}
               {isProposal && (
-                <div className="bg-white p-3 sm:p-6 rounded-2xl shadow-sm border border-gray-100">
-                  <div className="flex items-center justify-between max-w-xl mx-auto relative">
+                <div className="sticky -top-1 sm:-top-2 md:-top-6 z-30 bg-white pt-3 pb-2.5 px-4 shadow-sm border-b border-gray-200 -mx-2 sm:-mx-4 md:-mx-8 transition-all duration-300">
+                  <div className="flex items-center justify-between max-w-md mx-auto relative">
                     <div className="absolute top-1/2 left-0 right-0 h-1 bg-gray-100 -translate-y-1/2 z-0"></div>
                     <div className="absolute top-1/2 left-0 h-1 bg-primary-green -translate-y-1/2 z-0 transition-all duration-500 ease-in-out" style={{ width: proposalStep === 1 ? '15%' : proposalStep === 2 ? '50%' : '85%' }}></div>
                     
                     {[
-                      { step: 1, label: 'General Info', icon: <FileText size={14} /> },
-                      { step: 2, label: 'Preview & Download', icon: <Download size={14} /> },
-                      { step: 3, label: 'Upload Requirements', icon: <Upload size={14} /> },
+                      { step: 1, label: 'General Info', icon: <FileText size={13} /> },
+                      { step: 2, label: 'Preview & Download', icon: <Download size={13} /> },
+                      { step: 3, label: 'Upload Requirements', icon: <Upload size={13} /> },
                     ].map((s) => (
-                      <div key={s.step} className="flex flex-col items-center gap-2 relative z-10">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs transition-all duration-300 ${
+                      <div key={s.step} className="flex flex-col items-center gap-1 relative z-10">
+                        <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center font-black text-xs transition-all duration-300 ${
                           proposalStep >= s.step 
-                            ? 'bg-primary-green text-white shadow-md shadow-green-600/20 ring-4 ring-green-50' 
+                            ? 'bg-primary-green text-white shadow-xs shadow-green-600/20 ring-2 ring-green-50' 
                             : 'bg-white text-gray-400 border-2 border-gray-200'
                         }`}>
-                          {proposalStep > s.step ? <Check size={14} strokeWidth={3} /> : s.icon}
+                          {proposalStep > s.step ? <Check size={13} strokeWidth={3} /> : s.icon}
                         </div>
                         <span className={`text-[9px] font-black uppercase tracking-widest ${proposalStep >= s.step ? 'text-primary-green' : 'text-gray-400'}`}>{s.label}</span>
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
 
-                  {proposalStep === 1 && (
-                    <div className="bg-white p-4 sm:p-8 md:p-10 rounded-2xl shadow-sm border border-gray-100 space-y-6 sm:space-y-8 animate-in fade-in slide-in-from-right-4 duration-500 mt-4 sm:mt-6">
-                      <div className="flex items-center gap-4 pb-6 border-b border-gray-100">
-                        <div className="w-10 h-10 bg-primary-green/10 rounded-xl flex items-center justify-center text-primary-green shrink-0">
-                          <FileText size={20} />
-                        </div>
-                        <div>
-                          <h2 className="text-xl font-black text-gray-800 uppercase tracking-widest">General Information</h2>
-                          <p className="text-xs font-bold text-gray-400 mt-1">Please fill in the required details for your submission</p>
-                        </div>
-                      </div>
+              {proposalStep === 1 && (
+                <div className="bg-white p-4 sm:p-6 md:p-8 rounded-2xl shadow-sm border border-gray-100 space-y-4 sm:space-y-6 animate-in fade-in slide-in-from-right-4 duration-500 mt-2 sm:mt-3">
+                  <div className="flex items-center gap-3 pb-4 border-b border-gray-100">
+                    <div className="w-8 h-8 bg-primary-green/10 rounded-lg flex items-center justify-center text-primary-green shrink-0">
+                      <FileText size={18} />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-black text-gray-800 uppercase tracking-wider leading-tight">General Information</h2>
+                      <p className="text-[11px] font-bold text-gray-400 mt-0.5">Please fill in the required details for your submission</p>
+                    </div>
+                  </div>
 
                       <div className="space-y-6">
                         {/* Basic Info */}
@@ -3242,10 +3244,8 @@ const SubmitNewDocument = () => {
                       {renderRequirementsList(true)}
                     </div>
                   )}
-                </div>
-              )}
 
-              {/* Conditional Non-Proposal List */}
+                  {/* Conditional Non-Proposal List */}
               {!isProposal && renderRequirementsList(false)}
             </div>
           </div>
@@ -3535,7 +3535,7 @@ const SubmitNewDocument = () => {
 
       {/* Blocked Date Modal */}
       {blockedDateModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100000] flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-[2rem] w-full max-w-md p-8 flex flex-col shadow-2xl animate-in zoom-in-95 duration-200 text-gray-800 relative overflow-hidden border border-gray-100">
             <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-red-500 via-amber-500 to-red-500"></div>
 

@@ -36,24 +36,30 @@ const AccomplishmentReportPreviewModal = ({
   }), []);
 
   const getBase64 = (src) => new Promise((resolve) => {
+    if (!src) return resolve('');
+    if (src.startsWith('data:')) return resolve(src);
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.src = src;
     img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-      resolve(canvas.toDataURL('image/png'));
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || 800;
+        canvas.height = img.naturalHeight || 600;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        resolve(canvas.toDataURL('image/png'));
+      } catch (e) {
+        resolve(src);
+      }
     };
-    img.onerror = () => resolve(null);
+    img.onerror = () => resolve(src);
   });
 
   useEffect(() => {
     const loadDefaultImages = async () => {
-      if (!headerBase64) setHeaderBase64(await getBase64(DEFAULT_HEADER_IMG));
-      if (!footerBase64) setFooterBase64(await getBase64(DEFAULT_FOOTER_IMG));
+      if (!headerBase64 && DEFAULT_HEADER_IMG) setHeaderBase64(DEFAULT_HEADER_IMG);
+      if (!footerBase64 && DEFAULT_FOOTER_IMG) setFooterBase64(DEFAULT_FOOTER_IMG);
     };
     if (isOpen) loadDefaultImages();
   }, [isOpen]);
@@ -66,17 +72,17 @@ const AccomplishmentReportPreviewModal = ({
     }
     if (isInitialized) return;
 
-    const buildInitialHtml = async () => {
+    const buildInitialHtml = () => {
       let proofsHtml = '';
       if (proofImages && proofImages.length > 0) {
-        const loadedProofs = await Promise.all(
-          proofImages.map(async (img) => {
-            if (!img.file_url && !img.url) return null;
-            const b64 = await getBase64(img.file_url || img.url);
-            return b64 ? `<div style="margin-bottom: 20px;"><img src="${b64}" class="default-center-img" style="max-width: 80%; max-height: 400px; object-fit: contain;" /></div>` : '';
+        proofsHtml = proofImages
+          .map((img) => {
+            const src = img?.file_url || img?.url;
+            if (!src) return '';
+            return `<div style="margin-bottom: 20px; text-align: center;"><img src="${src}" class="default-center-img" style="max-width: 80%; max-height: 400px; object-fit: contain; margin: 0 auto;" /></div>`;
           })
-        );
-        proofsHtml = loadedProofs.filter(Boolean).join('');
+          .filter(Boolean)
+          .join('');
       }
 
       const subtypeName = submission?.document_subtypes?.name || 'MAIN CAMPUS';
