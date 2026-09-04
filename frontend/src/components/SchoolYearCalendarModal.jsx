@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { 
-  X, 
-  Calendar as CalendarIcon, 
-  List, 
-  FileDown, 
-  ChevronLeft, 
-  ChevronRight, 
-  Clock, 
-  Lock, 
-  ShieldAlert, 
-  Info, 
+import {
+  X,
+  Calendar as CalendarIcon,
+  List,
+  FileDown,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Lock,
+  ShieldAlert,
+  Info,
   MapPin,
   Building2,
   Tag,
@@ -28,10 +28,10 @@ const getWindowRemainingBadge = (endDate) => {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const end = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
-  
+
   const diffTime = end.getTime() - today.getTime();
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  
+
   if (diffDays === 0) return { label: 'Closes today', bg: 'bg-rose-100 text-rose-800 border-rose-200' };
   if (diffDays === 1) return { label: 'Closes tomorrow', bg: 'bg-amber-100 text-amber-800 border-amber-200' };
   if (diffDays > 1) return { label: `${diffDays} days left`, bg: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
@@ -132,7 +132,7 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
           events.push(actEv);
         });
       }
-      
+
       events.sort((a, b) => a.date - b.date);
       setActivities(events);
 
@@ -244,8 +244,8 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
       try {
         const start = new Date(act.date);
         const end = act.endDate ? new Date(act.endDate) : new Date(act.date);
-        start.setHours(0,0,0,0);
-        end.setHours(23,59,59,999);
+        start.setHours(0, 0, 0, 0);
+        end.setHours(23, 59, 59, 999);
         return isWithinInterval(day, { start, end });
       } catch {
         return false;
@@ -260,8 +260,8 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
       try {
         const start = new Date(sw.date);
         const end = sw.endDate ? new Date(sw.endDate) : new Date(sw.date);
-        start.setHours(0,0,0,0);
-        end.setHours(23,59,59,999);
+        start.setHours(0, 0, 0, 0);
+        end.setHours(23, 59, 59, 999);
         return isWithinInterval(day, { start, end });
       } catch {
         return false;
@@ -272,7 +272,7 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[99999] flex items-center justify-center p-3 sm:p-6" onClick={onClose}>
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-7xl h-[95vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150 border border-gray-100" onClick={e => e.stopPropagation()}>
-        
+
         {/* Modal Top Header with Mathematically Centered Month Controls */}
         <div className="px-6 py-3.5 border-b border-gray-100 grid grid-cols-1 md:grid-cols-3 items-center justify-between gap-3 shrink-0 bg-white">
           {/* Left: Title & Subtitle */}
@@ -393,11 +393,10 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
             {/* Org Activity Pill */}
             <button
               onClick={() => setCategoryFilter(prev => prev === 'APPROVED' ? 'ALL' : 'APPROVED')}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold shrink-0 transition-all cursor-pointer border ${
-                categoryFilter === 'APPROVED'
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold shrink-0 transition-all cursor-pointer border ${categoryFilter === 'APPROVED'
                   ? 'bg-purple-600 text-white border-purple-700 shadow-md'
                   : 'bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200/80'
-              }`}
+                }`}
             >
               <span className={`w-2 h-2 rounded-full ${categoryFilter === 'APPROVED' ? 'bg-white' : 'bg-purple-600'}`} />
               <span>Org Activity</span>
@@ -406,11 +405,10 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
             {/* Blocked Date Pill */}
             <button
               onClick={() => setCategoryFilter(prev => prev === 'BLOCKED' ? 'ALL' : 'BLOCKED')}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold shrink-0 transition-all cursor-pointer border ${
-                categoryFilter === 'BLOCKED'
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold shrink-0 transition-all cursor-pointer border ${categoryFilter === 'BLOCKED'
                   ? 'bg-rose-600 text-white border-rose-700 shadow-md'
                   : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200/80'
-              }`}
+                }`}
             >
               <span className={`w-2 h-2 rounded-full ${categoryFilter === 'BLOCKED' ? 'bg-white' : 'bg-rose-500'}`} />
               <span>Blocked Date</span>
@@ -419,11 +417,10 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
             {/* Open Window Pill */}
             <button
               onClick={() => setCategoryFilter(prev => prev === 'SUBMISSION_WINDOW' ? 'ALL' : 'SUBMISSION_WINDOW')}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold shrink-0 transition-all cursor-pointer border ${
-                categoryFilter === 'SUBMISSION_WINDOW'
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold shrink-0 transition-all cursor-pointer border ${categoryFilter === 'SUBMISSION_WINDOW'
                   ? 'bg-emerald-600 text-white border-emerald-700 shadow-md'
                   : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200/80'
-              }`}
+                }`}
             >
               <span className={`w-2 h-2 rounded-full ${categoryFilter === 'SUBMISSION_WINDOW' ? 'bg-white' : 'bg-emerald-500'}`} />
               <span>Open Window</span>
@@ -432,11 +429,10 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
             {/* Academic Event Pill */}
             <button
               onClick={() => setCategoryFilter(prev => prev === 'ACADEMIC' ? 'ALL' : 'ACADEMIC')}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold shrink-0 transition-all cursor-pointer border ${
-                categoryFilter === 'ACADEMIC'
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold shrink-0 transition-all cursor-pointer border ${categoryFilter === 'ACADEMIC'
                   ? 'bg-sky-600 text-white border-sky-700 shadow-md'
                   : 'bg-sky-50 hover:bg-sky-100 text-sky-700 border-sky-200/80'
-              }`}
+                }`}
             >
               <span className={`w-2 h-2 rounded-full ${categoryFilter === 'ACADEMIC' ? 'bg-white' : 'bg-sky-500'}`} />
               <span>Academic Event</span>
@@ -473,8 +469,8 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
 
                   <div className="flex items-center gap-2 flex-wrap">
                     {openWindows.map((sw, idx) => (
-                      <div 
-                        key={idx} 
+                      <div
+                        key={idx}
                         className="flex items-center gap-2 px-3.5 py-1.5 bg-white border border-emerald-300/80 rounded-full text-xs font-bold shadow-2xs"
                       >
                         <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
@@ -521,22 +517,20 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
                           onClick={() => {
                             setActiveDayModalDate(day);
                           }}
-                          className={`min-h-[115px] p-2 border-b border-r border-gray-100 transition flex flex-col justify-between cursor-pointer group ${
-                            !isCurrentMonth 
-                              ? 'bg-gray-50/40 text-gray-300' 
+                          className={`min-h-[115px] p-2 border-b border-r border-gray-100 transition flex flex-col justify-between cursor-pointer group ${!isCurrentMonth
+                              ? 'bg-gray-50/40 text-gray-300'
                               : 'bg-white text-gray-800 hover:bg-purple-50/20'
-                          }`}
+                            }`}
                         >
                           <div>
                             {/* Day Header Row: Date number on Left + Indicator Dots on Right */}
                             <div className="flex items-center justify-between mb-1.5">
-                              <span className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full transition ${
-                                isTodayDay 
-                                  ? 'bg-purple-700 text-white font-black shadow-2xs' 
-                                  : !isCurrentMonth 
-                                    ? 'text-gray-300' 
+                              <span className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full transition ${isTodayDay
+                                  ? 'bg-purple-700 text-white font-black shadow-2xs'
+                                  : !isCurrentMonth
+                                    ? 'text-gray-300'
                                     : 'text-gray-700 group-hover:text-purple-700'
-                              }`}>
+                                }`}>
                                 {format(day, 'd')}
                               </span>
 
@@ -553,19 +547,17 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
                               {dayEvents.slice(0, 2).map((ev, idx) => (
                                 <div
                                   key={idx}
-                                  className={`p-1.5 rounded-md text-[10px] font-bold border transition overflow-hidden space-y-0.5 ${
-                                    ev.isBlocked
+                                  className={`p-1.5 rounded-md text-[10px] font-bold border transition overflow-hidden space-y-0.5 ${ev.isBlocked
                                       ? 'bg-rose-50 text-rose-900 border-rose-200'
                                       : ev.isActivityProposal
                                         ? 'bg-purple-50 text-purple-900 border-purple-200'
                                         : 'bg-sky-50 text-sky-900 border-sky-200'
-                                  }`}
+                                    }`}
                                   title={`${ev.title} - ${ev.org || ''} (${ev.venue || 'No venue'})`}
                                 >
                                   <div className="flex items-center gap-1">
-                                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                                      ev.isBlocked ? 'bg-rose-500' : ev.isActivityProposal ? 'bg-purple-600' : 'bg-sky-500'
-                                    }`} />
+                                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${ev.isBlocked ? 'bg-rose-500' : ev.isActivityProposal ? 'bg-purple-600' : 'bg-sky-500'
+                                      }`} />
                                     <span className="truncate font-extrabold leading-tight">{ev.title}</span>
                                   </div>
 
@@ -652,9 +644,8 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
                           </td>
 
                           <td className="px-4 py-4 text-center">
-                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${
-                              act.isBlocked ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
-                            }`}>
+                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${act.isBlocked ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
+                              }`}>
                               {act.isBlocked ? 'BLOCKED' : 'ACTIVE'}
                             </span>
                           </td>
@@ -680,12 +671,12 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
 
       {/* CLICKED DATE DETAILS POPUP MODAL (REPLACES RIGHT SIDEBAR) */}
       {activeDayModalDate && (
-        <div 
-          className="fixed inset-0 bg-black/50 backdrop-blur-xs z-[100000] flex items-center justify-center p-4" 
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-xs z-[100000] flex items-center justify-center p-4"
           onClick={() => setActiveDayModalDate(null)}
         >
-          <div 
-            className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-100 animate-in zoom-in-95 duration-150" 
+          <div
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-100 animate-in zoom-in-95 duration-150"
             onClick={e => e.stopPropagation()}
           >
             {/* Modal Header */}
@@ -702,8 +693,8 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
                 </p>
               </div>
 
-              <button 
-                onClick={() => setActiveDayModalDate(null)} 
+              <button
+                onClick={() => setActiveDayModalDate(null)}
                 className="p-1 hover:bg-white/20 rounded-full transition text-white font-extrabold text-sm"
               >
                 ✕
@@ -712,7 +703,7 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
 
             {/* Modal Body */}
             <div className="p-5 space-y-4 max-h-[65vh] overflow-y-auto">
-              
+
               {/* Event Cards List */}
               <div className="space-y-3">
                 {getEventsForDay(activeDayModalDate).length === 0 ? (
@@ -723,22 +714,20 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
                   getEventsForDay(activeDayModalDate).map((ev, idx) => (
                     <div
                       key={idx}
-                      className={`p-4 rounded-2xl border transition space-y-2 ${
-                        ev.isActivityProposal
+                      className={`p-4 rounded-2xl border transition space-y-2 ${ev.isActivityProposal
                           ? 'border-2 border-purple-600 bg-purple-50/20 shadow-2xs'
                           : ev.isBlocked
                             ? 'border-2 border-rose-500 bg-rose-50/20 shadow-2xs'
                             : 'border border-gray-200 bg-white shadow-2xs'
-                      }`}
+                        }`}
                     >
                       <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
-                          ev.isBlocked
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${ev.isBlocked
                             ? 'bg-rose-100 text-rose-800'
                             : ev.isActivityProposal
                               ? 'bg-purple-100 text-purple-800'
                               : 'bg-sky-100 text-sky-800'
-                        }`}>
+                          }`}>
                           {ev.isBlocked ? '🔴 Blocked date' : ev.isActivityProposal ? '🟣 Approved activity' : '🔵 Academic event'}
                         </span>
 
@@ -757,7 +746,7 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
                         <div className="flex items-center gap-1.5">
                           <Clock size={12} className="text-gray-400 shrink-0" />
                           <span>
-                            {ev.endDate && !isSameDay(ev.date, ev.endDate) 
+                            {ev.endDate && !isSameDay(ev.date, ev.endDate)
                               ? `Multi-day · ${format(ev.date, 'MMM d')} – ${format(ev.endDate, 'MMM d, yyyy')}`
                               : format(ev.date, 'MMM d, yyyy')}
                           </span>

@@ -213,6 +213,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       { name: 'My Documents', path: '/my-documents', icon: <Files size={20} /> },
       { name: 'Completed', path: '/completed', icon: <CheckCircle size={20} /> },
       { name: 'List of Requirements', path: '/requirements', icon: <ListChecks size={20} /> },
+      { name: 'Academic Settings', path: '/admin/academic-settings', icon: <Settings size={20} /> },
     ],
     'vice-chairman': [
       { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
@@ -220,6 +221,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       { name: 'My Documents', path: '/my-documents', icon: <Files size={20} /> },
       { name: 'Completed', path: '/completed', icon: <CheckCircle size={20} /> },
       { name: 'List of Requirements', path: '/requirements', icon: <ListChecks size={20} /> },
+      { name: 'Academic Settings', path: '/admin/academic-settings', icon: <Settings size={20} /> },
     ],
     'org-president': [
       { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },

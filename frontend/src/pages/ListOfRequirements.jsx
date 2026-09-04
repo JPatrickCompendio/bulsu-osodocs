@@ -51,7 +51,7 @@ const getStoragePath = (filePath) => {
 const ListOfRequirements = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const isAdmin = user?.role === 'admin';
+  const canManage = ['admin', 'chairman', 'vice-chairman'].includes(user?.role);
 
   // State
   const [documentTypes, setDocumentTypes] = useState([]);
@@ -327,7 +327,7 @@ const ListOfRequirements = () => {
               </div>
             )}
           </div>
-          {isAdmin && !selectedType && (
+          {canManage && !selectedType && (
             <button
               onClick={() => navigate('/requirements/settings/new')}
               className="bg-gray-800 text-white px-6 py-3.5 rounded-xl text-sm font-black flex items-center gap-2 hover:bg-black transition-all shadow-md whitespace-nowrap"
@@ -359,7 +359,7 @@ const ListOfRequirements = () => {
               }}
               className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 cursor-pointer group relative overflow-hidden"
             >
-              {isAdmin && (
+              {canManage && (
                 <button
                   type="button"
                   onClick={(e) => {
@@ -412,7 +412,7 @@ const ListOfRequirements = () => {
               <span className="font-bold text-sm">Back</span>
             </button>
 
-            {isAdmin && (
+            {canManage && (
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => navigate(`/admin/academic-settings`)}

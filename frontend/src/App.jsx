@@ -39,7 +39,7 @@ const App = () => {
             <Route path="/my-documents" element={<MyDocuments />} />
             <Route path="/requirements" element={<ListOfRequirements />} />
             <Route path="/requirements/settings/:typeId" element={
-              <ProtectedRoute allowedRoles={['admin']}>
+              <ProtectedRoute allowedRoles={['admin', 'chairman', 'vice-chairman']}>
                 <DocumentTypeSettings />
               </ProtectedRoute>
             } />
@@ -57,7 +57,7 @@ const App = () => {
               </ProtectedRoute>
             } />
             <Route path="/admin/academic-settings" element={
-              <ProtectedRoute allowedRoles={['admin']}>
+              <ProtectedRoute allowedRoles={['admin', 'chairman', 'vice-chairman']}>
                 <AcademicSettings />
               </ProtectedRoute>
             } />

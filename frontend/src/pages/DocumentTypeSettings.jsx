@@ -787,7 +787,7 @@ const DocumentTypeSettings = () => {
               </p>
               <form onSubmit={confirmDelete} className="space-y-4">
                 <div className="text-left">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Verify Admin Password</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Verify Password</label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                     <input
