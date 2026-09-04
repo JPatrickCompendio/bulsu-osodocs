@@ -1824,23 +1824,14 @@ const SubmitNewDocument = () => {
   const handleRegisterDocument = (e) => {
     if (e) e.preventDefault();
     if (isSavingRef.current || isSaving) return;
-    isSavingRef.current = true;
-    setIsSaving(true);
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       setNetworkErrorModal({
         title: 'Internet Connection Lost',
         message: 'You are currently offline. Please check your network connection and try again.'
       });
-      isSavingRef.current = false;
-      setIsSaving(false);
       return;
     }
-
-    const resetSaving = () => {
-      isSavingRef.current = false;
-      setIsSaving(false);
-    };
 
     // Validate form inputs if proposal
     const isProposal = selectedType.name.toLowerCase().includes('activity proposal');
@@ -1850,7 +1841,6 @@ const SubmitNewDocument = () => {
       const hasSameDayRange = scheduleMode === 'range' && p.schedules.some(s => s.activity_date && s.end_date && s.activity_date === s.end_date);
       if (hasSameDayRange) {
         showToast("Date Range mode requires the start date and end date to be on different days. Use 'Single Day' mode for single-day activities.", 'error');
-        resetSaving();
         return;
       }
 
@@ -1879,13 +1869,11 @@ const SubmitNewDocument = () => {
         !p.satisfaction_goal_1?.trim()
       ) {
         showToast('Please fill in all required form fields.', 'error');
-        resetSaving();
         return;
       }
 
       if (!/^09\d{9}$/.test(p.contact_number)) {
         showToast('Contact number must start with 09 and have exactly 11 digits.', 'error');
-        resetSaving();
         return;
       }
     }
@@ -1901,14 +1889,12 @@ const SubmitNewDocument = () => {
       const missingReqs = requirements.filter(r => !attachedIds.has(String(r.id)));
       if (missingReqs.length > 0) {
         showToast(`Please attach files for all ${requirements.length} required documents before registering.`, 'error');
-        resetSaving();
         return;
       }
     } else {
       const requiredReqs = requirements.filter(r => !r.is_optional && String(r.is_optional) !== 'true' && !r.title.toLowerCase().includes('(optional)'));
       if (attachedIds.size < requiredReqs.length) {
         showToast(`Please attach all ${requiredReqs.length} required documents before registering.`, 'error');
-        resetSaving();
         return;
       }
     }

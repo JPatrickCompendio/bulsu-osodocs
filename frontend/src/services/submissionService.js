@@ -206,28 +206,12 @@ export const uploadSubmissionFile = async (file, typeName, submissionId, version
 };
 
 export const saveAttachmentRecord = async (versionId, requirementId, fileName, filePath) => {
-  // Prevent database duplicates by updating existing attachment for this requirement in this version if present
-  const { data: existing } = await supabase
+  // Prevent database duplicates by deleting the existing attachment for this requirement in this version
+  await supabase
     .from('submission_attachments')
-    .select('id')
+    .delete()
     .eq('submission_version_id', versionId)
-    .eq('requirement_id', requirementId)
-    .maybeSingle();
-
-  if (existing?.id) {
-    const { data, error } = await supabase
-      .from('submission_attachments')
-      .update({
-        file_name: fileName,
-        file_url: filePath,
-        uploaded_at: new Date().toISOString()
-      })
-      .eq('id', existing.id)
-      .select()
-      .single();
-    if (error) throw error;
-    return data;
-  }
+    .eq('requirement_id', requirementId);
 
   const { data, error } = await supabase
     .from('submission_attachments')
@@ -252,6 +236,8 @@ export const saveProposalDetails = async (versionId, details, subtypeId = null, 
   // Extract schedules before modifying details
   const schedulesToSave = details.schedules || [];
   
+  // Removed total duration calculation as per requirements
+
   // Validate schedules against blocked dates
   if (schedulesToSave.length > 0) {
     const { data: activeSy } = await supabase
@@ -263,25 +249,23 @@ export const saveProposalDetails = async (versionId, details, subtypeId = null, 
     if (activeSy) {
       const { data: events } = await supabase
         .from('academic_calendar_events')
-        .select('*')
-        .eq('school_year_id', activeSy.id)
-        .or('event_type.eq.blocked_activity,description.eq.BLOCKS_ACTIVITY');
+        .select('start_date, end_date, event_type, description')
+        .eq('school_year_id', activeSy.id);
 
-      if (events && events.length > 0) {
+      const blockingEvents = events?.filter(e => e.event_type === 'blocked_activity' || e.description === 'BLOCKS_ACTIVITY') || [];
+
+      if (blockingEvents.length > 0) {
         for (const sched of schedulesToSave) {
           if (!sched.activity_date) continue;
+          
           const startDate = new Date(sched.activity_date);
           const endDate = sched.end_date ? new Date(sched.end_date) : startDate;
-
+          
           let current = new Date(startDate);
           while (current <= endDate) {
-            for (const ev of events) {
+            for (const ev of blockingEvents) {
               const evStart = new Date(ev.start_date);
               const evEnd = ev.end_date ? new Date(ev.end_date) : evStart;
-              evStart.setHours(0, 0, 0, 0);
-              evEnd.setHours(23, 59, 59, 999);
-              current.setHours(12, 0, 0, 0);
-
               if (current >= evStart && current <= evEnd) {
                 const dateStr = current.toISOString().split('T')[0];
                 throw new Error(`Activity cannot be scheduled on ${dateStr}. This date is blocked by the Academic Calendar.`);
@@ -294,23 +278,11 @@ export const saveProposalDetails = async (versionId, details, subtypeId = null, 
     }
   }
 
-  // Safely parse number_of_students to fit within PostgreSQL int8 (BigInt) limits (up to Number.MAX_SAFE_INTEGER)
-  let safeNumStudents = 0;
-  if (details.number_of_students !== null && details.number_of_students !== undefined) {
-    const digitsOnly = String(details.number_of_students).replace(/[^0-9]/g, '');
-    if (digitsOnly) {
-      const parsed = parseInt(digitsOnly, 10);
-      if (!isNaN(parsed)) {
-        safeNumStudents = Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, parsed));
-      }
-    }
-  }
-
   const safeDetails = {
     submission_version_id: versionId,
     ...details,
     target_date: Array.isArray(details.activity_dates) && details.activity_dates.length > 0 ? details.activity_dates.join(', ') : details.target_date,
-    number_of_students: safeNumStudents,
+    number_of_students: parseInt(details.number_of_students) || 0,
     duration: null,
     created_at: new Date().toISOString()
   };
