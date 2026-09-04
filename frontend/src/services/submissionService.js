@@ -278,11 +278,23 @@ export const saveProposalDetails = async (versionId, details, subtypeId = null, 
     }
   }
 
+  // Safely parse number_of_students to fit within PostgreSQL int8 (BigInt) / integer limits
+  let safeNumStudents = 0;
+  if (details.number_of_students !== null && details.number_of_students !== undefined) {
+    const digitsOnly = String(details.number_of_students).replace(/[^0-9]/g, '');
+    if (digitsOnly) {
+      const parsed = parseInt(digitsOnly, 10);
+      if (!isNaN(parsed)) {
+        safeNumStudents = Math.min(2147483647, Math.max(0, parsed));
+      }
+    }
+  }
+
   const safeDetails = {
     submission_version_id: versionId,
     ...details,
     target_date: Array.isArray(details.activity_dates) && details.activity_dates.length > 0 ? details.activity_dates.join(', ') : details.target_date,
-    number_of_students: parseInt(details.number_of_students) || 0,
+    number_of_students: safeNumStudents,
     duration: null,
     created_at: new Date().toISOString()
   };
