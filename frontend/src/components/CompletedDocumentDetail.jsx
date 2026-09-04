@@ -769,7 +769,7 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
                   const reqObj = file.requirements || file.requirement;
                   const scope = reqObj?.requirement_scope || 'OSAS';
                   const isOsas = scope === 'OSAS';
-                  const RETURN_REASONS = ['missing-requirements', 'incorrect-format', 'incomplete-information', 'returned', 'return'];
+                  const RETURN_REASONS = ['missing-requirements', 'incorrect-format', 'incomplete-information', 'others', 'returned', 'return'];
                   const fileLog = (timelineLogs || []).find((l) => l.attachment_id === file.id || (l.comment && file.file_name && l.comment.includes(file.file_name)));
                   const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
                   const isReturnedAttachment = RETURN_REASONS.includes(reviewActionValue);

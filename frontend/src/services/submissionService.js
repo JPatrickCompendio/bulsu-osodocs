@@ -206,12 +206,33 @@ export const uploadSubmissionFile = async (file, typeName, submissionId, version
 };
 
 export const saveAttachmentRecord = async (versionId, requirementId, fileName, filePath) => {
-  // Prevent database duplicates by deleting the existing attachment for this requirement in this version
-  await supabase
+  // Prevent database duplicates by updating existing attachment or deleting extra duplicates
+  const { data: existingRecords } = await supabase
     .from('submission_attachments')
-    .delete()
+    .select('id')
     .eq('submission_version_id', versionId)
     .eq('requirement_id', requirementId);
+
+  if (existingRecords && existingRecords.length > 0) {
+    const keepId = existingRecords[0].id;
+    if (existingRecords.length > 1) {
+      const duplicateIds = existingRecords.slice(1).map(r => r.id);
+      await supabase.from('submission_attachments').delete().in('id', duplicateIds);
+    }
+
+    const { data, error } = await supabase
+      .from('submission_attachments')
+      .update({
+        file_name: fileName,
+        file_url: filePath,
+        uploaded_at: new Date().toISOString()
+      })
+      .eq('id', keepId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
 
   const { data, error } = await supabase
     .from('submission_attachments')

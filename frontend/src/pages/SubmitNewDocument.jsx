@@ -12,7 +12,7 @@ import {
   Clock, Users, Search, ChevronRight, RefreshCcw, X,
   FileCheck, Download, Eye, Trash2, File as FileIcon,
   Eraser, Check, CheckSquare, Lock, Paperclip, Settings, FilePlus, ChevronDown, WifiOff,
-  AlertTriangle, FileX, FileSignature, CalendarX, FileCode, HelpCircle, Award
+  AlertTriangle, FileX, FileSignature, CalendarX, FileCode, HelpCircle, Award, FileQuestion
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import DEFAULT_HEADER_IMG from '../assets/HEADER.png';
@@ -316,8 +316,9 @@ const SubmitNewDocument = () => {
         // Fallback baseline if DB RLS returns empty for non-admin client
         if (!errorsList || errorsList.length === 0) {
           errorsList = [
-            { reason: 'Missing Requirements', count: 2 },
-            { reason: 'Incorrect Format', count: 1 }
+            { reason: 'Incorrect Format', count: 2 },
+            { reason: 'Incomplete Information', count: 1 },
+            { reason: 'Incomplete Requirements', count: 1 }
           ];
         }
 
@@ -325,8 +326,9 @@ const SubmitNewDocument = () => {
       } catch (err) {
         console.error('Error fetching common errors for SubmitNewDocument:', err);
         setCommonErrors([
-          { reason: 'Missing Requirements', count: 2 },
-          { reason: 'Incorrect Format', count: 1 }
+          { reason: 'Incorrect Format', count: 2 },
+          { reason: 'Incomplete Information', count: 1 },
+          { reason: 'Incomplete Requirements', count: 1 }
         ]);
       }
     };
@@ -484,6 +486,7 @@ const SubmitNewDocument = () => {
   const [localFiles, setLocalFiles] = useState({}); // Stores actual File objects before uploading
   const [existingAttachments, setExistingAttachments] = useState([]);
   const [activeDraft, setActiveDraft] = useState({ submissionId: null, versionId: null });
+  const [flaggedMissingReqIds, setFlaggedMissingReqIds] = useState(new Set());
   const [draftNotice, setDraftNotice] = useState('');
   const [draftLoadedFields, setDraftLoadedFields] = useState(new Set());
   const [isNewDraftThisSession, setIsNewDraftThisSession] = useState(false);
@@ -1263,7 +1266,7 @@ const SubmitNewDocument = () => {
       const versionAttachments = version?.submission_attachments || [];
       const returnedSet = new Set();
       const approvedSet = new Set();
-      const RETURN_REASONS = ['missing-requirements', 'incorrect-format', 'incomplete-information', 'returned', 'revisions-required', 'disapproved'];
+      const RETURN_REASONS = ['missing-requirements', 'incorrect-format', 'incomplete-information', 'others', 'returned', 'revisions-required', 'disapproved'];
 
       // Check if any attachment has an explicit returned log
       const hasExplicitReturnedAttLog = versionAttachments.some((att) => {
@@ -1292,6 +1295,45 @@ const SubmitNewDocument = () => {
         }
       });
 
+      // Check for incomplete or missing requirements log in latest return
+      const latestReturnLog = (logsData || []).find(l => {
+        if (l.attachment_id) return false;
+        const at = String(l.action_type || '').toLowerCase();
+        const ra = String(l.review_action || '').toLowerCase();
+        return at === 'returned' || at === 'return' || ra === 'returned' || at === 'incomplete_requirements' || ra === 'incomplete-requirements';
+      });
+
+      const logTextToParse = latestReturnLog?.comment || latestReturnLog?.description || '';
+      const isIncReqReturn =
+        latestReturnLog &&
+        (latestReturnLog.action_type === 'incomplete_requirements' ||
+         latestReturnLog.review_action === 'incomplete-requirements' ||
+         logTextToParse.includes('Incomplete Requirements Flagged:'));
+
+      const flaggedMissingSet = new Set();
+      if (isIncReqReturn && latestReturnLog) {
+        if (logTextToParse.includes('Incomplete Requirements Flagged:')) {
+          const parts = logTextToParse.split('Incomplete Requirements Flagged:')[1].trim().split('\n');
+          parts.forEach(p => {
+            const title = p.replace(/^•\s*/, '').trim();
+            if (title) flaggedMissingSet.add(title.toLowerCase());
+          });
+        } else {
+          try {
+            const parsed = JSON.parse(logTextToParse);
+            if (Array.isArray(parsed)) {
+              parsed.forEach(p => {
+                if (p.id) flaggedMissingSet.add(p.id);
+                if (p.title) flaggedMissingSet.add(String(p.title).toLowerCase());
+              });
+            }
+          } catch (e) {
+            if (latestReturnLog.description) flaggedMissingSet.add(String(latestReturnLog.description).toLowerCase());
+          }
+        }
+      }
+      setFlaggedMissingReqIds(flaggedMissingSet);
+
       setReturnedReqIds(returnedSet);
       setApprovedReqIds(approvedSet);
 
@@ -1305,8 +1347,10 @@ const SubmitNewDocument = () => {
 
       setIs02F1Returned(is02F1InReturned);
 
-      // If document is returned and 02F1 is NOT returned, skip Phase 1 and Phase 2, go straight to Phase 3 (Upload Requirements)
-      if (isReturnedSub && !is02F1InReturned) {
+      const targetStepParam = new URLSearchParams(window.location.search).get('step');
+      if (targetStepParam) {
+        setProposalStep(parseInt(targetStepParam, 10));
+      } else if (isReturnedSub && !is02F1InReturned) {
         setProposalStep(3);
       } else {
         setProposalStep(1);
@@ -2066,6 +2110,7 @@ const SubmitNewDocument = () => {
         const existing = existingAttachmentMap[req.id];
         const isApprovedReq = isReturnedDocument && (approvedReqIds.has(req.id) || approvedReqIds.has(String(req.id)) || approvedReqIds.has(Number(req.id)));
         const isReturnedReq = isReturnedDocument && (returnedReqIds.has(req.id) || returnedReqIds.has(String(req.id)) || returnedReqIds.has(Number(req.id)));
+        const isFlaggedMissing = flaggedMissingReqIds.has(req.id) || flaggedMissingReqIds.has(String(req.title || '').toLowerCase());
         const isOptionalReq =
           req?.is_optional === true ||
           String(req?.is_optional).toLowerCase() === 'true' ||
@@ -2075,9 +2120,15 @@ const SubmitNewDocument = () => {
           String(req?.requirement_type || '').toLowerCase() === 'optional';
 
         return (
-          <div key={req.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 bg-white rounded-xl shadow-sm border border-gray-100 hover:border-amber-200 transition-all">
+          <div key={req.id} className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 bg-white rounded-xl shadow-sm border transition-all ${
+            isFlaggedMissing
+              ? 'border-2 border-amber-400 bg-amber-50/20'
+              : 'border-gray-100 hover:border-amber-200'
+          }`}>
             <div className="flex items-start sm:items-center gap-4 sm:gap-6">
-              <div className="w-10 h-10 bg-green-100 text-green-800 font-black text-sm flex items-center justify-center rounded-lg shrink-0">
+              <div className={`w-10 h-10 font-black text-sm flex items-center justify-center rounded-lg shrink-0 ${
+                isFlaggedMissing ? 'bg-amber-500 text-white' : 'bg-green-100 text-green-800'
+              }`}>
                 {i + 1}
               </div>
               <div className="flex flex-col gap-1">
@@ -2089,6 +2140,11 @@ const SubmitNewDocument = () => {
                   }`}>
                     {(req.requirement_scope || 'OSAS') === 'OSAS' ? 'OSAS Requirement' : 'LOCAL Requirement'}
                   </span>
+                  {isFlaggedMissing && (
+                    <span className="px-2.5 py-0.5 bg-amber-500 text-white text-[9px] font-black uppercase rounded-full flex items-center gap-1 shadow-xs">
+                      <AlertCircle size={10} /> Incomplete Requirement Flagged by Reviewer
+                    </span>
+                  )}
                   {isApprovedReq && (
                     <span className="px-2.5 py-0.5 bg-green-100 text-green-700 text-[9px] font-black uppercase rounded flex items-center gap-1">
                       <Lock size={10} /> Approved (Locked)
@@ -2317,21 +2373,9 @@ const SubmitNewDocument = () => {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
               {(() => {
                 const categories = [
-                  {
-                    id: 'missing-requirements',
-                    title: 'Missing Requirements',
-                    icon: <FileX size={20} className="text-amber-600 shrink-0" />,
-                    bgColor: 'from-amber-50/60 to-orange-50/40',
-                    borderColor: 'border-amber-200/80',
-                    badgeBg: 'bg-amber-100/90 text-amber-700 border-amber-200',
-                    barColor: 'bg-amber-500',
-                    matchFn: (r) => r.includes('requirement') || r.includes('missing'),
-                    description: 'Failing to attach mandatory required PDF files or leaving required requirement slots empty upon submission.',
-                    tip: 'Ensure all mandatory PDF slots are attached before submitting.'
-                  },
                   {
                     id: 'incorrect-format',
                     title: 'Incorrect Format',
@@ -2352,9 +2396,33 @@ const SubmitNewDocument = () => {
                     borderColor: 'border-gray-200',
                     badgeBg: 'bg-slate-200 text-slate-700 border-slate-300',
                     barColor: 'bg-slate-600',
-                    matchFn: (r) => r.includes('info') || r.includes('incomplete') || r.includes('signature'),
+                    matchFn: (r) => r.includes('info') || (r.includes('incomplete') && !r.includes('requirement')) || r.includes('signature'),
                     description: 'Missing officer signatures, incomplete form entries, or mismatched dates, venues, and participant details.',
                     tip: 'Verify all signatures & form entries match attached PDFs.'
+                  },
+                  {
+                    id: 'incomplete-requirements',
+                    title: 'Incomplete Requirements',
+                    icon: <FileQuestion size={20} className="text-amber-600 shrink-0" />,
+                    bgColor: 'from-amber-50/70 to-orange-50/50',
+                    borderColor: 'border-amber-200/80',
+                    badgeBg: 'bg-amber-100/90 text-amber-800 border-amber-200',
+                    barColor: 'bg-amber-500',
+                    matchFn: (r) => r.includes('requirement') || r.includes('missing-requirements') || r.includes('incomplete-requirements'),
+                    description: 'Missing mandatory attachments, unsubmitted speaker CVs, or incomplete required documents flagged by reviewers.',
+                    tip: 'Attach all required documents & speaker CVs before submitting.'
+                  },
+                  {
+                    id: 'others',
+                    title: 'Others',
+                    icon: <HelpCircle size={20} className="text-amber-600 shrink-0" />,
+                    bgColor: 'from-amber-50/60 to-orange-50/40',
+                    borderColor: 'border-amber-200/80',
+                    badgeBg: 'bg-amber-100/90 text-amber-700 border-amber-200',
+                    barColor: 'bg-amber-500',
+                    matchFn: (r) => r.includes('other') || r.includes('others'),
+                    description: 'Other specific issues, custom reviewer notes, or general document feedback specified by checking officers.',
+                    tip: 'Carefully review reviewer notes & comments provided for guidance.'
                   }
                 ];
 
@@ -2371,14 +2439,14 @@ const SubmitNewDocument = () => {
                   const barWidth = count > 0 ? Math.min(Math.round((count / maxCount) * 100), 100) : 0;
 
                   return (
-                    <div key={cat.id} className={`p-6 bg-gradient-to-br ${cat.bgColor} rounded-2xl border ${cat.borderColor} flex flex-col justify-between hover:shadow-md transition-all shadow-sm`}>
+                    <div key={cat.id} className={`p-4 sm:p-5 bg-gradient-to-br ${cat.bgColor} rounded-2xl border ${cat.borderColor} flex flex-col justify-between hover:shadow-md transition-all shadow-sm h-full`}>
                       <div>
-                        <div className="flex items-center justify-between gap-2 mb-3">
-                          <div className="flex items-center gap-2.5 text-gray-900 font-extrabold text-base">
+                        <div className="flex items-center justify-between gap-1.5 mb-3 min-h-[32px]">
+                          <div className="flex items-center gap-2 text-gray-900 font-extrabold text-xs sm:text-sm whitespace-nowrap min-w-0">
                             {cat.icon}
-                            <span>{cat.title}</span>
+                            <span className="whitespace-nowrap truncate">{cat.title}</span>
                           </div>
-                          <span className={`text-xs font-black px-3 py-1 rounded-lg shrink-0 border ${cat.badgeBg}`}>
+                          <span className={`text-[10px] sm:text-xs font-black px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg shrink-0 border whitespace-nowrap ${cat.badgeBg}`}>
                             {pct}% ({count})
                           </span>
                         </div>

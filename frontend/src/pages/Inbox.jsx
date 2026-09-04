@@ -7,6 +7,7 @@ import SubmissionTimeline from '../components/SubmissionTimeline';
 import { parseObjectivesList, calculateProposalDuration } from '../utils/submissionLogUtils';
 import PageHeader from '../components/PageHeader';
 import { useToast } from '../hooks/useToast';
+import * as reqService from '../services/requirementService';
 import { 
   Search, 
   Filter, 
@@ -34,7 +35,8 @@ import {
   Paperclip,
   X,
   Download,
-  ExternalLink
+  ExternalLink,
+  FileQuestion
 } from 'lucide-react';
 
 const getStatusColor = (status) => {
@@ -257,6 +259,7 @@ export const Inbox = () => {
   const [filePreviewUrl, setFilePreviewUrl] = React.useState('');
   const [reviewAction, setReviewAction] = React.useState('');
   const [reviewComments, setReviewComments] = React.useState('');
+  const [reviewCommentsError, setReviewCommentsError] = React.useState(false);
   const [timelineLogs, setTimelineLogs] = React.useState([]);
   const [isReturnModalOpen, setIsReturnModalOpen] = React.useState(false);
   const [returnComments, setReturnComments] = React.useState('');
@@ -268,18 +271,31 @@ export const Inbox = () => {
   const [attachmentReturnLogs, setAttachmentReturnLogs] = React.useState([]);
   const [isPreviewLoaded, setIsPreviewLoaded] = React.useState(true);
 
+  // Incomplete Requirements State
+  const [isIncompleteModalOpen, setIsIncompleteModalOpen] = React.useState(false);
+  const [incompleteRequirementsList, setIncompleteRequirementsList] = React.useState([]);
+  const [selectedIncompleteReqs, setSelectedIncompleteReqs] = React.useState([]);
+  const [loadingIncompleteReqs, setLoadingIncompleteReqs] = React.useState(false);
+  const [tempCheckedIncompleteIds, setTempCheckedIncompleteIds] = React.useState([]);
+
+  React.useEffect(() => {
+    setSelectedIncompleteReqs([]);
+  }, [selectedDoc]);
+
   React.useEffect(() => {
     if (previewFile) {
       setIsPreviewLoaded(false);
+      setReviewCommentsError(false);
       const timer = setTimeout(() => {
         setIsPreviewLoaded(true);
-      }, 2500);
+      }, 500);
       return () => clearTimeout(timer);
     } else {
+      setReviewCommentsError(false);
       setIsPreviewLoaded(true);
     }
   }, [previewFile]);
-  const RETURN_REASONS = ['missing-requirements', 'incorrect-format', 'incomplete-information'];
+  const RETURN_REASONS = ['missing-requirements', 'incorrect-format', 'incomplete-information', 'others', 'returned', 'return', 'incomplete-requirements', 'revisions-required', 'disapproved'];
 
   const normalizeRole = (role) => String(role || '').toLowerCase().replace('-', ' ').trim();
   const sameRole = (a, b) => normalizeRole(a) === normalizeRole(b);
@@ -350,9 +366,14 @@ export const Inbox = () => {
       };
     }
 
-    const fileLog = getLatestAttachmentLog(logs, file.id);
-    const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
-    const isReturnedAttachment = RETURN_REASONS.includes(reviewActionValue);
+    const historyLogs = getFileReturnHistory(file, allVersions, logs);
+    const latestHistoryLog = historyLogs[0] || getLatestAttachmentLog(logs, file.id);
+    const latestAction = String(latestHistoryLog?.review_action || latestHistoryLog?.action_type || '').toLowerCase();
+    const isLatestApproved = latestAction === 'approved' || latestAction === 'approve';
+    const isLatestReturned = RETURN_REASONS.includes(latestAction);
+
+    const fileLog = latestHistoryLog;
+    const reviewActionValue = latestAction;
 
     const currentVersionNumber = activeVersion?.version_number || 1;
     const isResubmittedVersion = currentVersionNumber > 1;
@@ -373,6 +394,10 @@ export const Inbox = () => {
     const isModifiedInResubmission =
       existedInPreviousVersion && prevAttachmentByRequirement.file_url !== file.file_url;
     const unchangedFromPrevious = existedInPreviousVersion && !isModifiedInResubmission;
+
+    const isReturnedAttachment =
+      !isLatestApproved &&
+      (isLatestReturned || (isResubmittedVersion && isModifiedInResubmission));
 
     // Use selected version status when browsing old versions
     const viewingLatestVersion = activeVersion?.id === doc.raw?.current_version_id;
@@ -402,7 +427,10 @@ export const Inbox = () => {
             )
           : !returnedForDisplay);
 
-    return { isApproved, returnedForDisplay, hasRevision, fileLog };
+    const isPulsing = returnedForDisplay && !approvedIds.includes(file.id) && !returnedMap[file.id];
+    const showRecheckBadge = isPulsing;
+
+    return { isApproved, returnedForDisplay, isPulsing, showRecheckBadge, hasRevision, fileLog };
   };
 
   const attachmentRequiresReview = (file, doc, activeVersion, allVersions, logs, approvedIds, returnedMap) => {
@@ -931,8 +959,15 @@ export const Inbox = () => {
       // Persist attachment-level reviews first
       await persistLocalAttachmentReviews(activeVersionId);
 
+      let finalComments = comments ? comments.trim() : '';
+      if (selectedIncompleteReqs.length > 0) {
+        const reqTitles = selectedIncompleteReqs.map(r => `• ${r.title}`).join('\n');
+        const incompleteBlock = `Incomplete Requirements Flagged:\n${reqTitles}`;
+        finalComments = finalComments ? `${finalComments}\n\n${incompleteBlock}` : incompleteBlock;
+      }
+
       // Call backend workflow transition API authoritatively
-      await transitionSubmission(selectedDoc.id, 'return', comments, [], user?.id);
+      await transitionSubmission(selectedDoc.id, 'return', finalComments, [], user?.id);
 
       // Close modal inputs, triggers and refresh list
       setPreviewFile(null);
@@ -954,6 +989,166 @@ export const Inbox = () => {
       setLoading(false);
     }
   };
+
+  const handleOpenIncompleteModal = async () => {
+    if (!selectedDoc) return;
+    setLoadingIncompleteReqs(true);
+    setIsIncompleteModalOpen(true);
+    try {
+      const docTypeId = selectedDoc.document_type_id || selectedDoc.raw?.document_type_id || selectedDoc.raw?.documentType?.id || selectedDoc.raw?.document_types?.id;
+      const subtypeId = selectedDoc.subtype_id || selectedDoc.raw?.subtype_id;
+
+      let allReqs = [];
+      if (docTypeId) {
+        allReqs = await reqService.fetchRequirements(docTypeId, subtypeId);
+      } else {
+        allReqs = await reqService.fetchAllRequirements();
+      }
+
+      const activeVersion = selectedDoc.raw?.submission_versions?.[0] || selectedDoc.raw?.current_version;
+      const activeVersionAttachments = selectedDoc.attachments || activeVersion?.submission_attachments || selectedDoc.raw?.submission_attachments || [];
+      const uploadedReqIds = new Set(
+        activeVersionAttachments.map(a => a.requirement_id || a.requirement?.id || a.requirements?.id).filter(Boolean)
+      );
+      const uploadedFileNames = new Set(
+        activeVersionAttachments.map(a => String(a.file_name || '').toLowerCase())
+      );
+
+      const unsubmitted = (allReqs || []).filter(req => {
+        if (uploadedReqIds.has(req.id)) return false;
+        const reqTitle = String(req.title || '').toLowerCase();
+        if (uploadedFileNames.has(reqTitle)) return false;
+        return true;
+      });
+
+      setIncompleteRequirementsList(unsubmitted);
+      setTempCheckedIncompleteIds(selectedIncompleteReqs.map(r => r.id));
+    } catch (err) {
+      console.error('Error fetching incomplete requirements:', err);
+      showToast('Failed to load incomplete requirements.');
+    } finally {
+      setLoadingIncompleteReqs(false);
+    }
+  };
+
+  const handleConfirmIncompleteModal = () => {
+    const chosen = incompleteRequirementsList.filter(r => tempCheckedIncompleteIds.includes(r.id));
+    setSelectedIncompleteReqs(chosen);
+    setIsIncompleteModalOpen(false);
+    if (chosen.length > 0) {
+      showToast(`${chosen.length} incomplete requirement(s) selected for return.`);
+    }
+  };
+
+  const renderIncompleteModal = () => {
+    if (!isIncompleteModalOpen) return null;
+    return (
+      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 animate-in fade-in duration-300">
+        <div className="bg-white rounded-3xl w-full max-w-lg p-6 sm:p-8 flex flex-col shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300 max-h-[85vh] overflow-hidden z-[100000]">
+          <div className="flex items-center justify-between pb-4 border-b border-gray-100">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center font-bold shrink-0">
+                <FileQuestion size={22} />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-800 text-base sm:text-lg">Flag Incomplete Requirements</h3>
+                <p className="text-xs text-gray-500">Select unsubmitted requirements to request from the organization</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsIncompleteModalOpen(false)}
+              className="text-gray-400 hover:text-gray-600 p-1.5 rounded-xl hover:bg-gray-100 transition-all cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="py-4 overflow-y-auto flex-1 space-y-3 pr-1">
+            {loadingIncompleteReqs ? (
+              <div className="py-12 text-center text-gray-400 flex flex-col items-center gap-2">
+                <RefreshCcw size={24} className="animate-spin text-amber-500" />
+                <span className="text-xs font-bold">Loading document requirements...</span>
+              </div>
+            ) : incompleteRequirementsList.length === 0 ? (
+              <div className="py-10 text-center text-gray-500 bg-gray-50 rounded-2xl p-6 border border-dashed border-gray-200">
+                <CheckCircle size={32} className="text-green-500 mx-auto mb-2" />
+                <p className="font-bold text-sm text-gray-700">No Incomplete Requirements Found</p>
+                <p className="text-xs text-gray-500 mt-1">All defined requirements for this document type have already been attached by the organization.</p>
+              </div>
+            ) : (
+              incompleteRequirementsList.map((req) => {
+                const isChecked = tempCheckedIncompleteIds.includes(req.id);
+                return (
+                  <div
+                    key={req.id}
+                    onClick={() => {
+                      if (isChecked) {
+                        setTempCheckedIncompleteIds(prev => prev.filter(id => id !== req.id));
+                      } else {
+                        setTempCheckedIncompleteIds(prev => [...prev, req.id]);
+                      }
+                    }}
+                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${
+                      isChecked
+                        ? 'bg-amber-50/80 border-amber-300 shadow-xs'
+                        : 'bg-gray-50/60 border-gray-200/80 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 mt-0.5 transition-all ${
+                      isChecked ? 'bg-amber-500 text-white' : 'border border-gray-300 bg-white'
+                    }`}>
+                      {isChecked && <Check size={14} strokeWidth={3} />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                          req.requirement_scope === 'OSAS' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-700'
+                        }`}>
+                          {req.requirement_scope || 'OSAS'}
+                        </span>
+                        {req.referenceCode && (
+                          <span className="text-[10px] text-gray-400 font-mono">[{req.referenceCode}]</span>
+                        )}
+                      </div>
+                      <h4 className="text-xs font-bold text-gray-800 leading-snug">{req.title}</h4>
+                      {req.description && (
+                        <p className="text-[11px] text-gray-500 mt-1 line-clamp-2">{req.description}</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <div className="pt-4 border-t border-gray-100 flex items-center justify-between gap-3">
+            <span className="text-xs font-semibold text-gray-500">
+              {tempCheckedIncompleteIds.length} requirement(s) selected
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsIncompleteModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 font-bold text-xs hover:bg-gray-50 transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmIncompleteModal}
+                disabled={incompleteRequirementsList.length === 0}
+                className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-md shadow-amber-500/20 transition-all disabled:opacity-40 cursor-pointer"
+              >
+                Confirm Incomplete Requirements
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
 
   const handleDisapproveSubmission = async (comments = '') => {
     if (!selectedDoc) return;
@@ -986,6 +1181,11 @@ export const Inbox = () => {
 
   const handleSaveAttachmentFeedback = () => {
     if (!previewFile || !selectedDoc || !reviewAction) return;
+    if (reviewAction === 'others' && !reviewComments.trim()) {
+      setReviewCommentsError(true);
+      return;
+    }
+    setReviewCommentsError(false);
     setLocallyReturned((prev) => ({
       ...prev,
       [previewFile.id]: {
@@ -1095,8 +1295,16 @@ export const Inbox = () => {
         : activeVersion?.activity_proposal_details) || {}
       : {};
 
-    // We MUST pass activeVersion's attachments to the map later
-    selectedDoc.attachments = activeVersion?.submission_attachments || [];
+    // Deduplicate attachments by requirement_id to ensure clean view
+    const rawAtts = activeVersion?.submission_attachments || [];
+    const attMap = new Map();
+    rawAtts.forEach(att => {
+      const key = att.requirement_id || att.id;
+      if (!attMap.has(key) || new Date(att.uploaded_at || 0) > new Date(attMap.get(key).uploaded_at || 0)) {
+        attMap.set(key, att);
+      }
+    });
+    selectedDoc.attachments = Array.from(attMap.values());
 
     return (
       <div className="animate-in fade-in slide-in-from-right-8 duration-500 pb-24 text-gray-800">
@@ -1370,14 +1578,48 @@ export const Inbox = () => {
                 </>
               )}
 
+              {selectedIncompleteReqs.length > 0 && (
+                <div className="bg-amber-50/90 border border-amber-200 rounded-xl p-3.5 flex items-center justify-between gap-3 mb-3 animate-in fade-in">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FileQuestion size={16} className="text-amber-600 shrink-0" />
+                    <div>
+                      <p className="text-xs font-bold text-amber-900">
+                        Flagged Incomplete Requirements ({selectedIncompleteReqs.length}):
+                      </p>
+                      <p className="text-[11px] text-amber-800 font-medium truncate">
+                        {selectedIncompleteReqs.map(r => r.title).join(', ')}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenIncompleteModal()}
+                    className="text-[11px] font-bold text-amber-700 hover:text-amber-900 underline shrink-0 cursor-pointer"
+                  >
+                    Change
+                  </button>
+                </div>
+              )}
+
               {selectedDoc.attachments && selectedDoc.attachments.length > 0 ? (
-                selectedDoc.attachments
+                [...selectedDoc.attachments]
                   .filter(file => {
                     const reqObj = file.requirements || file.requirement;
                     const scope = reqObj?.requirement_scope || 'OSAS';
                     if (docDetailTabFilter === 'osas') return scope === 'OSAS';
                     if (docDetailTabFilter === 'local') return scope !== 'OSAS';
                     return true;
+                  })
+                  .sort((a, b) => {
+                    const displayA = getInboxAttachmentDisplay(a, selectedDoc, activeVersion, allVersions, timelineLogs, locallyApproved, locallyReturned, user);
+                    const displayB = getInboxAttachmentDisplay(b, selectedDoc, activeVersion, allVersions, timelineLogs, locallyApproved, locallyReturned, user);
+
+                    const isReturnedA = Boolean(displayA?.returnedForDisplay || displayA?.localReturn || displayA?.hasRevision);
+                    const isReturnedB = Boolean(displayB?.returnedForDisplay || displayB?.localReturn || displayB?.hasRevision);
+
+                    if (isReturnedA && !isReturnedB) return -1;
+                    if (!isReturnedA && isReturnedB) return 1;
+                    return 0;
                   })
                   .map((file, idx) => {
                   const fileName = file.file_name || 'Attached File';
@@ -1388,7 +1630,7 @@ export const Inbox = () => {
                   const { data } = supabase.storage.from('documents').getPublicUrl(finalPath);
                   const fileUrl = data?.publicUrl || '#';
 
-                  const { isApproved, returnedForDisplay, fileLog } = getInboxAttachmentDisplay(
+                  const { isApproved, returnedForDisplay, isPulsing, showRecheckBadge, fileLog } = getInboxAttachmentDisplay(
                     file,
                     selectedDoc,
                     activeVersion,
@@ -1413,7 +1655,9 @@ export const Inbox = () => {
                     if (att?.requirement_id && file?.requirement_id) return att.requirement_id === file.requirement_id;
                     return !!att?.file_name && !!file?.file_name && att.file_name === file.file_name;
                   });
-                  const isUnchangedApproved = isResubmittedVersion && prevAttachment && prevAttachment.file_url === file.file_url;
+                  const existedInPreviousVersion = !!prevAttachment;
+                  const isModifiedInResubmission = existedInPreviousVersion && prevAttachment.file_url !== file.file_url;
+                  const isUnchangedApproved = isResubmittedVersion && existedInPreviousVersion && !isModifiedInResubmission;
 
                   // Chairman stage check: if status is submitted, oso staff review, pending, or returned
                   const isChairmanStage = docStatus === 'submitted' || docStatus === 'oso staff review' || docStatus === 'pending' || docStatus === 'returned';
@@ -1457,7 +1701,7 @@ export const Inbox = () => {
                         setReviewAction('');
                         setReviewComments('');
                       }}
-                      className={`${containerBg} rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 group hover:brightness-110 transition-all cursor-pointer overflow-hidden`}
+                      className={`${containerBg} ${isPulsing ? 'animate-pulse' : ''} rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 group hover:brightness-110 transition-all cursor-pointer overflow-hidden`}
                     >
                       <div className="flex items-start sm:items-center gap-2.5 sm:gap-4 min-w-0 flex-1 w-full sm:w-auto">
                         <div className={`w-9 h-9 sm:w-10 sm:h-10 ${iconStyle} rounded-lg flex items-center justify-center shrink-0 mt-0.5 sm:mt-0`}>
@@ -1468,6 +1712,11 @@ export const Inbox = () => {
                             <span className={`text-[8px] sm:text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${badgeStyle}`}>
                               {isOsas ? 'OSAS Requirement' : 'LOCAL Requirement'}
                             </span>
+                            {showRecheckBadge && (
+                              <span className="text-[8px] sm:text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider bg-amber-950 text-amber-100 border border-amber-500/80 shrink-0">
+                                ⚠️ RE-CHECK REQUIRED
+                              </span>
+                            )}
                           </div>
                           <p className={`${textColor} font-semibold text-xs sm:text-sm break-all line-clamp-2 max-w-full sm:max-w-md`} title={fileName}>{fileName}</p>
                           <p className={`${subtitleColor} text-[9px] sm:text-[10px] uppercase font-bold mt-0.5`}>
@@ -1510,6 +1759,19 @@ export const Inbox = () => {
               ) : (
                 <div className="text-center py-6 text-gray-500 text-sm italic">
                   No dynamic attachments uploaded for this submission.
+                </div>
+              )}
+
+              {user?.role !== 'org-president' && (
+                <div className="flex justify-end pt-3 mt-3 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenIncompleteModal()}
+                    className="bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <FileQuestion size={15} />
+                    <span>Incomplete {selectedIncompleteReqs.length > 0 ? `(${selectedIncompleteReqs.length})` : ''}</span>
+                  </button>
                 </div>
               )}
             </div>
@@ -1580,7 +1842,7 @@ export const Inbox = () => {
             return RETURN_REASONS.includes(reviewActionValue);
           });
           const hasLocallyReturnedAttachments = Object.keys(locallyReturned).length > 0;
-          const hasReturnedAttachments = hasBlockingReturnedAttachments || hasLocallyReturnedAttachments;
+          const hasReturnedAttachments = hasBlockingReturnedAttachments || hasLocallyReturnedAttachments || selectedIncompleteReqs.length > 0;
 
           const allFilesApproved = attachments.length > 0 && attachments.every((file) => {
             if (locallyReturned[file.id]) return false;
@@ -1601,7 +1863,7 @@ export const Inbox = () => {
           const disabledByReview = requireAllReviewed && !allFilesReviewed;
           const disabledByVersion = !isLatestVersion;
           const disableActions = disabledByReview || disabledByVersion;
-          const disableApprove = disableActions || hasLocallyReturnedAttachments || !isPreviewLoaded;
+          const disableApprove = disableActions || hasLocallyReturnedAttachments || selectedIncompleteReqs.length > 0 || !isPreviewLoaded;
           const disableReturn = disableActions || !hasReturnedAttachments;
 
           if (!isLatestVersion) return null;
@@ -1780,65 +2042,123 @@ export const Inbox = () => {
 
                       <div className="h-[1px] bg-gray-100"></div>
 
-                      {/* Review Action Dropdown */}
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block">Review Action</label>
-                        <select 
-                          value={reviewAction}
-                          onChange={(e) => setReviewAction(e.target.value)}
-                          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-700 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer text-gray-800"
-                        >
-                          <option value="">None / Approved</option>
-                          <option value="missing-requirements">Missing Requirements</option>
-                          <option value="incorrect-format">Incorrect Format</option>
-                          <option value="incomplete-information">Incomplete Information</option>
-                        </select>
-                      </div>
+                      {(() => {
+                        const currentStatusStr = String(selectedDoc?.raw?.status || selectedDoc?.status || activeVersion?.status || '').toLowerCase().trim();
+                        const isDeanApprovedStage = currentStatusStr === 'dean approved' || currentStatusStr.includes('dean approved');
 
-                      {/* Comments Textarea */}
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block">Review Comments</label>
-                        <textarea 
-                          value={reviewComments}
-                          onChange={(e) => setReviewComments(e.target.value)}
-                          placeholder="Enter review comments..."
-                          rows={4}
-                          className="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-none text-gray-800"
-                        />
-                      </div>
+                        if (user?.role === 'org-president' || isDeanApprovedStage) {
+                          return null;
+                        }
 
+                        return (
+                          <>
+                            {/* Review Action Dropdown */}
+                            <div className="space-y-2">
+                              <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block">Review Action</label>
+                              <select 
+                                value={reviewAction}
+                                onChange={(e) => {
+                                  setReviewAction(e.target.value);
+                                  if (reviewCommentsError) setReviewCommentsError(false);
+                                }}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-700 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer text-gray-800"
+                              >
+                                <option value="">None / Approved</option>
+                                <option value="incorrect-format">Incorrect Format</option>
+                                <option value="incomplete-information">Incomplete Information</option>
+                                <option value="others">Others</option>
+                              </select>
+                            </div>
+
+                            {/* Comments Textarea */}
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <label className={`text-xs font-bold uppercase tracking-widest block ${reviewCommentsError ? 'text-red-600 font-extrabold' : 'text-gray-500'}`}>
+                                  Review Comments {reviewAction === 'others' && <span className="text-red-500 font-bold">*</span>}
+                                </label>
+                                {reviewCommentsError && (
+                                  <span className="text-xs font-bold text-red-600 flex items-center gap-1">
+                                    <AlertCircle size={12} /> Required
+                                  </span>
+                                )}
+                              </div>
+                              <textarea 
+                                value={reviewComments}
+                                onChange={(e) => {
+                                  setReviewComments(e.target.value);
+                                  if (reviewCommentsError && e.target.value.trim()) setReviewCommentsError(false);
+                                }}
+                                placeholder="Enter review comments..."
+                                rows={4}
+                                className={`w-full text-sm font-medium transition-all resize-none ${
+                                  reviewCommentsError
+                                    ? 'bg-red-50/50 border-2 border-red-500 rounded-xl p-4 text-gray-800 focus:outline-none focus:ring-2 focus:ring-red-500/30'
+                                    : 'bg-gray-50 border border-gray-200 rounded-xl p-4 text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-gray-800'
+                                }`}
+                              />
+                              {reviewCommentsError && (
+                                <p className="text-xs text-red-600 font-bold flex items-center gap-1 mt-1 animate-in fade-in duration-200">
+                                  <AlertCircle size={13} className="shrink-0 text-red-600" />
+                                  Review comments are required when "Others" is selected.
+                                </p>
+                              )}
+                            </div>
+                          </>
+                        );
+                      })()}
                     </div>
 
                     {/* Actions Buttons */}
-                    <div className="space-y-3 pt-6 border-t border-gray-100 mt-6">
-                      {!requiresReview && (
-                        <div className="bg-green-50 border border-green-100 rounded-xl p-4 text-center">
-                          <CheckCircle size={20} className="text-green-600 mx-auto mb-2" />
-                          <p className="text-xs font-bold text-green-700 uppercase tracking-wider">Already Approved</p>
-                          <p className="text-xs text-green-600 mt-1">No re-approval needed. You can still return this file if you find an issue.</p>
-                        </div>
-                      )}
+                    {(() => {
+                      const currentStatusStr = String(selectedDoc?.raw?.status || selectedDoc?.status || activeVersion?.status || '').toLowerCase().trim();
+                      const isDeanApprovedStage = currentStatusStr === 'dean approved' || currentStatusStr.includes('dean approved');
 
-                      {requiresReview && (
-                        <button 
-                          onClick={handleApproveAttachment}
-                          disabled={attachmentSaving || !isPreviewLoaded}
-                          className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-all shadow-lg shadow-green-600/10 uppercase text-xs tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          <CheckCircle size={16} />
-                          <span>{attachmentSaving ? 'Saving...' : 'Approve Attachment'}</span>
-                        </button>
-                      )}
-                      
-                      <button 
-                        onClick={handleSaveAttachmentFeedback}
-                        disabled={!reviewAction || attachmentSaving}
-                        className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 transition-all shadow-lg shadow-amber-500/10 uppercase text-xs tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <RotateCcw size={16} />
-                        <span>{attachmentSaving ? 'Saving...' : 'Return for Edits'}</span>
-                      </button>
-                    </div>
+                      if (isDeanApprovedStage) {
+                        return (
+                          <div className="bg-green-50 border border-green-100 rounded-xl p-4 text-center mt-6">
+                            <CheckCircle size={20} className="text-green-600 mx-auto mb-2" />
+                            <p className="text-xs font-bold text-green-700 uppercase tracking-wider">Approved by Dean</p>
+                            <p className="text-xs text-green-600 mt-1">This attachment has been approved at the Final In-Campus Review stage and is ready to be sent to Main Campus.</p>
+                          </div>
+                        );
+                      }
+
+                      if (user?.role === 'org-president') {
+                        return null;
+                      }
+
+                      return (
+                        <div className="space-y-3 pt-6 border-t border-gray-100 mt-6">
+                          {!requiresReview && (
+                            <div className="bg-green-50 border border-green-100 rounded-xl p-4 text-center">
+                              <CheckCircle size={20} className="text-green-600 mx-auto mb-2" />
+                              <p className="text-xs font-bold text-green-700 uppercase tracking-wider">Already Approved</p>
+                              <p className="text-xs text-green-600 mt-1">No re-approval needed. You can still return this file if you find an issue.</p>
+                            </div>
+                          )}
+
+                          {requiresReview && (
+                            <button 
+                              onClick={handleApproveAttachment}
+                              disabled={attachmentSaving || !isPreviewLoaded}
+                              className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-all shadow-lg shadow-green-600/10 uppercase text-xs tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              <CheckCircle size={16} />
+                              <span>{attachmentSaving ? 'Saving...' : 'Approve Attachment'}</span>
+                            </button>
+                          )}
+                          
+                          <button 
+                            onClick={handleSaveAttachmentFeedback}
+                            disabled={!reviewAction || attachmentSaving}
+                            className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 transition-all shadow-lg shadow-amber-500/10 uppercase text-xs tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            <RotateCcw size={16} />
+                            <span>{attachmentSaving ? 'Saving...' : 'Return for Edits'}</span>
+                          </button>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
@@ -1970,6 +2290,7 @@ export const Inbox = () => {
           </div>
         </div>
       )}
+      {renderIncompleteModal()}
       </div>
     );
   }
@@ -2224,6 +2545,8 @@ export const Inbox = () => {
           </div>
         );
       })()}
+
+      {renderIncompleteModal()}
 
       <ToastComponent />
     </div>

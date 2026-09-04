@@ -27,8 +27,10 @@ import {
   LogOut,
   FolderOpen,
   Pencil,
-  Trash2
+  Trash2,
+  FileQuestion
 } from 'lucide-react';
+import * as reqService from '../services/requirementService';
 import PageHeader from '../components/PageHeader';
 import { useToast } from '../hooks/useToast';
 
@@ -298,7 +300,7 @@ export const MyDocuments = () => {
     if (isSuspended) {
       setShowSuspendedModal(true);
     } else {
-      navigate(`/submit?submissionId=${selectedDoc.id}`);
+      navigate(`/submit?submissionId=${selectedDoc.id}&step=3`);
     }
   };
 
@@ -399,7 +401,18 @@ export const MyDocuments = () => {
   const [locallyApproved, setLocallyApproved] = React.useState([]);
   const [locallyReturned, setLocallyReturned] = React.useState({});
   const [attachmentReturnLogs, setAttachmentReturnLogs] = React.useState([]);
-  const RETURN_REASONS = ['missing-requirements', 'incorrect-format', 'incomplete-information'];
+  const RETURN_REASONS = ['missing-requirements', 'incorrect-format', 'incomplete-information', 'others', 'returned', 'return', 'incomplete-requirements', 'revisions-required', 'disapproved'];
+
+  // Incomplete Requirements State
+  const [isIncompleteModalOpen, setIsIncompleteModalOpen] = React.useState(false);
+  const [incompleteRequirementsList, setIncompleteRequirementsList] = React.useState([]);
+  const [selectedIncompleteReqs, setSelectedIncompleteReqs] = React.useState([]);
+  const [loadingIncompleteReqs, setLoadingIncompleteReqs] = React.useState(false);
+  const [tempCheckedIncompleteIds, setTempCheckedIncompleteIds] = React.useState([]);
+
+  React.useEffect(() => {
+    setSelectedIncompleteReqs([]);
+  }, [selectedDoc]);
 
   // Resubmit State
   const [isResubmitModalOpen, setIsResubmitModalOpen] = React.useState(false);
@@ -412,6 +425,7 @@ export const MyDocuments = () => {
   const [decisionType, setDecisionType] = React.useState('return'); // 'return' or 'disapprove' or 'approve'
   const [reviewAction, setReviewAction] = React.useState('');
   const [reviewComments, setReviewComments] = React.useState('');
+  const [reviewCommentsError, setReviewCommentsError] = React.useState(false);
   const [attachmentSaving, setAttachmentSaving] = React.useState(false);
   const [attachmentSuccessModal, setAttachmentSuccessModal] = React.useState(null);
   const [isForwardModalOpen, setIsForwardModalOpen] = React.useState(false);
@@ -679,9 +693,14 @@ export const MyDocuments = () => {
       };
     }
 
-    const fileLog = getLatestAttachmentLog(logs, file.id);
-    const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
-    const isReturnedAttachment = RETURN_REASONS.includes(reviewActionValue);
+    const historyLogs = getFileReturnHistory(file, allVersions, logs);
+    const latestHistoryLog = historyLogs[0] || getLatestAttachmentLog(logs, file.id);
+    const latestAction = String(latestHistoryLog?.review_action || latestHistoryLog?.action_type || '').toLowerCase();
+    const isLatestApproved = latestAction === 'approved' || latestAction === 'approve';
+    const isLatestReturned = RETURN_REASONS.includes(latestAction);
+
+    const fileLog = latestHistoryLog;
+    const reviewActionValue = latestAction;
 
     const currentVersionNumber = Number(activeVersion?.version_number || 1);
     const isResubmittedVersion = currentVersionNumber > 1;
@@ -731,6 +750,10 @@ export const MyDocuments = () => {
       docStatus.includes('ready for retrieval') ||
       docStatus.includes('waiting for accomplishment') ||
       docStatus === 'completed';
+
+    const isReturnedAttachment =
+      !isLatestApproved &&
+      (isLatestReturned || (isResubmittedVersion && isModifiedInResubmission));
 
     const isReturnByCurrentReviewer =
       isReturnedAttachment &&
@@ -823,6 +846,11 @@ export const MyDocuments = () => {
 
   const handleSaveAttachmentFeedback = async () => {
     if (!previewFile || !selectedDoc || !reviewAction) return;
+    if (reviewAction === 'others' && !reviewComments.trim()) {
+      setReviewCommentsError(true);
+      return;
+    }
+    setReviewCommentsError(false);
     setLocallyReturned((prev) => ({
       ...prev,
       [previewFile.id]: {
@@ -1252,7 +1280,15 @@ export const MyDocuments = () => {
           : selectedDoc.raw?.submission_versions?.id);
 
       await persistLocalAttachmentReviews(activeVersionId);
-      await subService.transitionSubmission(selectedDoc.id, 'return', comments, [], user?.id);
+
+      let finalComments = comments ? comments.trim() : '';
+      if (selectedIncompleteReqs.length > 0) {
+        const reqTitles = selectedIncompleteReqs.map(r => `• ${r.title}`).join('\n');
+        const incompleteBlock = `Incomplete Requirements Flagged:\n${reqTitles}`;
+        finalComments = finalComments ? `${finalComments}\n\n${incompleteBlock}` : incompleteBlock;
+      }
+
+      await subService.transitionSubmission(selectedDoc.id, 'return', finalComments, [], user?.id);
 
       setIsReturnModalOpen(false);
       setReturnComments('');
@@ -1268,6 +1304,165 @@ export const MyDocuments = () => {
       setLoading(false);
     }
   };
+
+  const handleOpenIncompleteModal = async () => {
+    if (!selectedDoc) return;
+    setLoadingIncompleteReqs(true);
+    setIsIncompleteModalOpen(true);
+    try {
+      const docTypeId = selectedDoc.document_type_id || selectedDoc.raw?.document_type_id || selectedDoc.raw?.documentType?.id || selectedDoc.raw?.document_types?.id;
+      const subtypeId = selectedDoc.subtype_id || selectedDoc.raw?.subtype_id;
+
+      let allReqs = [];
+      if (docTypeId) {
+        allReqs = await reqService.fetchRequirements(docTypeId, subtypeId);
+      } else {
+        allReqs = await reqService.fetchAllRequirements();
+      }
+
+      const activeVersionAttachments = selectedDoc.attachments || currentVersion?.submission_attachments || selectedDoc.raw?.submission_attachments || [];
+      const uploadedReqIds = new Set(
+        activeVersionAttachments.map(a => a.requirement_id || a.requirement?.id || a.requirements?.id).filter(Boolean)
+      );
+      const uploadedFileNames = new Set(
+        activeVersionAttachments.map(a => String(a.file_name || '').toLowerCase())
+      );
+
+      const unsubmitted = (allReqs || []).filter(req => {
+        if (uploadedReqIds.has(req.id)) return false;
+        const reqTitle = String(req.title || '').toLowerCase();
+        if (uploadedFileNames.has(reqTitle)) return false;
+        return true;
+      });
+
+      setIncompleteRequirementsList(unsubmitted);
+      setTempCheckedIncompleteIds(selectedIncompleteReqs.map(r => r.id));
+    } catch (err) {
+      console.error('Error fetching incomplete requirements:', err);
+      showToast('Failed to load incomplete requirements.');
+    } finally {
+      setLoadingIncompleteReqs(false);
+    }
+  };
+
+  const handleConfirmIncompleteModal = () => {
+    const chosen = incompleteRequirementsList.filter(r => tempCheckedIncompleteIds.includes(r.id));
+    setSelectedIncompleteReqs(chosen);
+    setIsIncompleteModalOpen(false);
+    if (chosen.length > 0) {
+      showToast(`${chosen.length} incomplete requirement(s) selected for return.`);
+    }
+  };
+
+  const renderIncompleteModal = () => {
+    if (!isIncompleteModalOpen) return null;
+    return (
+      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 animate-in fade-in duration-300">
+        <div className="bg-white rounded-3xl w-full max-w-lg p-6 sm:p-8 flex flex-col shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300 max-h-[85vh] overflow-hidden z-[100000]">
+          <div className="flex items-center justify-between pb-4 border-b border-gray-100">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center font-bold shrink-0">
+                <FileQuestion size={22} />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-800 text-base sm:text-lg">Flag Incomplete Requirements</h3>
+                <p className="text-xs text-gray-500">Select unsubmitted requirements to request from the organization</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsIncompleteModalOpen(false)}
+              className="text-gray-400 hover:text-gray-600 p-1.5 rounded-xl hover:bg-gray-100 transition-all cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="py-4 overflow-y-auto flex-1 space-y-3 pr-1">
+            {loadingIncompleteReqs ? (
+              <div className="py-12 text-center text-gray-400 flex flex-col items-center gap-2">
+                <RefreshCcw size={24} className="animate-spin text-amber-500" />
+                <span className="text-xs font-bold">Loading document requirements...</span>
+              </div>
+            ) : incompleteRequirementsList.length === 0 ? (
+              <div className="py-10 text-center text-gray-500 bg-gray-50 rounded-2xl p-6 border border-dashed border-gray-200">
+                <CheckCircle size={32} className="text-green-500 mx-auto mb-2" />
+                <p className="font-bold text-sm text-gray-700">No Incomplete Requirements Found</p>
+                <p className="text-xs text-gray-500 mt-1">All defined requirements for this document type have already been attached by the organization.</p>
+              </div>
+            ) : (
+              incompleteRequirementsList.map((req) => {
+                const isChecked = tempCheckedIncompleteIds.includes(req.id);
+                return (
+                  <div
+                    key={req.id}
+                    onClick={() => {
+                      if (isChecked) {
+                        setTempCheckedIncompleteIds(prev => prev.filter(id => id !== req.id));
+                      } else {
+                        setTempCheckedIncompleteIds(prev => [...prev, req.id]);
+                      }
+                    }}
+                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${
+                      isChecked
+                        ? 'bg-amber-50/80 border-amber-300 shadow-xs'
+                        : 'bg-gray-50/60 border-gray-200/80 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 mt-0.5 transition-all ${
+                      isChecked ? 'bg-amber-500 text-white' : 'border border-gray-300 bg-white'
+                    }`}>
+                      {isChecked && <Check size={14} strokeWidth={3} />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                          req.requirement_scope === 'OSAS' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-700'
+                        }`}>
+                          {req.requirement_scope || 'OSAS'}
+                        </span>
+                        {req.referenceCode && (
+                          <span className="text-[10px] text-gray-400 font-mono">[{req.referenceCode}]</span>
+                        )}
+                      </div>
+                      <h4 className="text-xs font-bold text-gray-800 leading-snug">{req.title}</h4>
+                      {req.description && (
+                        <p className="text-[11px] text-gray-500 mt-1 line-clamp-2">{req.description}</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <div className="pt-4 border-t border-gray-100 flex items-center justify-between gap-3">
+            <span className="text-xs font-semibold text-gray-500">
+              {tempCheckedIncompleteIds.length} requirement(s) selected
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsIncompleteModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 font-bold text-xs hover:bg-gray-50 transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmIncompleteModal}
+                disabled={incompleteRequirementsList.length === 0}
+                className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-md shadow-amber-500/20 transition-all disabled:opacity-40 cursor-pointer"
+              >
+                Confirm Incomplete Requirements
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
 
   const handleResubmit = async () => {
     if (!selectedDoc) return;
@@ -2677,6 +2872,79 @@ export const MyDocuments = () => {
                 </>
               )}
 
+              {/* Flagged Incomplete Requirements Notice for Returned Document */}
+              {(() => {
+                // Find return log for the currently selected/viewing version
+                const versionLogs = (timelineLogs || []).filter(l => {
+                  if (l.attachment_id) return false;
+                  if (currentVersion?.id && l.submission_version_id) {
+                    return l.submission_version_id === currentVersion.id;
+                  }
+                  return true;
+                });
+
+                // Find the latest return log for this version/context
+                let versionReturnLog = versionLogs.find(l => {
+                  const at = String(l.action_type || '').toLowerCase();
+                  const ra = String(l.review_action || '').toLowerCase();
+                  return at === 'returned' || at === 'return' || ra === 'returned' || at === 'incomplete_requirements' || ra === 'incomplete-requirements';
+                });
+
+                if (!versionReturnLog) {
+                  // Fallback: check if any log in this version flagged incomplete requirements
+                  versionReturnLog = versionLogs.find(l => {
+                    const text = l.comment || l.description || '';
+                    return text.includes('Incomplete Requirements Flagged:');
+                  });
+                }
+
+                if (!versionReturnLog) return null;
+
+                const logText = versionReturnLog.comment || versionReturnLog.description || '';
+                const isIncReqReturn =
+                  versionReturnLog.action_type === 'incomplete_requirements' ||
+                  versionReturnLog.review_action === 'incomplete-requirements' ||
+                  logText.includes('Incomplete Requirements Flagged:');
+
+                if (!isIncReqReturn) return null;
+
+                let flaggedMissingReqs = [];
+                if (logText.includes('Incomplete Requirements Flagged:')) {
+                  const parts = logText.split('Incomplete Requirements Flagged:')[1].trim().split('\n');
+                  flaggedMissingReqs = parts.map(p => ({ title: p.replace(/^•\s*/, '').trim() })).filter(r => r.title);
+                } else if (versionReturnLog.comment) {
+                  try {
+                    flaggedMissingReqs = JSON.parse(versionReturnLog.comment);
+                  } catch (e) {
+                    flaggedMissingReqs = [{ title: versionReturnLog.description }];
+                  }
+                } else if (versionReturnLog.description) {
+                  flaggedMissingReqs = [{ title: versionReturnLog.description }];
+                }
+
+                if (!flaggedMissingReqs || flaggedMissingReqs.length === 0) return null;
+
+                return (
+                  <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-4 sm:p-5 mb-6 shadow-xs animate-in fade-in duration-300">
+                    <div className="flex items-center gap-2 text-amber-800 font-bold text-sm mb-2">
+                      <FileQuestion size={18} className="text-amber-600 shrink-0" />
+                      <span>Incomplete Requirements Flagged by Reviewer</span>
+                    </div>
+                    <p className="text-xs text-amber-700 font-medium mb-3">
+                      The document reviewer identified the following unsubmitted/incomplete requirements. Click "Edit & Resubmit" to attach them:
+                    </p>
+                    <div className="space-y-1.5">
+                      {flaggedMissingReqs.map((req, idx) => (
+                        <div key={idx} className="flex items-center gap-2 bg-white/80 border border-amber-200/80 rounded-xl px-3.5 py-2 text-xs font-bold text-amber-900 shadow-2xs">
+                          <AlertCircle size={14} className="text-amber-600 shrink-0" />
+                          <span>{req.title || req.name || req}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Attached Files Section - Collapsible with Live Data */}
               <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 mb-6 sm:mb-10 transition-all duration-500">
                 <button
@@ -2692,6 +2960,28 @@ export const MyDocuments = () => {
 
                 {isFilesOpen && (
                   <div className="p-3.5 sm:p-6 space-y-3 animate-in slide-in-from-top-4 duration-500">
+                    {selectedIncompleteReqs.length > 0 && (
+                      <div className="bg-amber-50/90 border border-amber-200 rounded-xl p-3.5 flex items-center justify-between gap-3 mb-3 animate-in fade-in">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileQuestion size={16} className="text-amber-600 shrink-0" />
+                          <div>
+                            <p className="text-xs font-bold text-amber-900">
+                              Flagged Incomplete Requirements ({selectedIncompleteReqs.length}):
+                            </p>
+                            <p className="text-[11px] text-amber-800 font-medium truncate">
+                              {selectedIncompleteReqs.map(r => r.title).join(', ')}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenIncompleteModal()}
+                          className="text-[11px] font-bold text-amber-700 hover:text-amber-900 underline shrink-0 cursor-pointer"
+                        >
+                          Change
+                        </button>
+                      </div>
+                    )}
                     {attachments && attachments.length > 0 && (
                       <>
                         <div className="hidden sm:flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 mb-3">
@@ -2741,13 +3031,26 @@ export const MyDocuments = () => {
                     )}
 
                     {attachments && attachments.length > 0 ? (
-                      attachments
+                      [...attachments]
                         .filter(file => {
                           const reqObj = file.requirements || file.requirement;
                           const scope = reqObj?.requirement_scope || 'OSAS';
                           if (docDetailTabFilter === 'osas') return scope === 'OSAS';
                           if (docDetailTabFilter === 'local') return scope !== 'OSAS';
                           return true;
+                        })
+                        .sort((a, b) => {
+                          const isReturnedA = Boolean(
+                            (locallyReturned && locallyReturned[a.id]) ||
+                            (timelineLogs || []).some(l => l.attachment_id === a.id && ['missing-requirements', 'incorrect-format', 'incomplete-information', 'others'].includes(String(l.review_action || '').toLowerCase()))
+                          );
+                          const isReturnedB = Boolean(
+                            (locallyReturned && locallyReturned[b.id]) ||
+                            (timelineLogs || []).some(l => l.attachment_id === b.id && ['missing-requirements', 'incorrect-format', 'incomplete-information', 'others'].includes(String(l.review_action || '').toLowerCase()))
+                          );
+                          if (isReturnedA && !isReturnedB) return -1;
+                          if (!isReturnedA && isReturnedB) return 1;
+                          return 0;
                         })
                         .map((file, idx) => {
                           const fileName = file.file_name || 'Attached File';
@@ -2780,7 +3083,7 @@ export const MyDocuments = () => {
 
                           const fileLog = (timelineLogs || []).find(log => log.attachment_id === file.id);
                           const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
-                          const isReturnedAttachment = ['missing-requirements', 'incorrect-format', 'incomplete-information'].includes(reviewActionValue);
+                          const isReturnedAttachment = ['missing-requirements', 'incorrect-format', 'incomplete-information', 'others'].includes(reviewActionValue);
 
                           const isReturnByCurrentReviewer =
                             isReturnedAttachment &&
@@ -2892,6 +3195,19 @@ export const MyDocuments = () => {
                     ) : (
                       <div className="text-center py-6 text-gray-500 text-sm italic">
                         No dynamic attachments uploaded for this submission.
+                      </div>
+                    )}
+
+                    {user?.role !== 'org-president' && (
+                      <div className="flex justify-end pt-3 mt-3 border-t border-gray-100">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenIncompleteModal()}
+                          className="bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
+                        >
+                          <FileQuestion size={15} />
+                          <span>Incomplete {selectedIncompleteReqs.length > 0 ? `(${selectedIncompleteReqs.length})` : ''}</span>
+                        </button>
                       </div>
                     )}
                   </div>
@@ -4169,19 +4485,28 @@ export const MyDocuments = () => {
           if (!canViewActions) return null;
 
           const currentAttachments = attachments || selectedDoc?.attachments || currentVersion?.submission_attachments || [];
-          const allFilesApproved = currentAttachments.length > 0 && currentAttachments.every((file) => {
-            const { isApproved } = getAttachmentReviewDisplay(
-              file,
-              selectedDoc,
-              currentVersion,
-              allVersions,
-              timelineLogs,
-              locallyApproved,
-              locallyReturned,
-              user
-            );
-            return isApproved;
+          const RETURN_REASONS = ['missing-requirements', 'incorrect-format', 'incomplete-information', 'others'];
+
+          const hasBlockingReturnedAttachments = currentAttachments.some((file) => {
+            const fileLog = (timelineLogs || []).find((l) => l.attachment_id === file.id || (l.comment && l.comment.includes(file.file_name)));
+            const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
+            return RETURN_REASONS.includes(reviewActionValue);
           });
+          const hasLocallyReturnedAttachments = Object.keys(locallyReturned || {}).length > 0;
+          const hasReturnedAttachmentsRaw = hasBlockingReturnedAttachments || hasLocallyReturnedAttachments;
+
+          const allFilesApproved = currentAttachments.length > 0 && currentAttachments.every((file) => {
+            if (locallyReturned && locallyReturned[file.id]) return false;
+            const fileLog = (timelineLogs || []).find((l) => l.attachment_id === file.id || (l.comment && l.comment.includes(file.file_name)));
+            const reviewActionValue = String(fileLog?.review_action || '').toLowerCase();
+            if (RETURN_REASONS.includes(reviewActionValue)) return false;
+
+            return (
+              (locallyApproved && locallyApproved.includes(file.id)) ||
+              reviewActionValue === 'approved'
+            );
+          });
+          const hasReturnedAttachments = (hasReturnedAttachmentsRaw || (selectedIncompleteReqs && selectedIncompleteReqs.length > 0));
           const canReturn = hasReturnedAttachments && !allFilesApproved;
 
           const buttons = [];
@@ -4590,67 +4915,120 @@ export const MyDocuments = () => {
                         </div>
                       )}
 
-                      {user?.role !== 'org-president' && (
-                        <>
-                          <div className="space-y-2">
-                            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block">Review Action</label>
-                            <select
-                              value={reviewAction}
-                              onChange={(e) => setReviewAction(e.target.value)}
-                              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-700 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer"
-                            >
-                              <option value="">None / Approved</option>
-                              <option value="missing-requirements">Missing Requirements</option>
-                              <option value="incorrect-format">Incorrect Format</option>
-                              <option value="incomplete-information">Incomplete Information</option>
-                            </select>
-                          </div>
+                      {(() => {
+                        const currentStatusStr = String(selectedDoc?.raw?.status || selectedDoc?.status || currentVersion?.status || '').toLowerCase().trim();
+                        const isDeanApprovedStage = currentStatusStr === 'dean approved' || currentStatusStr.includes('dean approved');
 
-                          <div className="space-y-2">
-                            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block">Review Comments</label>
-                            <textarea
-                              value={reviewComments}
-                              onChange={(e) => setReviewComments(e.target.value)}
-                              placeholder="Enter review comments..."
-                              rows={4}
-                              className="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-none"
-                            />
-                          </div>
-                        </>
-                      )}
+                        if (user?.role === 'org-president' || isDeanApprovedStage) {
+                          return null;
+                        }
+
+                        return (
+                          <>
+                            <div className="space-y-2">
+                              <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block">Review Action</label>
+                              <select
+                                value={reviewAction}
+                                onChange={(e) => {
+                                  setReviewAction(e.target.value);
+                                  if (reviewCommentsError) setReviewCommentsError(false);
+                                }}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-700 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer"
+                              >
+                                <option value="">None / Approved</option>
+                                <option value="incorrect-format">Incorrect Format</option>
+                                <option value="incomplete-information">Incomplete Information</option>
+                                <option value="others">Others</option>
+                              </select>
+                            </div>
+
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <label className={`text-xs font-bold uppercase tracking-widest block ${reviewCommentsError ? 'text-red-600 font-extrabold' : 'text-gray-500'}`}>
+                                  Review Comments {reviewAction === 'others' && <span className="text-red-500 font-bold">*</span>}
+                                </label>
+                                {reviewCommentsError && (
+                                  <span className="text-xs font-bold text-red-600 flex items-center gap-1">
+                                    <AlertCircle size={12} /> Required
+                                  </span>
+                                )}
+                              </div>
+                              <textarea
+                                value={reviewComments}
+                                onChange={(e) => {
+                                  setReviewComments(e.target.value);
+                                  if (reviewCommentsError && e.target.value.trim()) setReviewCommentsError(false);
+                                }}
+                                placeholder="Enter review comments..."
+                                rows={4}
+                                className={`w-full text-sm font-medium transition-all resize-none ${
+                                  reviewCommentsError
+                                    ? 'bg-red-50/50 border-2 border-red-500 rounded-xl p-4 text-gray-800 focus:outline-none focus:ring-2 focus:ring-red-500/30'
+                                    : 'bg-gray-50 border border-gray-200 rounded-xl p-4 text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500'
+                                }`}
+                              />
+                              {reviewCommentsError && (
+                                <p className="text-xs text-red-600 font-bold flex items-center gap-1 mt-1 animate-in fade-in duration-200">
+                                  <AlertCircle size={13} className="shrink-0 text-red-600" />
+                                  Review comments are required when "Others" is selected.
+                                </p>
+                              )}
+                            </div>
+                          </>
+                        );
+                      })()}
                     </div>
 
-                    {user?.role !== 'org-president' && (
-                      <div className="space-y-3 pt-6 border-t border-gray-100 mt-6">
-                        {!requiresReview && (
-                          <div className="bg-green-50 border border-green-100 rounded-xl p-4 text-center">
+                    {(() => {
+                      const currentStatusStr = String(selectedDoc?.raw?.status || selectedDoc?.status || currentVersion?.status || '').toLowerCase().trim();
+                      const isDeanApprovedStage = currentStatusStr === 'dean approved' || currentStatusStr.includes('dean approved');
+
+                      if (isDeanApprovedStage) {
+                        return (
+                          <div className="bg-green-50 border border-green-100 rounded-xl p-4 text-center mt-6">
                             <CheckCircle size={20} className="text-green-600 mx-auto mb-2" />
-                            <p className="text-xs font-bold text-green-700 uppercase tracking-wider">Already Approved</p>
-                            <p className="text-xs text-green-600 mt-1">No re-approval needed. You can still return this file if you find an issue.</p>
+                            <p className="text-xs font-bold text-green-700 uppercase tracking-wider">Approved by Dean</p>
+                            <p className="text-xs text-green-600 mt-1">This attachment has been approved at the Final In-Campus Review stage and is ready to be sent to Main Campus.</p>
                           </div>
-                        )}
+                        );
+                      }
 
-                        {requiresReview && (
+                      if (user?.role === 'org-president') {
+                        return null;
+                      }
+
+                      return (
+                        <div className="space-y-3 pt-6 border-t border-gray-100 mt-6">
+                          {!requiresReview && (
+                            <div className="bg-green-50 border border-green-100 rounded-xl p-4 text-center">
+                              <CheckCircle size={20} className="text-green-600 mx-auto mb-2" />
+                              <p className="text-xs font-bold text-green-700 uppercase tracking-wider">Already Approved</p>
+                              <p className="text-xs text-green-600 mt-1">No re-approval needed. You can still return this file if you find an issue.</p>
+                            </div>
+                          )}
+
+                          {requiresReview && (
+                            <button
+                              onClick={handleApproveAttachment}
+                              disabled={attachmentSaving}
+                              className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-all shadow-lg shadow-green-600/10 uppercase text-xs tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              <CheckCircle size={16} />
+                              <span>{attachmentSaving ? 'Saving...' : 'Approve Attachment'}</span>
+                            </button>
+                          )}
+
                           <button
-                            onClick={handleApproveAttachment}
-                            disabled={attachmentSaving}
-                            className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-all shadow-lg shadow-green-600/10 uppercase text-xs tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
+                            onClick={handleSaveAttachmentFeedback}
+                            disabled={!reviewAction || attachmentSaving}
+                            className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 transition-all shadow-lg shadow-amber-500/10 uppercase text-xs tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
                           >
-                            <CheckCircle size={16} />
-                            <span>{attachmentSaving ? 'Saving...' : 'Approve Attachment'}</span>
+                            <RotateCcw size={16} />
+                            <span>{attachmentSaving ? 'Saving...' : 'Return Attachment'}</span>
                           </button>
-                        )}
-
-                        <button
-                          onClick={handleSaveAttachmentFeedback}
-                          disabled={!reviewAction || attachmentSaving}
-                          className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 transition-all shadow-lg shadow-amber-500/10 uppercase text-xs tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          <RotateCcw size={16} />
-                          <span>{attachmentSaving ? 'Saving...' : 'Return Attachment'}</span>
-                        </button>
-                      </div>
-                    )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
@@ -5115,6 +5493,7 @@ export const MyDocuments = () => {
         })()}
         {renderDeliveryProofModal()}
         {renderDeleteDraftModal()}
+        {renderIncompleteModal()}
       </div>
     );
   }
@@ -5387,6 +5766,8 @@ export const MyDocuments = () => {
 
       {renderDeliveryProofModal()}
       {renderDeleteDraftModal()}
+
+      {renderIncompleteModal()}
 
       <ToastComponent />
     </div>

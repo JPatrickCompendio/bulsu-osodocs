@@ -73,9 +73,78 @@ export const formatLogActionLabel = (log) => {
 
 export const isLogPending = (log) => Boolean(log?.isPending);
 
+export const extractIncompleteRequirementTitles = (log) => {
+  if (!log) return [];
+  if (log.comment) {
+    let str = String(log.comment).trim();
+    if (str.startsWith('[') && str.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(str);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].title) {
+          return parsed.map(r => r.title).filter(Boolean);
+        }
+      } catch (_) { }
+    }
+  }
+  if (log.description && log.description.includes('Incomplete requirements flagged:')) {
+    const rawList = log.description.replace('Incomplete requirements flagged:', '').trim();
+    if (rawList) {
+      return rawList.split(',').map(s => s.trim()).filter(Boolean);
+    }
+  }
+  return [];
+};
+
+export const mergeIncompleteRequirementLogs = (logs) => {
+  if (!logs || !logs.length) return [];
+
+  const incompleteLogIdsToRemove = new Set();
+
+  const incompleteLogs = logs.filter(l => {
+    const at = norm(l.action_type);
+    const ra = norm(l.review_action);
+    return at === 'incomplete_requirements' || ra === 'incomplete-requirements';
+  });
+
+  incompleteLogs.forEach(incLog => {
+    const titles = extractIncompleteRequirementTitles(incLog);
+    if (!titles.length) return;
+
+    const incTime = incLog.created_at ? new Date(incLog.created_at).getTime() : 0;
+    const incUser = incLog.user_id;
+
+    const returnLog = logs.find(l => {
+      if (l.id === incLog.id) return false;
+      const at = norm(l.action_type);
+      const ra = norm(l.review_action);
+      if (at !== 'returned' && ra !== 'returned' && at !== 'return') return false;
+
+      const time = l.created_at ? new Date(l.created_at).getTime() : 0;
+      const timeDiff = Math.abs(time - incTime);
+      const sameUser = !incUser || !l.user_id || String(l.user_id) === String(incUser);
+
+      return sameUser && timeDiff < 180000; // 3 minutes window
+    });
+
+    const reqListStr = `Incomplete Requirements Flagged:\n` + titles.map(t => `• ${t}`).join('\n');
+
+    if (returnLog) {
+      const existingText = returnLog.comment || returnLog.description || '';
+      if (!existingText.includes('Incomplete Requirements Flagged:')) {
+        returnLog.comment = existingText ? `${existingText}\n\n${reqListStr}` : reqListStr;
+      }
+      incompleteLogIdsToRemove.add(incLog.id);
+    } else {
+      incLog.comment = reqListStr;
+    }
+  });
+
+  return logs.filter(l => !incompleteLogIdsToRemove.has(l.id));
+};
+
 /** Main timeline: submission-wide history (not attachment-level or view pings). */
-export const filterTimelineLogs = (logs) =>
-  (logs || []).filter((log) => {
+export const filterTimelineLogs = (logs) => {
+  const filtered = (logs || []).filter((log) => {
     if (log.attachment_id) return false;
 
     const type = String(log.action_type || '').toLowerCase().trim();
@@ -86,6 +155,9 @@ export const filterTimelineLogs = (logs) =>
 
     return true;
   });
+
+  return mergeIncompleteRequirementLogs(filtered);
+};
 
 const sortVersionsAsc = (versions) =>
   [...(versions || [])].filter(Boolean).sort((a, b) => (a?.version_number || 0) - (b?.version_number || 0));
@@ -384,19 +456,33 @@ const isTerminalStatus = (status) => {
 export const appendPendingTimelinePhase = (realLogs, { submissionStatus, isViewingLatestVersion = true } = {}) => {
   if (!isViewingLatestVersion || !realLogs) return realLogs || [];
 
+  const latestReturnIdx = (realLogs || []).findIndex(l => {
+    const at = norm(l.action_type);
+    const ra = norm(l.review_action);
+    return at === 'returned' || at === 'return' || ra === 'returned';
+  });
+
   const latestResubmitIdx = (realLogs || []).findIndex(l => {
     const at = norm(l.action_type);
     const desc = norm(l.description);
     return at === 'resubmitted' || at === 'resubmit' || desc.includes('resubmitted');
   });
-  const cycleLogs = latestResubmitIdx >= 0 ? (realLogs || []).slice(0, latestResubmitIdx + 1) : (realLogs || []);
+
+  let status = norm(submissionStatus);
+  const isReturnedDoc = status === 'returned' || (latestReturnIdx === 0 && (latestResubmitIdx < 0 || latestReturnIdx < latestResubmitIdx));
+
+  let cycleLogs = realLogs || [];
+  if (isReturnedDoc && latestReturnIdx >= 0) {
+    cycleLogs = (realLogs || []).slice(0, latestReturnIdx);
+  } else if (latestResubmitIdx >= 0) {
+    cycleLogs = (realLogs || []).slice(0, latestResubmitIdx + 1);
+  }
 
   const hasHardcopyVerifiedLog = cycleLogs.some(log => {
     const text = logText(log);
     return text.includes('hard copy verified') || text.includes('hardcopy verified');
   });
 
-  let status = norm(submissionStatus);
   if ((status === 'to forward' || status === 'pending hard copy' || status === 'pending hardcopy' || status === 'hardcopy submission') && hasHardcopyVerifiedLog) {
     status = 'ready for retrieval';
   }
@@ -474,16 +560,16 @@ export const appendPendingTimelinePhase = (realLogs, { submissionStatus, isViewi
   if (!phaseId) {
     phaseId = PHASE_SEQUENCE.find(p => {
       const matcher = phaseMatchers[p];
-      return matcher ? !realLogs.some(matcher) : false;
+      return matcher ? !cycleLogs.some(matcher) : false;
     });
   } else if (phaseId !== 'resubmitted') {
     let matcher = phaseMatchers[phaseId];
-    if (matcher && realLogs.some(matcher)) {
+    if (matcher && cycleLogs.some(matcher)) {
       const idx = PHASE_SEQUENCE.indexOf(phaseId);
       if (idx >= 0) {
         const nextUncompleted = PHASE_SEQUENCE.slice(idx + 1).find(p => {
           const m = phaseMatchers[p];
-          return m ? !realLogs.some(m) : false;
+          return m ? !cycleLogs.some(m) : false;
         });
         if (nextUncompleted) {
           phaseId = nextUncompleted;
@@ -495,10 +581,24 @@ export const appendPendingTimelinePhase = (realLogs, { submissionStatus, isViewi
   if (!phaseId) return realLogs;
 
   const matcher = phaseMatchers[phaseId];
-  if (matcher && realLogs.some(matcher)) return realLogs;
+  if (matcher && cycleLogs.some(matcher)) return realLogs;
 
   const template = PENDING_PHASE_TEMPLATES[phaseId];
   if (!template) return realLogs;
+
+  let pendingUsers = template.users;
+  let pendingDisplayName = template.displayName;
+
+  if (phaseId === 'resubmitted') {
+    const orgLog = (realLogs || []).find(log => {
+      const r = norm(log.users?.role);
+      return r === 'org-president' || r === 'org president' || norm(log.action_type) === 'submitted' || norm(log.action_type) === 'resubmitted';
+    });
+    if (orgLog?.users?.full_name || orgLog?.displayName) {
+      pendingDisplayName = orgLog.users?.full_name || orgLog.displayName;
+      pendingUsers = { full_name: pendingDisplayName, role: 'org-president' };
+    }
+  }
 
   const pendingLog = {
     id: `pending-${phaseId}`,
@@ -509,8 +609,8 @@ export const appendPendingTimelinePhase = (realLogs, { submissionStatus, isViewi
     workflow_phase: template.workflow_phase || null,
     description: template.description,
     comment: template.description,
-    users: template.users,
-    displayName: template.displayName,
+    users: pendingUsers,
+    displayName: pendingDisplayName,
     displayRole: template.displayRole,
     created_at: null
   };
@@ -525,10 +625,19 @@ export const buildTimelineDisplayLogs = (
   const isViewingLatestVersion =
     !viewingVersionId || !currentVersionId || viewingVersionId === currentVersionId;
 
-  const realLogs =
+  let realLogs =
     allVersions?.length && viewingVersionId && currentVersionId
       ? filterTimelineLogsForVersion(logs, { allVersions, viewingVersionId, currentVersionId })
       : filterTimelineLogs(logs);
+
+  realLogs = mergeIncompleteRequirementLogs(realLogs);
+
+  // Guarantee descending order by created_at (newest first) so recent actions appear above older actions
+  realLogs = [...realLogs].sort((a, b) => {
+    const timeA = a?.created_at ? new Date(a.created_at).getTime() : 0;
+    const timeB = b?.created_at ? new Date(b.created_at).getTime() : 0;
+    return timeB - timeA;
+  });
 
   const displayLogs = appendPendingTimelinePhase(realLogs, {
     submissionStatus,

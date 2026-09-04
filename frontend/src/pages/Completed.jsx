@@ -40,12 +40,20 @@ const getSemesterFromDate = (dateStr) => {
   return 'Summer';
 };
 
-const DATE_RANGE_OPTIONS = [
-  { value: 'all', label: 'All time' },
-  { value: '7d', label: 'Last 7 days' },
-  { value: '30d', label: 'Last 30 days' },
-  { value: '90d', label: 'Last 3 months' },
-  { value: 'year', label: 'This year' }
+const MONTH_OPTIONS = [
+  { value: 'all', label: 'All months' },
+  { value: '1', label: 'January' },
+  { value: '2', label: 'February' },
+  { value: '3', label: 'March' },
+  { value: '4', label: 'April' },
+  { value: '5', label: 'May' },
+  { value: '6', label: 'June' },
+  { value: '7', label: 'July' },
+  { value: '8', label: 'August' },
+  { value: '9', label: 'September' },
+  { value: '10', label: 'October' },
+  { value: '11', label: 'November' },
+  { value: '12', label: 'December' }
 ];
 
 const SORT_OPTIONS = [
@@ -103,7 +111,7 @@ const FilterDropdown = ({ label, value, options, onChange, isOpen, onToggle, act
   const [filterDocType, setFilterDocType] = React.useState('all');
   const [filterSchoolYear, setFilterSchoolYear] = React.useState('all');
   const [filterSemester, setFilterSemester] = React.useState('all');
-  const [filterDateRange, setFilterDateRange] = React.useState('all');
+  const [filterMonth, setFilterMonth] = React.useState('all');
   const [sortBy, setSortBy] = React.useState('recent');
   const [openFilter, setOpenFilter] = React.useState(null);
 
@@ -128,6 +136,10 @@ const FilterDropdown = ({ label, value, options, onChange, isOpen, onToggle, act
       ? `${Math.round((approved / totalDocs) * 100)}%` 
       : '0%';
 
+    const selectedMonthObj = MONTH_OPTIONS.find(m => m.value === filterMonth);
+    const selectedSyObj = schoolYearOptions.find(s => s.value === filterSchoolYear);
+    const selectedSemObj = semesterOptions.find(s => s.value === filterSemester);
+
     const stats = [
       { label: 'Total Documents', value: totalDocs },
       { label: 'Approved', value: approved },
@@ -135,9 +147,19 @@ const FilterDropdown = ({ label, value, options, onChange, isOpen, onToggle, act
       { label: 'Approval Rate', value: successRate }
     ];
 
+    if (filterMonth !== 'all' && selectedMonthObj) {
+      stats.push({ label: 'Selected Month', value: selectedMonthObj.label });
+    }
+    if (filterSchoolYear !== 'all' && selectedSyObj) {
+      stats.push({ label: 'School Year', value: selectedSyObj.label });
+    }
+    if (filterSemester !== 'all' && selectedSemObj) {
+      stats.push({ label: 'Semester', value: selectedSemObj.label });
+    }
+
     const tableHeaders = ['Ref ID', 'Document Title', 'Sender Organization', 'Document Type', 'Date Completed', 'Status'];
     const tableData = filteredDocs.map(doc => [
-      doc.tracking_number || (doc.documentType?.name?.toLowerCase().includes('proposal') ? 'PENDING NO.' : 'DRAFT'),
+      doc.ref || doc.tracking_number || '—',
       doc.title || 'Untitled Document',
       doc.sender || '—',
       doc.type || '—',
@@ -145,15 +167,22 @@ const FilterDropdown = ({ label, value, options, onChange, isOpen, onToggle, act
       String(doc.statusLabel || doc.raw?.status || 'Completed').toUpperCase()
     ]);
 
+    let titleSubtitle = 'Completed & Terminal Documents Report';
+    if (filterMonth !== 'all' && selectedMonthObj) {
+      titleSubtitle = `Completed Documents Report - ${selectedMonthObj.label}`;
+    }
+
+    const monthFileSuffix = filterMonth !== 'all' && selectedMonthObj ? `_${selectedMonthObj.label}` : '';
+
     setReportData({
-      title: `Completed & Terminal Documents Report`,
+      title: titleSubtitle,
       stats,
       headers: tableHeaders,
       rows: tableData,
       secondHeaders: null,
       secondRows: null,
       secondTitle: '',
-      filename: `Completed_Documents_Report_${new Date().toISOString().split('T')[0]}.pdf`
+      filename: `Completed_Documents_Report${monthFileSuffix}_${new Date().toISOString().split('T')[0]}.pdf`
     });
     setIsReportOpen(true);
   };
@@ -378,18 +407,12 @@ const FilterDropdown = ({ label, value, options, onChange, isOpen, onToggle, act
     return [{ value: 'all', label: 'All semesters' }, ...semesters.map((s) => ({ value: s, label: s }))];
   }, [completedDocs]);
 
-  const matchesDateRange = (completedAt, range) => {
-    if (range === 'all' || !completedAt) return true;
+  const matchesMonth = (completedAt, monthValue) => {
+    if (monthValue === 'all' || !completedAt) return true;
     const date = new Date(completedAt);
     if (Number.isNaN(date.getTime())) return true;
-    const now = new Date();
-    const diffMs = now - date;
-    const diffDays = diffMs / (1000 * 60 * 60 * 24);
-    if (range === '7d') return diffDays <= 7;
-    if (range === '30d') return diffDays <= 30;
-    if (range === '90d') return diffDays <= 90;
-    if (range === 'year') return date.getFullYear() === now.getFullYear();
-    return true;
+    const monthNum = date.getMonth() + 1;
+    return String(monthNum) === String(monthValue);
   };
 
   const filteredDocs = React.useMemo(() => {
@@ -404,8 +427,8 @@ const FilterDropdown = ({ label, value, options, onChange, isOpen, onToggle, act
     if (filterSemester !== 'all') {
       list = list.filter((d) => d.semester === filterSemester);
     }
-    if (filterDateRange !== 'all') {
-      list = list.filter((d) => matchesDateRange(d.completedAt, filterDateRange));
+    if (filterMonth !== 'all') {
+      list = list.filter((d) => matchesMonth(d.completedAt, filterMonth));
     }
 
     list.sort((a, b) => {
@@ -422,7 +445,7 @@ const FilterDropdown = ({ label, value, options, onChange, isOpen, onToggle, act
     });
 
     return list;
-  }, [completedDocs, filterDocType, filterSchoolYear, filterSemester, filterDateRange, sortBy]);
+  }, [completedDocs, filterDocType, filterSchoolYear, filterSemester, filterMonth, sortBy]);
 
   const toggleFilter = (e, name) => {
     e.stopPropagation();
@@ -490,16 +513,16 @@ const FilterDropdown = ({ label, value, options, onChange, isOpen, onToggle, act
             onToggle={(e) => toggleFilter(e, 'semester')}
           />
           <FilterDropdown
-            label="Date Range"
-            value={filterDateRange}
-            activeWhen={filterDateRange !== 'all'}
-            options={DATE_RANGE_OPTIONS}
+            label="Month"
+            value={filterMonth}
+            activeWhen={filterMonth !== 'all'}
+            options={MONTH_OPTIONS}
             onChange={(v) => {
-              setFilterDateRange(v);
+              setFilterMonth(v);
               setOpenFilter(null);
             }}
-            isOpen={openFilter === 'date'}
-            onToggle={(e) => toggleFilter(e, 'date')}
+            isOpen={openFilter === 'month'}
+            onToggle={(e) => toggleFilter(e, 'month')}
           />
         </div>
         <div className="flex flex-wrap items-center gap-3">

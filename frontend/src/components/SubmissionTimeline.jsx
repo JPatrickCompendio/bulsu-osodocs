@@ -71,8 +71,32 @@ const getStorageReference = (reference) => {
 
 const formatTimelineComment = (commentText) => {
   if (!commentText) return '';
-  const str = String(commentText).trim();
+  let str = String(commentText).trim();
   if (!str) return '';
+
+  if (str.startsWith('[') && str.endsWith(']')) {
+    try {
+      const parsed = JSON.parse(str);
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].title) {
+        return `Incomplete Requirements Flagged:\n` + parsed.map(r => `• ${r.title}`).join('\n');
+      }
+    } catch (_) { }
+  }
+
+  if (str.includes('[{"') || str.includes('[ {"')) {
+    try {
+      const jsonMatch = str.match(/\[\s*\{.*\}\s*\]/s);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].title) {
+          const cleanPrefix = str.replace(jsonMatch[0], '').trim();
+          const reqList = `Incomplete Requirements Flagged:\n` + parsed.map(r => `• ${r.title}`).join('\n');
+          return cleanPrefix ? `${cleanPrefix}\n\n${reqList}` : reqList;
+        }
+      }
+    } catch (_) { }
+  }
+
   return str;
 };
 
