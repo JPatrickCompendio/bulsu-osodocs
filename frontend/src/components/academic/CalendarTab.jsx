@@ -10,6 +10,7 @@ import { formatDateRange } from '../../utils/academicLifecycle';
 export function CalendarTab({
   schoolYears,
   events,
+  approvedActivities = [],
   selectedSyId,
   onSelectSy,
   onNewEvent,
@@ -19,21 +20,27 @@ export function CalendarTab({
 }) {
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const selectedSy = schoolYears.find(sy => sy.id === selectedSyId) || schoolYears.find(sy => sy.is_active) || schoolYears[0];
-  const syEvents = events.filter(ev => ev.school_year_id === selectedSy?.id);
+  const syEvents = events.filter(ev => ev.school_year_id === selectedSy?.id && ev.event_type !== 'submission_window');
 
   const filteredEvents = syEvents.filter(ev => {
     if (categoryFilter === 'ALL') return true;
+    if (categoryFilter === 'school_event') {
+      return ev.event_type === 'school_event' || ev.event_type === 'announcement';
+    }
+    if (categoryFilter === 'blocked_activity') {
+      return ev.event_type === 'blocked_activity' || ev.blocks_activity || ev.description === 'BLOCKS_ACTIVITY';
+    }
     return ev.event_type === categoryFilter;
   });
 
   const eventTypeLabels = {
     school_event: 'School Event',
+    announcement: 'School Event',
     blocked_activity: 'Blocked Activity',
     submission_window: 'Submission Window',
     holiday: 'Holiday',
     exam_week: 'Exam Week',
-    enrollment: 'Enrollment',
-    announcement: 'Announcement'
+    enrollment: 'Enrollment'
   };
 
   return (
@@ -74,6 +81,7 @@ export function CalendarTab({
             {[
               { id: 'ALL', label: 'All Events' },
               { id: 'school_event', label: 'School Events' },
+              { id: 'blocked_activity', label: 'Blocked Dates' },
               { id: 'holiday', label: 'Holidays' },
               { id: 'exam_week', label: 'Exams' },
               { id: 'enrollment', label: 'Enrollment' }
@@ -117,10 +125,10 @@ export function CalendarTab({
                           <div>
                             <span className="text-xs sm:text-sm">{ev.title}</span>
                             <div className="sm:hidden flex flex-wrap items-center gap-1 mt-0.5">
-                              <span className="bg-gray-100 border border-gray-200 px-1.5 py-0.5 rounded text-[9px] font-bold text-gray-600">
+                              <span className="text-[10px] font-bold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
                                 {eventTypeLabels[ev.event_type] || ev.event_type}
                               </span>
-                              <span className="text-[10px] text-gray-400 font-semibold">
+                              <span className="text-[10px] font-bold text-gray-400">
                                 {formatDateRange(ev.start_date, ev.end_date)}
                               </span>
                             </div>
@@ -129,26 +137,25 @@ export function CalendarTab({
                       </td>
 
                       <td className="hidden sm:table-cell p-4 text-xs font-bold text-gray-600">
-                        <span className="bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full text-gray-700">
+                        <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded-lg border border-gray-200">
                           {eventTypeLabels[ev.event_type] || ev.event_type}
                         </span>
                       </td>
 
-                      <td className="hidden md:table-cell p-4 text-gray-600 font-semibold text-xs">
+                      <td className="hidden md:table-cell p-4 text-xs font-bold text-gray-600">
                         {formatDateRange(ev.start_date, ev.end_date)}
                       </td>
 
                       <td className="px-2 sm:p-4 text-center sm:text-left">
                         <button
                           onClick={() => onToggleBlock(ev)}
-                          className={`w-9 sm:w-10 h-4.5 sm:h-5 inline-flex items-center rounded-full p-0.5 transition cursor-pointer ${
-                            isBlocked ? 'bg-red-500' : 'bg-gray-300'
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase transition border ${
+                            isBlocked
+                              ? 'bg-red-100 text-red-800 border-red-200 hover:bg-red-200'
+                              : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
                           }`}
-                          title="Toggle proposal date blocking for this event"
                         >
-                          <div className={`bg-white w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full shadow-md transform transition-transform ${
-                            isBlocked ? 'translate-x-4 sm:translate-x-5' : ''
-                          }`} />
+                          {isBlocked ? 'Blocked' : 'Open'}
                         </button>
                       </td>
 
@@ -156,14 +163,14 @@ export function CalendarTab({
                         <div className="flex items-center justify-end gap-1 sm:gap-2">
                           <button
                             onClick={() => onEditEvent(ev)}
-                            className="p-1 sm:p-1.5 text-gray-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition"
+                            className="p-1.5 text-gray-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition"
                             title="Edit Event"
                           >
                             <Edit3 size={15} />
                           </button>
                           <button
                             onClick={() => onDeleteEvent(ev.id)}
-                            className="p-1 sm:p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
                             title="Delete Event"
                           >
                             <Trash2 size={15} />
@@ -176,8 +183,8 @@ export function CalendarTab({
 
                 {filteredEvents.length === 0 && (
                   <tr>
-                    <td colSpan="5" className="p-12 text-center text-gray-400 font-semibold">
-                      No calendar events configured for {selectedSy?.name || 'this school year'}.
+                    <td colSpan="5" className="p-8 text-center text-gray-400 font-semibold text-xs">
+                      No calendar events found for {selectedSy?.name || 'the selected filter'}.
                     </td>
                   </tr>
                 )}
@@ -186,9 +193,9 @@ export function CalendarTab({
           </div>
         </div>
 
-        {/* Right 1 Col: Mini Calendar & Proposal Preview */}
+        {/* Right Col: Mini Calendar & Proposal Preview Panel */}
         <div className="space-y-6">
-          <BlockedDatesCalendar events={syEvents} />
+          <BlockedDatesCalendar events={syEvents} approvedActivities={approvedActivities} />
           <ProposalPreview events={syEvents} />
         </div>
       </div>

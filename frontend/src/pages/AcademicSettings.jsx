@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../config/api';
 import { 
-  Calendar, BookOpen, Clock, CalendarDays, FileText, Check, AlertCircle 
+  Calendar, BookOpen, Clock, CalendarDays, FileText, Check, AlertCircle, CheckCircle2 
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 
@@ -13,6 +13,9 @@ import { SchoolYearsTable } from '../components/academic/SchoolYearsTable';
 import { SemestersTab } from '../components/academic/SemestersTab';
 import { CalendarTab } from '../components/academic/CalendarTab';
 import { SubmissionWindowsTab } from '../components/academic/SubmissionWindowsTab';
+import { ApprovedActivitiesTab } from '../components/academic/ApprovedActivitiesTab';
+
+import { fetchApprovedActivitySchedules } from '../utils/activityScheduleFetcher';
 
 import { SchoolYearModal } from '../components/academic/SchoolYearModal';
 import { SemesterModal } from '../components/academic/SemesterModal';
@@ -32,6 +35,8 @@ const AcademicSettings = () => {
   const [documentTypes, setDocumentTypes] = useState([]);
   const [semesters, setSemesters] = useState([]);
   const [selectedSyId, setSelectedSyId] = useState('');
+  const [approvedActivities, setApprovedActivities] = useState([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(false);
 
   // Modals State
   const [showSyModal, setShowSyModal] = useState(false);
@@ -52,6 +57,24 @@ const AcademicSettings = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    if (selectedSyId) {
+      loadApprovedActivities(selectedSyId);
+    }
+  }, [selectedSyId]);
+
+  const loadApprovedActivities = async (syId) => {
+    setActivitiesLoading(true);
+    try {
+      const acts = await fetchApprovedActivitySchedules(syId);
+      setApprovedActivities(acts || []);
+    } catch (err) {
+      console.error('Failed to load approved activity schedules:', err);
+    } finally {
+      setActivitiesLoading(false);
+    }
+  };
 
   const showMessage = (msg, type = 'success') => {
     setToast({ msg, type });
@@ -476,6 +499,17 @@ const AcademicSettings = () => {
         >
           <FileText size={16} /> Submission Windows
         </button>
+
+        <button
+          className={`px-4 sm:px-5 py-2.5 sm:py-3 font-extrabold text-xs rounded-xl transition flex items-center gap-2 shrink-0 ${
+            activeTab === 'approved-activities'
+              ? 'bg-purple-800 text-white shadow-md'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+          }`}
+          onClick={() => setActiveTab('approved-activities')}
+        >
+          <CheckCircle2 size={16} /> Activity Schedules
+        </button>
       </div>
 
       {loading ? (
@@ -544,6 +578,7 @@ const AcademicSettings = () => {
             <CalendarTab
               schoolYears={schoolYears}
               events={academicEvents}
+              approvedActivities={approvedActivities}
               selectedSyId={selectedSyId}
               onSelectSy={setSelectedSyId}
               onNewEvent={(targetSyId) => openEventModal(null, 'school_event', targetSyId)}
@@ -564,6 +599,17 @@ const AcademicSettings = () => {
               onNewWindow={(targetSyId) => openEventModal(null, 'submission_window', targetSyId)}
               onEditWindow={(win) => openEventModal(win)}
               onDeleteWindow={deleteEvent}
+            />
+          )}
+
+          {/* STEP 5: APPROVED ACTIVITIES TAB */}
+          {activeTab === 'approved-activities' && (
+            <ApprovedActivitiesTab
+              schoolYears={schoolYears}
+              approvedActivities={approvedActivities}
+              selectedSyId={selectedSyId}
+              onSelectSy={setSelectedSyId}
+              loading={activitiesLoading}
             />
           )}
         </>

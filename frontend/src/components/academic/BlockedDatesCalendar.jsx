@@ -15,7 +15,7 @@ import {
 } from 'date-fns';
 import { ChevronLeft, ChevronRight, Lock, Calendar as CalendarIcon, Info } from 'lucide-react';
 
-export function BlockedDatesCalendar({ events }) {
+export function BlockedDatesCalendar({ events = [], approvedActivities = [] }) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDayEvent, setSelectedDayEvent] = useState(null);
 
@@ -29,14 +29,13 @@ export function BlockedDatesCalendar({ events }) {
   const nextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
   const prevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
 
-  // Find events blocking a specific day
+  // Find events blocking or scheduled for a specific day
   const getEventsForDay = (day) => {
-    return events.filter(ev => {
+    const matchedEvents = events.filter(ev => {
       if (!ev.start_date || !ev.end_date) return false;
       try {
         const start = typeof ev.start_date === 'string' ? parseISO(ev.start_date) : new Date(ev.start_date);
         const end = typeof ev.end_date === 'string' ? parseISO(ev.end_date) : new Date(ev.end_date);
-        // Normalize time
         start.setHours(0,0,0,0);
         end.setHours(23,59,59,999);
         return isWithinInterval(day, { start, end });
@@ -44,6 +43,25 @@ export function BlockedDatesCalendar({ events }) {
         return false;
       }
     });
+
+    const matchedActivities = approvedActivities.filter(act => {
+      if (!act.date) return false;
+      try {
+        const start = new Date(act.date);
+        const end = act.endDate ? new Date(act.endDate) : new Date(act.date);
+        start.setHours(0,0,0,0);
+        end.setHours(23,59,59,999);
+        return isWithinInterval(day, { start, end });
+      } catch {
+        return false;
+      }
+    });
+
+    return {
+      adminEvents: matchedEvents,
+      activityEvents: matchedActivities,
+      allCount: matchedEvents.length + matchedActivities.length
+    };
   };
 
   return (
@@ -83,17 +101,18 @@ export function BlockedDatesCalendar({ events }) {
 
       {/* Days grid */}
       <div className="grid grid-cols-7 gap-1">
-        {days.map((day, dayIdx) => {
-          const dayEvents = getEventsForDay(day);
-          const isBlocked = dayEvents.some(e => e.event_type === 'blocked_activity' || e.description === 'BLOCKS_ACTIVITY' || e.blocks_activity);
+        {days.map((day) => {
+          const { adminEvents, activityEvents, allCount } = getEventsForDay(day);
+          const isBlocked = adminEvents.some(e => e.event_type === 'blocked_activity' || e.description === 'BLOCKS_ACTIVITY' || e.blocks_activity);
+          const hasApprovedActivity = activityEvents.length > 0;
           const isCurrentMonth = isSameMonth(day, currentMonth);
 
           return (
             <button
               key={day.toString()}
               onClick={() => {
-                if (dayEvents.length > 0) {
-                  setSelectedDayEvent({ day, events: dayEvents });
+                if (allCount > 0) {
+                  setSelectedDayEvent({ day, adminEvents, activityEvents });
                 } else {
                   setSelectedDayEvent(null);
                 }
@@ -103,9 +122,11 @@ export function BlockedDatesCalendar({ events }) {
               } ${
                 isBlocked 
                   ? 'bg-red-500 text-white font-extrabold shadow-2xs hover:bg-red-600' 
-                  : dayEvents.length > 0
-                    ? 'bg-emerald-100 text-emerald-900 hover:bg-emerald-200'
-                    : 'hover:bg-gray-100'
+                  : hasApprovedActivity
+                    ? 'bg-purple-100 text-purple-900 font-extrabold border border-purple-300 hover:bg-purple-200'
+                    : adminEvents.length > 0
+                      ? 'bg-emerald-100 text-emerald-900 hover:bg-emerald-200'
+                      : 'hover:bg-gray-100'
               }`}
             >
               <span>{format(day, 'd')}</span>
@@ -119,28 +140,43 @@ export function BlockedDatesCalendar({ events }) {
 
       {/* Legend & Selected Day Info */}
       <div className="mt-4 pt-3 border-t border-gray-100 space-y-2">
-        <div className="flex items-center justify-between text-xs text-gray-500 font-semibold">
+        <div className="flex flex-wrap items-center justify-between text-[11px] text-gray-500 font-semibold gap-2">
           <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-md bg-red-500 inline-block" />
-            <span>Blocked Proposal Date</span>
+            <span className="w-2.5 h-2.5 rounded-md bg-red-500 inline-block" />
+            <span>Blocked Date</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-md bg-emerald-100 inline-block" />
-            <span>Scheduled Event</span>
+            <span className="w-2.5 h-2.5 rounded-md bg-purple-200 border border-purple-400 inline-block" />
+            <span>Approved Activity</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-md bg-emerald-100 inline-block" />
+            <span>Academic Event</span>
           </div>
         </div>
 
         {selectedDayEvent && (
-          <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-xl text-xs space-y-1">
-            <div className="flex items-center justify-between font-bold text-red-900">
-              <span className="flex items-center gap-1">
+          <div className="mt-3 p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs space-y-1.5">
+            <div className="flex items-center justify-between font-bold text-gray-900 border-b border-gray-200 pb-1">
+              <span className="flex items-center gap-1 text-emerald-800">
                 <Info size={14} /> {format(selectedDayEvent.day, 'MMMM d, yyyy')}
               </span>
-              <button onClick={() => setSelectedDayEvent(null)} className="text-red-500 hover:text-red-800 font-extrabold">✕</button>
+              <button onClick={() => setSelectedDayEvent(null)} className="text-gray-400 hover:text-gray-800 font-extrabold">✕</button>
             </div>
-            {selectedDayEvent.events.map((ev, i) => (
-              <p key={i} className="text-red-700 font-semibold">
-                • <strong className="font-bold">{ev.title}</strong> {(ev.event_type === 'blocked_activity' || ev.blocks_activity || ev.description === 'BLOCKS_ACTIVITY') ? '(Proposals Blocked)' : ''}
+            
+            {selectedDayEvent.adminEvents.map((ev, i) => (
+              <p key={`admin-${i}`} className={`font-semibold ${
+                ev.event_type === 'blocked_activity' || ev.blocks_activity || ev.description === 'BLOCKS_ACTIVITY'
+                  ? 'text-red-700 font-bold'
+                  : 'text-emerald-800'
+              }`}>
+                • <strong>{ev.title}</strong> {(ev.event_type === 'blocked_activity' || ev.blocks_activity || ev.description === 'BLOCKS_ACTIVITY') ? '(Proposals Blocked)' : ''}
+              </p>
+            ))}
+
+            {selectedDayEvent.activityEvents.map((act, i) => (
+              <p key={`act-${i}`} className="text-purple-800 font-semibold">
+                • <span className="bg-purple-100 text-purple-800 px-1 rounded text-[10px] font-bold">Approved</span> <strong>{act.title}</strong> ({act.org})
               </p>
             ))}
           </div>
