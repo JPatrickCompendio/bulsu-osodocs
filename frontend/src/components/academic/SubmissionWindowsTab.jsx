@@ -26,27 +26,18 @@ export function SubmissionWindowsTab({
         onSelectSy={onSelectSy}
       />
 
-      {/* Header bar */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="font-extrabold text-gray-900 text-lg flex items-center gap-2">
-            <FileText className="text-emerald-700" size={20} />
-            Document Submission Windows
-          </h3>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Configure submission deadlines and open periods for required documents in {selectedSy?.name}.
-          </p>
-        </div>
-
-        {canEdit && (
+      {/* Action Button under the academic year picker */}
+      {canEdit && (
+        <div className="flex justify-end -mt-2">
           <button
+            type="button"
             onClick={() => onNewWindow(selectedSy?.id)}
-            className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 shadow-sm transition"
+            className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 shadow-xs transition cursor-pointer"
           >
             <Plus size={16} /> Add Submission Window
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Table of Submission Windows */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-xs overflow-hidden">

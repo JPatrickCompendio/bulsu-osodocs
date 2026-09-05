@@ -27,3 +27,9 @@ export const AnnouncementManagement = AnnouncementManagementComponent;
 import AcademicSettingsComponent from './AcademicSettings';
 export const AcademicSettings = AcademicSettingsComponent;
 
+export { default as SchoolYearPage } from './SchoolYearPage';
+export { default as AcademicEventsPage } from './AcademicEventsPage';
+export { default as SubmissionWindowsPage } from './SubmissionWindowsPage';
+export { default as OrganizationActivitiesPage } from './OrganizationActivitiesPage';
+
+

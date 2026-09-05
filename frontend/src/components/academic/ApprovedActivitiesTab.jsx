@@ -219,19 +219,7 @@ export function ApprovedActivitiesTab({
       </div>
 
       {/* Main Activity Schedules Card Container */}
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-xs p-5 sm:p-6 space-y-6">
-        
-        {/* Section Header */}
-        <div>
-          <h3 className="font-extrabold text-gray-900 text-lg flex items-center gap-2">
-            <CheckCircle2 className="text-purple-600" size={20} />
-            Activity Schedules
-          </h3>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Official activities approved by Main Campus for {selectedSy?.name}.
-          </p>
-        </div>
-
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-xs p-5 sm:p-6 space-y-5">
         {/* Controls Toolbar: Search, Org Dropdown, Count, Export, View Toggle */}
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 pt-1">
           {/* Left Controls: Search & Org Select */}

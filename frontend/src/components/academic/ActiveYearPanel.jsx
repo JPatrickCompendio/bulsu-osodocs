@@ -66,13 +66,6 @@ export function ActiveYearPanel({ activeSy, activeSemester, blockedDaysCount, on
             >
               <Edit3 size={16} /> Edit Year Details
             </button>
-            
-            <button
-              onClick={() => onCloseSubmissions(activeSy)}
-              className="px-4 py-2.5 bg-amber-400 text-gray-900 hover:bg-amber-300 font-extrabold text-xs rounded-xl shadow-lg transition flex items-center gap-2"
-            >
-              <Lock size={16} /> Close Submissions
-            </button>
           </div>
         ) : (
           <div className="flex items-center gap-2 shrink-0 bg-white/10 px-3.5 py-2 rounded-xl border border-white/20 text-xs font-bold text-emerald-100 backdrop-blur-md">

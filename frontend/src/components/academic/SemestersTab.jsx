@@ -26,27 +26,18 @@ export function SemestersTab({
         onSelectSy={onSelectSy}
       />
 
-      {/* Header bar */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="font-extrabold text-gray-900 text-lg flex items-center gap-2">
-            <Clock className="text-emerald-700" size={20} />
-            Academic Semesters & Terms
-          </h3>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Configure term dates within {selectedSy?.name || 'the selected School Year'}.
-          </p>
-        </div>
-
-        {canEdit && (
+      {/* Action Button under the academic year picker */}
+      {canEdit && (
+        <div className="flex justify-end -mt-2">
           <button
+            type="button"
             onClick={() => onNewSemester(selectedSy?.id)}
-            className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 shadow-sm transition"
+            className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 shadow-xs transition cursor-pointer"
           >
             <Plus size={16} /> New Semester
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Semesters Cards / Table */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-xs overflow-hidden">
@@ -103,15 +94,7 @@ export function SemestersTab({
                   {canEdit && (
                     <td className="px-3 sm:p-4 text-right">
                       <div className="flex items-center justify-end gap-1 sm:gap-2">
-                        {!sem.is_active && !isArchived && (
-                          <button
-                            onClick={() => onActivateSemester(sem.id)}
-                            className="px-2 sm:px-3 py-1 sm:py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-[10px] sm:text-xs font-bold transition flex items-center gap-1 shrink-0"
-                          >
-                            <span className="hidden sm:inline">Set as Current</span>
-                            <span className="sm:hidden">Current</span>
-                          </button>
-                        )}
+
 
                         {!isArchived && (
                           <button

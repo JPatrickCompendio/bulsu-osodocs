@@ -415,7 +415,7 @@ const ListOfRequirements = () => {
             {canManage && (
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => navigate(`/admin/academic-settings?tab=submission-windows`)}
+                  onClick={() => navigate(`/admin/academic-dates/submission-windows`)}
                   className="flex items-center gap-2 px-5 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-blue-100 transition-all"
                 >
                   <Calendar size={18} />

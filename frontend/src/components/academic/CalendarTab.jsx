@@ -57,50 +57,40 @@ export function CalendarTab({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left 2 Cols: Events List */}
         <div className="lg:col-span-2 space-y-4">
-          {/* Header & Filter pills */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h3 className="font-extrabold text-gray-900 text-lg flex items-center gap-2">
-                <CalendarDays className="text-emerald-700" size={20} />
-                Calendar & Blocked Dates
-              </h3>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Manage university events and proposal blackout dates for {selectedSy?.name}.
-              </p>
+          {/* Filter Pills & Add Action Button */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            {/* Category Filter Pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 max-w-full bg-gray-100 p-1 rounded-xl w-full sm:w-fit border border-gray-200 scrollbar-none">
+              {[
+                { id: 'ALL', label: 'All Events' },
+                { id: 'school_event', label: 'School Events' },
+                { id: 'blocked_activity', label: 'Blocked Dates' },
+                { id: 'holiday', label: 'Holidays' },
+                { id: 'exam_week', label: 'Exams' },
+                { id: 'enrollment', label: 'Enrollment' }
+              ].map(cat => (
+                <button
+                  key={cat.id}
+                  onClick={() => setCategoryFilter(cat.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition shrink-0 ${
+                    categoryFilter === cat.id
+                      ? 'bg-emerald-800 text-white shadow-xs font-extrabold'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/60'
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              ))}
             </div>
 
             {canEdit && (
               <button
                 onClick={() => onNewEvent(selectedSy?.id)}
-                className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 shadow-sm transition shrink-0"
+                className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 shadow-xs transition shrink-0"
               >
-                <Plus size={16} /> Add Calendar Event
+                <Plus size={15} /> Add Calendar Event
               </button>
             )}
-          </div>
-
-          {/* Category Filter Pills */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 max-w-full bg-gray-100 p-1 rounded-xl w-full sm:w-fit border border-gray-200 scrollbar-none">
-            {[
-              { id: 'ALL', label: 'All Events' },
-              { id: 'school_event', label: 'School Events' },
-              { id: 'blocked_activity', label: 'Blocked Dates' },
-              { id: 'holiday', label: 'Holidays' },
-              { id: 'exam_week', label: 'Exams' },
-              { id: 'enrollment', label: 'Enrollment' }
-            ].map(cat => (
-              <button
-                key={cat.id}
-                onClick={() => setCategoryFilter(cat.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition shrink-0 ${
-                  categoryFilter === cat.id
-                    ? 'bg-white text-gray-900 shadow-2xs font-extrabold'
-                    : 'text-gray-500 hover:text-gray-800'
-                }`}
-              >
-                {cat.label}
-              </button>
-            ))}
           </div>
 
           {/* Table / List */}

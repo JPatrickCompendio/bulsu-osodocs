@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Inbox, 
@@ -13,7 +13,13 @@ import {
   Megaphone,
   Settings,
   User,
-  X
+  X,
+  ChevronDown,
+  Calendar,
+  CalendarDays,
+  BookOpen,
+  FileText,
+  CheckCircle2
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
@@ -196,6 +202,30 @@ const Sidebar = ({ isOpen, onClose }) => {
     };
   }, [user]);
 
+  const location = useLocation();
+  const isAcademicDatesActive = location.pathname.startsWith('/admin/academic-dates') || 
+                                location.pathname.startsWith('/admin/academic-settings');
+  const [academicDatesOpen, setAcademicDatesOpen] = React.useState(isAcademicDatesActive);
+
+  React.useEffect(() => {
+    if (isAcademicDatesActive) {
+      setAcademicDatesOpen(true);
+    }
+  }, [isAcademicDatesActive]);
+
+  const academicDatesGroup = {
+    name: 'Academic Dates',
+    isGroup: true,
+    basePath: '/admin/academic-dates',
+    icon: <Calendar size={20} />,
+    children: [
+      { name: 'School Year', path: '/admin/academic-dates/school-year', icon: <BookOpen size={16} /> },
+      { name: 'Events', path: '/admin/academic-dates/events', icon: <CalendarDays size={16} /> },
+      { name: 'Submission Windows', path: '/admin/academic-dates/submission-windows', icon: <FileText size={16} /> },
+      { name: 'Organization Activities', path: '/admin/academic-dates/organization-activities', icon: <CheckCircle2 size={16} /> },
+    ],
+  };
+
   const menuItems = {
     admin: [
       { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
@@ -205,7 +235,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       { name: 'User Management', path: '/users', icon: <Users size={20} /> },
       { name: 'List of Requirements', path: '/requirements', icon: <ListChecks size={20} /> },
       { name: 'Announcements', path: '/admin/announcements', icon: <Megaphone size={20} /> },
-      { name: 'Academic Settings', path: '/admin/academic-settings', icon: <Settings size={20} /> },
+      academicDatesGroup,
     ],
     chairman: [
       { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
@@ -213,7 +243,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       { name: 'My Documents', path: '/my-documents', icon: <Files size={20} /> },
       { name: 'Completed', path: '/completed', icon: <CheckCircle size={20} /> },
       { name: 'List of Requirements', path: '/requirements', icon: <ListChecks size={20} /> },
-      { name: 'Academic Settings', path: '/admin/academic-settings', icon: <Settings size={20} /> },
+      academicDatesGroup,
     ],
     'vice-chairman': [
       { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
@@ -221,7 +251,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       { name: 'My Documents', path: '/my-documents', icon: <Files size={20} /> },
       { name: 'Completed', path: '/completed', icon: <CheckCircle size={20} /> },
       { name: 'List of Requirements', path: '/requirements', icon: <ListChecks size={20} /> },
-      { name: 'Academic Settings', path: '/admin/academic-settings', icon: <Settings size={20} /> },
+      academicDatesGroup,
     ],
     'org-president': [
       { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
@@ -257,47 +287,107 @@ const Sidebar = ({ isOpen, onClose }) => {
       </div>
 
       <nav className="flex-1 mt-6 px-4 space-y-2 overflow-y-auto">
-        {currentMenu.map((item) => (
-          <NavLink
-            key={item.path}
-            to={item.path}
-            onClick={(e) => {
-              if (onClose) onClose();
-              window.dispatchEvent(new CustomEvent('sidebar-nav-click', { detail: { path: item.path } }));
-              if (window.__hasUnsavedChanges) {
-                e.preventDefault();
-                e.stopPropagation();
+        {currentMenu.map((item) => {
+          if (item.isGroup) {
+            return (
+              <div key={item.name} className="space-y-1">
+                <button
+                  type="button"
+                  onClick={() => setAcademicDatesOpen(prev => !prev)}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all duration-200 ${
+                    isAcademicDatesActive
+                      ? 'bg-white/15 text-secondary-gold font-semibold shadow-inner'
+                      : 'hover:bg-white/10 text-white/80'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    {item.icon}
+                    <span className="font-medium text-sm">{item.name}</span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`transition-transform duration-200 text-white/70 ${academicDatesOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
+
+                {academicDatesOpen && (
+                  <div className="pl-3 pr-1 py-1 space-y-1 border-l-2 border-white/20 ml-5 my-1 animate-in fade-in duration-150">
+                    {item.children.map((child) => (
+                      <NavLink
+                        key={child.path}
+                        to={child.path}
+                        onClick={(e) => {
+                          if (onClose) onClose();
+                          window.dispatchEvent(new CustomEvent('sidebar-nav-click', { detail: { path: child.path } }));
+                          if (window.__hasUnsavedChanges) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }
+                        }}
+                        className={({ isActive }) => {
+                          const isSubActive = isActive || (
+                            child.path === '/admin/academic-dates/school-year' &&
+                            (location.pathname === '/admin/academic-dates' || location.pathname === '/admin/academic-settings')
+                          );
+                          return `flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-200 ${
+                            isSubActive
+                              ? 'bg-secondary-gold text-primary-green shadow-md font-bold scale-[1.02]'
+                              : 'text-white/75 hover:text-white hover:bg-white/10'
+                          }`;
+                        }}
+                      >
+                        {child.icon}
+                        <span>{child.name}</span>
+                      </NavLink>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          }
+
+          return (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              onClick={(e) => {
+                if (onClose) onClose();
+                window.dispatchEvent(new CustomEvent('sidebar-nav-click', { detail: { path: item.path } }));
+                if (window.__hasUnsavedChanges) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }
+              }}
+              className={({ isActive }) =>
+                `flex items-center justify-between px-4 py-3 rounded-lg transition-all duration-200 ${
+                  isActive 
+                    ? 'bg-secondary-gold text-primary-green shadow-lg scale-105 animate-shine' 
+                    : 'hover:bg-white/10 text-white/80'
+                }`
               }
-            }}
-            className={({ isActive }) =>
-              `flex items-center justify-between px-4 py-3 rounded-lg transition-all duration-200 ${
-                isActive 
-                  ? 'bg-secondary-gold text-primary-green shadow-lg scale-105 animate-shine' 
-                  : 'hover:bg-white/10 text-white/80'
-              }`
-            }
-          >
-            <div className="flex items-center gap-3">
-              {item.icon}
-              <span className="font-medium text-sm">{item.name}</span>
-            </div>
-            {item.name === 'Inbox' && inboxCount > 0 && (
-              <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm">
-                {inboxCount > 99 ? '99+' : inboxCount}
-              </span>
-            )}
-            {item.name === 'Completed' && completedCount > 0 && (
-              <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm animate-pulse">
-                {completedCount > 99 ? '99+' : completedCount}
-              </span>
-            )}
-            {item.name === 'My Documents' && myDocsCount > 0 && (
-              <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm animate-pulse">
-                {myDocsCount > 99 ? '99+' : myDocsCount}
-              </span>
-            )}
-          </NavLink>
-        ))}
+            >
+              <div className="flex items-center gap-3">
+                {item.icon}
+                <span className="font-medium text-sm">{item.name}</span>
+              </div>
+              {item.name === 'Inbox' && inboxCount > 0 && (
+                <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm">
+                  {inboxCount > 99 ? '99+' : inboxCount}
+                </span>
+              )}
+              {item.name === 'Completed' && completedCount > 0 && (
+                <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm animate-pulse">
+                  {completedCount > 99 ? '99+' : completedCount}
+                </span>
+              )}
+              {item.name === 'My Documents' && myDocsCount > 0 && (
+                <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm animate-pulse">
+                  {myDocsCount > 99 ? '99+' : myDocsCount}
+                </span>
+              )}
+            </NavLink>
+          );
+        })}
       </nav>
 
       <div className="p-4 border-t border-white/10 shrink-0">

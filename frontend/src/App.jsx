@@ -13,6 +13,10 @@ import {
   SubmitNewDocuments,
   AnnouncementManagement,
   AcademicSettings,
+  SchoolYearPage,
+  AcademicEventsPage,
+  SubmissionWindowsPage,
+  OrganizationActivitiesPage,
 } from './pages/Pages';
 import Completed from './pages/Completed';
 import UserManagement from './pages/UserManagement';
@@ -58,7 +62,38 @@ const App = () => {
                 <AnnouncementManagement />
               </ProtectedRoute>
             } />
+            {/* Academic Dates - Distinct Pages */}
+            <Route path="/admin/academic-dates" element={
+              <ProtectedRoute allowedRoles={['admin', 'chairman', 'vice-chairman']}>
+                <Navigate to="/admin/academic-dates/school-year" replace />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/academic-dates/school-year" element={
+              <ProtectedRoute allowedRoles={['admin', 'chairman', 'vice-chairman']}>
+                <SchoolYearPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/academic-dates/events" element={
+              <ProtectedRoute allowedRoles={['admin', 'chairman', 'vice-chairman']}>
+                <AcademicEventsPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/academic-dates/submission-windows" element={
+              <ProtectedRoute allowedRoles={['admin', 'chairman', 'vice-chairman']}>
+                <SubmissionWindowsPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/academic-dates/organization-activities" element={
+              <ProtectedRoute allowedRoles={['admin', 'chairman', 'vice-chairman']}>
+                <OrganizationActivitiesPage />
+              </ProtectedRoute>
+            } />
             <Route path="/admin/academic-settings" element={
+              <ProtectedRoute allowedRoles={['admin', 'chairman', 'vice-chairman']}>
+                <AcademicSettings />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/academic-settings/:tab" element={
               <ProtectedRoute allowedRoles={['admin', 'chairman', 'vice-chairman']}>
                 <AcademicSettings />
               </ProtectedRoute>
