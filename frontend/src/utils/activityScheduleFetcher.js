@@ -87,6 +87,7 @@ export const fetchApprovedActivitySchedules = async (schoolYearId) => {
         current_version_id,
         school_year_id,
         document_type_id,
+        subtype_id,
         documentType:document_type_id(id, name),
         users:user_id(
           id,
@@ -121,43 +122,157 @@ export const fetchApprovedActivitySchedules = async (schoolYearId) => {
     if (activitySubmissions.length === 0) return [];
 
     const subIds = activitySubmissions.map(s => s.id);
+    const candidateVersionIds = activitySubmissions.map(s => s.current_version_id).filter(Boolean);
 
-    // 3. Check submission_logs for Main Campus Review approval
+    // 3. Fetch auxiliary data needed for subtype and requirement scope analysis:
+    const { data: subtypes } = await supabase
+      .from('document_subtypes')
+      .select('id, name, document_type_id');
+
+    const { data: allReqs } = await supabase
+      .from('requirements')
+      .select('id, title, requirement_scope, subtype_id');
+
+    const attachmentsByVersion = new Map();
+    if (candidateVersionIds.length > 0) {
+      const { data: atts } = await supabase
+        .from('submission_attachments')
+        .select('submission_version_id, requirement_id, requirements(id, title, requirement_scope, subtype_id)')
+        .in('submission_version_id', candidateVersionIds);
+
+      (atts || []).forEach(att => {
+        if (!attachmentsByVersion.has(att.submission_version_id)) {
+          attachmentsByVersion.set(att.submission_version_id, []);
+        }
+        attachmentsByVersion.get(att.submission_version_id).push(att);
+      });
+    }
+
+    // 4. Fetch submission logs for all candidate submissions
     const { data: logs, error: logsErr } = await supabase
       .from('submission_logs')
-      .select('submission_id, workflow_phase, action_type')
+      .select('submission_id, workflow_phase, action_type, description')
       .in('submission_id', subIds);
 
     if (logsErr) {
       console.error('Error fetching submission logs:', logsErr);
     }
 
-    const approvedSubIds = new Set();
-    (logs || []).forEach(log => {
-      const phaseNorm = String(log.workflow_phase || '').toLowerCase().replace(/[-_]/g, ' ').trim();
-      const actionNorm = String(log.action_type || '').toLowerCase().trim();
-
-      if ((phaseNorm === 'main campus review' || phaseNorm === 'main campus' || phaseNorm === 'main-campus-review') && actionNorm === 'approved') {
-        approvedSubIds.add(log.submission_id);
+    const logsBySubId = new Map();
+    (logs || []).forEach(l => {
+      if (!logsBySubId.has(l.submission_id)) {
+        logsBySubId.set(l.submission_id, []);
       }
+      logsBySubId.get(l.submission_id).push(l);
     });
+
+    // 5. Evaluate approval eligibility for each Activity Proposal based on its workflow path
+    const approvedSubIds = new Set();
+
+    for (const sub of activitySubmissions) {
+      // Step A: Determine Activity Proposal subtype
+      let subtypeId = sub.subtype_id ? String(sub.subtype_id) : null;
+
+      if (!subtypeId && sub.current_version_id) {
+        const verAtts = attachmentsByVersion.get(sub.current_version_id) || [];
+        const attWithSubtype = verAtts.find(a => a.requirements?.subtype_id);
+        if (attWithSubtype) {
+          subtypeId = String(attWithSubtype.requirements.subtype_id);
+        }
+      }
+
+      // Step B: Get requirements assigned to that subtype
+      let subReqs = [];
+      if (subtypeId) {
+        subReqs = (allReqs || []).filter(r => String(r.subtype_id) === String(subtypeId));
+      }
+
+      // Attachment fallback if subtype has no direct requirements defined in DB
+      if (subReqs.length === 0 && sub.current_version_id) {
+        const verAtts = attachmentsByVersion.get(sub.current_version_id) || [];
+        subReqs = verAtts.map(a => a.requirements).filter(Boolean);
+      }
+
+      // Step C: Determine whether the subtype is composed entirely of local-campus requirements
+      // Local-campus condition:
+      // ALL requirements assigned to the Activity Proposal subtype have local scope (OSOA) or OSAS without mixed scopes.
+      // If the subtype has a mixture of scopes, it must use the Main Campus approval path.
+      let isLocalCampusSubtype = false;
+      if (subReqs.length > 0) {
+        const scopes = subReqs.map(r => String(r.requirement_scope || '').trim().toUpperCase());
+        const hasOsoa = scopes.some(s => s === 'OSOA');
+        const hasOsas = scopes.some(s => s === 'OSAS');
+        const isMixed = hasOsoa && hasOsas;
+
+        if (!isMixed) {
+          if (scopes.every(s => s === 'OSOA') || scopes.every(s => s === 'OSAS')) {
+            isLocalCampusSubtype = true;
+          }
+        }
+      }
+
+      // Step D: Check submission_logs for the exact submission_id
+      const subLogs = logsBySubId.get(sub.id) || [];
+
+      const hasFinalInCampusApproval = subLogs.some(log => {
+        const action = String(log.action_type || '').toLowerCase().trim();
+        const phase = String(log.workflow_phase || '').toLowerCase().replace(/[-_]/g, ' ').trim();
+        if (action !== 'approved') return false;
+        return (
+          phase === 'final in-campus review' ||
+          phase === 'final in campus review' ||
+          phase === 'final local campus review' ||
+          phase === 'final local campus' ||
+          phase === 'dean-review' ||
+          phase === 'dean review' ||
+          (phase.includes('final') && (phase.includes('campus') || phase.includes('local') || phase.includes('in-campus')))
+        );
+      });
+
+      const hasMainCampusApproval = subLogs.some(log => {
+        const action = String(log.action_type || '').toLowerCase().trim();
+        const phase = String(log.workflow_phase || '').toLowerCase().replace(/[-_]/g, ' ').trim();
+        if (action !== 'approved') return false;
+        return (
+          phase === 'main campus review' ||
+          phase === 'main campus' ||
+          phase === 'main-campus-review' ||
+          phase.includes('main campus')
+        );
+      });
+
+      let isEligible = false;
+      if (isLocalCampusSubtype) {
+        // Local-campus workflow path:
+        // workflow_phase = "Final In-Campus Review" AND action_type = "approved"
+        isEligible = hasFinalInCampusApproval || hasMainCampusApproval;
+      } else {
+        // Main Campus workflow path:
+        // workflow_phase = "Main Campus Review" AND action_type = "approved"
+        isEligible = hasMainCampusApproval;
+      }
+
+      if (isEligible) {
+        approvedSubIds.add(sub.id);
+      }
+    }
 
     const approvedSubmissions = activitySubmissions.filter(sub => approvedSubIds.has(sub.id));
 
     if (approvedSubmissions.length === 0) return [];
 
-    // 4. Collect current_version_ids for approved submissions
-    const versionIds = approvedSubmissions
+    // 6. Collect current_version_ids for approved submissions
+    const approvedVersionIds = approvedSubmissions
       .map(sub => sub.current_version_id)
       .filter(Boolean);
 
-    if (versionIds.length === 0) return [];
+    if (approvedVersionIds.length === 0) return [];
 
-    // 5. Query activity_proposal_details using current_version_id
+    // 7. Query activity_proposal_details using approvedVersionIds
     const { data: details, error: detailsErr } = await supabase
       .from('activity_proposal_details')
       .select('id, submission_version_id, activity_title, target_venue')
-      .in('submission_version_id', versionIds);
+      .in('submission_version_id', approvedVersionIds);
 
     if (detailsErr || !details || details.length === 0) {
       return [];

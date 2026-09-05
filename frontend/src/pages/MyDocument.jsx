@@ -180,8 +180,11 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy, subtypesMap =
     const at = String(l.action_type || '').toLowerCase();
     return (
       wp === 'main campus review' ||
+      wp.includes('final') ||
       desc.includes('approved by main campus') ||
       desc.includes('sent to main campus') ||
+      desc.includes('final in-campus review') ||
+      desc.includes('approved by dean') ||
       at === 'forward' ||
       at === 'send_to_external'
     );
@@ -1612,14 +1615,7 @@ export const MyDocuments = () => {
         if (shouldForward) {
           forwardedFileNames.push(att.file_name || att.title || 'Attachment');
         }
-        try {
-          await supabase
-            .from('submission_attachments')
-            .update({ forwarded_to_main_campus: shouldForward })
-            .eq('id', att.id);
-        } catch (_) {
-          /* non-blocking fallback if column is not yet present */
-        }
+        // forwarded_to_main_campus is not in the database schema; omit PATCH call to prevent 400 Bad Request
       }
 
       const adminComment = comments?.trim() || '';
@@ -2013,8 +2009,11 @@ export const MyDocuments = () => {
         const at = String(l.action_type || '').toLowerCase();
         return (
           wp === 'main campus review' ||
+          wp.includes('final') ||
           desc.includes('approved by main campus') ||
           desc.includes('sent to main campus') ||
+          desc.includes('final in-campus review') ||
+          desc.includes('approved by dean') ||
           at === 'forward' ||
           at === 'send_to_external'
         );
@@ -2043,8 +2042,11 @@ export const MyDocuments = () => {
         const at = String(l.action_type || '').toLowerCase();
         return (
           wp === 'main campus review' ||
+          wp.includes('final') ||
           desc.includes('approved by main campus') ||
           desc.includes('sent to main campus') ||
+          desc.includes('final in-campus review') ||
+          desc.includes('approved by dean') ||
           at === 'forward' ||
           at === 'send_to_external'
         );
@@ -2469,8 +2471,12 @@ export const MyDocuments = () => {
     const phase2TransitionLogIndex = currentCycleTimelineLogs.findIndex(l => {
       const desc = String(l.description || '').toLowerCase();
       const at = String(l.action_type || '').toLowerCase();
+      const wp = String(l.workflow_phase || '').toLowerCase();
       return (
         desc.includes('sent to main campus') ||
+        desc.includes('approved by dean') ||
+        desc.includes('final in-campus review') ||
+        wp.includes('final') ||
         at === 'forward' ||
         at === 'send_to_external' ||
         (at === 'forwarded' && desc.includes('main'))

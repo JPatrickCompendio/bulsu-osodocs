@@ -4277,6 +4277,10 @@ async function handleOrgDashboard(url: URL) {
   });
 }
 
+async function handleChairmanDashboard(url: URL) {
+  return handleAdminDashboard();
+}
+
 async function handleCheckEmail(url: URL) {
   const email = url.searchParams.get('email');
   if (!email) {
@@ -4560,7 +4564,7 @@ export async function resolveActivityProposalRetrievalPhase(
   const latestResubmitIdx = resubmitIndices.length > 0 ? resubmitIndices[resubmitIndices.length - 1] : -1;
   const currentCycleLogs = latestResubmitIdx >= 0 ? logs.slice(latestResubmitIdx) : logs;
 
-  const hasMainCampusTransition = currentCycleLogs.some((l: any) => {
+  const hasPassedFinalOrMainCampus = currentCycleLogs.some((l: any) => {
     const phase = String(l.workflow_phase || '').toLowerCase();
     const actionType = String(l.action_type || '').toLowerCase();
     const desc = String(l.description || '').toLowerCase();
@@ -4570,11 +4574,146 @@ export async function resolveActivityProposalRetrievalPhase(
       phase.includes('main campus') ||
       desc.includes('main campus') ||
       desc.includes('sent to main campus') ||
-      (actionType === 'forwarded' && desc.includes('main'))
+      (actionType === 'forwarded' && desc.includes('main')) ||
+      phase.includes('final') ||
+      desc.includes('final in-campus') ||
+      desc.includes('final local campus') ||
+      desc.includes('approved by dean')
     );
   });
 
-  return hasMainCampusTransition ? 2 : 1;
+  return hasPassedFinalOrMainCampus ? 2 : 1;
+}
+
+export async function resolveActivityProposalFinalCampusDecision(
+  supabase: any,
+  sub: Record<string, unknown>
+): Promise<{ shouldBypassMainCampus: boolean; subtypeId: string | null; requirements: Array<Record<string, unknown>> }> {
+  // 1. Check the submissions table: get document_type_id and check if it belongs to Activity Proposal
+  const docTypeId = sub.document_type_id ? String(sub.document_type_id) : null;
+  const docTypeObj = sub.documentType as Record<string, unknown> | undefined;
+  const docTypeName = String(docTypeObj?.name || '').trim().toLowerCase();
+
+  let isActivityProposal = docTypeName.includes('activity proposal');
+
+  if (!isActivityProposal && docTypeId) {
+    const { data: dt } = await supabase
+      .from('document_types')
+      .select('id, name')
+      .eq('id', docTypeId)
+      .maybeSingle();
+    if (dt && String(dt.name || '').toLowerCase().includes('activity proposal')) {
+      isActivityProposal = true;
+    }
+  }
+
+  // If it is not an Activity Proposal, use the existing workflow normally
+  if (!isActivityProposal) {
+    return { shouldBypassMainCampus: false, subtypeId: null, requirements: [] };
+  }
+
+  // 2. Get the Activity Proposal subtype
+  let subtypeId: string | null = sub.subtype_id ? String(sub.subtype_id) : null;
+
+  if (!subtypeId && sub.proposal_type) {
+    const proposalTypeName = String(sub.proposal_type).trim();
+    let stQuery = supabase.from('document_subtypes').select('id, name');
+    if (docTypeId) {
+      stQuery = stQuery.eq('document_type_id', docTypeId);
+    }
+    const { data: stData } = await stQuery;
+    const matched = stData?.find((s: any) =>
+      String(s.name || '').toLowerCase() === proposalTypeName.toLowerCase() ||
+      String(s.id || '') === proposalTypeName
+    );
+    if (matched) {
+      subtypeId = String(matched.id);
+    }
+  }
+
+  if (!subtypeId && sub.current_version_id) {
+    const { data: atts } = await supabase
+      .from('submission_attachments')
+      .select('requirement:requirement_id(subtype_id)')
+      .eq('submission_version_id', sub.current_version_id);
+    const found = atts?.find((a: any) => a.requirement?.subtype_id)?.requirement?.subtype_id;
+    if (found) {
+      subtypeId = String(found);
+    }
+  }
+
+  // 3. Fetch all requirements assigned to that specific Activity Proposal subtype
+  let reqs: Array<Record<string, unknown>> = [];
+
+  if (subtypeId) {
+    let reqQuery = supabase
+      .from('requirements')
+      .select('id, title, requirement_scope, subtype_id');
+
+    if (docTypeId) {
+      reqQuery = reqQuery.eq('documentTypeID', docTypeId);
+    }
+
+    const { data: reqData, error: reqErr } = await reqQuery.or(`subtype_id.eq.${subtypeId},subtype_id.is.null`);
+    if (!reqErr && reqData && reqData.length > 0) {
+      reqs = reqData;
+    } else {
+      // Direct subtype query fallback
+      const { data: fallbackReqs } = await supabase
+        .from('requirements')
+        .select('id, title, requirement_scope, subtype_id')
+        .eq('subtype_id', subtypeId);
+      if (fallbackReqs && fallbackReqs.length > 0) {
+        reqs = fallbackReqs;
+      }
+    }
+  }
+
+  // Attachment fallback if subtype query yielded 0
+  if (reqs.length === 0 && sub.current_version_id) {
+    const { data: attsWithReq } = await supabase
+      .from('submission_attachments')
+      .select('requirement:requirement_id(id, title, requirement_scope, subtype_id)')
+      .eq('submission_version_id', sub.current_version_id);
+    if (attsWithReq && attsWithReq.length > 0) {
+      reqs = attsWithReq.map((a: any) => a.requirement).filter(Boolean);
+    }
+  }
+
+  // 5. If no requirements are found for the subtype, do not bypass Main Campus (keep existing Main Campus path)
+  if (!reqs || reqs.length === 0) {
+    console.log('Final Campus Review Decision: No requirements found for subtype. Continuing to Main Campus.', {
+      submissionId: sub.id,
+      subtypeId,
+    });
+    return { shouldBypassMainCampus: false, subtypeId, requirements: [] };
+  }
+
+  // 4. Decide where the Activity Proposal goes:
+  // Check requirement_scope: OSOA (Local Campus Requirement) vs OSAS (Main Campus Requirement)
+  const allOsoa = reqs.every((r) => {
+    const scope = String(r.requirement_scope || '').trim().toUpperCase();
+    return scope === 'OSOA';
+  });
+
+  const anyOsas = reqs.some((r) => {
+    const scope = String(r.requirement_scope || '').trim().toUpperCase();
+    return scope === 'OSAS';
+  });
+
+  const shouldBypassMainCampus = allOsoa && !anyOsas;
+
+  console.log('Final Campus Review Decision for Activity Proposal:', {
+    submissionId: sub.id,
+    subtypeId,
+    requirementsCount: reqs.length,
+    scopes: reqs.map((r) => ({ title: r.title, scope: r.requirement_scope })),
+    allOsoa,
+    anyOsas,
+    shouldBypassMainCampus,
+  });
+
+  return { shouldBypassMainCampus, subtypeId, requirements: reqs };
 }
 
 export function generateDescriptiveLogMessage(
@@ -4764,7 +4903,18 @@ async function handleSubmissionTransition(body: Record<string, unknown>) {
 
   let newDbStatus = stageToDbStatus(nextStage);
   if (currentStage === 'FINAL_LOCAL_CAMPUS_REVIEW' && action === 'approve') {
-    newDbStatus = 'dean approved';
+    const decision = await resolveActivityProposalFinalCampusDecision(supabase, sub);
+
+    if (decision.shouldBypassMainCampus) {
+      // ALL requirements are OSOA: Activity Proposal does NOT go to Main Campus.
+      // Final In-Campus Review -> Approve -> Approved / Retrieval -> Accomplishment -> Completed
+      nextStage = 'DOCUMENT_RETRIEVAL';
+      newDbStatus = stageToDbStatus(nextStage); // 'ready for retrieval'
+    } else {
+      // ANY requirement is OSAS, or no requirements found:
+      // Continue to Main Campus (dean approved -> Send to Main Campus -> Main Campus Review)
+      newDbStatus = 'dean approved';
+    }
   }
 
   const defaultDescriptiveMsg = generateDescriptiveLogMessage(currentStage, nextStage, action, actingUserRole, null);
