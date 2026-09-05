@@ -818,7 +818,7 @@ async function sendBrevoEmail({
   }
 
   const senderEmail = Deno.env.get('BREVO_SENDER_EMAIL') || 'osodocsbulsu@gmail.com';
-  const senderName = Deno.env.get('BREVO_SENDER_NAME') || 'BulSU OSODOCS Admin';
+  const senderName = Deno.env.get('BREVO_SENDER_NAME') || 'OSOADOCS Admin';
 
   try {
     const res = await fetch('https://api.brevo.com/v3/smtp/email', {
@@ -893,7 +893,7 @@ async function createAndSendInvitationToken(
   const isOrg = role === 'org-president';
   const displayName = isOrg ? (orgName || fullName || 'Organization') : (fullName || 'Personnel');
   const accountTypeLabel = isOrg ? 'Organization' : 'OSO Personnel';
-  const subject = `Set Up Your BulSU OSODOCS ${accountTypeLabel} Account`;
+  const subject = `Set Up Your OSOADOCS ${accountTypeLabel} Account`;
 
   // 4. Render Email HTML
   const htmlContent = `
@@ -901,7 +901,7 @@ async function createAndSendInvitationToken(
     <html>
     <head>
       <meta charset="utf-8">
-      <title>BulSU OSODOCS - Account Invitation</title>
+      <title>OSOADOCS - Account Invitation</title>
       <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f8; margin: 0; padding: 0; color: #333; }
         .container { max-width: 600px; margin: 30px auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
@@ -919,12 +919,12 @@ async function createAndSendInvitationToken(
     <body>
       <div class="container">
         <div class="header">
-          <h1>BulSU OSODOCS</h1>
-          <p>Office of Student Organizations Document Portal</p>
+          <h1>OSOADOCS</h1>
+          <p>Office of Student Organizations and Activities</p>
         </div>
         <div class="content">
           <div class="greeting">Welcome, ${displayName}!</div>
-          <p>An official ${accountTypeLabel} account has been created for you on BulSU OSODOCS by the System Administrator.</p>
+          <p>An official ${accountTypeLabel} account has been created for you on OSOADOCS by the System Administrator.</p>
           <p>To complete your registration and activate your account, please set up your password using the link below:</p>
           
           <div class="button-wrapper">
@@ -940,10 +940,10 @@ async function createAndSendInvitationToken(
             </ul>
           </div>
 
-          <p style="font-size: 13px; color: #777;">If you did not request this invitation, please disregard this email or contact the BulSU OSO Administrator.</p>
+          <p style="font-size: 13px; color: #777;">If you did not request this invitation, please disregard this email or contact the OSO Administrator.</p>
         </div>
         <div class="footer">
-          &copy; ${new Date().getFullYear()} Bulacan State University - Office of Student Organizations. All rights reserved.
+          &copy; ${new Date().getFullYear()} Bulacan State University - Office of Student Organizations and Activities. All rights reserved.
         </div>
       </div>
     </body>

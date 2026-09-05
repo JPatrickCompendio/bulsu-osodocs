@@ -279,16 +279,17 @@ export default function OnboardingOverlay() {
               <div className="space-y-5">
                 <div>
                   <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 block ml-1">Organization Name</label>
-                  <div className="relative group">
-                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400 group-focus-within:text-gray-900 transition-colors">
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400">
                       <Building2 size={18} />
                     </div>
                     <input 
                       type="text" 
-                      value={orgName}
-                      onChange={(e) => setOrgName(e.target.value)}
-                      className="w-full pl-11 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:border-gray-900 focus:bg-white focus:ring-4 focus:ring-gray-900/5 font-medium text-gray-800 outline-none transition-all shadow-sm"
-                      placeholder="e.g. Computer Science Society"
+                      disabled
+                      readOnly
+                      value={orgName || user?.org_name || user?.full_name || ''}
+                      className="w-full pl-11 pr-4 py-3.5 bg-gray-100/80 border border-gray-200 rounded-xl font-semibold text-gray-500 cursor-not-allowed select-none outline-none shadow-sm"
+                      placeholder="Organization Name"
                     />
                   </div>
                 </div>

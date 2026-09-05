@@ -259,7 +259,7 @@ const UserManagement = () => {
       joined_date: '',
       contact_no: '',
       student_no: '',
-      status: type === 'org' ? 'Inactive' : 'Active',
+      status: 'Pending Setup',
       suspension_message: ''
     });
     generatePassword(type);
@@ -566,9 +566,11 @@ const UserManagement = () => {
       full_name: formData.full_name,
       role: formData.role,
       email: formData.email,
-      status: formData.status === 'Suspended' && formData.suspension_message
-        ? `Suspended: ${formData.suspension_message}`
-        : formData.status,
+      status: isEditMode
+        ? (formData.status === 'Suspended' && formData.suspension_message
+          ? `Suspended: ${formData.suspension_message}`
+          : formData.status)
+        : 'Pending Setup',
       org_name: formData.org_name || null,
       abbreviation: formData.abbreviation ? formData.abbreviation.trim() : null,
       no_member: formData.no_member ? parseInt(formData.no_member) : null,
@@ -1625,17 +1627,19 @@ const UserManagement = () => {
                                       <RefreshCw size={13} /> Renew
                                     </button>
                                   )}
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleResendInvitation(org);
-                                    }}
-                                    className="p-1.5 sm:p-2 text-purple-600 hover:text-purple-700 transition-colors bg-purple-50 rounded-lg hover:bg-purple-100"
-                                    title="Resend Setup Invitation Email via Brevo"
-                                  >
-                                    <Mail size={14} className="sm:w-4 sm:h-4" />
-                                  </button>
+                                  {org.status === 'Pending Setup' && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleResendInvitation(org);
+                                      }}
+                                      className="p-1.5 sm:p-2 text-purple-600 hover:text-purple-700 transition-colors bg-purple-50 rounded-lg hover:bg-purple-100"
+                                      title="Resend Setup Invitation Email"
+                                    >
+                                      <Mail size={14} className="sm:w-4 sm:h-4" />
+                                    </button>
+                                  )}
                                   <button
                                     onClick={() => handleEditClick(org)}
                                     className="p-1.5 sm:p-2 text-gray-400 hover:text-blue-600 transition-colors bg-gray-50 rounded-lg hover:bg-blue-50"
@@ -1739,17 +1743,19 @@ const UserManagement = () => {
                             </td>
                             <td className="px-3 sm:px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                               <div className="flex justify-end items-center gap-1.5 sm:gap-2">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleResendInvitation(personnel);
-                                  }}
-                                  className="p-1.5 sm:p-2 text-purple-600 hover:text-purple-700 transition-colors bg-purple-50 rounded-lg hover:bg-purple-100"
-                                  title="Resend Setup Invitation Email via Brevo"
-                                >
-                                  <Mail size={14} className="sm:w-4 sm:h-4" />
-                                </button>
+                                {personnel.status === 'Pending Setup' && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleResendInvitation(personnel);
+                                    }}
+                                    className="p-1.5 sm:p-2 text-purple-600 hover:text-purple-700 transition-colors bg-purple-50 rounded-lg hover:bg-purple-100"
+                                    title="Resend Setup Invitation Email"
+                                  >
+                                    <Mail size={14} className="sm:w-4 sm:h-4" />
+                                  </button>
+                                )}
                                 {personnel.role !== 'admin' && (
                                   <button
                                     type="button"
@@ -1900,17 +1906,19 @@ const UserManagement = () => {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Abbreviation / Acronym</label>
-                          <input
-                            type="text"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-green text-gray-800 uppercase"
-                            placeholder="e.g. SSC"
-                            value={formData.abbreviation || ''}
-                            onChange={(e) => setFormData({ ...formData, abbreviation: e.target.value.toUpperCase() })}
-                          />
-                        </div>
+                      <div className={isEditMode ? "grid grid-cols-1 md:grid-cols-2 gap-5" : ""}>
+                        {isEditMode && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Abbreviation / Acronym</label>
+                            <input
+                              type="text"
+                              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-green text-gray-800 uppercase"
+                              placeholder="e.g. SSC"
+                              value={formData.abbreviation || ''}
+                              onChange={(e) => setFormData({ ...formData, abbreviation: e.target.value.toUpperCase() })}
+                            />
+                          </div>
+                        )}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Date of Formation *</label>
                           <div className="relative">
@@ -2103,8 +2111,8 @@ const UserManagement = () => {
                           <div className="bg-emerald-50/70 p-4 rounded-2xl border border-emerald-100 flex items-start gap-3">
                             <Mail className="text-primary-green shrink-0 mt-0.5" size={20} />
                             <div className="text-xs text-emerald-950 leading-relaxed">
-                              <span className="font-bold text-primary-green block text-sm mb-0.5">Secure Brevo Invitation Flow</span>
-                              An email containing a secure <strong>Set Up Account</strong> link (valid for 24 hours) will automatically be sent to <span className="font-semibold">{formData.email || 'the registered email address'}</span> via Brevo. The Organization will set their password directly via that link.
+                              <span className="font-bold text-primary-green block text-sm mb-0.5">Secure Invitation Flow</span>
+                              An email containing a secure <strong>Set Up Account</strong> link (valid for 24 hours) will automatically be sent to <span className="font-semibold">{formData.email || 'the registered email address'}</span>. The Organization will set their password directly via that link.
                             </div>
                           </div>
                         ) : (
@@ -2194,8 +2202,8 @@ const UserManagement = () => {
                     <div className="bg-emerald-50/70 p-4 rounded-2xl border border-emerald-100 flex items-start gap-3 mt-4">
                       <Mail className="text-primary-green shrink-0 mt-0.5" size={20} />
                       <div className="text-xs text-emerald-950 leading-relaxed">
-                        <span className="font-bold text-primary-green block text-sm mb-0.5">Secure Brevo Invitation Flow</span>
-                        An email containing a secure <strong>Set Up Account</strong> link (valid for 24 hours) will automatically be sent to <span className="font-semibold">{formData.email || 'the registered email address'}</span> via Brevo. The personnel will set their password directly via that link.
+                        <span className="font-bold text-primary-green block text-sm mb-0.5">Secure Invitation Flow</span>
+                        An email containing a secure <strong>Set Up Account</strong> link (valid for 24 hours) will automatically be sent to <span className="font-semibold">{formData.email || 'the registered email address'}</span>. The personnel will set their password directly via that link.
                       </div>
                     </div>
                   )}

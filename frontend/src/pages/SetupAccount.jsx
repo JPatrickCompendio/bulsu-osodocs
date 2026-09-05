@@ -110,7 +110,7 @@ const SetupAccount = () => {
           showToast('Account set up! Please sign in with your new credentials.', 'info');
           setTimeout(() => navigate('/login'), 2000);
         } else {
-          showToast('Welcome to BulSU OSODOCS!', 'success');
+          showToast('Welcome to OSOADOCS!', 'success');
           setTimeout(() => navigate('/'), 1000);
         }
       } else {
@@ -173,8 +173,8 @@ const SetupAccount = () => {
           <div className="w-16 h-16 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center mx-auto mb-4 border border-white/20 shadow-inner">
             <Shield className="text-emerald-400" size={32} />
           </div>
-          <h1 className="text-2xl font-black tracking-tight">BulSU OSODOCS</h1>
-          <p className="text-xs font-medium text-emerald-100/80 mt-1">Office of Student Organizations Portal</p>
+          <h1 className="text-2xl font-black tracking-tight">OSOADOCS</h1>
+          <p className="text-xs font-medium text-emerald-100/80 mt-1">Office of Student Organizations and Activities</p>
         </div>
 
         <div className="p-8">
@@ -298,7 +298,7 @@ const SetupAccount = () => {
                   <CheckCircle className="text-emerald-600 mx-auto mb-2" size={32} />
                   <h3 className="font-bold text-sm">New Invitation Email Sent!</h3>
                   <p className="text-xs text-emerald-800 mt-1">
-                    We've sent a fresh invitation link to <span className="font-bold">{resendEmail}</span> via Brevo.
+                    We've sent a fresh invitation link to <span className="font-bold">{resendEmail}</span>.
                     Please check your inbox (and spam folder).
                   </p>
                   <button
