@@ -18,6 +18,7 @@ import Completed from './pages/Completed';
 import UserManagement from './pages/UserManagement';
 import MyProfile from './pages/MyProfile';
 import ResetPassword from './pages/ResetPassword';
+import SetupAccount from './pages/SetupAccount';
 
 const App = () => {
   return (
@@ -27,6 +28,7 @@ const App = () => {
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/setup-account" element={<SetupAccount />} />
 
           {/* Protected Routes */}
           <Route element={

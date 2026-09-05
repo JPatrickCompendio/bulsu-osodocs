@@ -777,14 +777,14 @@ const AdminDashboardView = () => {
           </div>
         </section>
 
-        <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="p-6 border-b border-gray-50">
+        <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-[520px]">
+          <div className="p-6 border-b border-gray-50 shrink-0">
             <h2 className="text-lg font-black text-gray-800 uppercase">Active Documents Overview</h2>
             <p className="text-xs font-bold text-gray-400">All documents currently under review</p>
           </div>
-          <div>
+          <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0">
             <table className="w-full text-left border-collapse">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-gray-50">
                 <tr className="bg-gray-50/50">
                   <th className="px-3 sm:px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-wider">Document Title</th>
                   <th className="hidden sm:table-cell px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-wider">Organization</th>
@@ -1219,16 +1219,16 @@ const ChairmanDashboardView = ({ role }) => {
           </div>
         </section>
 
-        <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="p-6 border-b border-gray-50 flex justify-between items-center">
+        <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-[520px]">
+          <div className="p-6 border-b border-gray-50 flex justify-between items-center shrink-0">
             <div>
               <h2 className="text-lg font-black text-gray-800 uppercase">Active Documents Overview</h2>
               <p className="text-xs font-bold text-gray-400">All documents currently under review</p>
             </div>
           </div>
-          <div>
+          <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0">
             <table className="w-full text-left border-collapse">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-gray-50">
                 <tr className="bg-gray-50/50">
                   <th className="px-3 sm:px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-wider">Document Title</th>
                   <th className="hidden sm:table-cell px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-wider">Organization</th>
@@ -1649,15 +1649,15 @@ const OrgDashboardView = () => {
           </div>
         </section>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <section className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
-            <div className="p-6 border-b border-gray-50">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch">
+          <section className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-full min-h-[520px]">
+            <div className="p-6 border-b border-gray-50 shrink-0">
               <h2 className="text-lg font-black text-gray-800 uppercase tracking-tight">Documents Under Review</h2>
               <p className="text-xs font-bold text-gray-400 mt-1">Track your active submissions</p>
             </div>
-            <div className="flex-1">
+            <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0">
               <table className="w-full text-left border-collapse">
-                <thead>
+                <thead className="sticky top-0 z-10 bg-gray-50">
                   <tr className="bg-gray-50/50">
                     <th className="px-3 sm:px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-wider">Document Info</th>
                     <th className="hidden sm:table-cell px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-wider">Latest Activity Log</th>

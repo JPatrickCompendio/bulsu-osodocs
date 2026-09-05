@@ -79,6 +79,7 @@ const UserManagement = () => {
   const [detailData, setDetailData] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [docLogFilter, setDocLogFilter] = useState('all');
+  const [docLogMonthFilter, setDocLogMonthFilter] = useState('all');
   const [selectedSubmissionId, setSelectedSubmissionId] = useState(null);
 
   // Tab & AY Renewal state
@@ -552,6 +553,15 @@ const UserManagement = () => {
       }
     }
 
+    if (formData.contact_no != null && String(formData.contact_no).trim() !== '') {
+      const cleanContact = String(formData.contact_no).trim();
+      if (!/^09\d{9}$/.test(cleanContact)) {
+        showToast('Contact number must be an 11-digit mobile number starting with 09 (e.g. 09123456789).', 'error');
+        setIsSaving(false);
+        return;
+      }
+    }
+
     const payload = {
       full_name: formData.full_name,
       role: formData.role,
@@ -560,6 +570,7 @@ const UserManagement = () => {
         ? `Suspended: ${formData.suspension_message}`
         : formData.status,
       org_name: formData.org_name || null,
+      abbreviation: formData.abbreviation ? formData.abbreviation.trim() : null,
       no_member: formData.no_member ? parseInt(formData.no_member) : null,
       adviser_name: formData.adviser_name || null,
       co_advisers: formData.co_advisers || [],
@@ -615,7 +626,7 @@ const UserManagement = () => {
           fetchUserDetail(editingUserId);
         }
       } else {
-        showToast('Error: ' + result.error);
+        showToast('Error: ' + (result.details || result.error || 'Failed to create user'), 'error');
       }
     } catch (error) {
       console.error('Error saving user:', error);
@@ -659,6 +670,14 @@ const UserManagement = () => {
     if (!renewForm.president_name.trim()) {
       showToast('Org President Name is required for renewal.', 'error');
       return;
+    }
+
+    if (renewForm.contact_no != null && String(renewForm.contact_no).trim() !== '') {
+      const cleanContact = String(renewForm.contact_no).trim();
+      if (!/^09\d{9}$/.test(cleanContact)) {
+        showToast('Contact number must be an 11-digit mobile number starting with 09 (e.g. 09123456789).', 'error');
+        return;
+      }
     }
 
     setIsRenewing(true);
@@ -726,6 +745,26 @@ const UserManagement = () => {
     }
   };
 
+  const handleResendInvitation = async (orgUser) => {
+    try {
+      const res = await apiFetch('/api/invitations/resend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: orgUser.id, appOrigin: window.location.origin }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast(data.message || 'Invitation email resent successfully!', 'success');
+      } else {
+        showToast('Error: ' + (data.error || 'Failed to resend invitation'), 'error');
+      }
+    } catch (err) {
+      console.error('Error resending invitation:', err);
+      showToast('Failed to resend invitation email', 'error');
+    }
+  };
+
   const getRoleLabel = (role) => {
     if (role === 'org-president') return 'Organization President';
     if (role === 'vice-chairman') return 'Vice Chairman';
@@ -790,7 +829,15 @@ const UserManagement = () => {
           },
         ];
 
-    const rawDocLogs = detailData?.documentLogs || [];
+    const rawDocLogs = (detailData?.documentLogs || []).filter((doc) => {
+      if (!isOrg) {
+        const s = String(doc.rawStatus || doc.status || '').toLowerCase().trim();
+        if (s === 'submitted' || s === 'pending' || s === 'oso staff review' || s === 'draft') {
+          return false;
+        }
+      }
+      return true;
+    });
 
     const isDocCompleted = (statusStr) => {
       const s = String(statusStr || '').toLowerCase().trim();
@@ -826,12 +873,39 @@ const UserManagement = () => {
       return true;
     };
 
-    const filteredDocLogs = rawDocLogs.filter((doc) => matchDocStatusFilter(doc, docLogFilter));
+    const MONTH_OPTIONS = [
+      { value: 'all', label: 'All Months' },
+      { value: '1', label: 'January' },
+      { value: '2', label: 'February' },
+      { value: '3', label: 'March' },
+      { value: '4', label: 'April' },
+      { value: '5', label: 'May' },
+      { value: '6', label: 'June' },
+      { value: '7', label: 'July' },
+      { value: '8', label: 'August' },
+      { value: '9', label: 'September' },
+      { value: '10', label: 'October' },
+      { value: '11', label: 'November' },
+      { value: '12', label: 'December' },
+    ];
 
-    const totalCount = rawDocLogs.length;
-    const underProcessCount = rawDocLogs.filter((d) => matchDocStatusFilter(d, 'under-process')).length;
-    const completedCount = rawDocLogs.filter((d) => matchDocStatusFilter(d, 'completed')).length;
-    const disapprovedCount = rawDocLogs.filter((d) => matchDocStatusFilter(d, 'disapproved')).length;
+    const matchDocMonthFilter = (doc, monthFilter) => {
+      if (!monthFilter || monthFilter === 'all') return true;
+      const rawDate = doc?.dateSubmitted || doc?.created_at || doc?.dateLogged;
+      if (!rawDate) return false;
+      const dateObj = new Date(rawDate);
+      if (isNaN(dateObj.getTime())) return false;
+      return String(dateObj.getMonth() + 1) === String(monthFilter);
+    };
+
+    const docLogsByMonth = rawDocLogs.filter((doc) => matchDocMonthFilter(doc, docLogMonthFilter));
+
+    const filteredDocLogs = docLogsByMonth.filter((doc) => matchDocStatusFilter(doc, docLogFilter));
+
+    const totalCount = docLogsByMonth.length;
+    const underProcessCount = docLogsByMonth.filter((d) => matchDocStatusFilter(d, 'under-process')).length;
+    const completedCount = docLogsByMonth.filter((d) => matchDocStatusFilter(d, 'completed')).length;
+    const disapprovedCount = docLogsByMonth.filter((d) => matchDocStatusFilter(d, 'disapproved')).length;
 
     const handleGenerateDocLogsReport = () => {
       const orgName = profile.org_name || profile.full_name || 'Organization';
@@ -842,6 +916,10 @@ const UserManagement = () => {
         disapproved: 'Disapproved Only',
       };
       const currentFilterLabel = filterLabels[docLogFilter] || 'All Statuses';
+      const selectedMonthObj = MONTH_OPTIONS.find((m) => m.value === docLogMonthFilter);
+      const monthLabel = selectedMonthObj ? selectedMonthObj.label : 'All Months';
+
+      const filterHeaderStr = `${monthLabel !== 'All Months' ? `${monthLabel} • ` : ''}${currentFilterLabel}`;
 
       const stats = [
         { label: 'Total Submissions', value: totalCount },
@@ -863,11 +941,11 @@ const UserManagement = () => {
       const cleanOrgName = orgName.replace(/[^a-zA-Z0-9]/g, '_');
 
       setReportData({
-        title: `${orgName} — Document Logs Report (${currentFilterLabel})`,
+        title: `${orgName} — Document Logs Report (${filterHeaderStr})`,
         stats,
         headers: tableHeaders,
         rows: tableData,
-        filename: `${cleanOrgName}_Document_Logs_${docLogFilter}_${new Date().toISOString().split('T')[0]}.pdf`,
+        filename: `${cleanOrgName}_Document_Logs_Month_${docLogMonthFilter}_Status_${docLogFilter}_${new Date().toISOString().split('T')[0]}.pdf`,
         personInCharge: profile.full_name || '—',
       });
       setIsReportOpen(true);
@@ -978,27 +1056,42 @@ const UserManagement = () => {
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
             <Clock className="text-blue-600 shrink-0 mt-0.5" size={20} />
             <div>
-              <p className="font-bold text-blue-800 text-sm">Active Review Queue</p>
+              <p className="font-bold text-blue-800 text-sm">Reviewed Documents Overview</p>
               <p className="text-xs text-blue-700 mt-0.5">
-                {detailData.documentLogs.length} document{detailData.documentLogs.length !== 1 ? 's are' : ' is'} currently assigned for review.
+                {detailData.documentLogs.length} document{detailData.documentLogs.length !== 1 ? 's have' : ' has'} been reviewed by this user in the selected school year.
               </p>
             </div>
           </div>
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <section className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="p-6 border-b border-gray-50 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+          <section className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-[520px]">
+            <div className="p-6 border-b border-gray-50 flex flex-col xl:flex-row xl:items-center justify-between gap-4 shrink-0">
               <div>
                 <h2 className="text-lg font-black text-gray-800 uppercase">
                   {isOrg ? 'Document Logs' : 'Reviewed Documents'}
                 </h2>
                 <p className="text-xs font-bold text-gray-400 mt-1">
-                  {isOrg ? 'Current school year submissions' : 'Documents actively under review'}
+                  {isOrg ? 'Current school year submissions' : 'Documents reviewed by this account'}
                 </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1.5 bg-gray-100 px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 border border-gray-200/60">
+                  <Calendar size={14} className="text-gray-500" />
+                  <select
+                    value={docLogMonthFilter}
+                    onChange={(e) => setDocLogMonthFilter(e.target.value)}
+                    className="bg-transparent text-gray-700 font-bold focus:outline-none cursor-pointer pr-1"
+                  >
+                    {MONTH_OPTIONS.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold">
                   <button
                     type="button"
@@ -1058,9 +1151,9 @@ const UserManagement = () => {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0">
               <table className="w-full text-left border-collapse">
-                <thead>
+                <thead className="sticky top-0 z-10">
                   <tr className="bg-[#073c2d] text-white">
                     <th className="px-6 py-3 text-xs font-black uppercase text-white">Document Name</th>
                     <th className="px-6 py-3 text-xs font-black uppercase text-white">Type</th>
@@ -1074,7 +1167,7 @@ const UserManagement = () => {
                       <td colSpan="4" className="px-6 py-12 text-center text-gray-400 font-bold text-sm">
                         {isOrg
                           ? `No ${docLogFilter !== 'all' ? docLogFilter.replace('-', ' ') : ''} documents found for the current school year.`
-                          : 'No documents currently assigned for review.'}
+                          : 'No reviewed documents found for this user.'}
                       </td>
                     </tr>
                   ) : (
@@ -1123,12 +1216,12 @@ const UserManagement = () => {
             </div>
           </section>
 
-          <section className="bg-white rounded-2xl shadow-sm border border-gray-100">
-            <div className="p-6 border-b border-gray-50">
+          <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-[520px]">
+            <div className="p-6 border-b border-gray-50 shrink-0">
               <h2 className="text-lg font-black text-gray-800 uppercase">Activity History</h2>
               <p className="text-xs font-bold text-gray-400 mt-1">Current school year actions by this user</p>
             </div>
-              <div className="p-6 space-y-3 max-h-[520px] overflow-y-auto">
+            <div className="p-6 space-y-3 overflow-y-auto flex-1 min-h-0">
                 {(detailData?.activityHistory || []).length === 0 ? (
                   <p className="text-sm text-gray-400 text-center py-8 font-medium">No activity recorded for the current school year.</p>
                 ) : (
@@ -1533,6 +1626,17 @@ const UserManagement = () => {
                                     </button>
                                   )}
                                   <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleResendInvitation(org);
+                                    }}
+                                    className="p-1.5 sm:p-2 text-purple-600 hover:text-purple-700 transition-colors bg-purple-50 rounded-lg hover:bg-purple-100"
+                                    title="Resend Setup Invitation Email via Brevo"
+                                  >
+                                    <Mail size={14} className="sm:w-4 sm:h-4" />
+                                  </button>
+                                  <button
                                     onClick={() => handleEditClick(org)}
                                     className="p-1.5 sm:p-2 text-gray-400 hover:text-blue-600 transition-colors bg-gray-50 rounded-lg hover:bg-blue-50"
                                     title="Edit Details"
@@ -1588,6 +1692,7 @@ const UserManagement = () => {
                       filteredPersonnel.map((personnel) => {
                         const isActive = personnel.status === 'Active' || personnel.status === 'Active (Extended)';
                         const isSuspended = personnel.status?.startsWith('Suspended');
+                        const isPendingSetup = personnel.status === 'Pending Setup';
                         return (
                           <tr
                             key={personnel.id}
@@ -1621,11 +1726,11 @@ const UserManagement = () => {
                               <div className="flex items-center gap-1.5">
                                 <div
                                   className={`w-2 h-2 rounded-full ${
-                                    isSuspended ? 'bg-red-500' : !isActive ? 'bg-gray-400' : 'bg-emerald-500'
+                                    isSuspended ? 'bg-red-500' : isPendingSetup ? 'bg-amber-500 animate-pulse' : !isActive ? 'bg-gray-400' : 'bg-emerald-500'
                                   }`}
                                 ></div>
                                 <span className="text-xs font-semibold text-gray-700">
-                                  {isSuspended ? 'Suspended' : isActive ? 'Active' : 'Inactive'}
+                                  {isSuspended ? 'Suspended' : isPendingSetup ? 'Pending Setup' : isActive ? 'Active' : 'Inactive'}
                                 </span>
                               </div>
                             </td>
@@ -1634,6 +1739,17 @@ const UserManagement = () => {
                             </td>
                             <td className="px-3 sm:px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                               <div className="flex justify-end items-center gap-1.5 sm:gap-2">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleResendInvitation(personnel);
+                                  }}
+                                  className="p-1.5 sm:p-2 text-purple-600 hover:text-purple-700 transition-colors bg-purple-50 rounded-lg hover:bg-purple-100"
+                                  title="Resend Setup Invitation Email via Brevo"
+                                >
+                                  <Mail size={14} className="sm:w-4 sm:h-4" />
+                                </button>
                                 {personnel.role !== 'admin' && (
                                   <button
                                     type="button"
@@ -1730,8 +1846,7 @@ const UserManagement = () => {
                     onClick={() => {
                       setNewUserType('admin-staff');
                       setWizardStep(1);
-                      generatePassword('admin-staff');
-                      setFormData(prev => ({ ...prev, role: 'chairman', status: 'Active' }));
+                      setFormData(prev => ({ ...prev, role: 'chairman', status: 'Pending Setup' }));
                     }}
                     className={`px-6 py-2 rounded-lg text-sm font-semibold transition-all ${newUserType === 'admin-staff' ? 'bg-white text-primary-green shadow-xs' : 'text-gray-600 hover:text-gray-800'}`}
                   >
@@ -1984,20 +2099,30 @@ const UserManagement = () => {
                       )}
 
                       {!isEditMode && (
-                        <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 animate-shine">
-                          <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Temporary Autogenerated Password</label>
-                          <div className="flex items-center gap-3">
-                            <span className="font-mono text-primary-green font-bold text-lg">{tempPassword}</span>
-                            <button
-                              type="button"
-                              onClick={handleCopyPassword}
-                              className={`p-1.5 rounded-lg transition-all ${isCopied ? 'bg-green-100 text-green-600' : 'hover:bg-primary-green/10 text-primary-green'}`}
-                            >
-                              {isCopied ? <Check size={16} /> : <Copy size={16} />}
-                            </button>
+                        newUserType === 'org' ? (
+                          <div className="bg-emerald-50/70 p-4 rounded-2xl border border-emerald-100 flex items-start gap-3">
+                            <Mail className="text-primary-green shrink-0 mt-0.5" size={20} />
+                            <div className="text-xs text-emerald-950 leading-relaxed">
+                              <span className="font-bold text-primary-green block text-sm mb-0.5">Secure Brevo Invitation Flow</span>
+                              An email containing a secure <strong>Set Up Account</strong> link (valid for 24 hours) will automatically be sent to <span className="font-semibold">{formData.email || 'the registered email address'}</span> via Brevo. The Organization will set their password directly via that link.
+                            </div>
                           </div>
-                          <span className="text-[10px] text-gray-400 italic">Auto-generated</span>
-                        </div>
+                        ) : (
+                          <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 animate-shine">
+                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Temporary Autogenerated Password</label>
+                            <div className="flex items-center gap-3">
+                              <span className="font-mono text-primary-green font-bold text-lg">{tempPassword}</span>
+                              <button
+                                type="button"
+                                onClick={handleCopyPassword}
+                                className={`p-1.5 rounded-lg transition-all ${isCopied ? 'bg-green-100 text-green-600' : 'hover:bg-primary-green/10 text-primary-green'}`}
+                              >
+                                {isCopied ? <Check size={16} /> : <Copy size={16} />}
+                              </button>
+                            </div>
+                            <span className="text-[10px] text-gray-400 italic">Auto-generated</span>
+                          </div>
+                        )
                       )}
                     </div>
                   )}
@@ -2049,7 +2174,7 @@ const UserManagement = () => {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Contact Number</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Contact Number *</label>
                     <input
                       type="text"
                       required
@@ -2060,24 +2185,18 @@ const UserManagement = () => {
                         const cleaned = e.target.value.replace(/[^\d]/g, '');
                         setFormData({ ...formData, contact_no: cleaned });
                       }}
-                      pattern="09[0-9]{9}"
+                      pattern="^09[0-9]{9}$"
                       maxLength="11"
+                      title="Contact number must be an 11-digit mobile number starting with 09"
                     />
                   </div>
                   {!isEditMode && (
-                    <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 animate-shine mt-4">
-                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Temporary Autogenerated Password</label>
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono text-primary-green font-bold text-lg">{tempPassword}</span>
-                        <button
-                          type="button"
-                          onClick={handleCopyPassword}
-                          className={`p-1.5 rounded-lg transition-all ${isCopied ? 'bg-green-100 text-green-600' : 'hover:bg-primary-green/10 text-primary-green'}`}
-                        >
-                          {isCopied ? <Check size={16} /> : <Copy size={16} />}
-                        </button>
+                    <div className="bg-emerald-50/70 p-4 rounded-2xl border border-emerald-100 flex items-start gap-3 mt-4">
+                      <Mail className="text-primary-green shrink-0 mt-0.5" size={20} />
+                      <div className="text-xs text-emerald-950 leading-relaxed">
+                        <span className="font-bold text-primary-green block text-sm mb-0.5">Secure Brevo Invitation Flow</span>
+                        An email containing a secure <strong>Set Up Account</strong> link (valid for 24 hours) will automatically be sent to <span className="font-semibold">{formData.email || 'the registered email address'}</span> via Brevo. The personnel will set their password directly via that link.
                       </div>
-                      <span className="text-[10px] text-gray-400 italic">Auto-generated</span>
                     </div>
                   )}
                   {isEditMode && (
@@ -2140,6 +2259,10 @@ const UserManagement = () => {
                       }
                       if (!formData.contact_no || !formData.contact_no.trim()) {
                         showToast('Please enter President Contact Number.', 'error');
+                        return;
+                      }
+                      if (!/^09\d{9}$/.test(formData.contact_no.trim())) {
+                        showToast('Contact number must be an 11-digit mobile number starting with 09 (e.g. 09123456789).', 'error');
                         return;
                       }
                       if (!formData.adviser_name || !formData.adviser_name.trim()) {

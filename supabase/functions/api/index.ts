@@ -412,13 +412,61 @@ async function handleGetAdminEmail() {
   }
 }
 
+async function cleanOrphanedOrganizations() {
+  const supabase = getAdminClient();
+  try {
+    const { data: activeUsers } = await supabase
+      .from('users')
+      .select('id, organization_id, org_name, full_name, abbreviation');
+
+    const { data: allOrgs } = await supabase
+      .from('organizations')
+      .select('id, name, abbreviation');
+
+    if (!allOrgs || allOrgs.length === 0) return;
+
+    const userOrgIds = new Set<string>();
+    const userOrgNames = new Set<string>();
+    const userOrgAbbrs = new Set<string>();
+
+    (activeUsers || []).forEach((u: any) => {
+      if (u.organization_id) userOrgIds.add(String(u.organization_id));
+      if (u.org_name) userOrgNames.add(String(u.org_name).trim().toLowerCase());
+      if (u.full_name) userOrgNames.add(String(u.full_name).trim().toLowerCase());
+      if (u.abbreviation) userOrgAbbrs.add(String(u.abbreviation).trim().toLowerCase());
+    });
+
+    for (const org of allOrgs) {
+      const oId = String(org.id);
+      const oName = (org.name || '').trim().toLowerCase();
+      const oAbbr = (org.abbreviation || '').trim().toLowerCase();
+
+      const isLinkedById = userOrgIds.has(oId);
+      const isLinkedByName = oName ? userOrgNames.has(oName) : false;
+      const isLinkedByAbbr = oAbbr ? userOrgAbbrs.has(oAbbr) : false;
+
+      if (!isLinkedById && !isLinkedByName && !isLinkedByAbbr) {
+        console.log(`Auto-cleaning orphaned organization record: ${org.name} (${org.id})`);
+        await supabase.from('organization_academic_years').delete().eq('organization_id', org.id);
+        await supabase.from('users').update({ organization_id: null }).eq('organization_id', org.id);
+        await supabase.from('organizations').delete().eq('id', org.id);
+        if (org.name) await supabase.from('organizations').delete().ilike('name', org.name.trim());
+        if (org.abbreviation) await supabase.from('organizations').delete().ilike('abbreviation', org.abbreviation.trim());
+      }
+    }
+  } catch (err) {
+    console.error('Error auto-cleaning orphaned organizations:', err);
+  }
+}
+
 async function handleGetUsers() {
   const supabase = getAdminClient();
 
-  // Automatically check and deactivate/suspend organizations that missed deadlines
+  // Automatically check and deactivate/suspend organizations that missed deadlines & clean orphaned orgs
   try {
     await checkAndDeactivateLateUsers();
     await checkAndSuspendLateUsers();
+    await cleanOrphanedOrganizations();
   } catch (err) {
     console.error('Error running automated status checks:', err);
   }
@@ -670,83 +718,74 @@ async function handleGetUserDetail(id: string, url?: URL) {
     });
   } else {
     const submissionSelect =
-      'id, status, created_at, school_year_id, documentType:document_type_id(name), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title, target_venue, person_in_charge, contact_number))';
+      'id, tracking_number, status, created_at, school_year_id, documentType:document_type_id(name), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title, target_venue, person_in_charge, contact_number))';
 
-    const getStaffPipelineStatuses = (role: string) => {
-      if (role === 'admin') {
-        return [
-          'oso approved',
-          'sds coordinator review',
-          'vice chairman approved',
-          'external approved',
-          'main campus review',
-          'dean review',
-          'dean approved',
-          'approved',
-        ];
-      }
-      if (role === 'chairman' || role === 'vice-chairman') {
-        return [
-          'submitted',
-          'pending',
-          'sds approved',
-          'chairman approved',
-          'vice chairman approved',
-          'to forward',
-        ];
-      }
-      return [];
-    };
-
-    const pipelineStatuses = getStaffPipelineStatuses(String(user.role));
-    const pipelineDocs: Array<Record<string, unknown>> = [];
-
-    if (pipelineStatuses.length > 0) {
-      const { data: pipelineSubs } = await supabase
-        .from('submissions')
-        .select(submissionSelect)
-        .in('status', pipelineStatuses)
-        .order('created_at', { ascending: false });
-
-      pipelineDocs.push(
-        ...(pipelineSubs || []).filter(
-          (s) => !targetSy || s.school_year_id === targetSy.id || !s.school_year_id,
-        ),
-      );
-    }
-
-    const { data: userReturnLogs } = await supabase
+    // 1. Fetch submission logs created by this user to identify documents they actually acted on
+    const { data: userLogs } = await supabase
       .from('submission_logs')
-      .select(`submission_id, submissions(${submissionSelect})`)
+      .select(`id, action_type, description, created_at, submission_id, submissions(${submissionSelect})`)
       .eq('user_id', id)
-      .eq('action_type', 'returned')
       .order('created_at', { ascending: false });
 
-    const returnedDocs = (userReturnLogs || [])
-      .map((log) => log.submissions as Record<string, unknown> | null)
-      .filter(
-        (sub): sub is Record<string, unknown> =>
-          Boolean(sub) && (!targetSy || !sub.school_year_id || sub.school_year_id === targetSy.id),
+    // Helper to check if document status is still pending initial staff review / unreviewed
+    const isUnreviewedStatus = (statusStr: unknown) => {
+      const s = String(statusStr || '').toLowerCase().trim();
+      return (
+        s === 'submitted' ||
+        s === 'pending' ||
+        s === 'oso staff review' ||
+        s === 'draft'
       );
+    };
 
+    // Extract unique submissions that THIS user has taken action on AND is not currently pending initial staff review
     const reviewedMap = new Map<string, Record<string, unknown>>();
-    [...pipelineDocs, ...returnedDocs].forEach((doc) => {
-      reviewedMap.set(String(doc.id), doc);
+    (userLogs || []).forEach((log) => {
+      const sub = log.submissions as Record<string, unknown> | null;
+      if (sub && sub.id) {
+        const matchesSy = !targetSy || !sub.school_year_id || sub.school_year_id === targetSy.id;
+        const rawStatus = sub.status;
+        if (matchesSy && !isUnreviewedStatus(rawStatus) && !reviewedMap.has(String(sub.id))) {
+          reviewedMap.set(String(sub.id), sub);
+        }
+      }
     });
+
     reviewedDocuments = Array.from(reviewedMap.values()).map(formatDocumentLog);
 
-    let logsQuery = supabase
-      .from('submission_logs')
-      .select('*, submissions(tracking_number, status, school_year_id, documentType:document_type_id(name), submission_versions!submission_versions_submission_id_fkey(version_number, activity_proposal_details(activity_title)))')
-      .eq('user_id', id)
-      .order('created_at', { ascending: false })
-      .limit(50);
-
-    const { data: logs } = await logsQuery;
-    activityHistory = (logs || []).filter((log) => {
-      const sub = log.submissions as Record<string, unknown> | null;
-      return !targetSy || !sub?.school_year_id || sub.school_year_id === targetSy.id;
-    });
+    // 2. Build Activity History for THIS user's actions
+    activityHistory = (userLogs || [])
+      .filter((log) => {
+        const sub = log.submissions as Record<string, unknown> | null;
+        return !targetSy || !sub?.school_year_id || sub.school_year_id === targetSy.id;
+      })
+      .map((log) => {
+        const sub = log.submissions as Record<string, unknown> | null;
+        let docTitle = null;
+        if (sub) {
+          const versions = sub.submission_versions as Array<Record<string, unknown>> | undefined;
+          if (versions && versions.length > 0) {
+            const latest = versions.reduce(
+              (max, v) => ((v.version_number as number) > (max.version_number as number) ? v : max),
+              versions[0],
+            );
+            const details = Array.isArray(latest.activity_proposal_details)
+              ? latest.activity_proposal_details[0]
+              : latest.activity_proposal_details;
+            if (details && (details as Record<string, unknown>).activity_title) {
+              docTitle = (details as Record<string, unknown>).activity_title as string;
+            }
+          }
+          if (!docTitle) {
+            docTitle = (sub.documentType as Record<string, unknown>)?.name as string || null;
+          }
+        }
+        return {
+          ...log,
+          docTitle,
+          trackingNumber: sub?.tracking_number || null,
+        };
+      });
 
     return jsonResponse({
       success: true,
@@ -761,7 +800,389 @@ async function handleGetUserDetail(id: string, url?: URL) {
   }
 }
 
-async function handlePostUsers(body: Record<string, unknown>) {
+async function sendBrevoEmail({
+  toEmail,
+  toName,
+  subject,
+  htmlContent,
+}: {
+  toEmail: string;
+  toName: string;
+  subject: string;
+  htmlContent: string;
+}) {
+  const brevoApiKey = Deno.env.get('BREVO_API_KEY') || Deno.env.get('SIB_API_KEY') || '';
+  if (!brevoApiKey) {
+    console.warn('BREVO_API_KEY / SIB_API_KEY is not set. Email notification skipped.');
+    return { success: false, reason: 'Brevo API key not configured' };
+  }
+
+  const senderEmail = Deno.env.get('BREVO_SENDER_EMAIL') || 'osodocsbulsu@gmail.com';
+  const senderName = Deno.env.get('BREVO_SENDER_NAME') || 'BulSU OSODOCS Admin';
+
+  try {
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'api-key': brevoApiKey,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        sender: { name: senderName, email: senderEmail },
+        to: [{ email: toEmail, name: toName }],
+        subject,
+        htmlContent,
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error('Brevo API send error:', errText);
+      return { success: false, error: errText };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error('Brevo fetch error:', err);
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+async function createAndSendInvitationToken(
+  supabase: ReturnType<typeof getAdminClient>,
+  userId: string,
+  email: string,
+  fullName: string,
+  orgName?: string | null,
+  appOrigin?: string,
+  role?: string | null
+) {
+  const token = crypto.randomUUID().replace(/-/g, '') + Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 hours
+
+  // 1. Invalidate previous pending invitations for this user
+  await supabase
+    .from('account_invitations')
+    .update({ is_invalidated: true, updated_at: new Date().toISOString() })
+    .eq('user_id', userId)
+    .eq('is_used', false);
+
+  // 2. Insert new invitation token record
+  const { error: insErr } = await supabase
+    .from('account_invitations')
+    .insert([
+      {
+        user_id: userId,
+        email,
+        token,
+        expires_at: expiresAt,
+        is_used: false,
+        is_invalidated: false,
+      },
+    ]);
+
+  if (insErr) {
+    console.error('Failed to create account_invitations record:', insErr.message);
+    return { success: false, error: insErr.message };
+  }
+
+  // 3. Construct setup link
+  const origin = appOrigin ? appOrigin.replace(/\/$/, '') : 'http://localhost:5173';
+  const setupUrl = `${origin}/setup-account?token=${token}`;
+  const isOrg = role === 'org-president';
+  const displayName = isOrg ? (orgName || fullName || 'Organization') : (fullName || 'Personnel');
+  const accountTypeLabel = isOrg ? 'Organization' : 'OSO Personnel';
+  const subject = `Set Up Your BulSU OSODOCS ${accountTypeLabel} Account`;
+
+  // 4. Render Email HTML
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>BulSU OSODOCS - Account Invitation</title>
+      <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f8; margin: 0; padding: 0; color: #333; }
+        .container { max-width: 600px; margin: 30px auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+        .header { background-color: #073c2d; padding: 30px 20px; text-align: center; color: #ffffff; }
+        .header h1 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: 0.5px; }
+        .header p { margin: 6px 0 0 0; font-size: 14px; opacity: 0.85; }
+        .content { padding: 35px 30px; line-height: 1.6; }
+        .greeting { font-size: 18px; font-weight: 600; color: #073c2d; margin-bottom: 16px; }
+        .button-wrapper { text-align: center; margin: 35px 0; }
+        .btn { background-color: #073c2d; color: #ffffff !important; padding: 14px 32px; text-decoration: none; font-weight: 700; font-size: 15px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 12px rgba(7,60,45,0.25); }
+        .info-box { background-color: #f8faf9; border-left: 4px solid #073c2d; padding: 16px; border-radius: 8px; margin: 24px 0; font-size: 13px; color: #555; }
+        .footer { background-color: #f4f6f8; padding: 20px; text-align: center; font-size: 12px; color: #888; border-top: 1px solid #eef0f2; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>BulSU OSODOCS</h1>
+          <p>Office of Student Organizations Document Portal</p>
+        </div>
+        <div class="content">
+          <div class="greeting">Welcome, ${displayName}!</div>
+          <p>An official ${accountTypeLabel} account has been created for you on BulSU OSODOCS by the System Administrator.</p>
+          <p>To complete your registration and activate your account, please set up your password using the link below:</p>
+          
+          <div class="button-wrapper">
+            <a href="${setupUrl}" class="btn" target="_blank">Set Up Account</a>
+          </div>
+
+          <div class="info-box">
+            <strong>Security Notice:</strong>
+            <ul style="margin: 6px 0 0 0; padding-left: 18px;">
+              <li>This invitation link is valid for <strong>24 hours</strong>.</li>
+              <li>This link is single-use and will expire once your password is set.</li>
+              <li>If the link expires, you can request a new invitation link on the setup page.</li>
+            </ul>
+          </div>
+
+          <p style="font-size: 13px; color: #777;">If you did not request this invitation, please disregard this email or contact the BulSU OSO Administrator.</p>
+        </div>
+        <div class="footer">
+          &copy; ${new Date().getFullYear()} Bulacan State University - Office of Student Organizations. All rights reserved.
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const emailRes = await sendBrevoEmail({
+    toEmail: email,
+    toName: displayName,
+    subject,
+    htmlContent,
+  });
+
+  return { success: true, token, emailSent: emailRes.success };
+}
+
+async function handleVerifyInvitation(url: URL) {
+  const token = url.searchParams.get('token');
+  if (!token) {
+    return jsonResponse({ valid: false, reason: 'Invitation token is missing.' }, 400);
+  }
+
+  const supabase = getAdminClient();
+  const { data: inv, error } = await supabase
+    .from('account_invitations')
+    .select('*')
+    .eq('token', token)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Error verifying invitation token:', error.message);
+    return jsonResponse({ valid: false, reason: `Database error: ${error.message}` });
+  }
+
+  if (!inv) {
+    return jsonResponse({ valid: false, reason: 'Invalid or non-existent invitation token.' });
+  }
+
+  if (inv.is_used) {
+    return jsonResponse({ valid: false, reason: 'This invitation link has already been used.' });
+  }
+
+  if (inv.is_invalidated) {
+    return jsonResponse({ valid: false, reason: 'This invitation link has been invalidated by a newer request.' });
+  }
+
+  const expiresAt = new Date(inv.expires_at).getTime();
+  if (Date.now() > expiresAt) {
+    return jsonResponse({ valid: false, reason: 'This invitation link has expired (valid for 24 hours).' });
+  }
+
+  const { data: userRec } = await supabase
+    .from('users')
+    .select('full_name, org_name, role, status')
+    .eq('id', inv.user_id)
+    .maybeSingle();
+
+  return jsonResponse({
+    valid: true,
+    email: inv.email,
+    userId: inv.user_id,
+    orgName: userRec?.org_name || userRec?.full_name || 'Organization',
+  });
+}
+
+async function handleSetupPassword(body: Record<string, unknown>) {
+  const token = String(body.token || '').trim();
+  const password = String(body.password || '').trim();
+
+  if (!token || !password) {
+    return jsonResponse({ error: 'Token and new password are required' }, 400);
+  }
+
+  if (password.length < 6) {
+    return jsonResponse({ error: 'Password must be at least 6 characters long' }, 400);
+  }
+
+  const supabase = getAdminClient();
+  const { data: inv, error } = await supabase
+    .from('account_invitations')
+    .select('*')
+    .eq('token', token)
+    .maybeSingle();
+
+  if (error || !inv) {
+    return jsonResponse({ error: 'Invalid or non-existent invitation token' }, 404);
+  }
+
+  if (inv.is_used) {
+    return jsonResponse({ error: 'This invitation link has already been used.' }, 400);
+  }
+
+  if (inv.is_invalidated) {
+    return jsonResponse({ error: 'This invitation link has been invalidated.' }, 400);
+  }
+
+  if (Date.now() > new Date(inv.expires_at).getTime()) {
+    return jsonResponse({ error: 'This invitation link has expired.' }, 400);
+  }
+
+  // Update password in Supabase Auth
+  const { error: authErr } = await supabase.auth.admin.updateUserById(inv.user_id, {
+    password,
+  });
+
+  if (authErr) {
+    return jsonResponse({ error: 'Failed to set password: ' + authErr.message }, 500);
+  }
+
+  // Update user status to 'Active'
+  await supabase
+    .from('users')
+    .update({ status: 'Active' })
+    .eq('id', inv.user_id);
+
+  // Mark token as used
+  await supabase
+    .from('account_invitations')
+    .update({
+      is_used: true,
+      used_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', inv.id);
+
+  return jsonResponse({
+    success: true,
+    email: inv.email,
+    userId: inv.user_id,
+    message: 'Password created successfully! You can now access your Organization Dashboard.',
+  });
+}
+
+async function handleRequestNewInvitation(body: Record<string, unknown>, req: Request) {
+  const email = String(body.email || '').trim().toLowerCase();
+  const appOrigin = (body.appOrigin as string) || req.headers.get('origin') || req.headers.get('referer') || 'http://localhost:5173';
+
+  if (!email) {
+    return jsonResponse({ error: 'Email address is required' }, 400);
+  }
+
+  const supabase = getAdminClient();
+
+  const emailMap = await getAuthEmailsMap();
+  let targetUserId: string | null = null;
+  for (const [uid, uemail] of emailMap.entries()) {
+    if (uemail.toLowerCase() === email) {
+      targetUserId = uid;
+      break;
+    }
+  }
+
+  if (!targetUserId) {
+    const { data: dbUser } = await supabase
+      .from('users')
+      .select('id, full_name, org_name, role')
+      .eq('email', email)
+      .maybeSingle();
+    if (dbUser) targetUserId = dbUser.id;
+  }
+
+  if (!targetUserId) {
+    return jsonResponse({
+      success: true,
+      message: 'If an Organization account exists for this email, a new setup link has been sent.',
+    });
+  }
+
+  const { data: userRec } = await supabase
+    .from('users')
+    .select('id, full_name, org_name, role')
+    .eq('id', targetUserId)
+    .maybeSingle();
+
+  if (userRec) {
+    await createAndSendInvitationToken(
+      supabase,
+      userRec.id,
+      email,
+      userRec.full_name,
+      userRec.org_name,
+      appOrigin,
+      userRec.role
+    );
+  }
+
+  return jsonResponse({
+    success: true,
+    message: 'If an account exists for this email, a new setup link has been sent.',
+  });
+}
+
+async function handleResendInvitation(body: Record<string, unknown>, req: Request) {
+  const userId = String(body.userId || '').trim();
+  const appOrigin = (body.appOrigin as string) || req.headers.get('origin') || req.headers.get('referer') || 'http://localhost:5173';
+
+  if (!userId) {
+    return jsonResponse({ error: 'userId is required' }, 400);
+  }
+
+  const supabase = getAdminClient();
+  const { data: userRec, error: userErr } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (userErr || !userRec) {
+    return jsonResponse({ error: 'User not found' }, 404);
+  }
+
+  const { data: authUser } = await supabase.auth.admin.getUserById(userId);
+  const email = authUser?.user?.email || userRec.email;
+
+  if (!email) {
+    return jsonResponse({ error: 'User email not found' }, 400);
+  }
+
+  const result = await createAndSendInvitationToken(
+    supabase,
+    userId,
+    email,
+    userRec.full_name,
+    userRec.org_name,
+    appOrigin,
+    userRec.role
+  );
+
+  if (!result.success) {
+    return jsonResponse({ error: 'Failed to generate invitation: ' + result.error }, 500);
+  }
+
+  return jsonResponse({
+    success: true,
+    message: `Invitation email sent to ${email} via Brevo!`,
+  });
+}
+
+async function handlePostUsers(body: Record<string, unknown>, req?: Request) {
   const supabase = getAdminClient();
   const {
     full_name,
@@ -771,66 +1192,187 @@ async function handlePostUsers(body: Record<string, unknown>) {
     email,
     password,
     org_name,
+    abbreviation,
     no_member,
     adviser_name,
     co_advisers,
     joined_date,
     contact_no,
     student_no,
+    appOrigin,
   } = body as Record<string, string | null | undefined | string[]>;
 
-  if (!full_name || !role || !email || !password) {
-    return jsonResponse({ error: 'Full name, role, email, and password are required' }, 400);
+  const isOrg = role === 'org-president';
+
+  if (!full_name || !role || !email) {
+    return jsonResponse({ error: 'Full name, role, and email are required' }, 400);
   }
 
-  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+  const targetAbbr = (abbreviation || '').trim();
+
+  // Pre-validate duplicate Organization Name and Abbreviation if role is org-president or abbreviation provided
+  if (isOrg) {
+    const targetOrgName = (org_name || full_name || '').trim();
+    if (targetOrgName) {
+      const { data: existingUsers } = await supabase.from('users').select('id, org_name, full_name, organization_id');
+      const activeUserOrg = (existingUsers || []).find((u: any) => {
+        const uOrg = (u.org_name || '').trim().toLowerCase();
+        const uFull = (u.full_name || '').trim().toLowerCase();
+        return uOrg === targetOrgName.toLowerCase() || uFull === targetOrgName.toLowerCase();
+      });
+
+      if (activeUserOrg) {
+        return jsonResponse({ error: `An organization account named "${targetOrgName}" already exists. Duplicate organization names are not allowed.` }, 400);
+      }
+
+      const { data: existingOrgRecs } = await supabase.from('organizations').select('id, name');
+      const matchedOrgRec = (existingOrgRecs || []).find((o: any) => (o.name || '').trim().toLowerCase() === targetOrgName.toLowerCase());
+
+      if (matchedOrgRec) {
+        const linkedUser = (existingUsers || []).find((u: any) => u.organization_id === matchedOrgRec.id);
+        if (linkedUser) {
+          return jsonResponse({ error: `An organization named "${targetOrgName}" already exists. Duplicate organization names are not allowed.` }, 400);
+        } else {
+          console.log(`Cleaning up orphaned organization record ${matchedOrgRec.id} (${matchedOrgRec.name})`);
+          await supabase.from('organization_academic_years').delete().eq('organization_id', matchedOrgRec.id);
+          await supabase.from('organizations').delete().eq('id', matchedOrgRec.id);
+          await supabase.from('organizations').delete().ilike('name', targetOrgName);
+        }
+      }
+    }
+  }
+
+  if (targetAbbr) {
+    const { data: existingUsers } = await supabase.from('users').select('id, abbreviation, organization_id');
+    const activeUserAbbr = (existingUsers || []).find((u: any) => (u.abbreviation || '').trim().toLowerCase() === targetAbbr.toLowerCase());
+
+    if (activeUserAbbr) {
+      return jsonResponse({ error: `An organization with the abbreviation "${targetAbbr}" already exists. Duplicate abbreviations are not allowed.` }, 400);
+    }
+
+    const { data: existingOrgAbbrs } = await supabase.from('organizations').select('id, abbreviation');
+    const matchedOrgAbbr = (existingOrgAbbrs || []).find((o: any) => (o.abbreviation || '').trim().toLowerCase() === targetAbbr.toLowerCase());
+
+    if (matchedOrgAbbr) {
+      const linkedUser = (existingUsers || []).find((u: any) => u.organization_id === matchedOrgAbbr.id);
+      if (linkedUser) {
+        return jsonResponse({ error: `An organization with the abbreviation "${targetAbbr}" already exists. Duplicate abbreviations are not allowed.` }, 400);
+      } else {
+        console.log(`Cleaning up orphaned organization record ${matchedOrgAbbr.id} (${matchedOrgAbbr.abbreviation})`);
+        await supabase.from('organization_academic_years').delete().eq('organization_id', matchedOrgAbbr.id);
+        await supabase.from('organizations').delete().eq('id', matchedOrgAbbr.id);
+        await supabase.from('organizations').delete().ilike('abbreviation', targetAbbr);
+      }
+    }
+  }
+
+  // Generate secure temporary password for auth account creation (user will set real password via invitation link)
+  const authPassword = password || (crypto.randomUUID() + 'A1!@#');
+
+  let authData: any = null;
+  const { data: createdAuth, error: authError } = await supabase.auth.admin.createUser({
     email,
-    password,
+    password: authPassword,
     email_confirm: true,
   });
 
   if (authError) {
-    return jsonResponse({ error: authError.message }, 500);
+    const errLower = authError.message.toLowerCase();
+    if (errLower.includes('already') || errLower.includes('exists') || errLower.includes('registered')) {
+      // Check if existing auth user has an active profile in users table
+      const emailMap = await getAuthEmailsMap();
+      let existingAuthId: string | null = null;
+      for (const [uid, uemail] of emailMap.entries()) {
+        if (uemail.toLowerCase() === email.toLowerCase()) {
+          existingAuthId = uid;
+          break;
+        }
+      }
+
+      if (existingAuthId) {
+        const { data: existingProfile } = await supabase
+          .from('users')
+          .select('id')
+          .eq('id', existingAuthId)
+          .maybeSingle();
+
+        if (!existingProfile) {
+          console.log(`Cleaning up orphaned auth user ${existingAuthId} for email ${email}`);
+          await supabase.auth.admin.deleteUser(existingAuthId);
+
+          const { data: retryAuth, error: retryErr } = await supabase.auth.admin.createUser({
+            email,
+            password: authPassword,
+            email_confirm: true,
+          });
+
+          if (retryErr) {
+            return jsonResponse({ error: 'User registration error: ' + retryErr.message }, 400);
+          }
+          authData = retryAuth;
+        } else {
+          return jsonResponse({ error: 'An active user account with this email address already exists in the system.' }, 400);
+        }
+      } else {
+        return jsonResponse({ error: authError.message }, 400);
+      }
+    } else {
+      return jsonResponse({ error: authError.message }, 500);
+    }
+  } else {
+    authData = createdAuth;
   }
 
   let organizationId: string | null = null;
-  if (role === 'org-president') {
-    try {
-      const { data: orgData, error: orgErr } = await supabase
-        .from('organizations')
-        .insert([
-          {
-            name: org_name || full_name,
-            abbreviation: null,
-          },
-        ])
-        .select();
+  const nowIso = new Date().toISOString();
 
-      if (!orgErr && orgData?.[0]?.id) {
-        organizationId = orgData[0].id;
-      }
-    } catch (err) {
-      console.warn('Could not insert into organizations table:', err);
+  if (isOrg) {
+    const targetOrgName = (org_name || full_name || '').trim();
+
+    const { data: orgData, error: orgErr } = await supabase
+      .from('organizations')
+      .insert([
+        {
+          name: targetOrgName,
+          abbreviation: targetAbbr || null,
+          created_at: nowIso,
+          updated_at: nowIso,
+        },
+      ])
+      .select();
+
+    if (orgErr) {
+      console.error('Failed to create organization record:', orgErr.message);
+      await supabase.auth.admin.deleteUser(authData.user.id);
+      return jsonResponse({ error: `An organization named "${targetOrgName}" already exists or could not be created: ${orgErr.message}`, details: orgErr.message }, 400);
+    }
+
+    if (orgData?.[0]?.id) {
+      organizationId = orgData[0].id;
     }
   }
+
+  const defaultStatus = 'Pending Setup';
 
   const userPayload: Record<string, unknown> = {
     id: authData.user.id,
     full_name,
     role,
-    status: status || 'Active',
+    status: status || defaultStatus,
     profile_image: profile_image || null,
     org_name: org_name || null,
+    abbreviation: targetAbbr || null,
     no_member: no_member || null,
     adviser_name: adviser_name || null,
     co_advisers: co_advisers || [],
     joined_date: joined_date || null,
     contact_no: contact_no != null && contact_no !== '' ? String(contact_no) : null,
     student_no: student_no || null,
+    created_at: nowIso,
   };
 
-  if (role === 'org-president') {
-    userPayload.organization_id = organizationId || authData.user.id;
+  if (isOrg && organizationId) {
+    userPayload.organization_id = organizationId;
   }
 
   const { data: profileData, error: profileError } = await supabase
@@ -839,10 +1381,15 @@ async function handlePostUsers(body: Record<string, unknown>) {
     .select();
 
   if (profileError) {
-    return jsonResponse({ error: 'Failed to create user', details: profileError.message }, 500);
+    console.error('Failed to create user profile:', profileError.message);
+    if (organizationId) {
+      await supabase.from('organizations').delete().eq('id', organizationId);
+    }
+    await supabase.auth.admin.deleteUser(authData.user.id);
+    return jsonResponse({ error: `Failed to create user profile: ${profileError.message}`, details: profileError.message }, 500);
   }
 
-  if (role === 'org-president') {
+  if (isOrg) {
     const { data: activeSy } = await supabase
       .from('school_years')
       .select('id')
@@ -865,6 +1412,8 @@ async function handlePostUsers(body: Record<string, unknown>) {
             adviser_name: adviser_name || null,
             co_advisers: co_advisers || [],
             no_member: no_member ? Number(no_member) : 0,
+            created_at: nowIso,
+            updated_at: nowIso,
           },
         ]);
       if (ayInsErr) {
@@ -873,7 +1422,19 @@ async function handlePostUsers(body: Record<string, unknown>) {
     }
   }
 
-  return jsonResponse({ success: true, user: profileData?.[0] });
+  // Generate & send Brevo Invitation to recipient (Org or Personnel)
+  const origin = (appOrigin as string) || (req ? (req.headers.get('origin') || req.headers.get('referer')) : null) || 'http://localhost:5173';
+  await createAndSendInvitationToken(
+    supabase,
+    authData.user.id,
+    email,
+    full_name,
+    org_name,
+    origin,
+    role
+  );
+
+  return jsonResponse({ success: true, user: profileData?.[0], isOrgInvitation: true });
 }
 
 async function handlePutUsers(id: string, body: Record<string, unknown>) {
@@ -884,6 +1445,7 @@ async function handlePutUsers(id: string, body: Record<string, unknown>) {
     status,
     profile_image,
     org_name,
+    abbreviation,
     no_member,
     adviser_name,
     co_advisers,
@@ -896,7 +1458,7 @@ async function handlePutUsers(id: string, body: Record<string, unknown>) {
 
   const { data: existingUser, error: existingError } = await supabase
     .from('users')
-    .select('profile_image, organization_id, role')
+    .select('profile_image, organization_id, role, abbreviation, org_name')
     .eq('id', id)
     .maybeSingle();
 
@@ -908,6 +1470,39 @@ async function handlePutUsers(id: string, body: Record<string, unknown>) {
     const { error: authError } = await supabase.auth.admin.updateUserById(id, { email });
     if (authError) {
       console.warn('Failed to update auth email:', authError.message);
+    }
+  }
+
+  let targetAbbr: string | null = null;
+  if (abbreviation !== undefined) {
+    const trimmedAbbr = String(abbreviation || '').trim();
+    if (trimmedAbbr) {
+      const { data: existingUserAbbr } = await supabase
+        .from('users')
+        .select('id, abbreviation')
+        .ilike('abbreviation', trimmedAbbr)
+        .neq('id', id)
+        .maybeSingle();
+
+      if (existingUserAbbr) {
+        return jsonResponse({ error: `An organization with the abbreviation "${trimmedAbbr}" already exists. Duplicate abbreviations are not allowed.` }, 400);
+      }
+
+      const currentOrgId = existingUser?.organization_id;
+      if (currentOrgId) {
+        const { data: existingOrgAbbr } = await supabase
+          .from('organizations')
+          .select('id, abbreviation')
+          .ilike('abbreviation', trimmedAbbr)
+          .neq('id', currentOrgId)
+          .maybeSingle();
+
+        if (existingOrgAbbr) {
+          return jsonResponse({ error: `An organization with the abbreviation "${trimmedAbbr}" already exists. Duplicate abbreviations are not allowed.` }, 400);
+        }
+      }
+
+      targetAbbr = trimmedAbbr;
     }
   }
 
@@ -923,6 +1518,10 @@ async function handlePutUsers(id: string, body: Record<string, unknown>) {
     contact_no: contact_no != null && contact_no !== '' ? String(contact_no) : null,
     student_no: student_no || null,
   };
+
+  if (abbreviation !== undefined) {
+    updatePayload.abbreviation = targetAbbr;
+  }
 
   if (profile_image !== undefined && profile_image !== null && profile_image !== '') {
     updatePayload.profile_image = profile_image;
@@ -940,10 +1539,17 @@ async function handlePutUsers(id: string, body: Record<string, unknown>) {
     return jsonResponse({ error: 'Failed to update user', details: error.message }, 500);
   }
 
-  // Synchronize changes to organization_academic_years table for current/selected AY
   const isOrg = (role || existingUser?.role) === 'org-president';
   const orgId = existingUser?.organization_id || id;
 
+  if (existingUser?.organization_id && abbreviation !== undefined) {
+    await supabase
+      .from('organizations')
+      .update({ abbreviation: targetAbbr })
+      .eq('id', existingUser.organization_id);
+  }
+
+  // Synchronize changes to organization_academic_years table for current/selected AY
   if (isOrg && orgId) {
     let targetSyId = school_year_id;
     if (!targetSyId) {
@@ -1011,15 +1617,67 @@ async function handleDeleteUsers(id: string, body: Record<string, unknown>) {
     return jsonResponse({ error: 'Incorrect admin password' }, 401);
   }
 
-  const { data: userRec } = await supabase.from('users').select('organization_id').eq('id', id).maybeSingle();
-  const orgId = userRec?.organization_id;
+  // 1. Fetch user profile first to get organization_id, org_name, full_name, role, abbreviation
+  const { data: userRec } = await supabase
+    .from('users')
+    .select('id, organization_id, org_name, full_name, role, abbreviation')
+    .eq('id', id)
+    .maybeSingle();
 
-  let orFilter = `user_id.eq.${id}`;
-  if (orgId) {
-    orFilter += `,organization_id.eq.${orgId}`;
+  const orgIdsToDelete = new Set<string>();
+  const namesToDelete = new Set<string>();
+  const abbrsToDelete = new Set<string>();
+
+  orgIdsToDelete.add(id);
+
+  if (userRec) {
+    if (userRec.organization_id) orgIdsToDelete.add(userRec.organization_id);
+    if (userRec.org_name && userRec.org_name.trim()) namesToDelete.add(userRec.org_name.trim());
+    if (userRec.full_name && userRec.full_name.trim()) namesToDelete.add(userRec.full_name.trim());
+    if (userRec.abbreviation && userRec.abbreviation.trim()) abbrsToDelete.add(userRec.abbreviation.trim());
   }
 
-  // Check if account has any document submissions
+  // Find all matching organizations table rows
+  const { data: allOrgs } = await supabase.from('organizations').select('id, name, abbreviation');
+  if (allOrgs && allOrgs.length > 0) {
+    for (const org of allOrgs) {
+      const oName = (org.name || '').trim().toLowerCase();
+      const oAbbr = (org.abbreviation || '').trim().toLowerCase();
+
+      let isMatch = orgIdsToDelete.has(org.id);
+      if (!isMatch) {
+        for (const n of namesToDelete) {
+          if (n.toLowerCase() === oName) {
+            isMatch = true;
+            break;
+          }
+        }
+      }
+      if (!isMatch) {
+        for (const a of abbrsToDelete) {
+          if (a.toLowerCase() === oAbbr) {
+            isMatch = true;
+            break;
+          }
+        }
+      }
+
+      if (isMatch) {
+        orgIdsToDelete.add(org.id);
+        if (org.name) namesToDelete.add(org.name.trim());
+        if (org.abbreviation) abbrsToDelete.add(org.abbreviation.trim());
+      }
+    }
+  }
+
+  const foundOrgIds = Array.from(orgIdsToDelete);
+
+  // 2. Check if account has any active historical submissions
+  let orFilter = `user_id.eq.${id}`;
+  foundOrgIds.forEach((oid) => {
+    orFilter += `,organization_id.eq.${oid}`;
+  });
+
   const { count: submissionCount } = await supabase
     .from('submissions')
     .select('id', { count: 'exact', head: true })
@@ -1032,17 +1690,54 @@ async function handleDeleteUsers(id: string, body: Record<string, unknown>) {
     );
   }
 
-  const { error: deleteAuthError } = await supabase.auth.admin.deleteUser(id);
-  if (deleteAuthError) {
-    return jsonResponse({ error: 'Failed to delete user', details: deleteAuthError.message }, 500);
+  // 3. Delete invitation tokens & invitations for this user
+  await supabase.from('invitation_tokens').delete().eq('user_id', id);
+  await supabase.from('account_invitations').delete().eq('user_id', id);
+
+  // 4. Delete organization academic years for all found org IDs first
+  for (const oid of foundOrgIds) {
+    const { error: ayErr } = await supabase.from('organization_academic_years').delete().eq('organization_id', oid);
+    if (ayErr) console.warn(`AY cleanup note for ${oid}:`, ayErr.message);
   }
 
+  // Clear organization_id reference on users table prior to deleting organizations table rows
+  await supabase.from('users').update({ organization_id: null }).eq('id', id);
+  for (const oid of foundOrgIds) {
+    await supabase.from('users').update({ organization_id: null }).eq('organization_id', oid);
+  }
+
+  // 5. Delete organizations for all found org IDs
+  for (const oid of foundOrgIds) {
+    const { error: orgErr } = await supabase.from('organizations').delete().eq('id', oid);
+    if (orgErr) console.warn(`Organization cleanup note for ${oid}:`, orgErr.message);
+  }
+
+  // 6. Name and Abbreviation cleanup on organizations table
+  for (const name of namesToDelete) {
+    const { error: orgNameErr } = await supabase.from('organizations').delete().ilike('name', name);
+    if (orgNameErr) console.warn(`Organization name cleanup note for ${name}:`, orgNameErr.message);
+  }
+  for (const abbr of abbrsToDelete) {
+    const { error: orgAbbrErr } = await supabase.from('organizations').delete().ilike('abbreviation', abbr);
+    if (orgAbbrErr) console.warn(`Organization abbr cleanup note for ${abbr}:`, orgAbbrErr.message);
+  }
+
+  // 7. Delete profile from users table
   const { error: deleteProfileError } = await supabase.from('users').delete().eq('id', id);
   if (deleteProfileError) {
-    return jsonResponse({ error: 'Failed to delete user', details: deleteProfileError.message }, 500);
+    console.warn(`User profile deletion note for ${id}:`, deleteProfileError.message);
   }
 
-  return jsonResponse({ success: true, message: 'User deleted successfully' });
+  // 8. Delete Auth User
+  const { error: deleteAuthError } = await supabase.auth.admin.deleteUser(id);
+  if (deleteAuthError) {
+    console.warn(`Auth user deletion note for ${id}:`, deleteAuthError.message);
+  }
+
+  // 9. Run final automated orphan cleanup
+  await cleanOrphanedOrganizations();
+
+  return jsonResponse({ success: true, message: 'User and organization deleted successfully' });
 }
 
 async function handleRenewOrganization(body: Record<string, unknown>) {
@@ -4229,7 +4924,12 @@ async function routeRequest(req: Request): Promise<Response> {
   if (method === 'POST' && path === '/organizations/renew') return handleRenewOrganization(body);
   if (method === 'GET' && path === '/organizations/by-ay') return handleGetOrganizationsByAy(url);
 
-  if (method === 'POST' && path === '/users') return handlePostUsers(body);
+  if (method === 'GET' && path === '/invitations/verify') return handleVerifyInvitation(url);
+  if (method === 'POST' && path === '/invitations/setup-password') return handleSetupPassword(body);
+  if (method === 'POST' && path === '/invitations/request-new') return handleRequestNewInvitation(body, req);
+  if (method === 'POST' && path === '/invitations/resend') return handleResendInvitation(body, req);
+
+  if (method === 'POST' && path === '/users') return handlePostUsers(body, req);
   if (method === 'POST' && path === '/auth/verify-password') return handleVerifyPassword(body);
   if (method === 'PUT' && /^\/users\/[^/]+$/.test(path)) {
     return handlePutUsers(path.split('/')[2], body);

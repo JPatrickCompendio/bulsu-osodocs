@@ -14,8 +14,6 @@ export default function OnboardingOverlay() {
   const [orgName, setOrgName] = useState(user?.org_name || '');
   const [abbreviation, setAbbreviation] = useState('');
   const [isAbbrevManual, setIsAbbrevManual] = useState(false);
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   
   // Image State
   const [isUploadingImage, setIsUploadingImage] = useState(false);
@@ -90,27 +88,21 @@ export default function OnboardingOverlay() {
       return;
     }
     
-    if (newPassword || confirmPassword) {
-      if (newPassword.length < 6) {
-        setError('New password must be at least 6 characters.');
-        return;
-      }
-      if (newPassword !== confirmPassword) {
-        setError('New passwords do not match.');
-        return;
-      }
-    } else {
-      setError('Please set a new password.');
-      return;
-    }
-
     setIsSaving(true);
     try {
-      // Update Password
-      const { error: authError } = await supabase.auth.updateUser({
-        password: newPassword
-      });
-      if (authError) throw authError;
+      // Pre-validate abbreviation uniqueness
+      const { data: existingUserAbbr } = await supabase
+        .from('users')
+        .select('id, abbreviation')
+        .ilike('abbreviation', trimmedAbbr)
+        .neq('id', user.id)
+        .maybeSingle();
+
+      if (existingUserAbbr) {
+        setError(`An organization with the abbreviation "${trimmedAbbr}" already exists. Duplicate abbreviations are not allowed.`);
+        setIsSaving(false);
+        return;
+      }
 
       // Update Database Record
       const payload = {
@@ -321,41 +313,6 @@ export default function OnboardingOverlay() {
                     />
                   </div>
                   <p className="text-[10px] text-gray-400 font-medium mt-1.5 ml-2">Used to generate your document tracking numbers.</p>
-                </div>
-
-                <div className="pt-5 border-t border-gray-100 grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div>
-                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 block ml-1">New Password <span className="text-red-500">*</span></label>
-                    <div className="relative group">
-                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400 group-focus-within:text-gray-900 transition-colors">
-                        <Lock size={18} />
-                      </div>
-                      <input 
-                        type="password" 
-                        required
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        className="w-full pl-11 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:border-gray-900 focus:bg-white focus:ring-4 focus:ring-gray-900/5 font-medium text-gray-800 outline-none transition-all shadow-sm"
-                        placeholder="••••••••"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 block ml-1">Confirm Password <span className="text-red-500">*</span></label>
-                    <div className="relative group">
-                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400 group-focus-within:text-gray-900 transition-colors">
-                        <Lock size={18} />
-                      </div>
-                      <input 
-                        type="password" 
-                        required
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        className="w-full pl-11 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:border-gray-900 focus:bg-white focus:ring-4 focus:ring-gray-900/5 font-medium text-gray-800 outline-none transition-all shadow-sm"
-                        placeholder="••••••••"
-                      />
-                    </div>
-                  </div>
                 </div>
               </div>
 

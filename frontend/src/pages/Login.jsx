@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Lock, Eye, EyeOff, User, Mail, X, Loader2 } from 'lucide-react';
+import { Lock, Eye, EyeOff, User, Mail, X, Loader2, ShieldAlert, AlertTriangle, Clock } from 'lucide-react';
 import { apiFetch } from '../config/api';
 import { supabase } from '../supabaseClient';
 import { useToast } from '../hooks/useToast';
+
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes lockout
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -15,6 +18,11 @@ const Login = () => {
   const [emailValidationError, setEmailValidationError] = useState('');
   const [passwordError, setPasswordError] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Brute Force Rate Limiting State
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [isLockedOut, setIsLockedOut] = useState(false);
+  const [lockRemainingSeconds, setLockRemainingSeconds] = useState(0);
   
   // Forgot Password modal state
   const [showForgotModal, setShowForgotModal] = useState(false);
@@ -25,8 +33,67 @@ const Login = () => {
   const navigate = useNavigate();
   const { showToast, ToastComponent } = useToast();
 
+  useEffect(() => {
+    const checkLockoutState = () => {
+      const lockUntil = Number(localStorage.getItem('osodocs_login_lock_until') || 0);
+      const storedAttempts = Number(localStorage.getItem('osodocs_login_attempts') || 0);
+
+      if (lockUntil && Date.now() < lockUntil) {
+        const remaining = Math.ceil((lockUntil - Date.now()) / 1000);
+        setIsLockedOut(true);
+        setLockRemainingSeconds(remaining);
+        setFailedAttempts(MAX_FAILED_ATTEMPTS);
+      } else {
+        if (lockUntil && Date.now() >= lockUntil) {
+          localStorage.removeItem('osodocs_login_lock_until');
+          localStorage.removeItem('osodocs_login_attempts');
+          setIsLockedOut(false);
+          setFailedAttempts(0);
+          setLockRemainingSeconds(0);
+        } else {
+          setFailedAttempts(storedAttempts);
+        }
+      }
+    };
+
+    checkLockoutState();
+  }, []);
+
+  useEffect(() => {
+    let timer;
+    if (isLockedOut && lockRemainingSeconds > 0) {
+      timer = setInterval(() => {
+        setLockRemainingSeconds((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            localStorage.removeItem('osodocs_login_lock_until');
+            localStorage.removeItem('osodocs_login_attempts');
+            setIsLockedOut(false);
+            setFailedAttempts(0);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [isLockedOut, lockRemainingSeconds]);
+
+  const formatLockTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isLockedOut) {
+      showToast(`Account locked due to multiple failed login attempts. Please wait ${formatLockTime(lockRemainingSeconds)} before trying again.`, 'error');
+      return;
+    }
+
     setError('');
     setEmailError(false);
     setEmailValidationError('');
@@ -36,9 +103,29 @@ const Login = () => {
     const result = await login(email, password);
 
     if (result.success) {
+      // Clear rate-limiting records on successful authentication
+      localStorage.removeItem('osodocs_login_attempts');
+      localStorage.removeItem('osodocs_login_lock_until');
+      setFailedAttempts(0);
+      setIsLockedOut(false);
       setLoading(false);
       navigate('/');
     } else {
+      const newAttempts = failedAttempts + 1;
+      setFailedAttempts(newAttempts);
+      localStorage.setItem('osodocs_login_attempts', String(newAttempts));
+
+      if (newAttempts >= MAX_FAILED_ATTEMPTS) {
+        const lockUntil = Date.now() + LOCKOUT_DURATION_MS;
+        localStorage.setItem('osodocs_login_lock_until', String(lockUntil));
+        setIsLockedOut(true);
+        setLockRemainingSeconds(Math.ceil(LOCKOUT_DURATION_MS / 1000));
+        showToast('Too many failed login attempts! Account temporarily locked for 15 minutes to protect against brute-force attacks.', 'error');
+      } else {
+        const remaining = MAX_FAILED_ATTEMPTS - newAttempts;
+        showToast(`Invalid login credentials. ${remaining} attempt(s) remaining before temporary lockout.`, 'error');
+      }
+
       // Check if email exists to determine which input field is wrong
       try {
         const response = await apiFetch(`/api/users/check-email?email=${encodeURIComponent(email)}`);
@@ -53,8 +140,8 @@ const Login = () => {
         setEmailError(true);
         setPasswordError(true);
       }
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleForgotClick = () => {
@@ -159,6 +246,16 @@ const Login = () => {
 
           <div className="flex-1 flex flex-col justify-center px-7 sm:px-9 py-7">
             <form onSubmit={handleSubmit} className="space-y-5 max-w-sm mx-auto w-full">
+              {failedAttempts > 0 && !isLockedOut && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-900 text-xs flex items-center justify-between animate-in fade-in duration-200">
+                  <div className="flex items-center gap-2 font-semibold">
+                    <AlertTriangle size={16} className="shrink-0 text-amber-600" />
+                    <span>Failed Login Attempts: {failedAttempts}/{MAX_FAILED_ATTEMPTS}</span>
+                  </div>
+                  <span className="font-bold text-amber-700">{MAX_FAILED_ATTEMPTS - failedAttempts} left</span>
+                </div>
+              )}
+
               <h2 className="text-base font-semibold text-gray-800 text-center pb-1">Welcome back!</h2>
 
               <div className="space-y-4">
@@ -182,13 +279,14 @@ const Login = () => {
                     <input
                       type="email"
                       required
+                      disabled={isLockedOut}
                       value={email}
                       onChange={(e) => {
                         setEmail(e.target.value);
                         setEmailError(false);
                         setEmailValidationError('');
                       }}
-                      className={`block w-full pl-10 pr-4 py-3 bg-white border rounded-xl shadow-sm focus:ring-2 transition-all outline-none text-gray-800 placeholder:text-gray-400 ${
+                      className={`block w-full pl-10 pr-4 py-3 bg-white border rounded-xl shadow-sm focus:ring-2 transition-all outline-none text-gray-800 placeholder:text-gray-400 disabled:bg-gray-100 disabled:cursor-not-allowed ${
                         emailError || emailValidationError
                           ? 'border-red-500 focus:ring-red-500/25 focus:border-red-500'
                           : 'border-gray-200 focus:ring-primary-green/25 focus:border-primary-green'
@@ -214,12 +312,13 @@ const Login = () => {
                     <input
                       type={showPassword ? 'text' : 'password'}
                       required
+                      disabled={isLockedOut}
                       value={password}
                       onChange={(e) => {
                         setPassword(e.target.value);
                         setPasswordError(false);
                       }}
-                      className={`block w-full pl-10 pr-11 py-3 bg-white border rounded-xl shadow-sm focus:ring-2 transition-all outline-none text-gray-800 placeholder:text-gray-400 ${
+                      className={`block w-full pl-10 pr-11 py-3 bg-white border rounded-xl shadow-sm focus:ring-2 transition-all outline-none text-gray-800 placeholder:text-gray-400 disabled:bg-gray-100 disabled:cursor-not-allowed ${
                         passwordError
                           ? 'border-red-500 focus:ring-red-500/25 focus:border-red-500'
                           : 'border-gray-200 focus:ring-primary-green/25 focus:border-primary-green'
@@ -228,8 +327,9 @@ const Login = () => {
                     />
                     <button
                       type="button"
+                      disabled={isLockedOut}
                       onClick={() => setShowPassword((prev) => !prev)}
-                      className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
+                      className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
                       aria-label={showPassword ? 'Hide password' : 'Show password'}
                     >
                       {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -250,10 +350,23 @@ const Login = () => {
 
               <button
                 type="submit"
-                disabled={loading}
-                className="w-full py-3.5 px-4 bg-[#063c2d] hover:bg-[#0a3a16] text-white font-bold rounded-xl shadow-md shadow-primary-green/20 hover:shadow-lg transition-all duration-200 uppercase tracking-wider text-sm disabled:opacity-70 active:scale-[0.99]"
+                disabled={loading || isLockedOut}
+                className={`w-full py-3.5 px-4 font-bold rounded-xl shadow-md transition-all duration-200 uppercase tracking-wider text-sm flex items-center justify-center gap-2 active:scale-[0.99] ${
+                  isLockedOut
+                    ? 'bg-red-600/90 text-white cursor-not-allowed shadow-red-600/20'
+                    : 'bg-[#063c2d] hover:bg-[#0a3a16] text-white shadow-primary-green/20 hover:shadow-lg disabled:opacity-50'
+                }`}
               >
-                {loading ? 'Authenticating...' : 'Login'}
+                {isLockedOut ? (
+                  <>
+                    <Clock size={16} className="animate-spin text-white shrink-0" />
+                    <span>Try again in: {formatLockTime(lockRemainingSeconds)}</span>
+                  </>
+                ) : loading ? (
+                  'Authenticating...'
+                ) : (
+                  'Login'
+                )}
               </button>
             </form>
           </div>

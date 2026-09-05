@@ -139,6 +139,22 @@ const MyProfile = () => {
           setIsSavingProfile(false);
           return;
         }
+
+        if (trimmedAbbr) {
+          const { data: existingUserAbbr } = await supabase
+            .from('users')
+            .select('id, abbreviation')
+            .ilike('abbreviation', trimmedAbbr)
+            .neq('id', user.id)
+            .maybeSingle();
+
+          if (existingUserAbbr) {
+            showToast(`An organization with the abbreviation "${trimmedAbbr}" already exists. Duplicate abbreviations are not allowed.`, 'error');
+            setIsSavingProfile(false);
+            return;
+          }
+        }
+
         payload.abbreviation = trimmedAbbr;
       }
 
