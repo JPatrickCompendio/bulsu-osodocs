@@ -16,7 +16,8 @@ export function CalendarTab({
   onNewEvent,
   onEditEvent,
   onDeleteEvent,
-  onToggleBlock
+  onToggleBlock,
+  canEdit = true
 }) {
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const selectedSy = schoolYears.find(sy => sy.id === selectedSyId) || schoolYears.find(sy => sy.is_active) || schoolYears[0];
@@ -68,12 +69,14 @@ export function CalendarTab({
               </p>
             </div>
 
-            <button
-              onClick={() => onNewEvent(selectedSy?.id)}
-              className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 shadow-sm transition shrink-0"
-            >
-              <Plus size={16} /> Add Calendar Event
-            </button>
+            {canEdit && (
+              <button
+                onClick={() => onNewEvent(selectedSy?.id)}
+                className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 shadow-sm transition shrink-0"
+              >
+                <Plus size={16} /> Add Calendar Event
+              </button>
+            )}
           </div>
 
           {/* Category Filter Pills */}
@@ -109,7 +112,7 @@ export function CalendarTab({
                   <th className="hidden sm:table-cell p-4 text-white">Category</th>
                   <th className="hidden md:table-cell p-4 text-white">Duration</th>
                   <th className="px-2 sm:p-4 text-center sm:text-left text-white">Blocks</th>
-                  <th className="px-3 sm:p-4 text-right text-white">Actions</th>
+                  {canEdit && <th className="px-3 sm:p-4 text-right text-white">Actions</th>}
                 </tr>
               </thead>
 
@@ -147,36 +150,50 @@ export function CalendarTab({
                       </td>
 
                       <td className="px-2 sm:p-4 text-center sm:text-left">
-                        <button
-                          onClick={() => onToggleBlock(ev)}
-                          className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase transition border ${
-                            isBlocked
-                              ? 'bg-red-100 text-red-800 border-red-200 hover:bg-red-200'
-                              : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                          }`}
-                        >
-                          {isBlocked ? 'Blocked' : 'Open'}
-                        </button>
+                        {canEdit ? (
+                          <button
+                            onClick={() => onToggleBlock(ev)}
+                            className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase transition border ${
+                              isBlocked
+                                ? 'bg-red-100 text-red-800 border-red-200 hover:bg-red-200'
+                                : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                            }`}
+                          >
+                            {isBlocked ? 'Blocked' : 'Open'}
+                          </button>
+                        ) : (
+                          <span
+                            className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase border ${
+                              isBlocked
+                                ? 'bg-red-100 text-red-800 border-red-200'
+                                : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            }`}
+                          >
+                            {isBlocked ? 'Blocked' : 'Open'}
+                          </span>
+                        )}
                       </td>
 
-                      <td className="px-3 sm:p-4 text-right">
-                        <div className="flex items-center justify-end gap-1 sm:gap-2">
-                          <button
-                            onClick={() => onEditEvent(ev)}
-                            className="p-1.5 text-gray-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition"
-                            title="Edit Event"
-                          >
-                            <Edit3 size={15} />
-                          </button>
-                          <button
-                            onClick={() => onDeleteEvent(ev.id)}
-                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
-                            title="Delete Event"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      </td>
+                      {canEdit && (
+                        <td className="px-3 sm:p-4 text-right">
+                          <div className="flex items-center justify-end gap-1 sm:gap-2">
+                            <button
+                              onClick={() => onEditEvent(ev)}
+                              className="p-1.5 text-gray-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition"
+                              title="Edit Event"
+                            >
+                              <Edit3 size={15} />
+                            </button>
+                            <button
+                              onClick={() => onDeleteEvent(ev.id)}
+                              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                              title="Delete Event"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}

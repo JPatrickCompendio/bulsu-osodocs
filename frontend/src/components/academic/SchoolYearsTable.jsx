@@ -12,7 +12,8 @@ export function SchoolYearsTable({
   onEdit, 
   onClose, 
   onArchive, 
-  onDelete 
+  onDelete,
+  canEdit = true
 }) {
   const [filter, setFilter] = useState('ALL');
   const [openMenuId, setOpenMenuId] = useState(null);
@@ -44,12 +45,14 @@ export function SchoolYearsTable({
           ))}
         </div>
 
-        <button
-          onClick={onNewSchoolYear}
-          className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 shadow-sm transition shrink-0"
-        >
-          <Plus size={16} /> Add School Year
-        </button>
+        {canEdit && (
+          <button
+            onClick={onNewSchoolYear}
+            className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 shadow-sm transition shrink-0"
+          >
+            <Plus size={16} /> Add School Year
+          </button>
+        )}
       </div>
 
       {/* Table Card */}
@@ -62,7 +65,7 @@ export function SchoolYearsTable({
                 <th className="hidden sm:table-cell p-4 text-white">Duration</th>
                 <th className="px-3 sm:p-4 text-white">Status</th>
                 <th className="hidden md:table-cell p-4 text-white">Terms Configured</th>
-                <th className="px-3 sm:p-4 text-right text-white">Actions</th>
+                {canEdit && <th className="px-3 sm:p-4 text-right text-white">Actions</th>}
               </tr>
             </thead>
 
@@ -101,48 +104,50 @@ export function SchoolYearsTable({
                       {sySemesters.length} {sySemesters.length === 1 ? 'Semester' : 'Semesters'}
                     </td>
 
-                    <td className="px-3 sm:p-4 text-right">
-                      <div className="flex items-center justify-end gap-1 sm:gap-2">
-                        {!sy.is_active && status !== 'Archived' && (
+                    {canEdit && (
+                      <td className="px-3 sm:p-4 text-right">
+                        <div className="flex items-center justify-end gap-1 sm:gap-2">
+                          {!sy.is_active && status !== 'Archived' && (
+                            <button
+                              onClick={() => onActivate(sy.id)}
+                              className="px-2 sm:px-3 py-1 sm:py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg text-[10px] sm:text-xs font-bold transition flex items-center gap-1 shrink-0"
+                            >
+                              <CheckCircle2 size={13} />
+                              <span className="hidden sm:inline">Set Active</span>
+                            </button>
+                          )}
+
                           <button
-                            onClick={() => onActivate(sy.id)}
-                            className="px-2 sm:px-3 py-1 sm:py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg text-[10px] sm:text-xs font-bold transition flex items-center gap-1 shrink-0"
+                            onClick={() => onEdit(sy)}
+                            className="p-1 sm:p-1.5 text-gray-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition"
+                            title="Edit School Year"
                           >
-                            <CheckCircle2 size={13} />
-                            <span className="hidden sm:inline">Set Active</span>
+                            <Edit3 size={15} />
                           </button>
-                        )}
 
-                        <button
-                          onClick={() => onEdit(sy)}
-                          className="p-1 sm:p-1.5 text-gray-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition"
-                          title="Edit School Year"
-                        >
-                          <Edit3 size={15} />
-                        </button>
+                          <button
+                            onClick={() => onArchive(sy)}
+                            disabled={sy.is_active}
+                            title={sy.is_active ? "Active school years cannot be archived" : "Archive School Year"}
+                            className={`p-1 sm:p-1.5 rounded-lg transition ${
+                              sy.is_active 
+                                ? 'text-gray-300 cursor-not-allowed' 
+                                : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                            }`}
+                          >
+                            <Archive size={15} />
+                          </button>
 
-                        <button
-                          onClick={() => onArchive(sy)}
-                          disabled={sy.is_active}
-                          title={sy.is_active ? "Active school years cannot be archived" : "Archive School Year"}
-                          className={`p-1 sm:p-1.5 rounded-lg transition ${
-                            sy.is_active 
-                              ? 'text-gray-300 cursor-not-allowed' 
-                              : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
-                          }`}
-                        >
-                          <Archive size={15} />
-                        </button>
-
-                        <button
-                          onClick={() => onDelete(sy.id)}
-                          className="p-1 sm:p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
-                          title="Delete School Year"
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                    </td>
+                          <button
+                            onClick={() => onDelete(sy.id)}
+                            className="p-1 sm:p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                            title="Delete School Year"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 );
               })}

@@ -1,8 +1,8 @@
 import React from 'react';
-import { Calendar, CheckCircle2, Clock, Lock, Edit3, ShieldAlert, Sparkles } from 'lucide-react';
+import { Calendar, CheckCircle2, Clock, Lock, Edit3, ShieldAlert, Sparkles, Eye } from 'lucide-react';
 import { formatDateRange } from '../../utils/academicLifecycle';
 
-export function ActiveYearPanel({ activeSy, activeSemester, blockedDaysCount, onEdit, onCloseSubmissions }) {
+export function ActiveYearPanel({ activeSy, activeSemester, blockedDaysCount, onEdit, onCloseSubmissions, canEdit = true }) {
   if (!activeSy) {
     return (
       <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-amber-800 flex items-center justify-between mb-8 shadow-sm">
@@ -58,21 +58,27 @@ export function ActiveYearPanel({ activeSy, activeSemester, blockedDaysCount, on
         </div>
 
         {/* Quick Action buttons */}
-        <div className="flex items-center gap-3 shrink-0">
-          <button
-            onClick={() => onEdit(activeSy)}
-            className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl transition flex items-center gap-2 border border-white/20 backdrop-blur-md"
-          >
-            <Edit3 size={16} /> Edit Year Details
-          </button>
-          
-          <button
-            onClick={() => onCloseSubmissions(activeSy)}
-            className="px-4 py-2.5 bg-amber-400 text-gray-900 hover:bg-amber-300 font-extrabold text-xs rounded-xl shadow-lg transition flex items-center gap-2"
-          >
-            <Lock size={16} /> Close Submissions
-          </button>
-        </div>
+        {canEdit ? (
+          <div className="flex items-center gap-3 shrink-0">
+            <button
+              onClick={() => onEdit(activeSy)}
+              className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl transition flex items-center gap-2 border border-white/20 backdrop-blur-md"
+            >
+              <Edit3 size={16} /> Edit Year Details
+            </button>
+            
+            <button
+              onClick={() => onCloseSubmissions(activeSy)}
+              className="px-4 py-2.5 bg-amber-400 text-gray-900 hover:bg-amber-300 font-extrabold text-xs rounded-xl shadow-lg transition flex items-center gap-2"
+            >
+              <Lock size={16} /> Close Submissions
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 shrink-0 bg-white/10 px-3.5 py-2 rounded-xl border border-white/20 text-xs font-bold text-emerald-100 backdrop-blur-md">
+            <Eye size={14} className="text-emerald-300" /> Read-Only View
+          </div>
+        )}
       </div>
     </div>
   );

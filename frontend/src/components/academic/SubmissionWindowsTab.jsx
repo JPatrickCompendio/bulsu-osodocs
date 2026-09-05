@@ -11,7 +11,8 @@ export function SubmissionWindowsTab({
   onSelectSy,
   onNewWindow,
   onEditWindow,
-  onDeleteWindow
+  onDeleteWindow,
+  canEdit = true
 }) {
   const selectedSy = schoolYears.find(sy => sy.id === selectedSyId) || schoolYears.find(sy => sy.is_active) || schoolYears[0];
   const windowEvents = events.filter(ev => ev.school_year_id === selectedSy?.id && ev.event_type === 'submission_window');
@@ -37,12 +38,14 @@ export function SubmissionWindowsTab({
           </p>
         </div>
 
-        <button
-          onClick={() => onNewWindow(selectedSy?.id)}
-          className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 shadow-sm transition"
-        >
-          <Plus size={16} /> Add Submission Window
-        </button>
+        {canEdit && (
+          <button
+            onClick={() => onNewWindow(selectedSy?.id)}
+            className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 shadow-sm transition"
+          >
+            <Plus size={16} /> Add Submission Window
+          </button>
+        )}
       </div>
 
       {/* Table of Submission Windows */}
@@ -54,7 +57,7 @@ export function SubmissionWindowsTab({
               <th className="hidden sm:table-cell p-4 text-white">Target Audience</th>
               <th className="hidden md:table-cell p-4 text-white">Open Duration</th>
               <th className="px-3 sm:p-4 text-white">Status</th>
-              <th className="px-3 sm:p-4 text-right text-white">Actions</th>
+              {canEdit && <th className="px-3 sm:p-4 text-right text-white">Actions</th>}
             </tr>
           </thead>
 
@@ -115,24 +118,26 @@ export function SubmissionWindowsTab({
                     )}
                   </td>
 
-                  <td className="px-3 sm:p-4 text-right">
-                    <div className="flex items-center justify-end gap-1 sm:gap-2">
-                      <button
-                        onClick={() => onEditWindow(win)}
-                        className="p-1 sm:p-1.5 text-gray-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition"
-                        title="Edit Window"
-                      >
-                        <Edit3 size={15} />
-                      </button>
-                      <button
-                        onClick={() => onDeleteWindow(win.id)}
-                        className="p-1 sm:p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
-                        title="Delete Window"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </td>
+                  {canEdit && (
+                    <td className="px-3 sm:p-4 text-right">
+                      <div className="flex items-center justify-end gap-1 sm:gap-2">
+                        <button
+                          onClick={() => onEditWindow(win)}
+                          className="p-1 sm:p-1.5 text-gray-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition"
+                          title="Edit Window"
+                        >
+                          <Edit3 size={15} />
+                        </button>
+                        <button
+                          onClick={() => onDeleteWindow(win.id)}
+                          className="p-1 sm:p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                          title="Delete Window"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               );
             })}

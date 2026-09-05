@@ -11,7 +11,8 @@ export function SemestersTab({
   onNewSemester,
   onActivateSemester,
   onEditSemester,
-  onArchiveSemester
+  onArchiveSemester,
+  canEdit = true
 }) {
   const selectedSy = schoolYears.find(sy => sy.id === selectedSyId) || schoolYears.find(sy => sy.is_active) || schoolYears[0];
   const sySemesters = semesters.filter(sem => sem.school_year_id === selectedSy?.id);
@@ -37,12 +38,14 @@ export function SemestersTab({
           </p>
         </div>
 
-        <button
-          onClick={() => onNewSemester(selectedSy?.id)}
-          className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 shadow-sm transition"
-        >
-          <Plus size={16} /> New Semester
-        </button>
+        {canEdit && (
+          <button
+            onClick={() => onNewSemester(selectedSy?.id)}
+            className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 shadow-sm transition"
+          >
+            <Plus size={16} /> New Semester
+          </button>
+        )}
       </div>
 
       {/* Semesters Cards / Table */}
@@ -53,7 +56,7 @@ export function SemestersTab({
               <th className="px-3 sm:p-4 text-white">Semester Name</th>
               <th className="hidden sm:table-cell p-4 text-white">Duration</th>
               <th className="px-3 sm:p-4 text-white">Status</th>
-              <th className="px-3 sm:p-4 text-right text-white">Actions</th>
+              {canEdit && <th className="px-3 sm:p-4 text-right text-white">Actions</th>}
             </tr>
           </thead>
 
@@ -97,42 +100,44 @@ export function SemestersTab({
                     )}
                   </td>
 
-                  <td className="px-3 sm:p-4 text-right">
-                    <div className="flex items-center justify-end gap-1 sm:gap-2">
-                      {!sem.is_active && !isArchived && (
-                        <button
-                          onClick={() => onActivateSemester(sem.id)}
-                          className="px-2 sm:px-3 py-1 sm:py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-[10px] sm:text-xs font-bold transition flex items-center gap-1 shrink-0"
-                        >
-                          <span className="hidden sm:inline">Set as Current</span>
-                          <span className="sm:hidden">Current</span>
-                        </button>
-                      )}
+                  {canEdit && (
+                    <td className="px-3 sm:p-4 text-right">
+                      <div className="flex items-center justify-end gap-1 sm:gap-2">
+                        {!sem.is_active && !isArchived && (
+                          <button
+                            onClick={() => onActivateSemester(sem.id)}
+                            className="px-2 sm:px-3 py-1 sm:py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-[10px] sm:text-xs font-bold transition flex items-center gap-1 shrink-0"
+                          >
+                            <span className="hidden sm:inline">Set as Current</span>
+                            <span className="sm:hidden">Current</span>
+                          </button>
+                        )}
 
-                      {!isArchived && (
-                        <button
-                          onClick={() => onEditSemester(sem)}
-                          className="p-1 sm:p-1.5 text-gray-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition"
-                          title="Edit Semester"
-                        >
-                          <Edit3 size={15} />
-                        </button>
-                      )}
+                        {!isArchived && (
+                          <button
+                            onClick={() => onEditSemester(sem)}
+                            className="p-1 sm:p-1.5 text-gray-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition"
+                            title="Edit Semester"
+                          >
+                            <Edit3 size={15} />
+                          </button>
+                        )}
 
-                      <button
-                        onClick={() => onArchiveSemester(sem.id)}
-                        disabled={sem.is_active || isArchived}
-                        title={sem.is_active ? "Active semesters cannot be archived" : isArchived ? "Already archived" : "Archive Semester"}
-                        className={`p-1 sm:p-1.5 rounded-lg transition ${
-                          sem.is_active || isArchived
-                            ? 'text-gray-300 cursor-not-allowed'
-                            : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
-                        }`}
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </td>
+                        <button
+                          onClick={() => onArchiveSemester(sem.id)}
+                          disabled={sem.is_active || isArchived}
+                          title={sem.is_active ? "Active semesters cannot be archived" : isArchived ? "Already archived" : "Archive Semester"}
+                          className={`p-1 sm:p-1.5 rounded-lg transition ${
+                            sem.is_active || isArchived
+                              ? 'text-gray-300 cursor-not-allowed'
+                              : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                          }`}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               );
             })}

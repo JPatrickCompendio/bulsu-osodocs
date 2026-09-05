@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams, useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../config/api';
 import { 
-  Calendar, BookOpen, Clock, CalendarDays, FileText, Check, AlertCircle, CheckCircle2 
+  Calendar, BookOpen, Clock, CalendarDays, FileText, Check, AlertCircle, CheckCircle2, Info 
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 
@@ -25,9 +26,20 @@ import { CloseConfirmModal } from '../components/academic/CloseConfirmModal';
 
 const AcademicSettings = () => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState('school-years');
+  const [searchParams] = useSearchParams();
+  const location = useLocation();
+
+  const canEdit = user?.role === 'admin';
+  const tabFromQuery = searchParams.get('tab') || location.state?.tab;
+  const [activeTab, setActiveTab] = useState(tabFromQuery || 'school-years');
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
+
+  useEffect(() => {
+    if (tabFromQuery) {
+      setActiveTab(tabFromQuery);
+    }
+  }, [tabFromQuery]);
 
   // Core Data State
   const [schoolYears, setSchoolYears] = useState([]);
@@ -454,6 +466,13 @@ const AcademicSettings = () => {
         />
       </div>
 
+      {!canEdit && (
+        <div className="mb-6 bg-blue-50 border border-blue-200 rounded-2xl p-4 text-blue-800 flex items-center gap-3 text-xs font-bold shadow-2xs">
+          <Info size={18} className="text-blue-600 shrink-0" />
+          <span>You are viewing Academic Settings in <strong>Read-Only Mode</strong>. Only System Administrators can configure school years, semesters, calendar events, and submission windows.</span>
+        </div>
+      )}
+
       {/* 4-Step Navigation Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto pb-2 sm:pb-0 mb-6 bg-white p-2 rounded-2xl border border-gray-100 shadow-2xs scrollbar-none">
         <button
@@ -525,6 +544,7 @@ const AcademicSettings = () => {
                 activeSy={activeSy}
                 activeSemester={activeSemester}
                 blockedDaysCount={blockedDaysCount}
+                canEdit={canEdit}
                 onEdit={(sy) => {
                   setSyForm(sy);
                   setShowSyModal(true);
@@ -537,6 +557,7 @@ const AcademicSettings = () => {
               <SchoolYearsTable
                 schoolYears={schoolYears}
                 semesters={semesters}
+                canEdit={canEdit}
                 onNewSchoolYear={() => {
                   setSyForm({ id: null, name: '', start_date: '', end_date: '', is_active: false });
                   setShowSyModal(true);
@@ -560,6 +581,7 @@ const AcademicSettings = () => {
               semesters={semesters}
               selectedSyId={selectedSyId}
               onSelectSy={setSelectedSyId}
+              canEdit={canEdit}
               onNewSemester={(targetSyId) => {
                 setSemForm({ id: null, school_year_id: targetSyId || selectedSyId, name: '', start_date: '', end_date: '', is_active: false });
                 setShowSemModal(true);
@@ -581,6 +603,7 @@ const AcademicSettings = () => {
               approvedActivities={approvedActivities}
               selectedSyId={selectedSyId}
               onSelectSy={setSelectedSyId}
+              canEdit={canEdit}
               onNewEvent={(targetSyId) => openEventModal(null, 'school_event', targetSyId)}
               onEditEvent={(ev) => openEventModal(ev)}
               onDeleteEvent={deleteEvent}
@@ -596,6 +619,7 @@ const AcademicSettings = () => {
               documentTypes={documentTypes}
               selectedSyId={selectedSyId}
               onSelectSy={setSelectedSyId}
+              canEdit={canEdit}
               onNewWindow={(targetSyId) => openEventModal(null, 'submission_window', targetSyId)}
               onEditWindow={(win) => openEventModal(win)}
               onDeleteWindow={deleteEvent}
