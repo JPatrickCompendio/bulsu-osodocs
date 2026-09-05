@@ -17,9 +17,9 @@ const getStatusBorderClass = (statusKey) => {
     case 'UPCOMING':
       return 'border-l-amber-500';
     case 'COMPLETED':
-      return 'border-l-purple-500';
+      return 'border-l-slate-400';
     default:
-      return 'border-l-purple-500';
+      return 'border-l-emerald-600';
   }
 };
 
@@ -157,11 +157,11 @@ export function ApprovedActivitiesTab({
           onClick={() => setStatusFilter('ALL')}
           className={`p-5 rounded-2xl bg-white border text-left transition-all shadow-2xs ${
             statusFilter === 'ALL'
-              ? 'border-2 border-purple-600 shadow-md ring-2 ring-purple-600/10'
+              ? 'border-2 border-emerald-600 shadow-md ring-2 ring-emerald-600/10'
               : 'border-gray-200 hover:border-gray-300'
           }`}
         >
-          <div className="text-xs font-black uppercase tracking-wider text-purple-700">ALL ACTIVITIES</div>
+          <div className="text-xs font-black uppercase tracking-wider text-emerald-800">ALL ACTIVITIES</div>
           <div className="text-2xl font-black text-gray-900 mt-1">{approvedActivities.length}</div>
           <div className="text-xs font-bold text-gray-400 mt-0.5">schedules in scope</div>
         </button>
@@ -231,14 +231,14 @@ export function ApprovedActivitiesTab({
                 placeholder="Search title, organization, venue, or trac"
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-medium outline-none focus:border-purple-600 transition shadow-2xs"
+                className="w-full pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-medium outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 transition shadow-2xs"
               />
             </div>
 
             <select
               value={orgFilter}
               onChange={e => setOrgFilter(e.target.value)}
-              className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-700 outline-none focus:border-purple-600 transition shadow-2xs"
+              className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-700 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 transition shadow-2xs"
             >
               <option value="ALL">All organizations ({uniqueOrgs.length})</option>
               {uniqueOrgs.map(org => (
@@ -307,11 +307,11 @@ export function ApprovedActivitiesTab({
                     </td>
                   </tr>
                 ) : filteredActivities.map(act => (
-                  <tr key={act.id} className="hover:bg-purple-50/20 transition">
+                  <tr key={act.id} className="hover:bg-emerald-50/30 transition">
                     <td className="px-4 py-4 font-extrabold text-gray-900">
                       <div className="space-y-0.5">
                         <div className="text-sm font-extrabold text-gray-900">{act.title}</div>
-                        <div className="text-xs font-bold text-purple-700 flex items-center gap-1">
+                        <div className="text-xs font-bold text-emerald-800 flex items-center gap-1">
                           <Building2 size={12} className="shrink-0" />
                           <span>{act.org}</span>
                         </div>
@@ -332,7 +332,7 @@ export function ApprovedActivitiesTab({
                     <td className="px-4 py-4 text-xs font-semibold text-gray-700">
                       <div className="space-y-0.5">
                         <div className="flex items-center gap-1.5 font-bold text-gray-800">
-                          <CalendarIcon size={13} className="text-purple-600 shrink-0" />
+                          <CalendarIcon size={13} className="text-emerald-700 shrink-0" />
                           <span>
                             {act.date ? act.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unspecified'}
                             {act.endDate ? ` – ${act.endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}
@@ -351,9 +351,9 @@ export function ApprovedActivitiesTab({
                       </div>
                     </td>
 
-                    <td className="px-4 py-4 text-xs font-extrabold text-purple-800">
+                    <td className="px-4 py-4 text-xs font-extrabold text-emerald-900">
                       {act.trackingNumber ? (
-                        <span className="bg-purple-100 text-purple-800 px-2 py-0.5 rounded-md border border-purple-200">
+                        <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md border border-emerald-200">
                           #{act.trackingNumber}
                         </span>
                       ) : (
@@ -465,7 +465,7 @@ export function ApprovedActivitiesTab({
                           <div className="flex items-center justify-between mb-1">
                             <span className={`text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full ${
                               isTodayDay 
-                                ? 'bg-purple-700 text-white font-black' 
+                                ? 'bg-[#073c2d] text-white font-black' 
                                 : !isCurrentMonth 
                                   ? 'text-gray-300' 
                                   : 'text-gray-700'
@@ -508,7 +508,7 @@ export function ApprovedActivitiesTab({
 
                         {/* Overflow indicator */}
                         {dayActs.length > 2 && (
-                          <div className="text-[9px] font-extrabold text-purple-600 hover:underline pt-0.5">
+                          <div className="text-[9px] font-extrabold text-emerald-700 hover:underline pt-0.5">
                             +{dayActs.length - 2} more
                           </div>
                         )}
@@ -548,7 +548,7 @@ export function ApprovedActivitiesTab({
                         className={`bg-white p-3.5 rounded-xl border border-gray-200 shadow-2xs hover:shadow-xs transition relative overflow-hidden cursor-pointer border-l-4 ${borderClass}`}
                       >
                         <div className="flex items-center justify-between gap-2 mb-1">
-                          <span className="text-[11px] font-black uppercase tracking-wide text-purple-700">
+                          <span className="text-[11px] font-black uppercase tracking-wide text-emerald-800">
                             {act.orgAbbr || act.org}
                           </span>
                           <div className="flex items-center gap-1">
@@ -560,7 +560,7 @@ export function ApprovedActivitiesTab({
                           </div>
                         </div>
 
-                        <h5 className="font-extrabold text-xs text-gray-900 leading-snug line-clamp-2 hover:text-purple-700 transition">
+                        <h5 className="font-extrabold text-xs text-gray-900 leading-snug line-clamp-2 hover:text-emerald-700 transition">
                           {act.title}
                         </h5>
 
@@ -595,7 +595,7 @@ export function ApprovedActivitiesTab({
         {selectedDayActivities && (
           <div className="fixed inset-0 bg-black/40 backdrop-blur-xs z-[10000] flex items-center justify-center p-4" onClick={() => setSelectedDayActivities(null)}>
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-100 animate-in zoom-in-95 duration-150" onClick={e => e.stopPropagation()}>
-              <div className="p-5 bg-gradient-to-r from-purple-700 to-indigo-700 text-white flex items-center justify-between">
+              <div className="p-5 bg-gradient-to-r from-[#073c2d] to-emerald-800 text-white flex items-center justify-between">
                 <div className="flex items-center gap-2 font-extrabold text-sm">
                   <Info size={18} />
                   <span>Activities on {format(selectedDayActivities.day, 'MMMM d, yyyy')}</span>
@@ -620,7 +620,7 @@ export function ApprovedActivitiesTab({
                         </span>
                       </div>
                       
-                      <div className="text-xs font-bold text-purple-700 flex items-center gap-1">
+                      <div className="text-xs font-bold text-emerald-800 flex items-center gap-1">
                         <Building2 size={13} className="shrink-0" />
                         <span>{act.org} ({act.orgAbbr})</span>
                       </div>
@@ -638,7 +638,7 @@ export function ApprovedActivitiesTab({
                       )}
 
                       {act.trackingNumber && (
-                        <div className="text-xs font-bold text-purple-800 pt-1 border-t border-gray-100">
+                        <div className="text-xs font-bold text-emerald-900 pt-1 border-t border-gray-100">
                           Tracking Number: #{act.trackingNumber}
                         </div>
                       )}

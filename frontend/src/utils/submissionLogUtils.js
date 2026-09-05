@@ -670,15 +670,38 @@ export const getTimelineActorDisplay = (log) => {
   else if (rawRole === 'admin') roleLabel = 'Admin';
   else if (rawRole === 'chairman') roleLabel = 'Chairman';
   else if (rawRole === 'vice-chairman') roleLabel = 'Vice Chairman';
-  else if (rawRole === 'org-president') roleLabel = log?.operator_position ? `Org Delegate (${log.operator_position})` : 'Org President';
+  else if (rawRole === 'org-president') roleLabel = 'Org President';
   else if (rawRole === 'dean') roleLabel = 'Dean';
 
-  let actorName = log?.performed_by_name;
-  if (!actorName && log?.description && typeof log.description === 'string') {
-    const match = log.description.match(/\[Performed by ([^\]]+)\]/i);
-    if (match && match[1]) {
-      actorName = match[1];
+  let actorName = log?.performed_by_name || null;
+  let actorPosition = log?.operator_position || null;
+
+  const descToSearch = `${log?.description || ''} ${log?.comment || ''}`;
+  const match = descToSearch.match(/\[Performed by ([^(\]]+)(?:\s*\(([^)]+)\))?\]/i);
+  if (match) {
+    if (!actorName && match[1]) {
+      actorName = match[1].trim();
     }
+    if (!actorPosition && match[2]) {
+      actorPosition = match[2].trim();
+    }
+  }
+
+  // Handle case where actorName already contained "(position)"
+  if (actorName && /\([^)]+\)$/.test(actorName)) {
+    const parenMatch = actorName.match(/^(.*?)\s*\(([^)]+)\)$/);
+    if (parenMatch) {
+      actorName = parenMatch[1].trim();
+      if (!actorPosition) {
+        actorPosition = parenMatch[2].trim();
+      }
+    }
+  }
+
+  if (actorPosition) {
+    roleLabel = actorPosition.replace(/\b\w/g, (c) => c.toUpperCase());
+  } else if (rawRole === 'org-president' && log?.operator_position) {
+    roleLabel = String(log.operator_position).replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
   return {

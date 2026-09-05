@@ -3785,22 +3785,9 @@ async function handleAdminDashboard() {
     .select('id, document_type_id, status, document_types:document_type_id(name)');
 
   const startOfMonthDate = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-  let revisionsThisMonth = 0;
-  if (recentVersions) {
-    revisionsThisMonth += recentVersions.filter((v) => new Date(v.created_at) >= startOfMonthDate).length;
-  }
-  if (validReturnLogs) {
-    revisionsThisMonth += validReturnLogs.filter((l) => new Date(l.created_at) >= startOfMonthDate).length;
-  }
-  if (revisionsThisMonth === 0) {
-    const versionsCount = recentVersions ? recentVersions.length : 0;
-    const returnsCount = validReturnLogs ? validReturnLogs.length : 0;
-    revisionsThisMonth = Math.max(versionsCount, returnsCount);
-  }
-  if (revisionsThisMonth === 0 && allSubmissionsForStats) {
-    const returnedCount = allSubmissionsForStats.filter((s: any) => s.status === 'returned').length;
-    if (returnedCount > 0) revisionsThisMonth = returnedCount;
-  }
+  const revisionsThisMonth = recentVersions
+    ? recentVersions.filter((v) => new Date(v.created_at) >= startOfMonthDate).length
+    : 0;
 
   const avgRevisionsPerType: Record<string, string | number> = {
     'Activity Proposal': 0,
@@ -3829,28 +3816,6 @@ async function handleAdminDashboard() {
         docTypeStats[typeName].totalRevisions++;
       });
     }
-
-    if (validReturnLogs) {
-      validReturnLogs.forEach((l: any) => {
-        const sub: any = allSubmissionsForStats.find((s: any) => s.id === l.submission_id);
-        if (sub) {
-          const typeName = sub.document_types?.name || 'Activity Proposal';
-          if (!docTypeStats[typeName]) {
-            docTypeStats[typeName] = { totalRevisions: 0, docCount: 0 };
-          }
-          docTypeStats[typeName].totalRevisions++;
-        }
-      });
-    }
-
-    allSubmissionsForStats.forEach((sub: any) => {
-      if (sub.status === 'returned') {
-        const typeName = sub.document_types?.name || 'Activity Proposal';
-        if (docTypeStats[typeName] && docTypeStats[typeName].totalRevisions === 0) {
-          docTypeStats[typeName].totalRevisions = 1;
-        }
-      }
-    });
 
     for (const [type, stats] of Object.entries(docTypeStats)) {
       avgRevisionsPerType[type] = stats.docCount > 0 ? parseFloat((stats.totalRevisions / stats.docCount).toFixed(2)) : 0;
@@ -4142,22 +4107,9 @@ async function handleOrgDashboard(url: URL) {
     .select('id, document_type_id, status, document_types:document_type_id(name)');
 
   const startOfMonthDate = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-  let revisionsThisMonth = 0;
-  if (recentVersions) {
-    revisionsThisMonth += recentVersions.filter((v) => new Date(v.created_at) >= startOfMonthDate).length;
-  }
-  if (validReturnLogs) {
-    revisionsThisMonth += validReturnLogs.filter((l) => new Date(l.created_at) >= startOfMonthDate).length;
-  }
-  if (revisionsThisMonth === 0) {
-    const versionsCount = recentVersions ? recentVersions.length : 0;
-    const returnsCount = validReturnLogs ? validReturnLogs.length : 0;
-    revisionsThisMonth = Math.max(versionsCount, returnsCount);
-  }
-  if (revisionsThisMonth === 0 && allSubmissions) {
-    const returnedCount = allSubmissions.filter((s: any) => s.status === 'returned').length;
-    if (returnedCount > 0) revisionsThisMonth = returnedCount;
-  }
+  const revisionsThisMonth = recentVersions
+    ? recentVersions.filter((v) => new Date(v.created_at) >= startOfMonthDate).length
+    : 0;
 
   const avgRevisionsPerType: Record<string, string | number> = {
     'Activity Proposal': 0,
@@ -4186,28 +4138,6 @@ async function handleOrgDashboard(url: URL) {
         docTypeStats[typeName].totalRevisions++;
       });
     }
-
-    if (validReturnLogs) {
-      validReturnLogs.forEach((l: any) => {
-        const sub: any = allSubmissions.find((s: any) => s.id === l.submission_id);
-        if (sub) {
-          const typeName = sub.document_types?.name || 'Activity Proposal';
-          if (!docTypeStats[typeName]) {
-            docTypeStats[typeName] = { totalRevisions: 0, docCount: 0 };
-          }
-          docTypeStats[typeName].totalRevisions++;
-        }
-      });
-    }
-
-    allSubmissions.forEach((sub: any) => {
-      if (sub.status === 'returned') {
-        const typeName = sub.document_types?.name || 'Activity Proposal';
-        if (docTypeStats[typeName] && docTypeStats[typeName].totalRevisions === 0) {
-          docTypeStats[typeName].totalRevisions = 1;
-        }
-      }
-    });
 
     for (const [type, stats] of Object.entries(docTypeStats)) {
       avgRevisionsPerType[type] = stats.docCount > 0 ? parseFloat((stats.totalRevisions / stats.docCount).toFixed(2)) : 0;
@@ -4721,18 +4651,25 @@ export function generateDescriptiveLogMessage(
   nextStage: WorkflowStageKey,
   action: string,
   userRole: string,
-  userComment?: string | null
+  userComment?: string | null,
+  operatorPosition?: string | null
 ): string {
   if (userComment && userComment.trim().length > 0) {
-    return userComment.trim();
+    let cleanComment = userComment.trim();
+    if (operatorPosition && cleanComment.includes('Organization President')) {
+      cleanComment = cleanComment.replace(/Organization President/g, operatorPosition);
+    }
+    return cleanComment;
   }
 
-  const roleTitle = userRole === 'org-president' ? 'Organization President'
-    : userRole === 'admin' ? 'SDS Coordinator'
-      : userRole === 'chairman' ? 'Chairman'
-        : userRole === 'vice-chairman' ? 'Vice Chairman'
-          : userRole === 'oso-staff' ? 'OSO Staff'
-            : userRole;
+  const roleTitle = (userRole === 'org-president' && operatorPosition && operatorPosition.trim())
+    ? operatorPosition.trim()
+    : userRole === 'org-president' ? 'Organization President'
+      : userRole === 'admin' ? 'SDS Coordinator'
+        : userRole === 'chairman' ? 'Chairman'
+          : userRole === 'vice-chairman' ? 'Vice Chairman'
+            : userRole === 'oso-staff' ? 'OSO Staff'
+              : userRole;
 
   if (action === 'submit') {
     return `Submitted document by ${roleTitle}`;
@@ -4757,7 +4694,7 @@ export function generateDescriptiveLogMessage(
   }
 
   if (action === 'document_retrieved') {
-    return `Document retrieved by Organization President`;
+    return `Document retrieved by ${roleTitle}`;
   }
 
   if (action === 'confirm_retrieval') {
@@ -4917,8 +4854,11 @@ async function handleSubmissionTransition(body: Record<string, unknown>) {
     }
   }
 
-  const defaultDescriptiveMsg = generateDescriptiveLogMessage(currentStage, nextStage, action, actingUserRole, null);
-  const userOrDescriptiveMsg = generateDescriptiveLogMessage(currentStage, nextStage, action, actingUserRole, comment);
+  const operatorName = body.operatorName ? String(body.operatorName) : null;
+  const operatorPosition = body.operatorPosition ? String(body.operatorPosition) : null;
+
+  const defaultDescriptiveMsg = generateDescriptiveLogMessage(currentStage, nextStage, action, actingUserRole, null, operatorPosition);
+  const userOrDescriptiveMsg = generateDescriptiveLogMessage(currentStage, nextStage, action, actingUserRole, comment, operatorPosition);
   const formattedRemarks = userOrDescriptiveMsg;
 
   const { error: updateErr } = await supabase
@@ -4958,13 +4898,15 @@ async function handleSubmissionTransition(body: Record<string, unknown>) {
   const logReviewAction = null;
   const logWorkflowPhase = isForwardToMain ? 'main-campus-review' : STAGE_DISPLAY_LABELS[currentStage];
 
-  const operatorName = body.operatorName ? String(body.operatorName) : null;
-  const operatorPosition = body.operatorPosition ? String(body.operatorPosition) : null;
-
   let transitionLogDesc = userOrDescriptiveMsg;
   if (operatorName && !transitionLogDesc.includes('[Performed by')) {
     const posTag = operatorPosition ? ` (${operatorPosition})` : '';
     transitionLogDesc += ` [Performed by ${operatorName}${posTag}]`;
+  }
+
+  let finalComment = comment || null;
+  if (finalComment && operatorPosition && finalComment.includes('Organization President')) {
+    finalComment = finalComment.replace(/Organization President/g, operatorPosition);
   }
 
   await supabase.from('submission_logs').insert([{
@@ -4975,7 +4917,7 @@ async function handleSubmissionTransition(body: Record<string, unknown>) {
     action_type: logActionType,
     review_action: logReviewAction,
     description: transitionLogDesc,
-    comment: comment || null,
+    comment: finalComment,
     created_at: new Date().toISOString()
   }]);
 

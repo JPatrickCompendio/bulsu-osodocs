@@ -125,51 +125,14 @@ const calculateDashboardMetricsFallback = async (statsData = {}) => {
         .select('submission_id, version_number, created_at')
         .gt('version_number', 1);
 
-      const { data: returnLogsForRev } = await supabase
-        .from('submission_logs')
-        .select('submission_id, created_at, action_type, review_action, comment, description')
-        .in('action_type', ['return', 'returned', 'resubmitted', 'attachment_review']);
-
-      const validReturnLogs = (returnLogsForRev || []).filter((log) => {
-        const act = String(log.action_type || '').toLowerCase();
-        if (act === 'return' || act === 'returned' || act === 'resubmitted') return true;
-        if (act === 'attachment_review') {
-          const ra = String(log.review_action || log.comment || log.description || '').toLowerCase().trim();
-          if (!ra) return false;
-          return (
-            !ra.includes('approved') &&
-            !ra.includes('completed') &&
-            !ra.includes('retrieved') &&
-            !ra.includes('marked') &&
-            !ra.includes('verified') &&
-            !['none', 'none / approved', 'none/approved', ''].includes(ra) &&
-            !ra.startsWith('returned by')
-          );
-        }
-        return false;
-      });
-
       const { data: allSubmissions } = await supabase
         .from('submissions')
         .select('id, document_type_id, status, document_types:document_type_id(name)');
 
       const startOfMonthDate = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-      let revisionsThisMonth = 0;
-      if (recentVersions) {
-        revisionsThisMonth += recentVersions.filter(v => new Date(v.created_at) >= startOfMonthDate).length;
-      }
-      if (validReturnLogs) {
-        revisionsThisMonth += validReturnLogs.filter(l => new Date(l.created_at) >= startOfMonthDate).length;
-      }
-      if (revisionsThisMonth === 0) {
-        const versionsCount = recentVersions ? recentVersions.length : 0;
-        const returnsCount = validReturnLogs ? validReturnLogs.length : 0;
-        revisionsThisMonth = Math.max(versionsCount, returnsCount);
-      }
-      if (revisionsThisMonth === 0 && allSubmissions) {
-        const returnedCount = allSubmissions.filter(s => s.status === 'returned').length;
-        if (returnedCount > 0) revisionsThisMonth = returnedCount;
-      }
+      const revisionsThisMonth = recentVersions
+        ? recentVersions.filter(v => new Date(v.created_at) >= startOfMonthDate).length
+        : 0;
 
       const avgRevisionsPerType = {
         'Activity Proposal': 0,
@@ -194,26 +157,6 @@ const calculateDashboardMetricsFallback = async (statsData = {}) => {
             docTypeStats[typeName].totalRevisions++;
           });
         }
-
-        if (validReturnLogs) {
-          validReturnLogs.forEach((l) => {
-            const sub = allSubmissions.find((s) => s.id === l.submission_id);
-            if (sub) {
-              const typeName = sub.document_types?.name || 'Activity Proposal';
-              if (!docTypeStats[typeName]) docTypeStats[typeName] = { totalRevisions: 0, docCount: 0 };
-              docTypeStats[typeName].totalRevisions++;
-            }
-          });
-        }
-
-        allSubmissions.forEach((sub) => {
-          if (sub.status === 'returned') {
-            const typeName = sub.document_types?.name || 'Activity Proposal';
-            if (docTypeStats[typeName] && docTypeStats[typeName].totalRevisions === 0) {
-              docTypeStats[typeName].totalRevisions = 1;
-            }
-          }
-        });
 
         for (const [type, stats] of Object.entries(docTypeStats)) {
           avgRevisionsPerType[type] = stats.docCount > 0 ? parseFloat((stats.totalRevisions / stats.docCount).toFixed(2)) : 0;

@@ -1801,6 +1801,21 @@ export const MyDocuments = () => {
     }
   };
 
+  const getRetrievalConfirmedText = (defaultStaffRole = 'SDS Coordinator') => {
+    const role = (user?.role || '').toLowerCase();
+    if (role === 'org-president') {
+      try {
+        const raw = sessionStorage.getItem('osodocs_active_member');
+        if (raw) {
+          const m = JSON.parse(raw);
+          if (m?.position && !m.is_president) return `Retrieval confirmed by ${m.position}`;
+        }
+      } catch (_) {}
+      return 'Retrieval confirmed by Organization President';
+    }
+    return `Retrieval confirmed by ${defaultStaffRole}`;
+  };
+
   const handleConfirmRetrieval = async (descText = '') => {
     if (!selectedDoc) return;
     try {
@@ -3584,7 +3599,7 @@ export const MyDocuments = () => {
                     </button>
                   ) : (
                     <button
-                      onClick={() => handleConfirmRetrieval(user?.role === 'org-president' ? 'Retrieval confirmed by Organization President' : 'Retrieval confirmed by SDS Coordinator')}
+                      onClick={() => handleConfirmRetrieval(getRetrievalConfirmedText('SDS Coordinator'))}
                       disabled={loading}
                       className="w-full px-5 py-3.5 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
                     >
@@ -3633,7 +3648,7 @@ export const MyDocuments = () => {
                     </button>
                   ) : (
                     <button
-                      onClick={() => handleConfirmRetrieval(user?.role === 'org-president' ? 'Retrieval confirmed by Organization President' : 'Retrieval confirmed by Admin')}
+                      onClick={() => handleConfirmRetrieval(getRetrievalConfirmedText('Admin'))}
                       disabled={loading}
                       className="w-full px-5 py-3.5 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 transition-all shadow-sm mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
                     >
@@ -4756,7 +4771,7 @@ export const MyDocuments = () => {
                 buttons.push(
                   <button
                     key="sds-confirm"
-                    onClick={() => handleConfirmRetrieval(userRoleNorm === 'org-president' ? 'Retrieval confirmed by Organization President' : 'Retrieval confirmed by SDS Coordinator')}
+                    onClick={() => handleConfirmRetrieval(getRetrievalConfirmedText('SDS Coordinator'))}
                     disabled={loading}
                     className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-purple-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-tight sm:tracking-widest disabled:opacity-50 shrink-0"
                   >
@@ -4815,7 +4830,7 @@ export const MyDocuments = () => {
                 buttons.push(
                   <button
                     key="main-confirm"
-                    onClick={() => handleConfirmRetrieval(userRoleNorm === 'org-president' ? 'Retrieval confirmed by Organization President' : 'Retrieval confirmed by SDS Coordinator')}
+                    onClick={() => handleConfirmRetrieval(getRetrievalConfirmedText('SDS Coordinator'))}
                     disabled={loading}
                     className="flex items-center justify-center gap-1.5 sm:gap-3 px-3 sm:px-8 py-2 sm:py-3.5 bg-purple-600 text-white text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-purple-600/20 uppercase tracking-tight sm:tracking-widest disabled:opacity-50 shrink-0"
                   >

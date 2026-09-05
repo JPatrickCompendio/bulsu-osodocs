@@ -74,6 +74,8 @@ const formatTimelineComment = (commentText) => {
   let str = String(commentText).trim();
   if (!str) return '';
 
+  str = str.replace(/\[Performed by [^\]]+\]/gi, '').trim();
+
   if (str.startsWith('[') && str.endsWith(']')) {
     try {
       const parsed = JSON.parse(str);
@@ -225,6 +227,14 @@ const SubmissionTimeline = ({
               : stripProofReferenceFromText(log.comment || log.description || '');
 
             visibleComment = visibleComment.replace(/\bOSD Admin\b/gi, 'SDS Coordinator');
+            visibleComment = visibleComment.replace(/\[Performed by [^\]]+\]/gi, '').trim();
+
+            const normRole = (actor?.role || '').toLowerCase().trim();
+            if (normRole && normRole !== 'org president' && normRole !== 'user' && normRole !== 'system' && normRole !== 'pending') {
+              visibleComment = visibleComment.replace(/Retrieval confirmed by Organization President/gi, `Retrieval confirmed by ${actor.role}`);
+              visibleComment = visibleComment.replace(/Document retrieved by Organization President/gi, `Document retrieved by ${actor.role}`);
+              visibleComment = visibleComment.replace(/by Organization President/gi, `by ${actor.role}`);
+            }
 
             const formattedTime = log.created_at
               ? new Date(log.created_at).toLocaleString('en-US', {

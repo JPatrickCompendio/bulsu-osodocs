@@ -83,7 +83,7 @@ const OrganizationActivitiesPage = () => {
           title="Organization Activities"
           subtitle="Calendar and schedule listing of approved student organization activities."
           icon={CheckCircle2}
-          iconColor="purple"
+          iconColor="green"
         />
       </div>
 
