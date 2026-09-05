@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
-import { Bell, Search, X, Check, CheckCircle2, Megaphone, FileText, ChevronRight, Paperclip, ExternalLink, Image as ImageIcon, ShieldAlert, AlertTriangle, Lock, Clock, LogOut, User as UserIcon, Calendar, Menu } from 'lucide-react';
+import { Bell, Search, X, Check, CheckCircle2, Megaphone, FileText, ChevronRight, Paperclip, ExternalLink, Image as ImageIcon, ShieldAlert, AlertTriangle, Lock, Clock, LogOut, User as UserIcon, Calendar, Menu, UserCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiClient, apiUrl } from '../config/apiClient';
 import { supabase } from '../supabaseClient';
@@ -14,6 +14,7 @@ import {
 } from '../utils/workflowNotificationUtils';
 import SchoolYearCalendarModal from './SchoolYearCalendarModal';
 import OnboardingOverlay from './OnboardingOverlay';
+import MemberSelectorModal from './MemberSelectorModal';
 import Avatar from './Avatar';
 
 function formatHeadlineTitle(sub, activityTitle = '', maxTitleLength = 40) {
@@ -151,8 +152,8 @@ function isWorkflowLogRelevantForRole(role, log, submission) {
   return false;
 }
 
-const Header = ({ onToggleMobileMenu }) => {
-  const { user } = useAuth();
+const Header = ({ onToggleMobileMenu, onOpenMemberModal }) => {
+  const { user, activeMember } = useAuth();
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -586,7 +587,10 @@ const Header = ({ onToggleMobileMenu }) => {
             {(() => {
               const isOrgPres = user?.role === 'org-president';
               const navTitle = isOrgPres && user?.org_name ? user.org_name : (user?.full_name || user?.username || 'User');
-              const navSubtitle = isOrgPres ? (user?.full_name || 'Organization President') : (user?.role ? String(user.role).replace('-', ' ').toUpperCase() : '');
+              const activeOperatorName = activeMember ? `${activeMember.full_name} (${activeMember.position})` : null;
+              const navSubtitle = isOrgPres 
+                ? (activeOperatorName || user?.full_name || 'Organization President') 
+                : (user?.role ? String(user.role).replace('-', ' ').toUpperCase() : '');
               const avatarInitial = (navTitle || '?').charAt(0).toUpperCase();
 
               return (
@@ -597,7 +601,9 @@ const Header = ({ onToggleMobileMenu }) => {
                   >
                     <div className="text-right hidden sm:block">
                       <p className="text-sm font-bold text-gray-800 truncate max-w-[200px]">{navTitle}</p>
-                      <p className="text-[10px] text-gray-400 font-semibold truncate max-w-[200px]">{navSubtitle}</p>
+                      <p className="text-[10px] text-gray-400 font-semibold truncate max-w-[200px]">
+                        {activeOperatorName ? `Operator: ${activeOperatorName}` : navSubtitle}
+                      </p>
                     </div>
                     <Avatar
                       profileImage={user?.avatarUrl || user?.profile_image}
@@ -613,13 +619,30 @@ const Header = ({ onToggleMobileMenu }) => {
                         className="fixed inset-0 z-[999998]"
                         onClick={() => setShowUserDropdown(false)}
                       />
-                      <div className="absolute top-full right-0 mt-2 w-60 bg-white rounded-xl shadow-2xl border border-gray-100 z-[999999] overflow-hidden animate-in fade-in slide-in-from-top-2">
-                        <div className="p-4 border-b border-gray-100">
+                      <div className="absolute top-full right-0 mt-2 w-64 bg-white rounded-xl shadow-2xl border border-gray-100 z-[999999] overflow-hidden animate-in fade-in slide-in-from-top-2">
+                        <div className="p-4 border-b border-gray-100 bg-gray-50/50">
                           <p className="text-sm font-bold text-gray-800 truncate">{navTitle}</p>
-                          <p className="text-xs text-gray-500 font-medium truncate">{navSubtitle}</p>
-                          {user?.email && <p className="text-[11px] text-gray-400 truncate mt-0.5">{user.email}</p>}
+                          <p className="text-xs text-gray-500 font-medium truncate mt-0.5">{navSubtitle}</p>
+                          {activeOperatorName && (
+                            <span className="inline-block mt-2 px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-black uppercase rounded-full">
+                              Active: {activeMember.full_name}
+                            </span>
+                          )}
+                          {user?.email && <p className="text-[11px] text-gray-400 truncate mt-1">{user.email}</p>}
                         </div>
-                        <div className="p-2">
+                        <div className="p-2 space-y-1">
+                          {isOrgPres && (
+                            <button
+                              onClick={() => {
+                                setShowUserDropdown(false);
+                                onOpenMemberModal?.();
+                              }}
+                              className="w-full flex items-center gap-3 px-3 py-2 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            >
+                              <UserCheck size={16} />
+                              Switch Account Operator
+                            </button>
+                          )}
                           <button
                             onClick={() => {
                               setShowUserDropdown(false);
@@ -996,11 +1019,34 @@ const Header = ({ onToggleMobileMenu }) => {
 };
 
 const DashboardLayout = () => {
-  const { user } = useAuth();
+  const { user, activeMember, setActiveMember } = useAuth();
   const [showSuspendedModal, setShowSuspendedModal] = useState(false);
   const [showReactivatedModal, setShowReactivatedModal] = useState(false);
   const [adminEmail, setAdminEmail] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Executive Members state for account operator identity selector
+  const [orgMembers, setOrgMembers] = useState([]);
+  const [showMemberModal, setShowMemberModal] = useState(false);
+
+  useEffect(() => {
+    if (user?.role === 'org-president' && user?.id) {
+      supabase
+        .from('organization_members')
+        .select('*')
+        .or(`user_id.eq.${user.id},organization_id.eq.${user.organization_id || '00000000-0000-0000-0000-000000000000'}`)
+        .order('created_at', { ascending: true })
+        .then(({ data, error }) => {
+          if (!error && data && data.length > 0) {
+            setOrgMembers(data);
+            if (!activeMember) {
+              setShowMemberModal(true);
+            }
+          }
+        })
+        .catch(err => console.warn('Error fetching organization_members:', err));
+    }
+  }, [user?.id, user?.role, user?.organization_id, activeMember]);
   
   const isSuspended = user?.status?.startsWith('Suspended') && user?.role === 'org-president';
   const prevStatusRef = useRef(user?.status);
@@ -1043,7 +1089,10 @@ const DashboardLayout = () => {
     <div className="flex h-screen bg-[#f8fafc]">
       <Sidebar isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        <Header onToggleMobileMenu={() => setIsMobileMenuOpen(true)} />
+        <Header 
+          onToggleMobileMenu={() => setIsMobileMenuOpen(true)} 
+          onOpenMemberModal={() => setShowMemberModal(true)}
+        />
         <main className="flex-1 overflow-y-auto p-2 sm:p-4 md:p-6 relative">
           <PageTransition>
             <div className="max-w-[96rem] mx-auto">
@@ -1052,6 +1101,16 @@ const DashboardLayout = () => {
           </PageTransition>
         </main>
       </div>
+
+      <MemberSelectorModal
+        isOpen={showMemberModal}
+        members={orgMembers}
+        presidentUser={user}
+        onSelectMember={(selected) => {
+          setActiveMember(selected);
+          setShowMemberModal(false);
+        }}
+      />
 
       {showSuspendedModal && isSuspended && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[9999] flex items-center justify-center p-4">

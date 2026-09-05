@@ -6,12 +6,26 @@ import { apiFetch } from '../config/api';
  */
 export const createLog = async (submissionId, userId, description, versionId = null, workflowPhase = null, actionType = null) => {
   try {
+    let finalDesc = description;
+    try {
+      const activeMemberRaw = sessionStorage.getItem('osodocs_active_member');
+      if (activeMemberRaw) {
+        const activeMember = JSON.parse(activeMemberRaw);
+        if (activeMember?.full_name && !activeMember.is_president) {
+          const attribution = `[Performed by ${activeMember.full_name} (${activeMember.position})]`;
+          if (!finalDesc.includes('[Performed by')) {
+            finalDesc = `${finalDesc} ${attribution}`;
+          }
+        }
+      }
+    } catch (_) {}
+
     const { error } = await supabase
       .from('submission_logs')
       .insert([{
         submission_id: submissionId,
         user_id: userId,
-        description,
+        description: finalDesc,
         submission_version_id: versionId,
         workflow_phase: workflowPhase,
         action_type: actionType,
@@ -557,6 +571,12 @@ export const createNewVersion = async (submissionId, oldVersionId, userId) => {
  * CENTRALIZED BACKEND WORKFLOW TRANSITIONS
  */
 export const transitionSubmission = async (submissionId, action, comment = '', attachmentReviews = [], userId = null) => {
+  let activeMember = null;
+  try {
+    const raw = sessionStorage.getItem('osodocs_active_member');
+    if (raw) activeMember = JSON.parse(raw);
+  } catch (_) {}
+
   const response = await apiFetch('/submissions/transition', {
     method: 'POST',
     body: JSON.stringify({
@@ -564,7 +584,9 @@ export const transitionSubmission = async (submissionId, action, comment = '', a
       action,
       comment,
       attachmentReviews,
-      userId
+      userId,
+      operatorName: activeMember && !activeMember.is_president ? activeMember.full_name : null,
+      operatorPosition: activeMember && !activeMember.is_president ? activeMember.position : null,
     }),
   });
 
@@ -576,12 +598,20 @@ export const transitionSubmission = async (submissionId, action, comment = '', a
 };
 
 export const resubmitSubmission = async (submissionId, userId, oldVersionId = null) => {
+  let activeMember = null;
+  try {
+    const raw = sessionStorage.getItem('osodocs_active_member');
+    if (raw) activeMember = JSON.parse(raw);
+  } catch (_) {}
+
   const response = await apiFetch('/submissions/resubmit', {
     method: 'POST',
     body: JSON.stringify({
       submissionId,
       userId,
-      oldVersionId
+      oldVersionId,
+      operatorName: activeMember && !activeMember.is_president ? activeMember.full_name : null,
+      operatorPosition: activeMember && !activeMember.is_president ? activeMember.position : null,
     }),
   });
 

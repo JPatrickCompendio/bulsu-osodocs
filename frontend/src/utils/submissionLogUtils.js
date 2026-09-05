@@ -670,11 +670,19 @@ export const getTimelineActorDisplay = (log) => {
   else if (rawRole === 'admin') roleLabel = 'Admin';
   else if (rawRole === 'chairman') roleLabel = 'Chairman';
   else if (rawRole === 'vice-chairman') roleLabel = 'Vice Chairman';
-  else if (rawRole === 'org-president') roleLabel = 'Org President';
+  else if (rawRole === 'org-president') roleLabel = log?.operator_position ? `Org Delegate (${log.operator_position})` : 'Org President';
   else if (rawRole === 'dean') roleLabel = 'Dean';
 
+  let actorName = log?.performed_by_name;
+  if (!actorName && log?.description && typeof log.description === 'string') {
+    const match = log.description.match(/\[Performed by ([^\]]+)\]/i);
+    if (match && match[1]) {
+      actorName = match[1];
+    }
+  }
+
   return {
-    name: log?.users?.full_name || log?.displayName || 'System',
+    name: actorName || log?.users?.full_name || log?.displayName || 'System',
     role: roleLabel
   };
 };

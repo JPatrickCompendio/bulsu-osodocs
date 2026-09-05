@@ -4958,6 +4958,15 @@ async function handleSubmissionTransition(body: Record<string, unknown>) {
   const logReviewAction = null;
   const logWorkflowPhase = isForwardToMain ? 'main-campus-review' : STAGE_DISPLAY_LABELS[currentStage];
 
+  const operatorName = body.operatorName ? String(body.operatorName) : null;
+  const operatorPosition = body.operatorPosition ? String(body.operatorPosition) : null;
+
+  let transitionLogDesc = userOrDescriptiveMsg;
+  if (operatorName && !transitionLogDesc.includes('[Performed by')) {
+    const posTag = operatorPosition ? ` (${operatorPosition})` : '';
+    transitionLogDesc += ` [Performed by ${operatorName}${posTag}]`;
+  }
+
   await supabase.from('submission_logs').insert([{
     submission_id: submissionId,
     submission_version_id: activeVersionId || null,
@@ -4965,7 +4974,7 @@ async function handleSubmissionTransition(body: Record<string, unknown>) {
     workflow_phase: logWorkflowPhase,
     action_type: logActionType,
     review_action: logReviewAction,
-    description: userOrDescriptiveMsg,
+    description: transitionLogDesc,
     comment: comment || null,
     created_at: new Date().toISOString()
   }]);
@@ -4992,6 +5001,8 @@ async function handleSubmissionResubmit(body: Record<string, unknown>) {
   const submissionId = String(body.submissionId || '');
   const userId = body.userId ? String(body.userId) : null;
   const oldVersionId = body.oldVersionId ? String(body.oldVersionId) : null;
+  const operatorName = body.operatorName ? String(body.operatorName) : null;
+  const operatorPosition = body.operatorPosition ? String(body.operatorPosition) : null;
 
   if (!submissionId || !userId) {
     return jsonResponse({ error: 'submissionId and userId are required for resubmission' }, 400);
@@ -5030,6 +5041,12 @@ async function handleSubmissionResubmit(body: Record<string, unknown>) {
 
   await supabase.from('users').update({ status: 'Active' }).eq('id', userId);
 
+  let resubmitDesc = 'Document resubmitted for edits.';
+  if (operatorName) {
+    const posTag = operatorPosition ? ` (${operatorPosition})` : '';
+    resubmitDesc += ` [Performed by ${operatorName}${posTag}]`;
+  }
+
   await supabase.from('submission_logs').insert([{
     submission_id: submissionId,
     submission_version_id: sub.current_version_id || oldVersionId || null,
@@ -5037,7 +5054,7 @@ async function handleSubmissionResubmit(body: Record<string, unknown>) {
     workflow_phase: 'Resubmission',
     action_type: 'resubmitted',
     review_action: 'resubmitted',
-    description: 'Document resubmitted for edits.',
+    description: resubmitDesc,
     created_at: new Date().toISOString()
   }]);
 

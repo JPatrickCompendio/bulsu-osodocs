@@ -6,6 +6,25 @@ const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [activeMember, setActiveMemberState] = useState(() => {
+        try {
+            const saved = sessionStorage.getItem('osodocs_active_member');
+            return saved ? JSON.parse(saved) : null;
+        } catch (_) {
+            return null;
+        }
+    });
+
+    const setActiveMember = (member) => {
+        setActiveMemberState(member);
+        if (member) {
+            try {
+                sessionStorage.setItem('osodocs_active_member', JSON.stringify(member));
+            } catch (_) {}
+        } else {
+            sessionStorage.removeItem('osodocs_active_member');
+        }
+    };
 
     // Cleanup object URL on unmount or when avatarUrl changes
     useEffect(() => {
@@ -233,6 +252,10 @@ export const AuthProvider = ({ children }) => {
         if (user?.avatarUrl) {
             URL.revokeObjectURL(user.avatarUrl);
         }
+        try {
+            sessionStorage.removeItem('osodocs_active_member');
+        } catch (_) {}
+        setActiveMemberState(null);
         await supabase.auth.signOut();
         setUser(null);
     };
@@ -249,7 +272,7 @@ export const AuthProvider = ({ children }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ user, login, logout, loading, refreshUser }}>
+        <AuthContext.Provider value={{ user, login, logout, loading, refreshUser, activeMember, setActiveMember }}>
             {children}
         </AuthContext.Provider>
     );

@@ -3793,6 +3793,17 @@ export const MyDocuments = () => {
                             ? selectedDoc.raw?.submission_versions[0]?.id
                             : selectedDoc.raw?.submission_versions?.id);
 
+                        let accomLogDesc = 'Activity accomplishment report submitted';
+                        try {
+                          const activeMemberRaw = sessionStorage.getItem('osodocs_active_member');
+                          if (activeMemberRaw) {
+                            const activeMember = JSON.parse(activeMemberRaw);
+                            if (activeMember?.full_name && !activeMember.is_president) {
+                              accomLogDesc += ` [Performed by ${activeMember.full_name} (${activeMember.position})]`;
+                            }
+                          }
+                        } catch (_) {}
+
                         const { error: logErr } = await supabase.from('submission_logs').insert([{
                           submission_id: submissionId,
                           submission_version_id: activeVersionId,
@@ -3800,8 +3811,8 @@ export const MyDocuments = () => {
                           workflow_phase: 'accomplishment',
                           action_type: 'submitted',
                           review_action: 'completed',
-                          description: 'Activity accomplishment report submitted',
-                          comment: 'Activity accomplishment report submitted',
+                          description: accomLogDesc,
+                          comment: accomLogDesc,
                           created_at: new Date().toISOString()
                         }]);
 

@@ -20,7 +20,11 @@ import {
   UserCheck,
   Award,
   Hash,
-  Phone
+  Phone,
+  Plus,
+  Trash2,
+  Edit3,
+  X
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Avatar from '../components/Avatar';
@@ -32,6 +36,18 @@ const MyProfile = () => {
   const [fullName, setFullName] = useState('');
   const [abbreviation, setAbbreviation] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  // Executive Members State (for org-president)
+  const [members, setMembers] = useState([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
+  const [editingMember, setEditingMember] = useState(null);
+  const [memberForm, setMemberForm] = useState({
+    full_name: '',
+    position: '',
+    student_number: '',
+    contact_number: ''
+  });
   
   // Password State
   const [currentPassword, setCurrentPassword] = useState('');
@@ -50,8 +66,96 @@ const MyProfile = () => {
     if (user) {
       setFullName(user.full_name || user.username || '');
       setAbbreviation(user.abbreviation || '');
+      if (user.role === 'org-president') {
+        loadMembers();
+      }
     }
-  }, [user]);
+  }, [user?.id, user?.role, user?.organization_id]);
+
+  const loadMembers = async () => {
+    if (!user?.id) return;
+    setLoadingMembers(true);
+    try {
+      const { data, error } = await supabase
+        .from('organization_members')
+        .select('*')
+        .or(`user_id.eq.${user.id},organization_id.eq.${user.organization_id || '00000000-0000-0000-0000-000000000000'}`)
+        .order('created_at', { ascending: true });
+
+      if (!error && data) {
+        setMembers(data);
+      }
+    } catch (err) {
+      console.warn('Error loading executive members:', err);
+    } finally {
+      setLoadingMembers(false);
+    }
+  };
+
+  const handleSaveMember = async (e) => {
+    e.preventDefault();
+    if (!memberForm.full_name.trim() || !memberForm.position.trim()) {
+      showToast('Please provide both full name and position.', 'error');
+      return;
+    }
+
+    try {
+      if (editingMember) {
+        const { error } = await supabase
+          .from('organization_members')
+          .update({
+            full_name: memberForm.full_name.trim(),
+            position: memberForm.position.trim(),
+            student_number: memberForm.student_number.trim() || null,
+            contact_number: memberForm.contact_number.trim() || null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', editingMember.id);
+
+        if (error) throw error;
+        showToast('Executive member updated successfully!');
+      } else {
+        const { error } = await supabase
+          .from('organization_members')
+          .insert([{
+            organization_id: user.organization_id || null,
+            user_id: user.id,
+            full_name: memberForm.full_name.trim(),
+            position: memberForm.position.trim(),
+            student_number: memberForm.student_number.trim() || null,
+            contact_number: memberForm.contact_number.trim() || null,
+          }]);
+
+        if (error) throw error;
+        showToast('Executive member added successfully!');
+      }
+
+      setIsMemberModalOpen(false);
+      setEditingMember(null);
+      setMemberForm({ full_name: '', position: '', student_number: '', contact_number: '' });
+      await loadMembers();
+    } catch (err) {
+      console.error('Error saving member:', err);
+      showToast(err.message || 'Failed to save executive member', 'error');
+    }
+  };
+
+  const handleDeleteMember = async (id) => {
+    if (!window.confirm('Are you sure you want to remove this executive member?')) return;
+    try {
+      const { error } = await supabase
+        .from('organization_members')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      showToast('Executive member removed.');
+      await loadMembers();
+    } catch (err) {
+      console.error('Error deleting member:', err);
+      showToast('Failed to remove executive member', 'error');
+    }
+  };
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -489,6 +593,181 @@ const MyProfile = () => {
               </div>
             </div>
           </form>
+
+          {/* Executive Board Members Section (for Org President) */}
+          {user?.role === 'org-president' && (
+            <div className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-600"></div>
+              
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                <div>
+                  <h3 className="text-xl font-black text-gray-800 flex items-center gap-2">
+                    <Users className="text-blue-600" size={22} /> Executive Board Members
+                  </h3>
+                  <p className="text-xs text-gray-500 font-medium mt-1">
+                    Register officers (VP, Secretary, Treasurer) who operate this account. Their names will be selected upon login and attributed in activity logs.
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setEditingMember(null);
+                    setMemberForm({ full_name: '', position: '', student_number: '', contact_number: '' });
+                    setIsMemberModalOpen(true);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all text-xs shadow-md shrink-0"
+                >
+                  <Plus size={16} /> Add Executive Member
+                </button>
+              </div>
+
+              {loadingMembers ? (
+                <div className="py-8 text-center text-gray-400 text-sm font-medium">Loading executive members...</div>
+              ) : members.length === 0 ? (
+                <div className="p-8 rounded-2xl bg-gray-50/60 border border-dashed border-gray-200 text-center">
+                  <UserCheck className="mx-auto text-gray-300 mb-2" size={32} />
+                  <p className="text-sm font-bold text-gray-700">No Executive Members Added Yet</p>
+                  <p className="text-xs text-gray-400 mt-1 max-w-md mx-auto">
+                    Add your organization officers so they can select their name when using this shared account.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {members.map((m) => (
+                    <div key={m.id} className="p-4 rounded-2xl border border-gray-100 bg-gray-50/50 hover:bg-gray-50 transition-all flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-bold text-sm text-gray-900">{m.full_name}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-black uppercase rounded-full">
+                            {m.position}
+                          </span>
+                          {m.student_number && (
+                            <span className="text-[11px] text-gray-400 font-medium">#{m.student_number}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            setEditingMember(m);
+                            setMemberForm({
+                              full_name: m.full_name || '',
+                              position: m.position || '',
+                              student_number: m.student_number || '',
+                              contact_number: m.contact_number || ''
+                            });
+                            setIsMemberModalOpen(true);
+                          }}
+                          className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                          title="Edit member"
+                        >
+                          <Edit3 size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteMember(m.id)}
+                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                          title="Delete member"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Member Modal */}
+          {isMemberModalOpen && (
+            <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+              <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 border border-gray-100 relative">
+                <button
+                  onClick={() => setIsMemberModalOpen(false)}
+                  className="absolute top-6 right-6 text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100"
+                >
+                  <X size={18} />
+                </button>
+
+                <h3 className="text-lg font-black text-gray-900 mb-1">
+                  {editingMember ? 'Edit Executive Member' : 'Add Executive Member'}
+                </h3>
+                <p className="text-xs text-gray-500 font-medium mb-6">
+                  Provide officer details for shared account operation attribution.
+                </p>
+
+                <form onSubmit={handleSaveMember} className="space-y-4">
+                  <div>
+                    <label className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-1 block">
+                      Full Name <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={memberForm.full_name}
+                      onChange={(e) => setMemberForm({ ...memberForm, full_name: e.target.value })}
+                      placeholder="e.g. Maria Santos"
+                      className="w-full px-4 py-2.5 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-blue-600 outline-none text-sm font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-1 block">
+                      Position / Role <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={memberForm.position}
+                      onChange={(e) => setMemberForm({ ...memberForm, position: e.target.value })}
+                      placeholder="e.g. Vice President, Secretary, Treasurer"
+                      className="w-full px-4 py-2.5 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-blue-600 outline-none text-sm font-medium"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-1 block">Student No.</label>
+                      <input
+                        type="text"
+                        value={memberForm.student_number}
+                        onChange={(e) => setMemberForm({ ...memberForm, student_number: e.target.value })}
+                        placeholder="e.g. 2021101234"
+                        className="w-full px-4 py-2.5 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-blue-600 outline-none text-sm font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-1 block">Contact No.</label>
+                      <input
+                        type="text"
+                        value={memberForm.contact_number}
+                        onChange={(e) => setMemberForm({ ...memberForm, contact_number: e.target.value })}
+                        placeholder="e.g. 09123456789"
+                        className="w-full px-4 py-2.5 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-blue-600 outline-none text-sm font-medium"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                    <button
+                      type="button"
+                      onClick={() => setIsMemberModalOpen(false)}
+                      className="px-4 py-2 bg-gray-100 text-gray-700 font-bold rounded-xl text-xs hover:bg-gray-200"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-2 bg-blue-600 text-white font-bold rounded-xl text-xs hover:bg-blue-700 shadow-md"
+                    >
+                      {editingMember ? 'Save Changes' : 'Add Member'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
 
           {/* Change Password */}
           <form onSubmit={handleChangePassword} className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm relative overflow-hidden">
