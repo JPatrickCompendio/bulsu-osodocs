@@ -327,15 +327,7 @@ const ListOfRequirements = () => {
               </div>
             )}
           </div>
-          {canManage && !selectedType && (
-            <button
-              onClick={() => navigate('/requirements/settings/new')}
-              className="bg-gray-800 text-white px-6 py-3.5 rounded-xl text-sm font-black flex items-center gap-2 hover:bg-black transition-all shadow-md whitespace-nowrap"
-            >
-              <Plus size={18} />
-              New Category
-            </button>
-          )}
+
         </div>
       </div>
 

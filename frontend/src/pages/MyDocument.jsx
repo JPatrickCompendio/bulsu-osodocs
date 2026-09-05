@@ -397,6 +397,7 @@ export const MyDocuments = () => {
     fetchSy();
   }, []);
   const [selectedVersionId, setSelectedVersionId] = React.useState(null);
+  const [docPresidentInfo, setDocPresidentInfo] = React.useState(null);
   const [isFilesOpen, setIsFilesOpen] = React.useState(true);
   const [previewFile, setPreviewFile] = React.useState(null);
   const [filePreviewUrl, setFilePreviewUrl] = React.useState('');
@@ -1021,8 +1022,112 @@ export const MyDocuments = () => {
     }
   };
 
+  const resolveDocumentSubmitter = async (doc) => {
+    if (!doc?.id) {
+      setDocPresidentInfo(null);
+      return;
+    }
+
+    try {
+      const sub = doc.raw || {};
+      const schoolYearId = sub.school_year_id;
+      const subUserId = sub.user_id || user?.id;
+      let orgId = user?.organization_id || sub.users?.organization_id || null;
+
+      if (!orgId && subUserId) {
+        const { data: uData } = await supabase
+          .from('users')
+          .select('organization_id')
+          .eq('id', subUserId)
+          .maybeSingle();
+        orgId = uData?.organization_id || null;
+      }
+
+      let resolvedPresident = null;
+
+      // 1. Check organization_academic_years for the document's specific school year
+      if (schoolYearId) {
+        if (orgId) {
+          const { data: ayData } = await supabase
+            .from('organization_academic_years')
+            .select('president_name')
+            .eq('organization_id', orgId)
+            .eq('school_year_id', schoolYearId)
+            .maybeSingle();
+          if (ayData?.president_name && ayData.president_name.trim()) {
+            resolvedPresident = ayData.president_name.trim();
+          }
+        }
+
+        if (!resolvedPresident) {
+          const { data: fallbackAy } = await supabase
+            .from('organization_academic_years')
+            .select('president_name')
+            .eq('school_year_id', schoolYearId)
+            .maybeSingle();
+          if (fallbackAy?.president_name && fallbackAy.president_name.trim()) {
+            resolvedPresident = fallbackAy.president_name.trim();
+          }
+        }
+
+        // 2. Check organization_members for is_president = true for that school_year_id
+        if (!resolvedPresident) {
+          try {
+            let memberQuery = supabase
+              .from('organization_members')
+              .select('full_name, position')
+              .eq('is_president', true)
+              .eq('school_year_id', schoolYearId);
+            if (orgId) {
+              memberQuery = memberQuery.eq('organization_id', orgId);
+            }
+            const { data: presMember } = await memberQuery.maybeSingle();
+            if (presMember?.full_name && presMember.full_name.trim()) {
+              resolvedPresident = presMember.full_name.trim();
+            }
+          } catch (mErr) {
+            // Ignore if column doesn't exist yet
+          }
+        }
+      }
+
+      // 3. Check submission_logs for the initial submission to see if an operator was recorded
+      let operatorInfo = null;
+      const logs = sub.submission_logs || [];
+      const submitLog = logs.find(l => l.action_type === 'submitted') || logs[logs.length - 1];
+      if (submitLog?.description) {
+        const match = submitLog.description.match(/\[Performed by ([^(\]]+)(?:\s*\(([^)]+)\))?\]/i);
+        if (match && match[1]) {
+          operatorInfo = {
+            name: match[1].trim(),
+            role: match[2]?.trim() || 'org president'
+          };
+        }
+      }
+
+      const finalName = resolvedPresident ||
+        operatorInfo?.name ||
+        (doc.pic && doc.pic !== '-' ? doc.pic : null) ||
+        sub.users?.full_name ||
+        user?.full_name ||
+        '—';
+
+      const finalRole = operatorInfo?.role ||
+        (resolvedPresident ? 'org president' : (user?.role ? String(user.role).replace('-', ' ') : 'org president'));
+
+      setDocPresidentInfo({ name: finalName, role: finalRole });
+    } catch (err) {
+      console.warn('Error resolving document submitter:', err);
+      setDocPresidentInfo({
+        name: (doc.pic && doc.pic !== '-') ? doc.pic : (user?.full_name || '—'),
+        role: user?.role ? String(user.role).replace('-', ' ') : 'org president'
+      });
+    }
+  };
+
   React.useEffect(() => {
     if (selectedDoc) {
+      resolveDocumentSubmitter(selectedDoc);
       loadAccomplishmentReport(selectedDoc.id);
       loadExternalProofs(selectedDoc.id);
       const allVersions = Array.isArray(selectedDoc.raw?.submission_versions)
@@ -1035,6 +1140,7 @@ export const MyDocuments = () => {
       setLocallyApproved([]);
       setLocallyReturned({});
     } else {
+      setDocPresidentInfo(null);
       setTimelineLogs([]);
       setAttachmentReturnLogs([]);
       setLocallyApproved([]);
@@ -1101,6 +1207,7 @@ export const MyDocuments = () => {
             users (org_name, abbreviation, student_no, full_name, role),
             documentType (name),
             document_subtypes (name),
+            school_years (id, name),
             submission_logs (created_at, action_type, review_action, description, comment),
             submission_versions!submission_id (
               *,
@@ -1152,6 +1259,7 @@ export const MyDocuments = () => {
           users (org_name, abbreviation, student_no, full_name, role),
           documentType (name),
           document_subtypes (name),
+          school_years (id, name),
           submission_logs (created_at, action_type, review_action, description, comment),
           submission_versions!submission_id (
             *,
@@ -1203,6 +1311,7 @@ export const MyDocuments = () => {
           users (org_name, abbreviation, student_no, full_name, role),
           documentType (name),
           document_subtypes (name),
+          school_years (id, name),
           submission_logs (created_at, action_type, description, workflow_phase, review_action, users (full_name, role)),
           submission_versions!submission_id (
             *,
@@ -2668,8 +2777,8 @@ export const MyDocuments = () => {
         { month: 'short', day: 'numeric', year: 'numeric' }
       );
 
-      const submittedByName = user?.full_name || selectedDoc.pic || '—';
-      const submittedByRole = user?.role ? String(user.role).replace('-', ' ') : null;
+      const submittedByName = docPresidentInfo?.name || selectedDoc.pic || user?.full_name || '—';
+      const submittedByRole = docPresidentInfo?.role || (user?.role ? String(user.role).replace('-', ' ') : null);
 
       const timelineLogsForTimeline = versionScopedTimelineLogs(timelineLogs);
 
@@ -2755,9 +2864,9 @@ export const MyDocuments = () => {
                 </p>
                 <h1
                   className="mt-1 text-lg sm:text-2xl md:text-3xl font-extrabold tracking-tight text-gray-900 break-all line-clamp-2 max-w-3xl"
-                  title={isActivityProposal ? docTitle : `${selectedDoc.sender} ${selectedDoc.type} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
+                  title={isActivityProposal ? docTitle : `${selectedDoc.sender} ${selectedDoc.type} ${selectedDoc.raw?.school_years?.name || (activeSy ? activeSy.name : '')}`.toUpperCase()}
                 >
-                  {isActivityProposal ? docTitle : `${selectedDoc.sender} ${selectedDoc.type} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
+                  {isActivityProposal ? docTitle : `${selectedDoc.sender} ${selectedDoc.type} ${selectedDoc.raw?.school_years?.name || (activeSy ? activeSy.name : '')}`.toUpperCase()}
                 </h1>
                 {isActivityProposal && (
                   <p className="mt-1 sm:mt-2 text-xs sm:text-sm font-semibold text-gray-500">Activity Proposal Form</p>

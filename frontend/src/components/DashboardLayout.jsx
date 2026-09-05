@@ -623,11 +623,6 @@ const Header = ({ onToggleMobileMenu, onOpenMemberModal }) => {
                         <div className="p-4 border-b border-gray-100 bg-gray-50/50">
                           <p className="text-sm font-bold text-gray-800 truncate">{navTitle}</p>
                           <p className="text-xs text-gray-500 font-medium truncate mt-0.5">{navSubtitle}</p>
-                          {activeOperatorName && (
-                            <span className="inline-block mt-2 px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-black uppercase rounded-full">
-                              Active: {activeMember.full_name}
-                            </span>
-                          )}
                           {user?.email && <p className="text-[11px] text-gray-400 truncate mt-1">{user.email}</p>}
                         </div>
                         <div className="p-2 space-y-1">
@@ -1031,20 +1026,64 @@ const DashboardLayout = () => {
 
   useEffect(() => {
     if (user?.role === 'org-president' && user?.id) {
-      supabase
-        .from('organization_members')
-        .select('*')
-        .or(`user_id.eq.${user.id},organization_id.eq.${user.organization_id || '00000000-0000-0000-0000-000000000000'}`)
-        .order('created_at', { ascending: true })
-        .then(({ data, error }) => {
+      const fetchCurrentMembers = async () => {
+        try {
+          const { data: curSy } = await supabase
+            .from('school_years')
+            .select('id')
+            .eq('is_active', true)
+            .maybeSingle();
+
+          let query = supabase
+            .from('organization_members')
+            .select('*')
+            .or(`user_id.eq.${user.id},organization_id.eq.${user.organization_id || '00000000-0000-0000-0000-000000000000'}`);
+
+          if (curSy?.id) {
+            query = query.eq('school_year_id', curSy.id);
+          }
+
+          const { data, error } = await query.order('created_at', { ascending: true });
           if (!error && data && data.length > 0) {
             setOrgMembers(data);
             if (!activeMember) {
               setShowMemberModal(true);
             }
+          } else if (!error && (!data || data.length === 0)) {
+            // Check for legacy members where school_year_id is null if none for current SY yet
+            const { data: legacyData } = await supabase
+              .from('organization_members')
+              .select('*')
+              .or(`user_id.eq.${user.id},organization_id.eq.${user.organization_id || '00000000-0000-0000-0000-000000000000'}`)
+              .is('school_year_id', null)
+              .order('created_at', { ascending: true });
+
+            if (legacyData && legacyData.length > 0) {
+              setOrgMembers(legacyData);
+              if (!activeMember) {
+                setShowMemberModal(true);
+              }
+            } else {
+              setOrgMembers([]);
+            }
+          } else if (error) {
+            // Fallback if school_year_id column doesn't exist yet
+            const { data: fallbackData } = await supabase
+              .from('organization_members')
+              .select('*')
+              .or(`user_id.eq.${user.id},organization_id.eq.${user.organization_id || '00000000-0000-0000-0000-000000000000'}`)
+              .order('created_at', { ascending: true });
+
+            if (fallbackData && fallbackData.length > 0) {
+              setOrgMembers(fallbackData);
+              if (!activeMember) setShowMemberModal(true);
+            }
           }
-        })
-        .catch(err => console.warn('Error fetching organization_members:', err));
+        } catch (err) {
+          console.warn('Error fetching organization_members:', err);
+        }
+      };
+      fetchCurrentMembers();
     }
   }, [user?.id, user?.role, user?.organization_id, activeMember]);
   

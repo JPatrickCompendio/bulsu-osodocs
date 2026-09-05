@@ -42,11 +42,15 @@ const MyProfile = () => {
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
+  const [activeSy, setActiveSy] = useState(null);
+  const [allSchoolYears, setAllSchoolYears] = useState([]);
+  const [selectedSyId, setSelectedSyId] = useState(null);
+  const isViewingActiveSy = Boolean(activeSy && selectedSyId === activeSy.id);
   const [memberForm, setMemberForm] = useState({
     full_name: '',
     position: '',
     student_number: '',
-    contact_number: ''
+    contact_number: '',
   });
   
   // Password State
@@ -63,27 +67,84 @@ const MyProfile = () => {
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
+    const fetchSchoolYears = async () => {
+      try {
+        const { data: activeData } = await supabase
+          .from('school_years')
+          .select('*')
+          .eq('is_active', true)
+          .maybeSingle();
+
+        const { data: allData } = await supabase
+          .from('school_years')
+          .select('*')
+          .order('start_date', { ascending: false });
+
+        if (activeData) {
+          setActiveSy(activeData);
+          setSelectedSyId(activeData.id);
+        } else if (allData && allData.length > 0) {
+          setActiveSy(allData[0]);
+          setSelectedSyId(allData[0].id);
+        }
+        if (allData) {
+          setAllSchoolYears(allData);
+        }
+      } catch (err) {
+        console.warn('Error fetching school years in MyProfile:', err);
+      }
+    };
+    fetchSchoolYears();
+  }, []);
+
+  useEffect(() => {
     if (user) {
       setFullName(user.full_name || user.username || '');
       setAbbreviation(user.abbreviation || '');
       if (user.role === 'org-president') {
-        loadMembers();
+        loadMembers(selectedSyId);
       }
     }
-  }, [user?.id, user?.role, user?.organization_id]);
+  }, [user?.id, user?.role, user?.organization_id, selectedSyId]);
 
-  const loadMembers = async () => {
+  const loadMembers = async (targetSyId = null) => {
     if (!user?.id) return;
+    const syIdToUse = targetSyId || selectedSyId || activeSy?.id;
     setLoadingMembers(true);
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('organization_members')
         .select('*')
-        .or(`user_id.eq.${user.id},organization_id.eq.${user.organization_id || '00000000-0000-0000-0000-000000000000'}`)
-        .order('created_at', { ascending: true });
+        .or(`user_id.eq.${user.id},organization_id.eq.${user.organization_id || '00000000-0000-0000-0000-000000000000'}`);
+
+      if (syIdToUse) {
+        query = query.eq('school_year_id', syIdToUse);
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: true });
 
       if (!error && data) {
+        if (data.length === 0 && syIdToUse === activeSy?.id) {
+          const { data: legacyData, error: legErr } = await supabase
+            .from('organization_members')
+            .select('*')
+            .or(`user_id.eq.${user.id},organization_id.eq.${user.organization_id || '00000000-0000-0000-0000-000000000000'}`)
+            .is('school_year_id', null)
+            .order('created_at', { ascending: true });
+          if (!legErr && legacyData && legacyData.length > 0) {
+            setMembers(legacyData);
+            setLoadingMembers(false);
+            return;
+          }
+        }
         setMembers(data);
+      } else if (error) {
+        const { data: fallbackData } = await supabase
+          .from('organization_members')
+          .select('*')
+          .or(`user_id.eq.${user.id},organization_id.eq.${user.organization_id || '00000000-0000-0000-0000-000000000000'}`)
+          .order('created_at', { ascending: true });
+        if (fallbackData) setMembers(fallbackData);
       }
     } catch (err) {
       console.warn('Error loading executive members:', err);
@@ -94,37 +155,62 @@ const MyProfile = () => {
 
   const handleSaveMember = async (e) => {
     e.preventDefault();
+    if (!isViewingActiveSy) {
+      showToast('Executive members can only be added or edited for the active school year.', 'error');
+      return;
+    }
     if (!memberForm.full_name.trim() || !memberForm.position.trim()) {
       showToast('Please provide both full name and position.', 'error');
       return;
     }
 
     try {
+      const targetSy = selectedSyId || activeSy?.id || null;
       if (editingMember) {
-        const { error } = await supabase
+        const updatePayload = {
+          full_name: memberForm.full_name.trim(),
+          position: memberForm.position.trim(),
+          student_number: memberForm.student_number.trim() || null,
+          contact_number: memberForm.contact_number.trim() || null,
+          updated_at: new Date().toISOString()
+        };
+        if (targetSy) {
+          updatePayload.school_year_id = editingMember.school_year_id || targetSy;
+        }
+
+        let { error } = await supabase
           .from('organization_members')
-          .update({
-            full_name: memberForm.full_name.trim(),
-            position: memberForm.position.trim(),
-            student_number: memberForm.student_number.trim() || null,
-            contact_number: memberForm.contact_number.trim() || null,
-            updated_at: new Date().toISOString()
-          })
+          .update(updatePayload)
           .eq('id', editingMember.id);
+
+        if (error && error.message?.includes('school_year_id')) {
+          delete updatePayload.school_year_id;
+          const retry = await supabase.from('organization_members').update(updatePayload).eq('id', editingMember.id);
+          error = retry.error;
+        }
 
         if (error) throw error;
         showToast('Executive member updated successfully!');
       } else {
-        const { error } = await supabase
+        const insertPayload = {
+          organization_id: user.organization_id || null,
+          user_id: user.id,
+          full_name: memberForm.full_name.trim(),
+          position: memberForm.position.trim(),
+          student_number: memberForm.student_number.trim() || null,
+          contact_number: memberForm.contact_number.trim() || null,
+          school_year_id: targetSy,
+        };
+
+        let { error } = await supabase
           .from('organization_members')
-          .insert([{
-            organization_id: user.organization_id || null,
-            user_id: user.id,
-            full_name: memberForm.full_name.trim(),
-            position: memberForm.position.trim(),
-            student_number: memberForm.student_number.trim() || null,
-            contact_number: memberForm.contact_number.trim() || null,
-          }]);
+          .insert([insertPayload]);
+
+        if (error && error.message?.includes('school_year_id')) {
+          delete insertPayload.school_year_id;
+          const retry = await supabase.from('organization_members').insert([insertPayload]);
+          error = retry.error;
+        }
 
         if (error) throw error;
         showToast('Executive member added successfully!');
@@ -133,7 +219,7 @@ const MyProfile = () => {
       setIsMemberModalOpen(false);
       setEditingMember(null);
       setMemberForm({ full_name: '', position: '', student_number: '', contact_number: '' });
-      await loadMembers();
+      await loadMembers(selectedSyId);
     } catch (err) {
       console.error('Error saving member:', err);
       showToast(err.message || 'Failed to save executive member', 'error');
@@ -141,6 +227,10 @@ const MyProfile = () => {
   };
 
   const handleDeleteMember = async (id) => {
+    if (!isViewingActiveSy) {
+      showToast('Executive members can only be removed from the active school year.', 'error');
+      return;
+    }
     if (!window.confirm('Are you sure you want to remove this executive member?')) return;
     try {
       const { error } = await supabase
@@ -150,7 +240,7 @@ const MyProfile = () => {
 
       if (error) throw error;
       showToast('Executive member removed.');
-      await loadMembers();
+      await loadMembers(selectedSyId);
     } catch (err) {
       console.error('Error deleting member:', err);
       showToast('Failed to remove executive member', 'error');
@@ -601,24 +691,57 @@ const MyProfile = () => {
               
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div>
-                  <h3 className="text-xl font-black text-gray-800 flex items-center gap-2">
-                    <Users className="text-blue-600" size={22} /> Executive Board Members
-                  </h3>
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <h3 className="text-xl font-black text-gray-800 flex items-center gap-2">
+                      <Users className="text-blue-600" size={22} /> Executive Board Members
+                    </h3>
+                    {(() => {
+                      const curSy = allSchoolYears.find(s => s.id === selectedSyId) || activeSy;
+                      return curSy ? (
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                          {curSy.name} {curSy.is_active ? '(Active)' : ''}
+                        </span>
+                      ) : null;
+                    })()}
+                  </div>
                   <p className="text-xs text-gray-500 font-medium mt-1">
-                    Register officers (VP, Secretary, Treasurer) who operate this account. Their names will be selected upon login and attributed in activity logs.
+                    Register officers (VP, Secretary, Treasurer) who operate this account for the selected school year.
                   </p>
                 </div>
 
-                <button
-                  onClick={() => {
-                    setEditingMember(null);
-                    setMemberForm({ full_name: '', position: '', student_number: '', contact_number: '' });
-                    setIsMemberModalOpen(true);
-                  }}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all text-xs shadow-md shrink-0"
-                >
-                  <Plus size={16} /> Add Executive Member
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  {allSchoolYears.length > 1 && (
+                    <select
+                      value={selectedSyId || ''}
+                      onChange={(e) => setSelectedSyId(e.target.value)}
+                      className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-700 outline-none cursor-pointer focus:ring-2 focus:ring-blue-500/20"
+                      title="Select School Year"
+                    >
+                      {allSchoolYears.map((sy) => (
+                        <option key={sy.id} value={sy.id}>
+                          {sy.name} {sy.is_active ? '★' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {isViewingActiveSy ? (
+                    <button
+                      onClick={() => {
+                        setEditingMember(null);
+                        setMemberForm({ full_name: '', position: '', student_number: '', contact_number: '' });
+                        setIsMemberModalOpen(true);
+                      }}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all text-xs shadow-md shrink-0"
+                    >
+                      <Plus size={16} /> Add Executive Member
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-500 text-xs font-semibold rounded-xl border border-gray-200 shrink-0" title="Historical and upcoming terms are read-only">
+                      <Lock size={13} className="text-gray-400" />
+                      <span>Read-Only Term</span>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {loadingMembers ? (
@@ -647,31 +770,33 @@ const MyProfile = () => {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => {
-                            setEditingMember(m);
-                            setMemberForm({
-                              full_name: m.full_name || '',
-                              position: m.position || '',
-                              student_number: m.student_number || '',
-                              contact_number: m.contact_number || ''
-                            });
-                            setIsMemberModalOpen(true);
-                          }}
-                          className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                          title="Edit member"
-                        >
-                          <Edit3 size={16} />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteMember(m.id)}
-                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                          title="Delete member"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
+                      {isViewingActiveSy && (
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => {
+                              setEditingMember(m);
+                              setMemberForm({
+                                full_name: m.full_name || '',
+                                position: m.position || '',
+                                student_number: m.student_number || '',
+                                contact_number: m.contact_number || ''
+                              });
+                              setIsMemberModalOpen(true);
+                            }}
+                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                            title="Edit member"
+                          >
+                            <Edit3 size={16} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteMember(m.id)}
+                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                            title="Delete member"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
