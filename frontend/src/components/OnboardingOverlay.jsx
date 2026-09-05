@@ -58,7 +58,7 @@ export default function OnboardingOverlay() {
       const { error: uploadError } = await supabase.storage
         .from('profile_img')
         .upload(filePath, file, {
-          cacheControl: '3600',
+          cacheControl: '86400',
           upsert: true
         });
 

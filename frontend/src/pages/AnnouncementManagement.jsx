@@ -105,6 +105,7 @@ const AnnouncementManagement = () => {
       const uploadPromises = selectedFiles.map(file => {
         const filePath = `${folderPath}/${file.name}`;
         return supabase.storage.from('documents').upload(filePath, file, {
+          cacheControl: '86400',
           upsert: true
         });
       });

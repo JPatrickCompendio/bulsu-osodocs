@@ -121,7 +121,7 @@ export const uploadTemplate = async (file, documentTypeName, subtypeSlug = null)
 
   const { data, error } = await supabase.storage
     .from('documents')
-    .upload(filePath, file);
+    .upload(filePath, file, { cacheControl: '86400', upsert: true });
 
   if (error) throw error;
   return data.path; // Return only the storage path

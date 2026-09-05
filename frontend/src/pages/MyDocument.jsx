@@ -1595,7 +1595,7 @@ export const MyDocuments = () => {
 
         const { error: uploadErr } = await supabase.storage
           .from('documents')
-          .upload(filePath, externalProofFile, { cacheControl: '3600', upsert: false });
+          .upload(filePath, externalProofFile, { cacheControl: '0', upsert: false });
 
         if (uploadErr) throw uploadErr;
       }
@@ -3761,7 +3761,7 @@ export const MyDocuments = () => {
                             const filePath = `accom-report/${submissionId}/${Date.now()}-${index}-${safeFileName}`;
                             return supabase.storage
                               .from('documents')
-                              .upload(filePath, file, { cacheControl: '3600', upsert: false });
+                              .upload(filePath, file, { cacheControl: '31536000', upsert: false });
                           })
                         );
 

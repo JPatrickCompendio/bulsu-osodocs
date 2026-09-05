@@ -197,7 +197,7 @@ export const uploadSubmissionFile = async (file, typeName, submissionId, version
   const { data, error } = await supabase.storage
     .from('documents')
     .upload(filePath, file, {
-      cacheControl: '3600',
+      cacheControl: '86400',
       upsert: true
     });
 

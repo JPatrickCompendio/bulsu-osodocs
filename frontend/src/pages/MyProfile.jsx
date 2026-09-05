@@ -97,7 +97,7 @@ const MyProfile = () => {
       const { error: uploadError } = await supabase.storage
         .from('profile_img')
         .upload(filePath, file, {
-          cacheControl: '0',
+          cacheControl: '86400',
           upsert: true
         });
 
