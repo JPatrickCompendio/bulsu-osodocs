@@ -20,6 +20,7 @@ import {
 import ReportPreviewModal from './ReportPreviewModal';
 import GlobalLoader from './GlobalLoader';
 import { useAuth } from '../context/AuthContext';
+import { getReportGeneratorName } from '../utils/submissionLogUtils';
 import { fetchApprovedActivitySchedules } from '../utils/activityScheduleFetcher';
 import { format, isSameDay, isSameMonth, addMonths, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval } from 'date-fns';
 
@@ -39,7 +40,7 @@ const getWindowRemainingBadge = (endDate) => {
 };
 
 const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
-  const { user } = useAuth();
+  const { user, activeMember } = useAuth();
   const [view, setView] = useState('calendar'); // 'calendar' or 'list'
   const [currentDate, setCurrentDate] = useState(new Date());
   const [activities, setActivities] = useState([]);
@@ -831,7 +832,7 @@ const SchoolYearCalendarModal = ({ activeSy, onClose }) => {
         tableData={reportData.rows}
         pdfFilename={reportData.filename}
         schoolYear={activeSy?.name || ''}
-        generatedBy={user?.full_name || 'System Administrator'}
+        generatedBy={getReportGeneratorName(user, activeMember)}
       />
     </div>
   );

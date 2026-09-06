@@ -6,6 +6,7 @@ import CompletedDocumentDetail from '../components/CompletedDocumentDetail';
 import { Filter, ChevronDown, Eye, FileText, CheckCircle } from 'lucide-react';
 import ReportPreviewModal from '../components/ReportPreviewModal';
 import PageHeader from '../components/PageHeader';
+import { getReportGeneratorName } from '../utils/submissionLogUtils';
 
 const normalizeStatus = (status) =>
   String(status || '')
@@ -100,7 +101,7 @@ const FilterDropdown = ({ label, value, options, onChange, isOpen, onToggle, act
     )}
   </div>
 );const Completed = () => {
-  const { user } = useAuth();
+  const { user, activeMember } = useAuth();
   const location = useLocation();
   const [loading, setLoading] = React.useState(true);
   const [selectedSubmissionId, setSelectedSubmissionId] = React.useState(null);
@@ -645,7 +646,7 @@ const FilterDropdown = ({ label, value, options, onChange, isOpen, onToggle, act
         isOpen={isReportOpen}
         onClose={() => setIsReportOpen(false)}
         title={reportData.title}
-        generatedBy={user?.full_name || 'System User'}
+        generatedBy={getReportGeneratorName(user, activeMember)}
         stats={reportData.stats}
         tableHeaders={reportData.headers}
         tableData={reportData.rows}

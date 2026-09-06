@@ -893,14 +893,12 @@ const MyProfile = () => {
             isSaving={isSavingProfile}
           />
 
-          {/* 5. Password & Security Panel (Org President only) */}
-          {isPresident && (
-            <SecurityPanel
-              isPresident={isPresident}
-              onChangePassword={handleChangePassword}
-              isSaving={isSavingPassword}
-            />
-          )}
+          {/* 5. Password & Security Panel */}
+          <SecurityPanel
+            isPresident={isPresident}
+            onChangePassword={handleChangePassword}
+            isSaving={isSavingPassword}
+          />
         </div>
       </div>
 

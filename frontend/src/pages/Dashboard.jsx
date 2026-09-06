@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import ReportPreviewModal from '../components/ReportPreviewModal';
+import { getReportGeneratorName } from '../utils/submissionLogUtils';
 import {
   FileText, CheckCircle, Clock, AlertCircle, RefreshCcw,
   ChevronRight, BarChart2, Activity, UserCheck, Calendar, Bell, XCircle, Inbox,
@@ -907,7 +908,7 @@ const AdminDashboardView = () => {
         isOpen={isReportOpen}
         onClose={() => setIsReportOpen(false)}
         title={reportData.title}
-        generatedBy={user?.full_name || 'System User'}
+        generatedBy={getReportGeneratorName(user, null)}
         stats={reportData.stats}
         tableHeaders={reportData.headers}
         tableData={reportData.rows}
@@ -1376,7 +1377,7 @@ const ChairmanDashboardView = ({ role }) => {
         isOpen={isReportOpen}
         onClose={() => setIsReportOpen(false)}
         title={reportData.title}
-        generatedBy={user?.full_name || 'System User'}
+        generatedBy={getReportGeneratorName(user, null)}
         stats={reportData.stats}
         tableHeaders={reportData.headers}
         tableData={reportData.rows}
@@ -1401,7 +1402,7 @@ const ChairmanDashboardView = ({ role }) => {
 // ─── Org President Dashboard ──────────────────────────────────────────────────
 
 const OrgDashboardView = () => {
-  const { user } = useAuth();
+  const { user, activeMember } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
@@ -1757,7 +1758,7 @@ const OrgDashboardView = () => {
         isOpen={isReportOpen}
         onClose={() => setIsReportOpen(false)}
         title={reportData.title}
-        generatedBy={user?.full_name || 'System User'}
+        generatedBy={getReportGeneratorName(user, activeMember)}
         stats={reportData.stats}
         tableHeaders={reportData.headers}
         tableData={reportData.rows}
