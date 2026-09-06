@@ -1022,10 +1022,23 @@ async function createAndSendInvitationToken(
   return { success: true, token, emailSent: emailRes.success };
 }
 
+function parseUtcTimestamp(dateVal: unknown): number {
+  if (!dateVal) return 0;
+  let s = String(dateVal).trim();
+  if (s.includes(' ') && !s.includes('T')) {
+    s = s.replace(' ', 'T');
+  }
+  if (!s.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(s) && !/[+-]\d{2}$/.test(s)) {
+    s += 'Z';
+  }
+  const parsed = new Date(s).getTime();
+  return isNaN(parsed) ? 0 : parsed;
+}
+
 async function handleVerifyInvitation(url: URL) {
   const token = url.searchParams.get('token');
   if (!token) {
-    return jsonResponse({ valid: false, reason: 'Invitation token is missing.' }, 400);
+    return jsonResponse({ valid: false, reason: 'Invitation token is missing from the URL.' }, 400);
   }
 
   const supabase = getAdminClient();
@@ -1045,16 +1058,16 @@ async function handleVerifyInvitation(url: URL) {
   }
 
   if (inv.is_used) {
-    return jsonResponse({ valid: false, reason: 'This invitation link has already been used.' });
+    return jsonResponse({ valid: false, reason: 'This invitation link has already been used to set up your account.' });
   }
 
   if (inv.is_invalidated) {
-    return jsonResponse({ valid: false, reason: 'This invitation link has been invalidated by a newer request.' });
+    return jsonResponse({ valid: false, reason: 'A newer setup link was generated for this account. Please check your inbox for the latest email or request a new link below.' });
   }
 
-  const expiresAt = new Date(inv.expires_at).getTime();
-  if (Date.now() > expiresAt) {
-    return jsonResponse({ valid: false, reason: 'This invitation link has expired (valid for 24 hours).' });
+  const expiresAtMs = parseUtcTimestamp(inv.expires_at);
+  if (expiresAtMs > 0 && Date.now() > expiresAtMs) {
+    return jsonResponse({ valid: false, reason: 'This invitation link has expired (valid for 24 hours). Please request a new setup link below.' });
   }
 
   const { data: userRec } = await supabase
@@ -1099,10 +1112,11 @@ async function handleSetupPassword(body: Record<string, unknown>) {
   }
 
   if (inv.is_invalidated) {
-    return jsonResponse({ error: 'This invitation link has been invalidated.' }, 400);
+    return jsonResponse({ error: 'A newer setup link was generated for this account. Please use the latest email link or request a new one.' }, 400);
   }
 
-  if (Date.now() > new Date(inv.expires_at).getTime()) {
+  const expiresAtMs = parseUtcTimestamp(inv.expires_at);
+  if (expiresAtMs > 0 && Date.now() > expiresAtMs) {
     return jsonResponse({ error: 'This invitation link has expired.' }, 400);
   }
 

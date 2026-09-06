@@ -1593,8 +1593,8 @@ const OrgDashboardView = () => {
           </div>
         </section>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch">
-          <section className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-full min-h-[520px]">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+          <section className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-[520px]">
             <div className="p-6 border-b border-gray-50 shrink-0">
               <h2 className="text-lg font-black text-gray-800 uppercase tracking-tight">Documents Under Review</h2>
               <p className="text-xs font-bold text-gray-400 mt-1">Track your active submissions</p>

@@ -72,9 +72,7 @@ export function SecurityPanel({ onChangePassword, isSaving = false, isPresident 
 
   const handlePinSubmit = async (event) => {
     event.preventDefault();
-    const targetId = activeMember?.id || user?.id || 'admin';
-    const localPin = localStorage.getItem(`member_pin_${targetId}`);
-    const expectedPin = localPin || activeMember?.security_pin || user?.security_pin || '1234';
+    const expectedPin = activeMember?.security_pin || user?.security_pin || '1234';
 
     if (currentPin !== expectedPin && currentPin !== '1234') {
       setPinStatus('error');
@@ -98,25 +96,20 @@ export function SecurityPanel({ onChangePassword, isSaving = false, isPresident 
     setPinStatus('idle');
 
     try {
-      localStorage.setItem(`member_pin_${targetId}`, newPin);
-      localStorage.setItem(`member_pin_changed_${targetId}`, 'true');
-
       if (activeMember && !activeMember.is_president && activeMember.id !== 'president') {
         await supabase
           .from('organization_members')
           .update({ security_pin: newPin, is_pin_changed: true })
           .eq('id', activeMember.id);
       } else if (user?.id) {
-        try {
-          await supabase
-            .from('users')
-            .update({ security_pin: newPin, is_pin_changed: true })
-            .eq('id', user.id);
-        } catch (_) {}
+        await supabase
+          .from('users')
+          .update({ security_pin: newPin, is_pin_changed: true })
+          .eq('id', user.id);
       }
 
       setPinStatus('success');
-      setPinMessage('Security PIN updated successfully!');
+      setPinMessage('Security PIN updated successfully in database!');
       setCurrentPin('');
       setNewPin('');
       setConfirmPin('');

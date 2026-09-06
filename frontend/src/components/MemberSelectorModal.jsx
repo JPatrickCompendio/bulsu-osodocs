@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { UserCheck, Shield, ChevronRight, User, Lock, KeyRound, AlertCircle, ArrowLeft, CheckCircle2, RefreshCw, LogOut } from 'lucide-react';
+import { UserCheck, Shield, ChevronRight, User, Lock, KeyRound, AlertCircle, ArrowLeft, CheckCircle2, RefreshCw, LogOut, X } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
 
-const MemberSelectorModal = ({ isOpen, members = [], presidentUser, currentMemberId, onSelectMember, onLogout }) => {
+const MemberSelectorModal = ({ isOpen, members = [], presidentUser, currentMemberId, onSelectMember, onLogout, onClose }) => {
   if (!isOpen) return null;
 
   const { logout } = useAuth();
@@ -16,6 +16,7 @@ const MemberSelectorModal = ({ isOpen, members = [], presidentUser, currentMembe
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [updatedPins, setUpdatedPins] = useState({});
 
   const handleLogoutAction = async () => {
     if (onLogout) {
@@ -25,15 +26,12 @@ const MemberSelectorModal = ({ isOpen, members = [], presidentUser, currentMembe
     }
   };
 
-  // Active target candidate with localStorage fallback
+  // Active target candidate from Supabase Database (with in-memory override)
   const getSelectedCandidate = () => {
+    const override = updatedPins[selectedId];
     if (selectedId === 'president') {
-      const targetId = presidentUser?.id || 'president';
-      const localPin = localStorage.getItem(`member_pin_${targetId}`);
-      const localChanged = localStorage.getItem(`member_pin_changed_${targetId}`) === 'true';
-
-      const pinValue = localPin || presidentUser?.security_pin || '1234';
-      const isChanged = localChanged || presidentUser?.is_pin_changed === true || presidentUser?.is_pin_changed === 'true';
+      const pinValue = override?.security_pin || presidentUser?.security_pin || '1234';
+      const isChanged = override?.is_pin_changed ?? (presidentUser?.is_pin_changed === true || presidentUser?.is_pin_changed === 'true');
 
       return {
         id: 'president',
@@ -51,12 +49,8 @@ const MemberSelectorModal = ({ isOpen, members = [], presidentUser, currentMembe
 
     const match = members.find((m) => m.id === selectedId);
     if (match) {
-      const targetId = match.id;
-      const localPin = localStorage.getItem(`member_pin_${targetId}`);
-      const localChanged = localStorage.getItem(`member_pin_changed_${targetId}`) === 'true';
-
-      const pinValue = localPin || match.security_pin || '1234';
-      const isChanged = localChanged || match.is_pin_changed === true || match.is_pin_changed === 'true';
+      const pinValue = override?.security_pin || match.security_pin || '1234';
+      const isChanged = override?.is_pin_changed ?? (match.is_pin_changed === true || match.is_pin_changed === 'true');
 
       return {
         ...match,
@@ -112,12 +106,6 @@ const MemberSelectorModal = ({ isOpen, members = [], presidentUser, currentMembe
     setIsSaving(true);
     setErrorMessage('');
 
-    const targetKeyId = candidate.is_president ? (presidentUser?.id || 'president') : candidate.id;
-
-    // Instantly persist in localStorage fallback
-    localStorage.setItem(`member_pin_${targetKeyId}`, pinInput);
-    localStorage.setItem(`member_pin_changed_${targetKeyId}`, 'true');
-
     try {
       if (candidate.is_president) {
         try {
@@ -138,6 +126,11 @@ const MemberSelectorModal = ({ isOpen, members = [], presidentUser, currentMembe
           console.warn('DB update error for PIN:', error);
         }
       }
+
+      setUpdatedPins(prev => ({
+        ...prev,
+        [selectedId]: { security_pin: pinInput, is_pin_changed: true }
+      }));
 
       onSelectMember({
         ...candidate,
@@ -176,11 +169,6 @@ const MemberSelectorModal = ({ isOpen, members = [], presidentUser, currentMembe
     setIsSaving(true);
     setErrorMessage('');
 
-    const targetKeyId = candidate.is_president ? (presidentUser?.id || 'president') : candidate.id;
-
-    localStorage.setItem(`member_pin_${targetKeyId}`, pinInput);
-    localStorage.setItem(`member_pin_changed_${targetKeyId}`, 'true');
-
     try {
       if (candidate.is_president) {
         try {
@@ -197,6 +185,11 @@ const MemberSelectorModal = ({ isOpen, members = [], presidentUser, currentMembe
           .update({ security_pin: pinInput, is_pin_changed: true })
           .eq('id', candidate.id);
       }
+
+      setUpdatedPins(prev => ({
+        ...prev,
+        [selectedId]: { security_pin: pinInput, is_pin_changed: true }
+      }));
 
       setSuccessMessage('Security PIN updated successfully!');
       setTimeout(() => {
@@ -240,27 +233,16 @@ const MemberSelectorModal = ({ isOpen, members = [], presidentUser, currentMembe
         {/* STEP 1: SELECT IDENTITY */}
         {step === 1 && (
           <>
-            <div className="flex items-start justify-between gap-3 mb-6">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-primary-green/10 text-primary-green flex items-center justify-center shrink-0">
-                  <UserCheck size={24} />
-                </div>
-                <div>
-                  <h2 className="text-xl font-black text-gray-900 tracking-tight">Who is using this account?</h2>
-                  <p className="text-xs text-gray-500 font-medium mt-0.5">
-                    Select your identity for this session. Actions and timeline logs will be attributed to you.
-                  </p>
-                </div>
+            <div className="flex items-center gap-4 mb-6">
+              <div className="w-12 h-12 rounded-2xl bg-primary-green/10 text-primary-green flex items-center justify-center shrink-0">
+                <UserCheck size={24} />
               </div>
-              <button
-                type="button"
-                onClick={handleLogoutAction}
-                title="Log Out Account"
-                className="px-2.5 py-1.5 border border-red-200/80 text-red-600 hover:bg-red-50 rounded-xl transition-all flex items-center gap-1 text-[11px] font-bold shrink-0 shadow-2xs"
-              >
-                <LogOut size={13} />
-                <span>Logout</span>
-              </button>
+              <div>
+                <h2 className="text-xl font-black text-gray-900 tracking-tight">Who is using this account?</h2>
+                <p className="text-xs text-gray-500 font-medium mt-0.5">
+                  Select your identity for this session. Actions and timeline logs will be attributed to you.
+                </p>
+              </div>
             </div>
 
             {/* List of Identities */}
@@ -297,8 +279,8 @@ const MemberSelectorModal = ({ isOpen, members = [], presidentUser, currentMembe
               {/* Members Options */}
               {members.map((member) => {
                 const isSelected = selectedId === member.id;
-                const localChanged = localStorage.getItem(`member_pin_changed_${member.id}`) === 'true';
-                const isPinSet = localChanged || member.is_pin_changed === true || member.is_pin_changed === 'true';
+                const override = updatedPins[member.id];
+                const isPinSet = override ? override.is_pin_changed : (member.is_pin_changed === true || member.is_pin_changed === 'true');
 
                 return (
                   <div
@@ -339,13 +321,36 @@ const MemberSelectorModal = ({ isOpen, members = [], presidentUser, currentMembe
             </div>
 
             {/* Footer Action */}
-            <button
-              onClick={handleProceedToPinStep}
-              className="w-full py-3.5 px-6 bg-primary-green text-white font-bold text-sm rounded-2xl shadow-lg hover:bg-primary-green/90 transition-all flex items-center justify-center gap-2"
-            >
-              <span>Next: Security PIN Verification</span>
-              <ChevronRight size={18} />
-            </button>
+            <div className="space-y-3">
+              <button
+                onClick={handleProceedToPinStep}
+                className="w-full py-3.5 px-6 bg-primary-green text-white font-bold text-sm rounded-2xl shadow-lg hover:bg-primary-green/90 transition-all flex items-center justify-center gap-2"
+              >
+                <span>Next: Security PIN Verification</span>
+                <ChevronRight size={18} />
+              </button>
+
+              <div className="pt-2 border-t border-gray-100 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={handleLogoutAction}
+                  className="w-full py-2.5 px-4 text-red-600 hover:bg-red-50 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 border border-red-200/80"
+                >
+                  <LogOut size={14} />
+                  <span>Logout Account</span>
+                </button>
+                {onClose && (
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="w-full py-2.5 px-4 text-gray-600 hover:bg-gray-100 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 border border-gray-200"
+                  >
+                    <X size={14} />
+                    <span>Cancel</span>
+                  </button>
+                )}
+              </div>
+            </div>
           </>
         )}
 
@@ -364,16 +369,9 @@ const MemberSelectorModal = ({ isOpen, members = [], presidentUser, currentMembe
                     setStep(1);
                   }
                 }}
-                className="text-xs font-bold text-gray-400 hover:text-gray-600 flex items-center gap-1 transition-colors"
+                className="text-xs font-bold text-gray-500 hover:text-gray-800 flex items-center gap-1 transition-colors"
               >
                 <ArrowLeft size={14} /> {isChangingPinMode ? 'Cancel PIN Change' : 'Back to Identity Selection'}
-              </button>
-              <button
-                type="button"
-                onClick={handleLogoutAction}
-                className="px-2.5 py-1 border border-red-200/80 text-red-600 hover:bg-red-50 rounded-xl transition-all flex items-center gap-1 text-[11px] font-bold shrink-0"
-              >
-                <LogOut size={13} /> Logout
               </button>
             </div>
 

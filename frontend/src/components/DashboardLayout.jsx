@@ -1014,7 +1014,7 @@ const Header = ({ onToggleMobileMenu, onOpenMemberModal }) => {
 };
 
 const DashboardLayout = () => {
-  const { user, activeMember, setActiveMember } = useAuth();
+  const { user, activeMember, setActiveMember, refreshUser } = useAuth();
   const [showSuspendedModal, setShowSuspendedModal] = useState(false);
   const [showReactivatedModal, setShowReactivatedModal] = useState(false);
   const [adminEmail, setAdminEmail] = useState('');
@@ -1024,67 +1024,67 @@ const DashboardLayout = () => {
   const [orgMembers, setOrgMembers] = useState([]);
   const [showMemberModal, setShowMemberModal] = useState(false);
 
-  useEffect(() => {
+  const fetchCurrentMembers = async (overrideActiveMember) => {
+    const currentActiveMember = overrideActiveMember !== undefined ? overrideActiveMember : activeMember;
     if (user?.role === 'org-president' && user?.id) {
-      const fetchCurrentMembers = async () => {
-        try {
-          const { data: curSy } = await supabase
-            .from('school_years')
-            .select('id')
-            .eq('is_active', true)
-            .maybeSingle();
+      try {
+        const { data: curSy } = await supabase
+          .from('school_years')
+          .select('id')
+          .eq('is_active', true)
+          .maybeSingle();
 
-          let query = supabase
+        let query = supabase
+          .from('organization_members')
+          .select('*')
+          .or(`user_id.eq.${user.id},organization_id.eq.${user.organization_id || '00000000-0000-0000-0000-000000000000'}`);
+
+        if (curSy?.id) {
+          query = query.eq('school_year_id', curSy.id);
+        }
+
+        const { data, error } = await query.order('created_at', { ascending: true });
+        if (!error && data && data.length > 0) {
+          setOrgMembers(data);
+          if (!currentActiveMember) {
+            setShowMemberModal(true);
+          }
+        } else if (!error && (!data || data.length === 0)) {
+          const { data: legacyData } = await supabase
             .from('organization_members')
             .select('*')
-            .or(`user_id.eq.${user.id},organization_id.eq.${user.organization_id || '00000000-0000-0000-0000-000000000000'}`);
+            .or(`user_id.eq.${user.id},organization_id.eq.${user.organization_id || '00000000-0000-0000-0000-000000000000'}`)
+            .is('school_year_id', null)
+            .order('created_at', { ascending: true });
 
-          if (curSy?.id) {
-            query = query.eq('school_year_id', curSy.id);
-          }
-
-          const { data, error } = await query.order('created_at', { ascending: true });
-          if (!error && data && data.length > 0) {
-            setOrgMembers(data);
-            if (!activeMember) {
+          if (legacyData && legacyData.length > 0) {
+            setOrgMembers(legacyData);
+            if (!currentActiveMember) {
               setShowMemberModal(true);
             }
-          } else if (!error && (!data || data.length === 0)) {
-            // Check for legacy members where school_year_id is null if none for current SY yet
-            const { data: legacyData } = await supabase
-              .from('organization_members')
-              .select('*')
-              .or(`user_id.eq.${user.id},organization_id.eq.${user.organization_id || '00000000-0000-0000-0000-000000000000'}`)
-              .is('school_year_id', null)
-              .order('created_at', { ascending: true });
-
-            if (legacyData && legacyData.length > 0) {
-              setOrgMembers(legacyData);
-              if (!activeMember) {
-                setShowMemberModal(true);
-              }
-            } else {
-              setOrgMembers([]);
-            }
-          } else if (error) {
-            // Fallback if school_year_id column doesn't exist yet
-            const { data: fallbackData } = await supabase
-              .from('organization_members')
-              .select('*')
-              .or(`user_id.eq.${user.id},organization_id.eq.${user.organization_id || '00000000-0000-0000-0000-000000000000'}`)
-              .order('created_at', { ascending: true });
-
-            if (fallbackData && fallbackData.length > 0) {
-              setOrgMembers(fallbackData);
-              if (!activeMember) setShowMemberModal(true);
-            }
+          } else {
+            setOrgMembers([]);
           }
-        } catch (err) {
-          console.warn('Error fetching organization_members:', err);
+        } else if (error) {
+          const { data: fallbackData } = await supabase
+            .from('organization_members')
+            .select('*')
+            .or(`user_id.eq.${user.id},organization_id.eq.${user.organization_id || '00000000-0000-0000-0000-000000000000'}`)
+            .order('created_at', { ascending: true });
+
+          if (fallbackData && fallbackData.length > 0) {
+            setOrgMembers(fallbackData);
+            if (!currentActiveMember) setShowMemberModal(true);
+          }
         }
-      };
-      fetchCurrentMembers();
+      } catch (err) {
+        console.warn('Error fetching organization_members:', err);
+      }
     }
+  };
+
+  useEffect(() => {
+    fetchCurrentMembers();
   }, [user?.id, user?.role, user?.organization_id, activeMember]);
   
   const isSuspended = user?.status?.startsWith('Suspended') && user?.role === 'org-president';
@@ -1149,7 +1149,10 @@ const DashboardLayout = () => {
         onSelectMember={(selected) => {
           setActiveMember(selected);
           setShowMemberModal(false);
+          if (refreshUser) refreshUser();
+          fetchCurrentMembers(selected);
         }}
+        onClose={activeMember ? () => setShowMemberModal(false) : null}
       />
 
       {showSuspendedModal && isSuspended && (

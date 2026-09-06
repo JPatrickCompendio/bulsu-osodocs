@@ -507,8 +507,29 @@ export const MyDocuments = () => {
     );
   };
 
-  const getLatestAttachmentLog = (logs, attachmentId) =>
-    (logs || []).find((log) => log.attachment_id === attachmentId);
+  const getLatestAttachmentLog = (logs, attachmentId, targetVersion = null, allVersions = []) => {
+    if (!targetVersion) {
+      return (logs || []).find((log) => log.attachment_id === attachmentId);
+    }
+    const sortedVersions = (allVersions || []).slice().sort((a, b) => (a.version_number || 0) - (b.version_number || 0));
+    const targetIndex = sortedVersions.findIndex(v => v.id === targetVersion.id);
+    const nextVersion = targetIndex !== -1 && targetIndex < sortedVersions.length - 1 ? sortedVersions[targetIndex + 1] : null;
+
+    return (logs || []).find((log) => {
+      if (log.attachment_id !== attachmentId) return false;
+      if (log.submission_version_id) {
+        if (log.submission_version_id === targetVersion.id) return true;
+        const logVersion = sortedVersions.find(v => v.id === log.submission_version_id);
+        if (logVersion && (logVersion.version_number || 0) > (targetVersion.version_number || 0)) {
+          return false;
+        }
+      }
+      if (nextVersion && nextVersion.created_at) {
+        return new Date(log.created_at) <= new Date(nextVersion.created_at);
+      }
+      return true;
+    });
+  };
 
   const getFileHistoryAttachmentIds = (file, allVersions) => {
     const ids = [];
@@ -527,12 +548,33 @@ export const MyDocuments = () => {
     return ids;
   };
 
-  const getFileReturnHistory = (file, allVersions, logs) => {
+  const getFileReturnHistory = (file, allVersions, logs, targetVersion = null) => {
     const ids = new Set(getFileHistoryAttachmentIds(file, allVersions));
     if (ids.size === 0) return [];
-    return (logs || [])
-      .filter((log) => ids.has(log.attachment_id))
-      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    let filteredLogs = (logs || []).filter((log) => ids.has(log.attachment_id));
+
+    if (targetVersion) {
+      const sortedVersions = (allVersions || []).slice().sort((a, b) => (a.version_number || 0) - (b.version_number || 0));
+      const targetIndex = sortedVersions.findIndex(v => v.id === targetVersion.id);
+      const nextVersion = targetIndex !== -1 && targetIndex < sortedVersions.length - 1 ? sortedVersions[targetIndex + 1] : null;
+
+      filteredLogs = filteredLogs.filter((log) => {
+        if (log.submission_version_id) {
+          if (log.submission_version_id === targetVersion.id) return true;
+          const logVersion = sortedVersions.find(v => v.id === log.submission_version_id);
+          if (logVersion && (logVersion.version_number || 0) > (targetVersion.version_number || 0)) {
+            return false;
+          }
+        }
+        if (nextVersion && nextVersion.created_at) {
+          return new Date(log.created_at) <= new Date(nextVersion.created_at);
+        }
+        return true;
+      });
+    }
+
+    return filteredLogs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   };
 
   const getStoragePath = (filePath) => {
@@ -684,6 +726,8 @@ export const MyDocuments = () => {
       return {
         isApproved: false,
         returnedForDisplay: true,
+        isPulsing: false,
+        showRecheckBadge: false,
         fileLog: null,
         localReturn: returnedMap[file.id]
       };
@@ -693,12 +737,14 @@ export const MyDocuments = () => {
       return {
         isApproved: true,
         returnedForDisplay: false,
-        fileLog: getLatestAttachmentLog(logs, file.id)
+        isPulsing: false,
+        showRecheckBadge: false,
+        fileLog: getLatestAttachmentLog(logs, file.id, activeVersion, allVersions)
       };
     }
 
-    const historyLogs = getFileReturnHistory(file, allVersions, logs);
-    const latestHistoryLog = historyLogs[0] || getLatestAttachmentLog(logs, file.id);
+    const historyLogs = getFileReturnHistory(file, allVersions, logs, activeVersion);
+    const latestHistoryLog = historyLogs[0] || getLatestAttachmentLog(logs, file.id, activeVersion, allVersions);
     const latestAction = String(latestHistoryLog?.review_action || latestHistoryLog?.action_type || '').toLowerCase();
     const isLatestApproved = latestAction === 'approved' || latestAction === 'approve';
     const isLatestReturned = RETURN_REASONS.includes(latestAction);
@@ -725,73 +771,59 @@ export const MyDocuments = () => {
       existedInPreviousVersion && prevAttachmentByRequirement.file_url !== file.file_url;
     const unchangedFromPrevious = existedInPreviousVersion && !isModifiedInResubmission;
 
-    const viewingLatestVersion = activeVersion?.id === doc.raw?.current_version_id;
+    const viewingLatestVersion = activeVersion?.id === doc?.raw?.current_version_id;
     const docStatus = (viewingLatestVersion
-      ? (doc.raw?.status || doc.status || '')
-      : (activeVersion?.status || doc.raw?.status || doc.status || '')
+      ? (doc?.raw?.status || doc?.status || '')
+      : (activeVersion?.status || doc?.raw?.status || doc?.status || '')
     ).toLowerCase();
 
-    const isActiveChairmanReview =
+    const isChairmanStage =
       docStatus === 'submitted' ||
       docStatus === 'oso staff review' ||
       docStatus === 'pending' ||
       docStatus === 'returned';
 
-    const isToForwardStage = docStatus === 'to forward';
-
-    const isChairmanStage = isActiveChairmanReview || isToForwardStage;
-
-    const isReviewerStage =
-      isChairmanStage ||
-      docStatus.includes('sds') ||
-      docStatus.includes('dean review') ||
-      docStatus.includes('dean approved') ||
-      docStatus.includes('main campus review');
-
-    const isApprovedStage =
-      docStatus === 'dean approved' ||
-      docStatus === 'approved' ||
-      docStatus.includes('ready for retrieval') ||
-      docStatus.includes('waiting for accomplishment') ||
-      docStatus === 'completed';
-
     const isReturnedAttachment =
       !isLatestApproved &&
       (isLatestReturned || (isResubmittedVersion && isModifiedInResubmission));
 
-    const isReturnByCurrentReviewer =
-      isReturnedAttachment &&
-      ((fileLog?.user_id && fileLog.user_id === currentUser?.id) ||
-        sameRole(fileLog?.users?.role, currentUser?.role));
+    const userRoleNorm = normalizeRole(currentUser?.role);
+    const isAdminUser = userRoleNorm === 'admin' || userRoleNorm.includes('sds');
 
-    const returnedForDisplay = isChairmanStage
-      ? isReturnedAttachment
-      : (isReviewerStage ? isReturnByCurrentReviewer : false);
+    const fileLogRole = normalizeRole(fileLog?.users?.role);
+    const fileLogPhase = String(fileLog?.workflow_phase || '').toLowerCase();
+    const isFileReturnedByAdmin = fileLogRole === 'admin' || fileLogRole.includes('sds') || fileLogPhase.includes('sds');
+    const isFileReturnedByOso = fileLogRole === 'chairman' || fileLogRole.includes('vice chairman') || fileLogPhase.includes('chairman') || fileLogPhase.includes('oso staff');
 
-    const hasRevision = returnedForDisplay || (isActiveChairmanReview && isModifiedInResubmission);
-    const historicalChairmanVersion = !viewingLatestVersion && isChairmanStage;
-
-    let isApproved = approvedIds.includes(file.id);
-
-    if (!isApproved) {
-      if (historicalChairmanVersion) {
-        // Browsing older versions: green unless explicitly returned
-        isApproved = !returnedForDisplay;
-      } else if (isToForwardStage || isApprovedStage) {
-        // Passed review — carry forward as approved unless returned at this stage
-        isApproved = !returnedForDisplay;
-      } else if (isActiveChairmanReview) {
-        isApproved =
-          (fileLog && fileLog.review_action === 'approved') ||
-          (isResubmittedVersion && unchangedFromPrevious && !hasRevision);
-      } else if (isReviewerStage) {
-        isApproved =
-          (fileLog && fileLog.review_action === 'approved') ||
-          !returnedForDisplay;
-      }
+    let returnedForDisplay = false;
+    if (!viewingLatestVersion) {
+      returnedForDisplay = isReturnedAttachment;
+    } else if (isAdminUser) {
+      returnedForDisplay = isReturnedAttachment && isFileReturnedByAdmin;
+    } else {
+      returnedForDisplay = isChairmanStage
+        ? isReturnedAttachment
+        : (isReturnedAttachment && (isFileReturnedByOso || sameRole(fileLogRole, currentUser?.role)));
     }
 
-    return { isApproved, returnedForDisplay, hasRevision, fileLog };
+    const hasRevision = returnedForDisplay || (isChairmanStage && isModifiedInResubmission);
+    const historicalChairmanVersion = !viewingLatestVersion && isChairmanStage;
+
+    const isApproved = historicalChairmanVersion
+      ? !returnedForDisplay
+      : (isAdminUser
+          ? !returnedForDisplay
+          : (isChairmanStage
+              ? (
+                  (fileLog && fileLog.review_action === 'approved') ||
+                  (isResubmittedVersion && unchangedFromPrevious && !hasRevision)
+                )
+              : !returnedForDisplay));
+
+    const isPulsing = viewingLatestVersion && returnedForDisplay && !approvedIds.includes(file.id) && !returnedMap[file.id];
+    const showRecheckBadge = isPulsing;
+
+    return { isApproved, returnedForDisplay, isPulsing, showRecheckBadge, hasRevision, fileLog };
   };
 
   const attachmentRequiresReview = (file, doc, activeVersion, allVersions, logs, approvedIds, returnedMap) => {
@@ -2471,12 +2503,81 @@ export const MyDocuments = () => {
 
     const currentVersionIdToUse = selectedVersionId || selectedDoc.raw?.current_version_id;
     const currentVersion = allVersions.find(v => v.id === currentVersionIdToUse) || allVersions[0];
+
+    const activeDetails = isActivityProposal
+      ? (Array.isArray(currentVersion?.activity_proposal_details)
+        ? currentVersion.activity_proposal_details[currentVersion.activity_proposal_details.length - 1]
+        : currentVersion?.activity_proposal_details)
+      : null;
+
+    const versionTitle = activeDetails?.activity_title || activeDetails?.title || (selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title);
+    const versionPic = activeDetails?.person_in_charge || selectedDoc.pic || '—';
+    const versionStudentId = activeDetails?.student_id_number || selectedDoc.studentId || '—';
+    const versionContact = activeDetails?.contact_number || selectedDoc.contact || '—';
+
+    const versionSchedules = (activeDetails?.activity_schedules && activeDetails.activity_schedules.length > 0)
+      ? activeDetails.activity_schedules
+      : (activeDetails?.schedules && activeDetails.schedules.length > 0)
+        ? activeDetails.schedules
+        : (selectedDoc.schedules || []);
+
+    const rawVersionTargetDate = activeDetails?.target_date || selectedDoc.targetDate;
+    let versionTargetDate = rawVersionTargetDate;
+    if (rawVersionTargetDate && rawVersionTargetDate !== '-' && rawVersionTargetDate !== '—') {
+      try {
+        versionTargetDate = new Date(rawVersionTargetDate).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric'
+        });
+      } catch (_) {}
+    }
+    const versionTargetTime = activeDetails?.target_time || selectedDoc.targetTime || '—';
+
+    const versionDuration = calculateProposalDuration(activeDetails || selectedDoc.proposalDetails || selectedDoc.raw?.activity_proposal_details || { schedules: versionSchedules, duration: selectedDoc.duration, is_indefinite_end_time: selectedDoc.is_indefinite_end_time });
+
+    const versionStudents = activeDetails?.number_of_students_involved || activeDetails?.students_involved || selectedDoc.students || '—';
+    const versionNature = activeDetails?.nature_of_activity || activeDetails?.nature || selectedDoc.nature || '—';
+    const versionObjectives = activeDetails?.objectives_of_the_activity || activeDetails?.objectives || selectedDoc.objectives || '—';
+
+    const rawSatisfyGoals = activeDetails?.describe_how_this_activity_will_satisfy_the_needs || activeDetails?.satisfy_goals || [activeDetails?.satisfaction_goal_1, activeDetails?.satisfaction_goal_2, activeDetails?.satisfaction_goal_3].filter(Boolean);
+    const versionSatisfyGoals = Array.isArray(rawSatisfyGoals)
+      ? rawSatisfyGoals.filter(Boolean)
+      : (typeof rawSatisfyGoals === 'string' && rawSatisfyGoals.trim() ? [rawSatisfyGoals.trim()] : (selectedDoc.satisfy_goals || []));
+
+    const versionSubmittedAt = new Date(currentVersion?.created_at || selectedDoc.raw?.created_at || selectedDoc.submittedDate).toLocaleDateString(
+      'en-US',
+      { month: 'short', day: 'numeric', year: 'numeric' }
+    );
+
+    const versionStatus = (currentVersion?.id === selectedDoc.raw?.current_version_id
+      ? (selectedDoc.status || currentVersion?.status || '')
+      : (currentVersion?.status || selectedDoc.status || '')
+    );
+
     const versionScopedTimelineLogs = (logs) =>
       filterTimelineLogsForVersion(logs, {
         allVersions,
         viewingVersionId: currentVersion?.id,
         currentVersionId: selectedDoc.raw?.current_version_id
       });
+
+    const currentVersionTimelineLogs = versionScopedTimelineLogs(timelineLogs);
+    const lastLogForVersion = currentVersionTimelineLogs[0] || null;
+    const rawLastActionDate = lastLogForVersion?.created_at || currentVersion?.created_at || selectedDoc.raw?.updated_at || selectedDoc.raw?.created_at;
+    let versionLastAction = selectedDoc.lastAction || selectedDoc.submittedDate;
+    if (rawLastActionDate) {
+      try {
+        versionLastAction = new Date(rawLastActionDate).toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        });
+      } catch (_) {}
+    }
     const rawAttachments = currentVersion?.submission_attachments || [];
     // Deduplicate attachments by requirement_id, taking the latest one
     const attachments = Array.from(
@@ -2879,9 +2980,9 @@ export const MyDocuments = () => {
                 </p>
                 <h1
                   className="mt-1 text-lg sm:text-2xl md:text-3xl font-extrabold tracking-tight text-gray-900 break-all line-clamp-2 max-w-3xl"
-                  title={isActivityProposal ? docTitle : `${selectedDoc.sender} ${selectedDoc.type} ${selectedDoc.raw?.school_years?.name || (activeSy ? activeSy.name : '')}`.toUpperCase()}
+                  title={isActivityProposal ? versionTitle : `${selectedDoc.sender} ${selectedDoc.type} ${selectedDoc.raw?.school_years?.name || (activeSy ? activeSy.name : '')}`.toUpperCase()}
                 >
-                  {isActivityProposal ? docTitle : `${selectedDoc.sender} ${selectedDoc.type} ${selectedDoc.raw?.school_years?.name || (activeSy ? activeSy.name : '')}`.toUpperCase()}
+                  {isActivityProposal ? versionTitle : `${selectedDoc.sender} ${selectedDoc.type} ${selectedDoc.raw?.school_years?.name || (activeSy ? activeSy.name : '')}`.toUpperCase()}
                 </h1>
                 {isActivityProposal && (
                   <p className="mt-1 sm:mt-2 text-xs sm:text-sm font-semibold text-gray-500">Activity Proposal Form</p>
@@ -2898,21 +2999,21 @@ export const MyDocuments = () => {
                   <div className="space-y-3 sm:space-y-4 text-xs sm:text-sm text-gray-700 max-w-4xl">
                     <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
                       <span className="font-bold sm:min-w-[200px] shrink-0">Person In-Charge:</span>
-                      <span className="break-all">{selectedDoc.pic || '—'}</span>
+                      <span className="break-all">{versionPic}</span>
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
                       <span className="font-bold sm:min-w-[200px] shrink-0">Student ID No.:</span>
-                      <span>{selectedDoc.studentId || '—'}</span>
+                      <span>{versionStudentId}</span>
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
                       <span className="font-bold sm:min-w-[200px] shrink-0">Contact Number of Person-in-Charge:</span>
-                      <span>{selectedDoc.contact || '—'}</span>
+                      <span>{versionContact}</span>
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-2">
                       <span className="font-bold sm:min-w-[200px] shrink-0">Target Date and Time:</span>
                       <span>
-                        {selectedDoc.schedules && selectedDoc.schedules.length > 0 ? (
-                          selectedDoc.schedules.map((s, idx) => {
+                        {versionSchedules && versionSchedules.length > 0 ? (
+                          versionSchedules.map((s, idx) => {
                             let dateStr = 'TBD';
                             if (s.activity_date) {
                               try {
@@ -2936,21 +3037,21 @@ export const MyDocuments = () => {
                             return <span key={idx} className="block">{`${dateStr} — ${formatTime(s.start_time)} – ${s.is_indefinite ? 'INDEFINITE' : formatTime(s.end_time)}`}</span>;
                           })
                         ) : (
-                          selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-' ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}` : selectedDoc.targetDate
+                          versionTargetDate && versionTargetTime && versionTargetDate !== '-' && versionTargetTime !== '-' ? `${versionTargetDate} | ${versionTargetTime}` : versionTargetDate
                         )}
                       </span>
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
                       <span className="font-bold sm:min-w-[200px] shrink-0">Duration:</span>
-                      <span>{calculateProposalDuration(selectedDoc.proposalDetails || selectedDoc.raw?.activity_proposal_details || { schedules: selectedDoc.schedules, duration: selectedDoc.duration, is_indefinite_end_time: selectedDoc.is_indefinite_end_time })}</span>
+                      <span>{versionDuration}</span>
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
                       <span className="font-bold sm:min-w-[200px] shrink-0">Number of Students Involved:</span>
-                      <span>{selectedDoc.students || '—'}</span>
+                      <span>{versionStudents}</span>
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
                       <span className="font-bold sm:min-w-[200px] shrink-0">Nature of Activity:</span>
-                      <span>{selectedDoc.nature || '—'}</span>
+                      <span>{versionNature}</span>
                     </div>
                   </div>
 
@@ -2960,7 +3061,7 @@ export const MyDocuments = () => {
                         <p className="font-bold text-xs sm:text-sm mb-2">Objectives of the Activity:</p>
                         <div className="bg-gray-50 p-4 sm:p-6 rounded-2xl border border-gray-100">
                           {(() => {
-                            const objList = parseObjectivesList(selectedDoc.objectives);
+                            const objList = parseObjectivesList(versionObjectives);
                             if (objList.length > 0) {
                               return (
                                 <ul className="list-disc pl-5 space-y-1 text-xs sm:text-sm text-gray-700 font-medium">
@@ -2968,7 +3069,7 @@ export const MyDocuments = () => {
                                 </ul>
                               );
                             }
-                            return <p className="text-gray-700 text-xs sm:text-sm leading-relaxed">{selectedDoc.objectives || '-'}</p>;
+                            return <p className="text-gray-700 text-xs sm:text-sm leading-relaxed">{versionObjectives || '-'}</p>;
                           })()}
                         </div>
                       </div>
@@ -2985,9 +3086,9 @@ export const MyDocuments = () => {
                         Describe how this activity will satisfy the needs of the organization and how it will help the organization achieve its goals:
                       </p>
                       <div className="bg-gray-50 p-4 sm:p-6 rounded-2xl text-xs sm:text-sm leading-relaxed text-gray-700 border border-gray-100">
-                        {isActivityProposal && selectedDoc.satisfy_goals && selectedDoc.satisfy_goals.length > 0 ? (
+                        {isActivityProposal && versionSatisfyGoals && versionSatisfyGoals.length > 0 ? (
                           <ol className="list-decimal pl-5 space-y-1.5">
-                            {selectedDoc.satisfy_goals.map((goal, idx) => (
+                            {versionSatisfyGoals.map((goal, idx) => (
                               <li key={idx}>{goal}</li>
                             ))}
                           </ol>
@@ -3440,21 +3541,21 @@ export const MyDocuments = () => {
                   <div>
                     <span className="block text-gray-500 mb-1">Document Title</span>
                     <p className="text-sm font-medium text-gray-800 leading-snug">
-                      {selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title}
+                      {versionTitle}
                     </p>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-gray-500 inline-flex items-center gap-1.5"><AlertCircle size={14} /> Status</span>
                     <span
                       className="px-3 py-1 rounded-full text-[11px] font-semibold uppercase text-white"
-                      style={{ backgroundColor: getStatusColor(isEffectiveReadyForRetrieval ? 'ready for retrieval' : (docStatusLower === 'waiting for accomplishment report' ? 'approved' : selectedDoc.status)) }}
+                      style={{ backgroundColor: getStatusColor(isEffectiveReadyForRetrieval ? 'ready for retrieval' : (docStatusLower === 'waiting for accomplishment report' ? 'approved' : versionStatus)) }}
                     >
-                      {isEffectiveReadyForRetrieval ? 'FOR RETRIEVAL' : (docStatusLower === 'waiting for accomplishment report' ? 'APPROVED' : selectedDoc.status)}
+                      {isEffectiveReadyForRetrieval ? 'FOR RETRIEVAL' : (docStatusLower === 'waiting for accomplishment report' ? 'APPROVED' : versionStatus)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-gray-500 inline-flex items-center gap-1.5"><Calendar size={14} /> Date</span>
-                    <span className="text-gray-800 font-medium">{formattedSubmittedAt}</span>
+                    <span className="text-gray-800 font-medium">{versionSubmittedAt}</span>
                   </div>
                   <div>
                     <span className="block text-gray-500 mb-1 inline-flex items-center gap-1.5"><User size={14} /> Submitted By</span>
@@ -4067,8 +4168,8 @@ export const MyDocuments = () => {
               locallyApproved,
               locallyReturned
             );
-            const fileLog = getLatestAttachmentLog(timelineLogs, previewFile.id);
-            const previewReturnHistory = getFileReturnHistory(previewFile, allVersions, attachmentReturnLogs);
+            const fileLog = getLatestAttachmentLog(timelineLogs, previewFile.id, currentVersion, allVersions);
+            const previewReturnHistory = getFileReturnHistory(previewFile, allVersions, attachmentReturnLogs, currentVersion);
             const latestPreviewReturn = previewReturnHistory[0] || null;
             const previewDisplayLog =
               latestPreviewReturn ||
@@ -4233,7 +4334,7 @@ export const MyDocuments = () => {
             { label: 'ORGANIZATION', value: selectedDoc.fullOrgName || selectedDoc.raw?.users?.org_name || selectedDoc.sender || '-', icon: <User size={18} /> },
             { label: 'TYPE', value: `${selectedDoc.type}`, icon: <FileText size={18} />, color: 'text-blue-500' },
             { label: 'STATUS', value: (isEffectiveReadyForRetrieval || selectedDoc.status === 'READY FOR RETRIEVAL' || selectedDoc.category === 'For Retrieval') ? 'FOR RETRIEVAL' : ((['ready for retrieval', 'waiting for accomplishment report', 'approved'].includes(selectedDoc.status?.toLowerCase())) ? 'APPROVED' : selectedDoc.status), icon: <Clock size={18} />, badge: true },
-            { label: 'LAST ACTION', value: selectedDoc.lastAction || selectedDoc.submittedDate, icon: <Calendar size={18} /> }
+            { label: 'LAST ACTION', value: versionLastAction, icon: <Calendar size={18} /> }
           ].map((card, idx) => (
             <div key={idx} className="bg-gray-100 p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
               <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 sm:mb-3">
@@ -4264,30 +4365,30 @@ export const MyDocuments = () => {
             <div className="text-center mb-6 sm:mb-10">
               <h3
                 className="text-sm sm:text-lg font-bold text-gray-800 break-all line-clamp-2 max-w-3xl mx-auto"
-                title={isActivityProposal ? (selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title) : `${selectedDoc.sender} ${selectedDoc.type} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
+                title={isActivityProposal ? versionTitle : `${selectedDoc.sender} ${selectedDoc.type} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
               >
-                Document Title: {isActivityProposal ? (selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title) : `${selectedDoc.sender} ${selectedDoc.type} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
+                Document Title: {isActivityProposal ? versionTitle : `${selectedDoc.sender} ${selectedDoc.type} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
               </h3>
             </div>
 
             <div className="space-y-3 sm:space-y-4 text-xs sm:text-sm text-gray-700 max-w-4xl">
               <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
                 <span className="font-bold sm:min-w-[200px] shrink-0">Person In-Charge:</span>
-                <span className="break-all">{selectedDoc.pic}</span>
+                <span className="break-all">{versionPic}</span>
               </div>
               <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
                 <span className="font-bold sm:min-w-[200px] shrink-0">Student ID No.:</span>
-                <span>{selectedDoc.studentId}</span>
+                <span>{versionStudentId}</span>
               </div>
               <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
                 <span className="font-bold sm:min-w-[200px] shrink-0">Contact Number:</span>
-                <span>{selectedDoc.contact}</span>
+                <span>{versionContact}</span>
               </div>
               <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-2">
                 <span className="font-bold sm:min-w-[200px] shrink-0">Target Date and Time:</span>
                 <span>
-                  {Array.isArray(selectedDoc.schedules) && selectedDoc.schedules.length > 0 ? (
-                    selectedDoc.schedules.map((s, idx) => {
+                  {Array.isArray(versionSchedules) && versionSchedules.length > 0 ? (
+                    versionSchedules.map((s, idx) => {
                       let dateStr = 'TBD';
                       if (s.activity_date) {
                         try {
@@ -4311,28 +4412,28 @@ export const MyDocuments = () => {
                       return <span key={idx} className="block">{`${dateStr} — ${formatTime(s.start_time)} – ${s.is_indefinite ? 'INDEFINITE' : formatTime(s.end_time)}`}</span>;
                     })
                   ) : (
-                    selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-' ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}` : selectedDoc.targetDate
+                    versionTargetDate && versionTargetTime && versionTargetDate !== '-' && versionTargetTime !== '-' ? `${versionTargetDate} | ${versionTargetTime}` : versionTargetDate
                   )}
                 </span>
               </div>
               <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
                 <span className="font-bold sm:min-w-[200px] shrink-0">Duration:</span>
-                <span>{calculateProposalDuration(selectedDoc.proposalDetails || selectedDoc.raw?.activity_proposal_details || { schedules: selectedDoc.schedules, duration: selectedDoc.duration, is_indefinite_end_time: selectedDoc.is_indefinite_end_time })}</span>
+                <span>{versionDuration}</span>
               </div>
               <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
                 <span className="font-bold sm:min-w-[200px] shrink-0">Number of Students:</span>
-                <span>{selectedDoc.students}</span>
+                <span>{versionStudents}</span>
               </div>
               <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
                 <span className="font-bold sm:min-w-[200px] shrink-0">Nature of Activity:</span>
-                <span>{selectedDoc.nature}</span>
+                <span>{versionNature}</span>
               </div>
 
               <div className="mt-6 sm:mt-8">
                 <p className="font-bold mb-2 sm:mb-3">Objectives of the Activity:</p>
                 <div className="bg-gray-50 p-4 sm:p-6 rounded-2xl border border-gray-100">
                   {(() => {
-                    const objList = parseObjectivesList(selectedDoc.objectives);
+                    const objList = parseObjectivesList(versionObjectives);
                     if (objList.length > 0) {
                       return (
                         <ul className="list-disc pl-5 space-y-1 text-xs sm:text-sm text-gray-700 font-medium">
@@ -4357,14 +4458,14 @@ export const MyDocuments = () => {
                 <p className="font-bold mb-2">Target Audience / Participants: <span className="font-normal text-xs sm:text-sm">BulSUans Only</span></p>
               </div>
 
-              {isActivityProposal && (selectedDoc.satisfy_goals && selectedDoc.satisfy_goals.length > 0) ? (
+              {isActivityProposal && (versionSatisfyGoals && versionSatisfyGoals.length > 0) ? (
                 <div className="mt-6 sm:mt-8">
                   <p className="font-bold mb-3 text-xs sm:text-sm leading-relaxed">
                     Describe how this activity will satisfy the needs of the organization and how it will help the organization achieve its goals:
                   </p>
                   <div className="bg-gray-50 p-4 sm:p-6 rounded-2xl text-xs sm:text-sm leading-relaxed text-gray-600 border border-gray-100 italic">
                     <ol className="list-decimal pl-5 space-y-1.5">
-                      {selectedDoc.satisfy_goals.map((g, i) => <li key={i}>{g}</li>)}
+                      {versionSatisfyGoals.map((g, i) => <li key={i}>{g}</li>)}
                     </ol>
                   </div>
                 </div>
@@ -4455,7 +4556,7 @@ export const MyDocuments = () => {
                     const { data } = supabase.storage.from('documents').getPublicUrl(finalPath);
                     const fileUrl = data?.publicUrl || '#';
 
-                    const { isApproved, returnedForDisplay, fileLog } = getAttachmentReviewDisplay(
+                    const { isApproved, returnedForDisplay, isPulsing, showRecheckBadge, fileLog } = getAttachmentReviewDisplay(
                       file,
                       selectedDoc,
                       currentVersion,
@@ -4484,7 +4585,7 @@ export const MyDocuments = () => {
                     let badgeStyle = 'bg-white/10 text-white/90 border border-white/20';
 
                     if (returnedForDisplay) {
-                      containerBg = 'bg-[#f59e0b]';
+                      containerBg = isPulsing ? 'bg-[#f59e0b] animate-pulse' : 'bg-[#f59e0b]';
                       textColor = 'text-[#451a03]';
                       subtitleColor = 'text-[#78350f]';
                       iconStyle = 'bg-[#78350f]/10 text-[#78350f]';
@@ -4525,13 +4626,22 @@ export const MyDocuments = () => {
                               <span className={`text-[8px] sm:text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${badgeStyle}`}>
                                 {isOsas ? 'OSAS Requirement' : 'LOCAL Requirement'}
                               </span>
+                              {showRecheckBadge ? (
+                                <span className="text-[8px] sm:text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider bg-amber-950 text-amber-100 border border-amber-500/80 shrink-0 animate-pulse">
+                                  ⚠️ RE-CHECK REQUIRED
+                                </span>
+                              ) : returnedForDisplay ? (
+                                <span className="text-[8px] sm:text-[9px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-amber-100/90 text-amber-900 border border-amber-300/80 shrink-0">
+                                  {String(locallyReturned[file.id]?.reviewAction || fileLog?.review_action || fileLog?.action_type || 'returned').replace(/-/g, ' ').replace(/_/g, ' ').toUpperCase()}
+                                </span>
+                              ) : null}
                             </div>
                             <p className={`${subtitleColor} text-[9px] sm:text-[10px] uppercase font-bold mt-0.5`}>
                               {isForwardedItem ? '✓ Forwarded to Main Campus' : 'Attached Document'}
                             </p>
-                            {returnedForDisplay && (locallyReturned[file.id]?.comment || fileLog?.comment) && (
+                            {returnedForDisplay && (locallyReturned[file.id]?.comment || fileLog?.comment || fileLog?.description) && (
                               <p className="mt-1 text-[11px] sm:text-xs italic font-medium opacity-90 max-w-lg">
-                                {(fileLog?.users?.full_name || fileLog?.users?.role || user?.role || 'Reviewer')}'s Comment: "{locallyReturned[file.id]?.comment || fileLog?.comment}"
+                                {(fileLog?.users?.full_name || fileLog?.users?.role || user?.role || 'Reviewer')}'s Comment: "{locallyReturned[file.id]?.comment || fileLog?.comment || fileLog?.description}"
                               </p>
                             )}
                           </div>
@@ -4962,8 +5072,8 @@ export const MyDocuments = () => {
             locallyApproved,
             locallyReturned
           );
-          const fileLog = getLatestAttachmentLog(timelineLogs, previewFile.id);
-          const previewReturnHistory = getFileReturnHistory(previewFile, allVersions, attachmentReturnLogs);
+          const fileLog = getLatestAttachmentLog(timelineLogs, previewFile.id, currentVersion, allVersions);
+          const previewReturnHistory = getFileReturnHistory(previewFile, allVersions, attachmentReturnLogs, currentVersion);
           const latestPreviewReturn = previewReturnHistory[0] || null;
           const previewDisplayLog =
             latestPreviewReturn ||

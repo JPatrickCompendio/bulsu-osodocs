@@ -324,12 +324,33 @@ export const Inbox = () => {
     return ids;
   };
 
-  const getFileReturnHistory = (file, allVersions, logs) => {
+  const getFileReturnHistory = (file, allVersions, logs, targetVersion = null) => {
     const ids = new Set(getFileHistoryAttachmentIds(file, allVersions));
     if (ids.size === 0) return [];
-    return (logs || [])
-      .filter((log) => ids.has(log.attachment_id))
-      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    let filteredLogs = (logs || []).filter((log) => ids.has(log.attachment_id));
+
+    if (targetVersion) {
+      const sortedVersions = (allVersions || []).slice().sort((a, b) => (a.version_number || 0) - (b.version_number || 0));
+      const targetIndex = sortedVersions.findIndex(v => v.id === targetVersion.id);
+      const nextVersion = targetIndex !== -1 && targetIndex < sortedVersions.length - 1 ? sortedVersions[targetIndex + 1] : null;
+
+      filteredLogs = filteredLogs.filter((log) => {
+        if (log.submission_version_id) {
+          if (log.submission_version_id === targetVersion.id) return true;
+          const logVersion = sortedVersions.find(v => v.id === log.submission_version_id);
+          if (logVersion && (logVersion.version_number || 0) > (targetVersion.version_number || 0)) {
+            return false;
+          }
+        }
+        if (nextVersion && nextVersion.created_at) {
+          return new Date(log.created_at) <= new Date(nextVersion.created_at);
+        }
+        return true;
+      });
+    }
+
+    return filteredLogs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   };
 
   const getActiveVersionId = (doc, versionOverride = null) => {
@@ -345,8 +366,29 @@ export const Inbox = () => {
     );
   };
 
-  const getLatestAttachmentLog = (logs, attachmentId) =>
-    (logs || []).find((log) => log.attachment_id === attachmentId);
+  const getLatestAttachmentLog = (logs, attachmentId, targetVersion = null, allVersions = []) => {
+    if (!targetVersion) {
+      return (logs || []).find((log) => log.attachment_id === attachmentId);
+    }
+    const sortedVersions = (allVersions || []).slice().sort((a, b) => (a.version_number || 0) - (b.version_number || 0));
+    const targetIndex = sortedVersions.findIndex(v => v.id === targetVersion.id);
+    const nextVersion = targetIndex !== -1 && targetIndex < sortedVersions.length - 1 ? sortedVersions[targetIndex + 1] : null;
+
+    return (logs || []).find((log) => {
+      if (log.attachment_id !== attachmentId) return false;
+      if (log.submission_version_id) {
+        if (log.submission_version_id === targetVersion.id) return true;
+        const logVersion = sortedVersions.find(v => v.id === log.submission_version_id);
+        if (logVersion && (logVersion.version_number || 0) > (targetVersion.version_number || 0)) {
+          return false;
+        }
+      }
+      if (nextVersion && nextVersion.created_at) {
+        return new Date(log.created_at) <= new Date(nextVersion.created_at);
+      }
+      return true;
+    });
+  };
 
   const getInboxAttachmentDisplay = (file, doc, activeVersion, allVersions, logs, approvedIds, returnedMap, currentUser) => {
     if (returnedMap[file.id]) {
@@ -362,12 +404,12 @@ export const Inbox = () => {
       return {
         isApproved: true,
         returnedForDisplay: false,
-        fileLog: getLatestAttachmentLog(logs, file.id)
+        fileLog: getLatestAttachmentLog(logs, file.id, activeVersion, allVersions)
       };
     }
 
-    const historyLogs = getFileReturnHistory(file, allVersions, logs);
-    const latestHistoryLog = historyLogs[0] || getLatestAttachmentLog(logs, file.id);
+    const historyLogs = getFileReturnHistory(file, allVersions, logs, activeVersion);
+    const latestHistoryLog = historyLogs[0] || getLatestAttachmentLog(logs, file.id, activeVersion, allVersions);
     const latestAction = String(latestHistoryLog?.review_action || latestHistoryLog?.action_type || '').toLowerCase();
     const isLatestApproved = latestAction === 'approved' || latestAction === 'approve';
     const isLatestReturned = RETURN_REASONS.includes(latestAction);
@@ -399,7 +441,14 @@ export const Inbox = () => {
       !isLatestApproved &&
       (isLatestReturned || (isResubmittedVersion && isModifiedInResubmission));
 
-    // Use selected version status when browsing old versions
+    const userRoleNorm = normalizeRole(currentUser?.role);
+    const isAdminUser = userRoleNorm === 'admin' || userRoleNorm.includes('sds');
+
+    const fileLogRole = normalizeRole(fileLog?.users?.role);
+    const fileLogPhase = String(fileLog?.workflow_phase || '').toLowerCase();
+    const isFileReturnedByAdmin = fileLogRole === 'admin' || fileLogRole.includes('sds') || fileLogPhase.includes('sds');
+    const isFileReturnedByOso = fileLogRole === 'chairman' || fileLogRole.includes('vice chairman') || fileLogPhase.includes('chairman') || fileLogPhase.includes('oso staff');
+
     const viewingLatestVersion = activeVersion?.id === doc.raw?.current_version_id;
     const docStatus = (viewingLatestVersion
       ? (doc.raw?.status || doc.status || '')
@@ -410,24 +459,33 @@ export const Inbox = () => {
       docStatus === 'oso staff review' ||
       docStatus === 'pending' ||
       docStatus === 'returned';
-    const isReturnByCurrentReviewer =
-      isReturnedAttachment &&
-      ((fileLog?.user_id && fileLog.user_id === currentUser?.id) ||
-        sameRole(fileLog?.users?.role, currentUser?.role));
-    const returnedForDisplay = isChairmanStage ? isReturnedAttachment : isReturnByCurrentReviewer;
+
+    let returnedForDisplay = false;
+    if (!viewingLatestVersion) {
+      returnedForDisplay = isReturnedAttachment;
+    } else if (isAdminUser) {
+      returnedForDisplay = isReturnedAttachment && isFileReturnedByAdmin;
+    } else {
+      returnedForDisplay = isChairmanStage
+        ? isReturnedAttachment
+        : (isReturnedAttachment && (isFileReturnedByOso || sameRole(fileLogRole, currentUser?.role)));
+    }
+
     const hasRevision = returnedForDisplay || (isChairmanStage && isModifiedInResubmission);
 
     const historicalChairmanVersion = !viewingLatestVersion && isChairmanStage;
     const isApproved = historicalChairmanVersion
       ? !returnedForDisplay
-      : (isChairmanStage
-          ? (
-              (fileLog && fileLog.review_action === 'approved') ||
-              (isResubmittedVersion && unchangedFromPrevious && !hasRevision)
-            )
-          : !returnedForDisplay);
+      : (isAdminUser
+          ? !returnedForDisplay
+          : (isChairmanStage
+              ? (
+                  (fileLog && fileLog.review_action === 'approved') ||
+                  (isResubmittedVersion && unchangedFromPrevious && !hasRevision)
+                )
+              : !returnedForDisplay));
 
-    const isPulsing = returnedForDisplay && !approvedIds.includes(file.id) && !returnedMap[file.id];
+    const isPulsing = viewingLatestVersion && returnedForDisplay && !approvedIds.includes(file.id) && !returnedMap[file.id];
     const showRecheckBadge = isPulsing;
 
     return { isApproved, returnedForDisplay, isPulsing, showRecheckBadge, hasRevision, fileLog };
@@ -767,9 +825,7 @@ export const Inbox = () => {
         ? [
             'sds coordinator review', 'SDS coordinator review', 'SDS Coordinator Review', 'sds_coordinator_review',
             'sds review', 'SDS review', 'SDS Review', 'sds_review',
-            'oso approved', 'OSO Approved', 'OSO approved', 'oso_approved',
-            'pending hard copy', 'Pending Hard Copy', 'pending_hard_copy', 'hard copy', 'Hard Copy',
-            'to forward', 'To Forward', 'to_forward'
+            'oso approved', 'OSO Approved', 'OSO approved', 'oso_approved'
           ]
         : [
             'submitted', 'Submitted',
@@ -811,11 +867,24 @@ export const Inbox = () => {
       const mapped = (data || [])
         .filter(sub => {
           if (isAdmin) {
+            const rawStatus = String(sub.status || '').toLowerCase().trim();
+            if (
+              rawStatus === 'pending hard copy' ||
+              rawStatus === 'pending hardcopy' ||
+              rawStatus === 'to forward' ||
+              rawStatus === 'returned' ||
+              rawStatus === 'approved' ||
+              rawStatus === 'completed' ||
+              rawStatus.includes('dean')
+            ) {
+              return false;
+            }
             const logs = sub.submission_logs || [];
-            const hasApproved = logs.some(l => 
-              String(l.workflow_phase || '').toLowerCase().includes('sds') && 
-              (String(l.action_type || '').toLowerCase() === 'approved' || String(l.review_action || '').toLowerCase() === 'approved')
-            );
+            const hasApproved = logs.some(l => {
+              const phase = String(l.workflow_phase || '').toLowerCase();
+              const action = String(l.action_type || l.review_action || '').toLowerCase();
+              return (phase.includes('sds') || phase.includes('admin')) && (action === 'approved' || action === 'approve');
+            });
             if (hasApproved) return false;
           }
           return true;
@@ -1289,11 +1358,58 @@ export const Inbox = () => {
 
     const documentTypeName = selectedDoc?.raw?.documentType?.name || selectedDoc?.type || "";
     const isActivityProposal = documentTypeName.toLowerCase() === "activity proposal" || documentTypeName.toLowerCase() === "activity-proposal";
-    const details = isActivityProposal
+    const activeDetails = isActivityProposal
       ? (Array.isArray(activeVersion?.activity_proposal_details)
         ? activeVersion.activity_proposal_details[activeVersion.activity_proposal_details.length - 1]
         : activeVersion?.activity_proposal_details) || {}
       : {};
+
+    const isLatestVersion = activeVersion?.id === selectedDoc.raw?.current_version_id;
+
+    const versionTitle = isActivityProposal
+      ? (activeDetails.activity_title || selectedDoc.proposal_title || selectedDoc.title)
+      : `${selectedDoc.org || selectedDoc.sender} ${documentTypeName} ${activeSy ? activeSy.name : ''}`.toUpperCase();
+
+    const activeVersionTime = activeVersion?.created_at
+      ? new Date(activeVersion.created_at).toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        })
+      : selectedDoc.time;
+
+    let activeVersionStatus = selectedDoc.status;
+    if (!isLatestVersion) {
+      const vStatus = activeVersion?.status;
+      if (vStatus) {
+        activeVersionStatus = vStatus.charAt(0).toUpperCase() + vStatus.slice(1);
+      } else {
+        activeVersionStatus = `Returned (V${activeVersion?.version_number || 1})`;
+      }
+    }
+
+    const versionPic = activeDetails.person_in_charge || selectedDoc.raw?.users?.full_name || selectedDoc.pic || '—';
+    const versionStudentId = activeDetails.student_id_no || selectedDoc.studentId || '—';
+    const versionContact = activeDetails.contact_number || selectedDoc.contact || '—';
+    const versionSchedules = activeDetails.activity_schedules || selectedDoc.schedules || [];
+    const versionTargetDate = activeDetails.target_date || selectedDoc.targetDate || '-';
+    const versionTargetTime = activeDetails.target_time || selectedDoc.targetTime || '-';
+    const versionDuration = calculateProposalDuration(activeDetails);
+    const versionStudents = activeDetails.number_of_students ? `${activeDetails.number_of_students} Students` : (selectedDoc.students || '—');
+    const versionNature = activeDetails.nature_of_activity || selectedDoc.nature || '—';
+    const versionObjectives = activeDetails.objectives || selectedDoc.objectives || '';
+
+    const activeSatisfyGoals = [];
+    if (activeDetails.satisfaction_goal_1) activeSatisfyGoals.push(activeDetails.satisfaction_goal_1);
+    if (activeDetails.satisfaction_goal_2) activeSatisfyGoals.push(activeDetails.satisfaction_goal_2);
+    if (activeDetails.satisfaction_goal_3) activeSatisfyGoals.push(activeDetails.satisfaction_goal_3);
+    const versionSatisfyGoals = activeSatisfyGoals.length > 0 ? activeSatisfyGoals : selectedDoc.satisfy_goals;
+
+    const versionPartners = isActivityProposal ? (activeDetails.partners || selectedDoc.partners || null) : null;
+    const versionSponsors = isActivityProposal ? (activeDetails.sponsors || selectedDoc.sponsors || null) : null;
 
     // Deduplicate attachments by requirement_id to ensure clean view
     const rawAtts = activeVersion?.submission_attachments || [];
@@ -1319,7 +1435,7 @@ export const Inbox = () => {
             </button>
             <div className="min-w-0 flex-1">
               <h1 className="text-xl sm:text-3xl font-bold text-gray-800 tracking-tight flex flex-wrap items-center gap-2 sm:gap-3 break-words">
-                <span className="break-words max-w-full">{isActivityProposal ? (selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title) : `${selectedDoc.org || selectedDoc.sender} ${documentTypeName} ${activeSy ? activeSy.name : ''}`.toUpperCase()}</span>
+                <span className="break-words max-w-full">{versionTitle}</span>
                 {allVersions.length > 0 && (
                   <span className="px-2.5 py-0.5 sm:px-3 sm:py-1 bg-gray-100 text-gray-500 text-xs sm:text-sm font-bold rounded-lg uppercase tracking-widest shrink-0">
                     V{activeVersion?.version_number}
@@ -1352,10 +1468,10 @@ export const Inbox = () => {
         {/* Summary Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-10 text-gray-800">
           {[
-            { label: 'ORGANIZATION', value: selectedDoc.raw?.users?.org_name || details?.organization_name || selectedDoc.org || '-', icon: <User size={18} /> },
+            { label: 'ORGANIZATION', value: selectedDoc.raw?.users?.org_name || activeDetails?.organization_name || selectedDoc.org || '-', icon: <User size={18} /> },
             { label: 'TYPE', value: `${selectedDoc.type} ${selectedDoc.proposal_type && selectedDoc.proposal_type !== '-' ? `(${selectedDoc.proposal_type})` : ''}`, icon: <FileText size={18} />, color: 'text-blue-500' },
-            { label: 'STATUS', value: selectedDoc.status, icon: <Clock size={18} />, badge: true },
-            { label: 'RECEIVED AT', value: selectedDoc.time, icon: <Calendar size={18} /> }
+            { label: 'STATUS', value: activeVersionStatus, icon: <Clock size={18} />, badge: true },
+            { label: 'RECEIVED AT', value: activeVersionTime, icon: <Calendar size={18} /> }
           ].map((card, idx) => (
             <div key={idx} className="bg-gray-100 p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
               <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 sm:mb-3">
@@ -1385,30 +1501,30 @@ export const Inbox = () => {
           <div className="text-center mb-6 sm:mb-10">
             <h3 
               className="text-sm sm:text-lg font-bold text-gray-800 break-all line-clamp-2 max-w-3xl mx-auto"
-              title={isActivityProposal ? (selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title) : `${selectedDoc.org || selectedDoc.sender} ${documentTypeName} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
+              title={versionTitle}
             >
-              Document Title: {isActivityProposal ? (selectedDoc.proposal_title && selectedDoc.proposal_title !== '-' ? selectedDoc.proposal_title : selectedDoc.title) : `${selectedDoc.org || selectedDoc.sender} ${documentTypeName} ${activeSy ? activeSy.name : ''}`.toUpperCase()}
+              Document Title: {versionTitle}
             </h3>
           </div>
 
           <div className="space-y-3 sm:space-y-4 text-xs sm:text-sm text-gray-700 max-w-4xl">
             <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
               <span className="font-bold sm:min-w-[200px] shrink-0">Person In-Charge:</span>
-              <span className="break-all">{selectedDoc.pic || '—'}</span>
+              <span className="break-all">{versionPic}</span>
             </div>
             <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
               <span className="font-bold sm:min-w-[200px] shrink-0">Student ID No.:</span>
-              <span>{selectedDoc.studentId || '—'}</span>
+              <span>{versionStudentId}</span>
             </div>
             <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
               <span className="font-bold sm:min-w-[200px] shrink-0">Contact Number of Person-in-Charge:</span>
-              <span>{selectedDoc.contact || '—'}</span>
+              <span>{versionContact}</span>
             </div>
             <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-2">
               <span className="font-bold sm:min-w-[200px] shrink-0">Target Date and Time:</span>
               <span>
-                {selectedDoc.schedules && selectedDoc.schedules.length > 0 ? (
-                  selectedDoc.schedules.map((s, idx) => {
+                {versionSchedules && versionSchedules.length > 0 ? (
+                  versionSchedules.map((s, idx) => {
                     let dateStr = 'TBD';
                     if (s.activity_date) {
                       try {
@@ -1432,28 +1548,28 @@ export const Inbox = () => {
                     return <span key={idx} className="block">{`${dateStr} — ${formatTime(s.start_time)} – ${s.is_indefinite ? 'INDEFINITE' : formatTime(s.end_time)}`}</span>;
                   })
                 ) : (
-                  selectedDoc.targetDate && selectedDoc.targetTime && selectedDoc.targetDate !== '-' && selectedDoc.targetTime !== '-' ? `${selectedDoc.targetDate} | ${selectedDoc.targetTime}` : selectedDoc.targetDate
+                  versionTargetDate && versionTargetTime && versionTargetDate !== '-' && versionTargetTime !== '-' ? `${versionTargetDate} | ${versionTargetTime}` : versionTargetDate
                 )}
               </span>
             </div>
             <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
               <span className="font-bold sm:min-w-[200px] shrink-0">Duration:</span>
-              <span>{calculateProposalDuration(selectedDoc.proposalDetails || selectedDoc.raw?.activity_proposal_details || { schedules: selectedDoc.schedules, duration: selectedDoc.duration, is_indefinite_end_time: selectedDoc.is_indefinite_end_time })}</span>
+              <span>{versionDuration}</span>
             </div>
             <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
               <span className="font-bold sm:min-w-[200px] shrink-0">Number of Students Involved:</span>
-              <span>{selectedDoc.students || '—'}</span>
+              <span>{versionStudents}</span>
             </div>
             <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
               <span className="font-bold sm:min-w-[200px] shrink-0">Nature of Activity:</span>
-              <span>{selectedDoc.nature || '—'}</span>
+              <span>{versionNature}</span>
             </div>
 
             <div className="mt-6 sm:mt-8">
               <p className="font-bold text-xs sm:text-sm mb-2">Objectives of the Activity:</p>
               <div className="bg-gray-50 p-4 sm:p-6 rounded-2xl border border-gray-100">
                 {(() => {
-                  const objList = parseObjectivesList(selectedDoc.objectives);
+                  const objList = parseObjectivesList(versionObjectives);
                   if (objList.length > 0) {
                     return (
                       <ul className="list-disc pl-5 space-y-1 text-xs sm:text-sm text-gray-700 font-medium">
@@ -1461,7 +1577,7 @@ export const Inbox = () => {
                       </ul>
                     );
                   }
-                  return <p className="text-gray-700 text-xs sm:text-sm leading-relaxed">{selectedDoc.objectives || '-'}</p>;
+                  return <p className="text-gray-700 text-xs sm:text-sm leading-relaxed">{versionObjectives || '-'}</p>;
                 })()}
               </div>
             </div>
@@ -1478,9 +1594,9 @@ export const Inbox = () => {
                   Describe how this activity will satisfy the needs of the organization and how it will help the organization achieve its goals:
                 </p>
                 <div className="bg-gray-50 p-4 sm:p-6 rounded-2xl text-xs sm:text-sm leading-relaxed text-gray-600 border border-gray-100 italic">
-                  {selectedDoc.satisfy_goals && selectedDoc.satisfy_goals.length > 0 ? (
+                  {versionSatisfyGoals && versionSatisfyGoals.length > 0 ? (
                     <ol className="list-decimal pl-5 space-y-1.5">
-                      {selectedDoc.satisfy_goals.map((goal, idx) => (
+                      {versionSatisfyGoals.map((goal, idx) => (
                         <li key={idx} className="font-medium">{goal}</li>
                       ))}
                     </ol>
@@ -1492,18 +1608,18 @@ export const Inbox = () => {
             )}
 
             {/* Partners and Sponsors Cards */}
-            {isActivityProposal && (selectedDoc.partners || selectedDoc.sponsors) && (
+            {isActivityProposal && (versionPartners || versionSponsors) && (
               <div className="mt-6 sm:mt-8 grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-                {selectedDoc.partners && (
+                {versionPartners && (
                   <div className="bg-gray-50 p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm">
                     <p className="font-bold text-gray-800 mb-2 uppercase tracking-wider text-[10px] sm:text-xs">Partners</p>
-                    <p className="text-gray-600 text-xs sm:text-sm leading-relaxed">{selectedDoc.partners}</p>
+                    <p className="text-gray-600 text-xs sm:text-sm leading-relaxed">{versionPartners}</p>
                   </div>
                 )}
-                {selectedDoc.sponsors && (
+                {versionSponsors && (
                   <div className="bg-gray-50 p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm">
                     <p className="font-bold text-gray-800 mb-2 uppercase tracking-wider text-[10px] sm:text-xs">Sponsors</p>
-                    <p className="text-gray-600 text-xs sm:text-sm leading-relaxed">{selectedDoc.sponsors}</p>
+                    <p className="text-gray-600 text-xs sm:text-sm leading-relaxed">{versionSponsors}</p>
                   </div>
                 )}
               </div>
@@ -1712,19 +1828,24 @@ export const Inbox = () => {
                             <span className={`text-[8px] sm:text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${badgeStyle}`}>
                               {isOsas ? 'OSAS Requirement' : 'LOCAL Requirement'}
                             </span>
-                            {showRecheckBadge && (
-                              <span className="text-[8px] sm:text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider bg-amber-950 text-amber-100 border border-amber-500/80 shrink-0">
+                            {showRecheckBadge ? (
+                              <span className="text-[8px] sm:text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider bg-amber-950 text-amber-100 border border-amber-500/80 shrink-0 animate-pulse">
                                 ⚠️ RE-CHECK REQUIRED
                               </span>
-                            )}
+                            ) : returnedForDisplay ? (
+                              <span className="text-[8px] sm:text-[9px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-amber-100/90 text-amber-900 border border-amber-300/80 shrink-0">
+                                {String(locallyReturned[file.id]?.reviewAction || fileLog?.review_action || fileLog?.action_type || 'returned').replace(/-/g, ' ').replace(/_/g, ' ').toUpperCase()}
+                              </span>
+                            ) : null}
                           </div>
                           <p className={`${textColor} font-semibold text-xs sm:text-sm break-all line-clamp-2 max-w-full sm:max-w-md`} title={fileName}>{fileName}</p>
-                          <p className={`${subtitleColor} text-[9px] sm:text-[10px] uppercase font-bold mt-0.5`}>
-                            {isForwardedPhase ? (isOsas ? '✓ Forwarded to Main Campus' : '✓ Retained Locally') : 'Attached Document'}
-                          </p>
-                          {returnedForDisplay && (locallyReturned[file.id]?.comment || fileLog?.comment) && (
-                            <p className="mt-1 text-[11px] sm:text-xs italic font-medium opacity-90 max-w-lg">
-                              {(fileLog?.users?.full_name || fileLog?.users?.role || user?.role || 'Reviewer')}'s Comment: "{locallyReturned[file.id]?.comment || fileLog?.comment}"
+                          {returnedForDisplay && (locallyReturned[file.id]?.comment || fileLog?.comment || fileLog?.description) ? (
+                            <p className="mt-0.5 text-[11px] sm:text-xs italic font-medium text-[#78350f] max-w-lg">
+                              {(fileLog?.users?.full_name || fileLog?.users?.role || user?.role || 'Reviewer')}'s Comment: "{locallyReturned[file.id]?.comment || fileLog?.comment || fileLog?.description}"
+                            </p>
+                          ) : (
+                            <p className={`${subtitleColor} text-[9px] sm:text-[10px] uppercase font-bold mt-0.5`}>
+                              {isForwardedPhase ? (isOsas ? '✓ Forwarded to Main Campus' : '✓ Retained Locally') : 'Attached Document'}
                             </p>
                           )}
                         </div>
@@ -1738,9 +1859,10 @@ export const Inbox = () => {
                             setReviewAction('');
                             setReviewComments('');
                           }}
-                          className="bg-secondary-gold text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-bold hover:brightness-110 transition-all shadow-md text-center shrink-0"
+                          className="bg-secondary-gold text-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-bold hover:brightness-110 transition-all shadow-md text-center shrink-0 flex items-center gap-1.5"
                         >
-                          view
+                          <Eye size={14} />
+                          <span>View</span>
                         </button>
                         <button 
                           type="button"
@@ -1748,9 +1870,10 @@ export const Inbox = () => {
                             e.stopPropagation();
                             handleDownload(file.file_url, fileName);
                           }}
-                          className="bg-secondary-gold text-white px-3 sm:px-5 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-bold hover:brightness-110 transition-all shadow-md text-center shrink-0"
+                          className="bg-secondary-gold text-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-bold hover:brightness-110 transition-all shadow-md text-center shrink-0 flex items-center gap-1.5"
                         >
-                          Download
+                          <Download size={14} />
+                          <span>Download</span>
                         </button>
                       </div>
                     </div>
@@ -1942,8 +2065,8 @@ export const Inbox = () => {
             locallyApproved,
             locallyReturned
           );
-          const fileLog = getLatestAttachmentLog(timelineLogs, previewFile.id);
-          const previewReturnHistory = getFileReturnHistory(previewFile, allVersions, attachmentReturnLogs);
+          const fileLog = getLatestAttachmentLog(timelineLogs, previewFile.id, activeVersion, allVersions);
+          const previewReturnHistory = getFileReturnHistory(previewFile, allVersions, attachmentReturnLogs, activeVersion);
           const latestPreviewReturn = previewReturnHistory[0] || null;
           const previewDisplayLog =
             latestPreviewReturn ||
