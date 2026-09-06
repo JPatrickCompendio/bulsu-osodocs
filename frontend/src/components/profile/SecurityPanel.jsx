@@ -8,7 +8,8 @@ const inputClass =
   'w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm text-ink outline-none transition-colors duration-150 placeholder:text-ink-faint focus:border-forest-400 focus:ring-2 focus:ring-forest-100';
 
 export function SecurityPanel({ onChangePassword, isSaving = false, isPresident = true }) {
-  const { user, activeMember } = useAuth();
+  const { user, activeMember, refreshUser, setActiveMember } = useAuth();
+  const isOrgPresident = user?.role === 'org-president';
 
   // Password state
   const [current, setCurrent] = useState('');
@@ -101,15 +102,36 @@ export function SecurityPanel({ onChangePassword, isSaving = false, isPresident 
           .from('organization_members')
           .update({ security_pin: newPin, is_pin_changed: true })
           .eq('id', activeMember.id);
+
+        if (setActiveMember) {
+          setActiveMember({
+            ...activeMember,
+            security_pin: newPin,
+            is_pin_changed: true,
+          });
+        }
       } else if (user?.id) {
         await supabase
           .from('users')
           .update({ security_pin: newPin, is_pin_changed: true })
           .eq('id', user.id);
+
+        if (refreshUser) {
+          await refreshUser();
+        }
+        if (activeMember && (activeMember.is_president || activeMember.id === 'president')) {
+          if (setActiveMember) {
+            setActiveMember({
+              ...activeMember,
+              security_pin: newPin,
+              is_pin_changed: true,
+            });
+          }
+        }
       }
 
       setPinStatus('success');
-      setPinMessage('Security PIN updated successfully in database!');
+      setPinMessage('Security PIN updated successfully!');
       setCurrentPin('');
       setNewPin('');
       setConfirmPin('');
@@ -231,109 +253,111 @@ export function SecurityPanel({ onChangePassword, isSaving = false, isPresident 
         </SectionCard>
       )}
 
-      {/* 2. 4-Digit Security PIN Card (Available for Admin, Staff, Org President & Members) */}
-      <SectionCard
-        title="4-Digit Security PIN"
-        description="Your private security PIN used to authenticate identity when performing actions or switching operators."
-        icon={<Lock className="h-5 w-5" />}
-      >
-        <form onSubmit={handlePinSubmit} noValidate>
-          <div className="grid gap-5 sm:grid-cols-3">
-            <div>
-              <label
-                htmlFor="currentPin"
-                className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-faint"
-              >
-                Current 4-Digit PIN
-              </label>
-              <input
-                id="currentPin"
-                type="password"
-                maxLength={4}
-                pattern="\d{4}"
-                className={`${inputClass} text-center tracking-[0.3em] font-mono text-base`}
-                value={currentPin}
-                onChange={(event) => {
-                  setCurrentPin(event.target.value.replace(/[^\d]/g, ''));
-                  setPinStatus('idle');
-                }}
-                placeholder="••••"
-                required
-              />
+      {/* 2. 4-Digit Security PIN Card (Only available for Org President accounts) */}
+      {isOrgPresident && (
+        <SectionCard
+          title="4-Digit Security PIN"
+          description="Your private security PIN used to authenticate identity when performing actions or switching operators."
+          icon={<Lock className="h-5 w-5" />}
+        >
+          <form onSubmit={handlePinSubmit} noValidate>
+            <div className="grid gap-5 sm:grid-cols-3">
+              <div>
+                <label
+                  htmlFor="currentPin"
+                  className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-faint"
+                >
+                  Current 4-Digit PIN
+                </label>
+                <input
+                  id="currentPin"
+                  type="password"
+                  maxLength={4}
+                  pattern="\d{4}"
+                  className={`${inputClass} text-center tracking-[0.3em] font-mono text-base`}
+                  value={currentPin}
+                  onChange={(event) => {
+                    setCurrentPin(event.target.value.replace(/[^\d]/g, ''));
+                    setPinStatus('idle');
+                  }}
+                  placeholder="••••"
+                  required
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="newPin"
+                  className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-faint"
+                >
+                  New 4-Digit PIN
+                </label>
+                <input
+                  id="newPin"
+                  type="password"
+                  maxLength={4}
+                  pattern="\d{4}"
+                  className={`${inputClass} text-center tracking-[0.3em] font-mono text-base`}
+                  value={newPin}
+                  onChange={(event) => {
+                    setNewPin(event.target.value.replace(/[^\d]/g, ''));
+                    setPinStatus('idle');
+                  }}
+                  placeholder="••••"
+                  required
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="confirmPin"
+                  className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-faint"
+                >
+                  Confirm New 4-Digit PIN
+                </label>
+                <input
+                  id="confirmPin"
+                  type="password"
+                  maxLength={4}
+                  pattern="\d{4}"
+                  className={`${inputClass} text-center tracking-[0.3em] font-mono text-base`}
+                  value={confirmPin}
+                  onChange={(event) => {
+                    setConfirmPin(event.target.value.replace(/[^\d]/g, ''));
+                    setPinStatus('idle');
+                  }}
+                  placeholder="••••"
+                  required
+                />
+              </div>
             </div>
 
-            <div>
-              <label
-                htmlFor="newPin"
-                className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-faint"
+            <div className="mt-6 flex flex-wrap items-center justify-end gap-3 border-t border-line pt-5">
+              {pinStatus !== 'idle' && (
+                <p
+                  role="status"
+                  aria-live="polite"
+                  className={`flex-1 text-sm font-medium ${
+                    pinStatus === 'error' ? 'text-danger-600' : 'text-forest-600 flex items-center gap-1.5'
+                  }`}
+                >
+                  {pinStatus === 'success' && <Check className="h-4 w-4" />}
+                  {pinMessage}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={isSavingPin || currentPin.length < 4 || newPin.length < 4 || confirmPin.length < 4}
+                className="inline-flex items-center gap-2 rounded-lg bg-forest-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors duration-150 hover:bg-forest-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 disabled:cursor-not-allowed disabled:bg-forest-100 disabled:text-forest-300 cursor-pointer shadow-2xs"
               >
-                New 4-Digit PIN
-              </label>
-              <input
-                id="newPin"
-                type="password"
-                maxLength={4}
-                pattern="\d{4}"
-                className={`${inputClass} text-center tracking-[0.3em] font-mono text-base`}
-                value={newPin}
-                onChange={(event) => {
-                  setNewPin(event.target.value.replace(/[^\d]/g, ''));
-                  setPinStatus('idle');
-                }}
-                placeholder="••••"
-                required
-              />
+                {isSavingPin && <Loader2 className="animate-spin h-4 w-4" />}
+                Update Security PIN
+              </button>
             </div>
-
-            <div>
-              <label
-                htmlFor="confirmPin"
-                className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-faint"
-              >
-                Confirm New 4-Digit PIN
-              </label>
-              <input
-                id="confirmPin"
-                type="password"
-                maxLength={4}
-                pattern="\d{4}"
-                className={`${inputClass} text-center tracking-[0.3em] font-mono text-base`}
-                value={confirmPin}
-                onChange={(event) => {
-                  setConfirmPin(event.target.value.replace(/[^\d]/g, ''));
-                  setPinStatus('idle');
-                }}
-                placeholder="••••"
-                required
-              />
-            </div>
-          </div>
-
-          <div className="mt-6 flex flex-wrap items-center justify-end gap-3 border-t border-line pt-5">
-            {pinStatus !== 'idle' && (
-              <p
-                role="status"
-                aria-live="polite"
-                className={`flex-1 text-sm font-medium ${
-                  pinStatus === 'error' ? 'text-danger-600' : 'text-forest-600 flex items-center gap-1.5'
-                }`}
-              >
-                {pinStatus === 'success' && <Check className="h-4 w-4" />}
-                {pinMessage}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              disabled={isSavingPin || currentPin.length < 4 || newPin.length < 4 || confirmPin.length < 4}
-              className="inline-flex items-center gap-2 rounded-lg bg-forest-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors duration-150 hover:bg-forest-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest-500 disabled:cursor-not-allowed disabled:bg-forest-100 disabled:text-forest-300 cursor-pointer shadow-2xs"
-            >
-              {isSavingPin && <Loader2 className="animate-spin h-4 w-4" />}
-              Update Security PIN
-            </button>
-          </div>
-        </form>
-      </SectionCard>
+          </form>
+        </SectionCard>
+      )}
     </div>
   );
 }

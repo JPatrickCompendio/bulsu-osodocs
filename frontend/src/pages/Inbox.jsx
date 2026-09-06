@@ -36,7 +36,8 @@ import {
   X,
   Download,
   ExternalLink,
-  FileQuestion
+  FileQuestion,
+  ShieldAlert
 } from 'lucide-react';
 
 const getStatusColor = (status) => {
@@ -234,6 +235,50 @@ export const Inbox = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const isOsoStaff = user?.role === 'chairman' || user?.role === 'vice-chairman';
+  
+  const isSuspended = Boolean(user?.status && user.status.startsWith('Suspended'));
+  const suspensionReason = isSuspended && user.status.includes(':') 
+    ? user.status.split(':').slice(1).join(':').trim() 
+    : '';
+
+  const renderSuspendedModal = () => {
+    if (!isSuspended) return null;
+
+    return (
+      <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[999] flex items-center justify-center p-4 animate-in fade-in duration-300">
+        <div className="bg-white rounded-3xl w-full max-w-md p-8 flex flex-col items-center text-center shadow-2xl border border-red-100 animate-in zoom-in-95 duration-300">
+          <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-6 shadow-inner ring-8 ring-red-50 animate-pulse">
+            <ShieldAlert size={36} />
+          </div>
+          
+          <h3 className="font-extrabold text-gray-900 text-xl mb-2">Account Suspended</h3>
+          
+          <p className="text-gray-600 text-sm mb-6 leading-relaxed">
+            You cannot access the <strong className="text-gray-800">Inbox</strong> page because your account has been suspended by the Administrator.
+          </p>
+
+          {suspensionReason ? (
+            <div className="w-full bg-red-50 border border-red-200/80 rounded-2xl p-4 mb-6 text-left">
+              <span className="text-[11px] font-bold text-red-600 uppercase tracking-wider block mb-1">Reason for Suspension:</span>
+              <p className="text-xs text-red-800 font-semibold leading-relaxed">{suspensionReason}</p>
+            </div>
+          ) : (
+            <div className="w-full bg-amber-50 border border-amber-200/80 rounded-2xl p-4 mb-6 text-left">
+              <p className="text-xs text-amber-800 font-medium">Please contact the Office of Student Organizations (OSO) Administrator if you believe this is an error or to request account reactivation.</p>
+            </div>
+          )}
+
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="w-full py-3.5 px-6 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-bold rounded-xl shadow-lg shadow-red-600/20 transition-all text-xs uppercase tracking-wider active:scale-[0.98]"
+          >
+            Return to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   const [isFilterOpen, setIsFilterOpen] = React.useState(false);
   const [filterType, setFilterType] = React.useState('All'); // 'All', 'Pending', 'Approved', 'Rejected'
   const [selectedDocs, setSelectedDocs] = React.useState([]);
@@ -2670,6 +2715,7 @@ export const Inbox = () => {
       })()}
 
       {renderIncompleteModal()}
+      {renderSuspendedModal()}
 
       <ToastComponent />
     </div>

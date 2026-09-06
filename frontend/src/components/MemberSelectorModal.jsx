@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 const MemberSelectorModal = ({ isOpen, members = [], presidentUser, currentMemberId, onSelectMember, onLogout, onClose }) => {
   if (!isOpen) return null;
 
-  const { logout } = useAuth();
+  const { logout, refreshUser } = useAuth();
   const [selectedId, setSelectedId] = useState(currentMemberId || 'president');
   const [step, setStep] = useState(1); // 1: Select Identity, 2: PIN Challenge / Setup
   const [pinInput, setPinInput] = useState('');
@@ -113,6 +113,7 @@ const MemberSelectorModal = ({ isOpen, members = [], presidentUser, currentMembe
             .from('users')
             .update({ security_pin: pinInput, is_pin_changed: true })
             .eq('id', presidentUser.id);
+          if (refreshUser) refreshUser();
         } catch (err) {
           console.warn('Could not update users table for PIN:', err);
         }
@@ -176,6 +177,7 @@ const MemberSelectorModal = ({ isOpen, members = [], presidentUser, currentMembe
             .from('users')
             .update({ security_pin: pinInput, is_pin_changed: true })
             .eq('id', presidentUser.id);
+          if (refreshUser) refreshUser();
         } catch (err) {
           console.warn('Could not update users table for PIN:', err);
         }
@@ -331,22 +333,33 @@ const MemberSelectorModal = ({ isOpen, members = [], presidentUser, currentMembe
               </button>
 
               <div className="pt-2 border-t border-gray-100 flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={handleLogoutAction}
-                  className="w-full py-2.5 px-4 text-red-600 hover:bg-red-50 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 border border-red-200/80"
-                >
-                  <LogOut size={14} />
-                  <span>Logout Account</span>
-                </button>
-                {onClose && (
+                {onClose ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="w-1/2 py-2.5 px-4 text-gray-700 hover:bg-gray-100 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 border border-gray-200 cursor-pointer"
+                    >
+                      <ArrowLeft size={14} />
+                      <span>Back</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleLogoutAction}
+                      className="w-1/2 py-2.5 px-4 text-red-600 hover:bg-red-50 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 border border-red-200/80 cursor-pointer"
+                    >
+                      <LogOut size={14} />
+                      <span>Logout Account</span>
+                    </button>
+                  </>
+                ) : (
                   <button
                     type="button"
-                    onClick={onClose}
-                    className="w-full py-2.5 px-4 text-gray-600 hover:bg-gray-100 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 border border-gray-200"
+                    onClick={handleLogoutAction}
+                    className="w-full py-2.5 px-4 text-red-600 hover:bg-red-50 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 border border-red-200/80 cursor-pointer"
                   >
-                    <X size={14} />
-                    <span>Cancel</span>
+                    <LogOut size={14} />
+                    <span>Logout Account</span>
                   </button>
                 )}
               </div>

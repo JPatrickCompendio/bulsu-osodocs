@@ -5106,11 +5106,205 @@ async function handleSubmissionResubmit(body: Record<string, unknown>) {
   });
 }
 
+async function handleSendLoginOtp(body: any) {
+  const email = String(body.email || '').trim().toLowerCase();
+  if (!email) {
+    return jsonResponse({ error: 'Email address is required' }, 400);
+  }
+
+  const supabase = getAdminClient();
+  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 minutes
+
+  try {
+    // Invalidate prior active OTPs for this email
+    await supabase
+      .from('user_login_otps')
+      .update({ is_verified: true })
+      .eq('email', email)
+      .eq('is_verified', false);
+
+    // Insert new OTP record
+    const { error: insErr } = await supabase
+      .from('user_login_otps')
+      .insert([
+        {
+          email,
+          otp_code: otpCode,
+          expires_at: expiresAt,
+          is_verified: false,
+          created_at: new Date().toISOString(),
+        },
+      ]);
+
+    if (insErr) {
+      console.error('Failed to save OTP to user_login_otps:', insErr.message);
+      return jsonResponse({ error: 'Failed to generate verification code' }, 500);
+    }
+
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 16px; background-color: #ffffff;">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <h2 style="color: #047857; margin: 0; font-size: 22px; font-weight: 800;">OSOADOCS Security Verification</h2>
+          <p style="color: #6b7280; font-size: 13px; margin-top: 4px;">Bulacan State University - Office of Student Organizations</p>
+        </div>
+        <p style="color: #374151; font-size: 15px; line-height: 1.5;">Hello,</p>
+        <p style="color: #374151; font-size: 15px; line-height: 1.5;">You recently logged into your OSOADOCS account. Use the verification code below to complete your login:</p>
+        <div style="text-align: center; margin: 28px 0; background-color: #f0fdf4; padding: 18px; border-radius: 12px; border: 1px stroke #bbf7d0;">
+          <span style="font-size: 32px; font-weight: 800; letter-spacing: 6px; color: #15803d; font-family: monospace;">${otpCode}</span>
+        </div>
+        <p style="color: #6b7280; font-size: 13px;">This verification code will expire in <strong>5 minutes</strong>. Do not share this code with anyone.</p>
+        <hr style="border: none; border-top: 1px solid #f3f4f6; margin: 20px 0;" />
+        <p style="color: #9ca3af; font-size: 12px; text-align: center;">If you did not attempt to log in, please secure your account password immediately.</p>
+      </div>
+    `;
+
+    const emailRes = await sendBrevoEmail({
+      toEmail: email,
+      toName: email,
+      subject: `${otpCode} is your OSOADOCS verification code`,
+      htmlContent: emailHtml,
+    });
+
+    return jsonResponse({ success: true, emailSent: emailRes.success });
+  } catch (err) {
+    console.error('Error sending login OTP:', err);
+    return jsonResponse({ error: 'Failed to send OTP email' }, 500);
+  }
+}
+
+async function handleVerifyLoginOtp(body: any) {
+  const email = String(body.email || '').trim().toLowerCase();
+  const otpCode = String(body.otpCode || '').trim();
+  const trustDevice = Boolean(body.trustDevice);
+  const userAgent = String(body.userAgent || '').trim();
+
+  if (!email || !otpCode) {
+    return jsonResponse({ error: 'Email and OTP code are required' }, 400);
+  }
+
+  const supabase = getAdminClient();
+
+  try {
+    const { data: records, error } = await supabase
+      .from('user_login_otps')
+      .select('*')
+      .eq('email', email)
+      .eq('otp_code', otpCode)
+      .eq('is_verified', false)
+      .gte('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (error || !records || records.length === 0) {
+      return jsonResponse({ success: false, error: 'Invalid or expired verification code. Please request a new code.' }, 400);
+    }
+
+    const otpRecord = records[0];
+
+    // Mark OTP as verified
+    await supabase
+      .from('user_login_otps')
+      .update({ is_verified: true, verified_at: new Date().toISOString() })
+      .eq('id', otpRecord.id);
+
+    let deviceToken: string | null = null;
+    if (trustDevice) {
+      const randomHex = Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('');
+      deviceToken = `dt_${crypto.randomUUID().replace(/-/g, '')}${randomHex}`;
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days
+
+      // Find user id if available
+      const { data: userRec } = await supabase.from('users').select('id').eq('email', email).maybeSingle();
+
+      // Clean up previous tokens for this email & agent
+      if (userAgent) {
+        await supabase
+          .from('user_trusted_devices')
+          .delete()
+          .eq('email', email)
+          .eq('user_agent', userAgent);
+      }
+
+      const { error: insDevErr } = await supabase
+        .from('user_trusted_devices')
+        .insert([
+          {
+            user_id: userRec?.id || null,
+            email,
+            device_token: deviceToken,
+            user_agent: userAgent || null,
+            expires_at: expiresAt,
+            last_used_at: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+          },
+        ]);
+
+      if (insDevErr) {
+        console.error('Failed to create user_trusted_devices record:', insDevErr.message);
+      }
+    } else {
+      if (userAgent) {
+        await supabase
+          .from('user_trusted_devices')
+          .delete()
+          .eq('email', email)
+          .eq('user_agent', userAgent);
+      }
+    }
+
+    return jsonResponse({ success: true, trustedDeviceToken: deviceToken });
+  } catch (err) {
+    console.error('Error verifying login OTP:', err);
+    return jsonResponse({ error: 'Failed to verify verification code' }, 500);
+  }
+}
+
+async function handleCheckTrustedDevice(body: any) {
+  const email = String(body.email || '').trim().toLowerCase();
+  const deviceToken = String(body.deviceToken || '').trim();
+
+  if (!email || !deviceToken) {
+    return jsonResponse({ isTrusted: false });
+  }
+
+  const supabase = getAdminClient();
+
+  try {
+    const { data: record, error } = await supabase
+      .from('user_trusted_devices')
+      .select('*')
+      .eq('email', email)
+      .eq('device_token', deviceToken)
+      .gte('expires_at', new Date().toISOString())
+      .maybeSingle();
+
+    if (error || !record) {
+      return jsonResponse({ isTrusted: false });
+    }
+
+    // Touch last_used_at
+    await supabase
+      .from('user_trusted_devices')
+      .update({ last_used_at: new Date().toISOString() })
+      .eq('id', record.id);
+
+    return jsonResponse({ isTrusted: true, expiresAt: record.expires_at });
+  } catch (err) {
+    console.error('Error checking trusted device:', err);
+    return jsonResponse({ isTrusted: false });
+  }
+}
+
 async function routeRequest(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const path = normalizePath(url.pathname);
   const method = req.method.toUpperCase();
   const body = method === 'GET' ? {} : await readBody(req);
+
+  if (method === 'POST' && path === '/auth/send-login-otp') return handleSendLoginOtp(body);
+  if (method === 'POST' && path === '/auth/verify-login-otp') return handleVerifyLoginOtp(body);
+  if (method === 'POST' && path === '/auth/check-trusted-device') return handleCheckTrustedDevice(body);
 
   if (method === 'GET' && path === '/users') return handleGetUsers();
   if (method === 'GET' && path === '/users/check-email') return handleCheckEmail(url);
@@ -5196,6 +5390,12 @@ async function routeRequest(req: Request): Promise<Response> {
   if (method === 'DELETE' && /^\/academic-events\/[^/]+$/.test(path)) {
     return handleDeleteAcademicEvent(path.split('/')[2]);
   }
+
+
+
+  if (method === 'POST' && path === '/auth/send-login-otp') return handleSendLoginOtp(body);
+  if (method === 'POST' && path === '/auth/verify-login-otp') return handleVerifyLoginOtp(body);
+  if (method === 'POST' && path === '/auth/check-trusted-device') return handleCheckTrustedDevice(body);
 
   if (method === 'GET' && path === '/system/document-availability') {
     return handleDocumentAvailability(url);
