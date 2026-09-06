@@ -236,6 +236,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       { name: 'List of Requirements', path: '/requirements', icon: <ListChecks size={20} /> },
       { name: 'Announcements', path: '/admin/announcements', icon: <Megaphone size={20} /> },
       academicDatesGroup,
+      { name: 'My Profile', path: '/profile', icon: <User size={20} /> },
     ],
     chairman: [
       { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
@@ -244,6 +245,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       { name: 'Completed', path: '/completed', icon: <CheckCircle size={20} /> },
       { name: 'List of Requirements', path: '/requirements', icon: <ListChecks size={20} /> },
       academicDatesGroup,
+      { name: 'My Profile', path: '/profile', icon: <User size={20} /> },
     ],
     'vice-chairman': [
       { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
@@ -252,6 +254,25 @@ const Sidebar = ({ isOpen, onClose }) => {
       { name: 'Completed', path: '/completed', icon: <CheckCircle size={20} /> },
       { name: 'List of Requirements', path: '/requirements', icon: <ListChecks size={20} /> },
       academicDatesGroup,
+      { name: 'My Profile', path: '/profile', icon: <User size={20} /> },
+    ],
+    'oso-staff': [
+      { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
+      { name: 'Inbox', path: '/inbox', icon: <Inbox size={20} /> },
+      { name: 'My Documents', path: '/my-documents', icon: <Files size={20} /> },
+      { name: 'Completed', path: '/completed', icon: <CheckCircle size={20} /> },
+      { name: 'List of Requirements', path: '/requirements', icon: <ListChecks size={20} /> },
+      academicDatesGroup,
+      { name: 'My Profile', path: '/profile', icon: <User size={20} /> },
+    ],
+    'sds-coordinator': [
+      { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
+      { name: 'Inbox', path: '/inbox', icon: <Inbox size={20} /> },
+      { name: 'My Documents', path: '/my-documents', icon: <Files size={20} /> },
+      { name: 'Completed', path: '/completed', icon: <CheckCircle size={20} /> },
+      { name: 'List of Requirements', path: '/requirements', icon: <ListChecks size={20} /> },
+      academicDatesGroup,
+      { name: 'My Profile', path: '/profile', icon: <User size={20} /> },
     ],
     'org-president': [
       { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
@@ -259,11 +280,12 @@ const Sidebar = ({ isOpen, onClose }) => {
       { name: 'My Documents', path: '/my-documents', icon: <Files size={20} /> },
       { name: 'Completed', path: '/completed', icon: <CheckCircle size={20} /> },
       { name: 'List of Requirements', path: '/requirements', icon: <ListChecks size={20} /> },
+      { name: 'My Profile', path: '/profile', icon: <User size={20} /> },
     ],
   };
 
   const roleKey = user?.role;
-  const currentMenu = menuItems[roleKey] || [];
+  const currentMenu = menuItems[roleKey] || menuItems['org-president'] || [];
 
   const sidebarContent = (
     <div className="w-64 h-full bg-[#073c2d] text-white flex flex-col shadow-xl border-r border-emerald-900/40">

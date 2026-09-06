@@ -10,16 +10,34 @@
   --color-primary-green: var(--primary-green);
   --color-secondary-gold: var(--secondary-gold);
 
-  --color-forest-50: #f0f6f3;
-  --color-forest-100: #d7e8df;
-  --color-forest-200: #a9cebd;
-  --color-forest-300: #6faa91;
-  --color-forest-400: #3d8265;
-  --color-forest-500: #1f6349;
-  --color-forest-600: #155039;
-  --color-forest-700: #0f3d2e;
-  --color-forest-800: #0b2f23;
-  --color-forest-900: #071f17;
+  --color-canvas: #f8fafc;
+  --color-line: #e2e7e4;
+  --color-ink: #101a15;
+  --color-ink-muted: #5a6660;
+  --color-ink-faint: #8a948e;
+
+  --color-forest-50: #eef7f1;
+  --color-forest-100: #d6ecdf;
+  --color-forest-200: #b0dbc2;
+  --color-forest-300: #7cc29b;
+  --color-forest-400: #3f9e68;
+  --color-forest-500: #1f7a46;
+  --color-forest-600: #155f35;
+  --color-forest-700: #0f4527;
+  --color-forest-800: #0a2e1b;
+  --color-forest-900: #06180f;
+  --color-forest-950: #030c07;
+
+  --color-amber-50: #fdf8e7;
+  --color-amber-100: #f9edbf;
+  --color-amber-400: #d7a61b;
+  --color-amber-600: #8e6a05;
+
+  --color-danger-50: #fdecec;
+  --color-danger-500: #dc2626;
+  --color-danger-600: #b91c1c;
+
+  --shadow-card: 0 1px 2px rgba(16, 26, 21, 0.04), 0 10px 28px -20px rgba(16, 26, 21, 0.18);
 
   --color-gold-100: #fdf3d8;
   --color-gold-200: #f8e2a4;

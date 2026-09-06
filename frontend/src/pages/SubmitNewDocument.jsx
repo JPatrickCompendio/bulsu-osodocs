@@ -166,8 +166,34 @@ const humanizeProposalType = (typeStr) => {
 };
 
 const SubmitNewDocument = () => {
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, activeMember } = useAuth();
   const navigate = useNavigate();
+
+  // Detect if the active user is an organization member labeled as "Member"
+  const isMemberReadOnly = useMemo(() => {
+    let member = activeMember;
+    if (!member) {
+      try {
+        const raw = sessionStorage.getItem('osodocs_active_member');
+        if (raw) member = JSON.parse(raw);
+      } catch (_) {}
+    }
+    if (!member) return false;
+    if (member.is_president) return false;
+    const pos = (member.position || member.title || '').trim().toLowerCase();
+    return pos === 'member';
+  }, [activeMember]);
+
+  const memberDisplayName = useMemo(() => {
+    let member = activeMember;
+    if (!member) {
+      try {
+        const raw = sessionStorage.getItem('osodocs_active_member');
+        if (raw) member = JSON.parse(raw);
+      } catch (_) {}
+    }
+    return member?.full_name || 'Member';
+  }, [activeMember]);
 
   // Navigation & State
   const [view, setView] = useState('dashboard'); // 'dashboard' or 'form'
@@ -837,6 +863,10 @@ const SubmitNewDocument = () => {
   };
 
   const handleNextFromStep1 = () => {
+    if (isMemberReadOnly) {
+      setProposalStep(2);
+      return;
+    }
     const missing = validateStep1Detailed();
     if (missing.length > 0) {
       setShowValidationHighlights(true);
@@ -1539,6 +1569,10 @@ const SubmitNewDocument = () => {
   }, [isReturnedDocument, proposalDetails, localFiles]);
 
   const handleFileUpload = (reqId, file) => {
+    if (isMemberReadOnly) {
+      showToast('File uploads are disabled in Read-Only mode for members.', 'error');
+      return;
+    }
     if (!file) return;
 
     const fileExt = file.name.split('.').pop().toLowerCase();
@@ -1662,7 +1696,7 @@ const SubmitNewDocument = () => {
   });
 
   useEffect(() => {
-    if (view !== 'form') {
+    if (view !== 'form' || isMemberReadOnly) {
       setHasUnsavedChanges(false);
       window.__hasUnsavedChanges = false;
       return;
@@ -1688,9 +1722,10 @@ const SubmitNewDocument = () => {
     } else {
       setHasUnsavedChanges(false);
     }
-  }, [proposalDetails, localFiles, view]);
+  }, [proposalDetails, localFiles, view, isMemberReadOnly]);
 
   const processUploadsAndSave = async (status) => {
+    if (isMemberReadOnly) return;
     if (isSavingRef.current) return;
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -1867,6 +1902,10 @@ const SubmitNewDocument = () => {
 
   const handleRegisterDocument = (e) => {
     if (e) e.preventDefault();
+    if (isMemberReadOnly) {
+      showToast('Document submission is disabled in Read-Only mode for members.', 'error');
+      return;
+    }
     if (isSavingRef.current || isSaving) return;
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -1947,6 +1986,10 @@ const SubmitNewDocument = () => {
   };
 
   const handleSaveDraft = () => {
+    if (isMemberReadOnly) {
+      showToast('Saving drafts is disabled in Read-Only mode for members.', 'error');
+      return;
+    }
     if (isSavingRef.current || isSaving) return;
     if (Object.keys(localFiles).length === 0 && !hasUnsavedChanges) {
       showToast('Nothing to save yet.', 'error');
@@ -1966,6 +2009,14 @@ const SubmitNewDocument = () => {
   };
 
   const handleBackNavigation = async () => {
+    if (isMemberReadOnly) {
+      setPendingNavPath(null);
+      setShowUnsavedModal(false);
+      setHasUnsavedChanges(false);
+      window.__hasUnsavedChanges = false;
+      navigate('/my-documents');
+      return;
+    }
     if (hasUnsavedChanges) {
       setPendingNavPath('/my-documents');
       setShowUnsavedModal(true);
@@ -2183,11 +2234,13 @@ const SubmitNewDocument = () => {
                 <span className="text-xs font-bold text-green-700 max-w-[150px] truncate" title={localFiles[req.id].name}>
                   {localFiles[req.id].name}
                 </span>
-                <button type="button" onClick={() => setLocalFiles(prev => {
-                  const next = { ...prev }; delete next[req.id]; return next;
-                })} className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all ml-2">
-                  <Trash2 size={14} />
-                </button>
+                {!isMemberReadOnly && (
+                  <button type="button" onClick={() => setLocalFiles(prev => {
+                    const next = { ...prev }; delete next[req.id]; return next;
+                  })} className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all ml-2">
+                    <Trash2 size={14} />
+                  </button>
+                )}
               </div>
             ) : existing && !isReturnedDocument ? (
               <div className="flex flex-col gap-2 bg-yellow-50 px-5 py-3 rounded-lg border border-yellow-100 self-start sm:self-auto shrink-0 max-w-full">
@@ -2195,9 +2248,15 @@ const SubmitNewDocument = () => {
                   <CheckSquare className="text-amber-600" size={16} />
                   <span className="text-xs font-bold text-amber-700 truncate max-w-[180px]" title={existing.file_name}>{existing.file_name}</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => setExistingAttachments(prev => prev.filter(a => a.requirement_id !== req.id))} className="text-xs text-blue-600 font-bold hover:underline">Remove saved file</button>
-                </div>
+                {!isMemberReadOnly && (
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => setExistingAttachments(prev => prev.filter(a => a.requirement_id !== req.id))} className="text-xs text-blue-600 font-bold hover:underline">Remove saved file</button>
+                  </div>
+                )}
+              </div>
+            ) : isMemberReadOnly ? (
+              <div className="px-4 py-2.5 bg-gray-100 text-gray-400 border border-gray-200 font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 self-start sm:self-auto shrink-0 cursor-not-allowed">
+                <Lock size={13} /> Upload Disabled
               </div>
             ) : (
               <button
@@ -2256,6 +2315,25 @@ const SubmitNewDocument = () => {
               <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             </div>
           </div>
+
+          {isMemberReadOnly && (
+            <div className="mb-8 p-5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl flex items-start gap-4 shadow-xs animate-in fade-in">
+              <div className="p-3 bg-blue-500 text-white rounded-xl shrink-0 shadow-sm">
+                <Eye size={22} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-base font-black text-blue-950 uppercase tracking-tight">Read-Only Mode Active</h3>
+                  <span className="px-2.5 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-black uppercase rounded-full border border-blue-200">
+                    {memberDisplayName} (Member)
+                  </span>
+                </div>
+                <p className="text-xs text-blue-800 font-medium mt-1 leading-relaxed">
+                  Your current session identity is set as a Member. You can browse all document categories, inspect guidelines, and review templates in read-only mode. Drafting and submitting documents are restricted to organization officers (President, Vice President, etc.).
+                </p>
+              </div>
+            </div>
+          )}
 
           {globalWarning && (
             <div className="mb-8 p-6 bg-red-50 border-2 border-red-200 rounded-2xl flex items-start gap-4">
@@ -2533,17 +2611,49 @@ const SubmitNewDocument = () => {
               </div>
             </div>
 
-            <div className="flex items-center gap-2 px-3 py-1 bg-amber-50 border border-amber-100 rounded-lg shadow-xs">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-              </span>
-              <span className="text-[10px] font-black text-amber-700 uppercase tracking-widest">Draft Mode</span>
-            </div>
+            {isMemberReadOnly ? (
+              <div className="flex items-center gap-1.5 px-3 py-1 bg-blue-100 border border-blue-200 text-blue-800 rounded-lg shadow-xs">
+                <Eye size={12} className="text-blue-600" />
+                <span className="text-[10px] font-black uppercase tracking-widest">Read-Only Mode</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-1 bg-amber-50 border border-amber-100 rounded-lg shadow-xs">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                </span>
+                <span className="text-[10px] font-black text-amber-700 uppercase tracking-widest">Draft Mode</span>
+              </div>
+            )}
           </div>
 
           <div className="flex-1 px-2 sm:px-4 pt-1 sm:pt-2 pb-24 bg-gray-50/20">
             <div className={`w-full max-w-5xl mx-auto space-y-2`}>
+
+              {/* Member Read-Only Banner */}
+              {isMemberReadOnly && (
+                <div className="p-3 sm:p-4 bg-blue-50 border-2 border-blue-200 rounded-xl flex items-center justify-between gap-3 shadow-xs animate-in fade-in mb-2">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="p-2 bg-blue-500 text-white rounded-lg shrink-0 shadow-xs">
+                      <Eye size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <h4 className="font-black text-blue-950 text-xs uppercase tracking-wider flex items-center gap-2 flex-wrap">
+                        <span>Form in Read-Only Mode</span>
+                        <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full border border-blue-200">
+                          {memberDisplayName} (Member)
+                        </span>
+                      </h4>
+                      <p className="text-[11px] text-blue-800 font-medium mt-0.5">
+                        This page is in view-only mode for members. Field editing, file uploads, saving drafts, and document registration are disabled.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="hidden sm:inline-flex px-3 py-1 rounded-full text-[10px] font-black uppercase shadow-xs tracking-wider shrink-0 bg-blue-200 text-blue-900">
+                    View Only
+                  </span>
+                </div>
+              )}
 
               {/* Returned Document Revision Banner */}
               {isReturnedDocument && (
@@ -2581,7 +2691,15 @@ const SubmitNewDocument = () => {
                       { step: 2, label: 'Preview & Download', icon: <Download size={13} /> },
                       { step: 3, label: 'Upload Requirements', icon: <Upload size={13} /> },
                     ].map((s) => (
-                      <div key={s.step} className="flex flex-col items-center gap-1 relative z-10">
+                      <div 
+                        key={s.step} 
+                        onClick={() => {
+                          if (isMemberReadOnly) {
+                            setProposalStep(s.step);
+                          }
+                        }}
+                        className={`flex flex-col items-center gap-1 relative z-10 ${isMemberReadOnly ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+                      >
                         <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center font-black text-xs transition-all duration-300 ${
                           proposalStep >= s.step 
                             ? 'bg-primary-green text-white shadow-xs shadow-green-600/20 ring-2 ring-green-50' 
@@ -2608,7 +2726,7 @@ const SubmitNewDocument = () => {
                     </div>
                   </div>
 
-                      <div className="space-y-6">
+                  <fieldset disabled={isMemberReadOnly} className={`space-y-6 ${isMemberReadOnly ? 'opacity-90 select-text' : ''}`}>
                         {/* Basic Info */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
                           <div className="space-y-2 md:col-span-2">
@@ -2767,6 +2885,7 @@ const SubmitNewDocument = () => {
                                             id={`sched-start-date-${idx}`}
                                             name={`sched_start_date_${idx}`}
                                             required
+                                            disabled={isMemberReadOnly}
                                             min={getMinAllowedDate()}
                                             blockedEvents={blockedEvents}
                                             onBlockedDateClick={(dateStr) => validateDateSelection(dateStr)}
@@ -2789,6 +2908,7 @@ const SubmitNewDocument = () => {
                                             id={`sched-end-date-${idx}`}
                                             name={`sched_end_date_${idx}`}
                                             required
+                                            disabled={isMemberReadOnly}
                                             min={sched.activity_date || getMinAllowedDate()}
                                             blockedEvents={blockedEvents}
                                             onBlockedDateClick={(dateStr) => validateDateSelection(dateStr)}
@@ -2829,6 +2949,7 @@ const SubmitNewDocument = () => {
                                             id={`sched-single-date-${idx}`}
                                             name={`sched_single_date_${idx}`}
                                             required
+                                            disabled={isMemberReadOnly}
                                             min={getMinAllowedDate()}
                                             blockedEvents={blockedEvents}
                                             onBlockedDateClick={(dateStr) => validateDateSelection(dateStr)}
@@ -3245,7 +3366,7 @@ const SubmitNewDocument = () => {
                             />
                           </div>
                         </div>
-                      </div>
+                      </fieldset>
                     </div>
                   )}
                   {proposalStep === 2 && (
@@ -3336,7 +3457,7 @@ const SubmitNewDocument = () => {
                       </button>
                     )}
 
-                    {proposalStep === 1 && (
+                    {!isMemberReadOnly && proposalStep === 1 && (
                       <button
                         type="button"
                         onClick={() => setShowClearModal(true)}
@@ -3346,7 +3467,7 @@ const SubmitNewDocument = () => {
                       </button>
                     )}
 
-                    {proposalStep === 3 && (Object.keys(localFiles).length > 0 || existingAttachments.length > 0) && (
+                    {!isMemberReadOnly && proposalStep === 3 && (Object.keys(localFiles).length > 0 || existingAttachments.length > 0) && (
                       <button
                         type="button"
                         onClick={() => clearFormOptions('attachments')}
@@ -3356,20 +3477,22 @@ const SubmitNewDocument = () => {
                       </button>
                     )}
 
-                    <button
-                      type="button"
-                      onClick={handleSaveDraft}
-                      disabled={isSaving}
-                      className="px-3 sm:px-5 py-2 sm:py-2.5 bg-amber-50 text-amber-600 border border-amber-200 font-black rounded-lg hover:bg-amber-100 transition-all flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] uppercase shadow-sm tracking-tight sm:tracking-widest shrink-0"
-                    >
-                      <Save size={13} /> <span>Save Draft</span>
-                    </button>
+                    {!isMemberReadOnly && (
+                      <button
+                        type="button"
+                        onClick={handleSaveDraft}
+                        disabled={isSaving}
+                        className="px-3 sm:px-5 py-2 sm:py-2.5 bg-amber-50 text-amber-600 border border-amber-200 font-black rounded-lg hover:bg-amber-100 transition-all flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] uppercase shadow-sm tracking-tight sm:tracking-widest shrink-0"
+                      >
+                        <Save size={13} /> <span>Save Draft</span>
+                      </button>
+                    )}
 
                     {proposalStep === 1 && (
                       <button
                         type="button"
                         onClick={handleNextFromStep1}
-                        disabled={isReturnedDocument && is02F1Returned && !hasFormChanges}
+                        disabled={!isMemberReadOnly && isReturnedDocument && is02F1Returned && !hasFormChanges}
                         className="px-4 sm:px-8 py-2 sm:py-2.5 bg-primary-green text-white font-black rounded-lg hover:bg-green-700 hover:scale-105 active:scale-95 transition-all shadow-md shadow-green-600/20 flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] uppercase disabled:opacity-50 tracking-tight sm:tracking-widest shrink-0"
                         title={
                           isReturnedDocument && is02F1Returned && !hasFormChanges
@@ -3385,15 +3508,76 @@ const SubmitNewDocument = () => {
                       <button
                         type="button"
                         onClick={() => setProposalStep(3)}
-                        disabled={!hasDownloadedProposal}
+                        disabled={!isMemberReadOnly && !hasDownloadedProposal}
                         className="px-4 sm:px-8 py-2 sm:py-2.5 bg-primary-green text-white font-black rounded-lg hover:bg-green-700 hover:scale-105 active:scale-95 transition-all shadow-md shadow-green-600/20 flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] uppercase disabled:opacity-50 tracking-tight sm:tracking-widest shrink-0"
-                        title={!hasDownloadedProposal ? "Please download the form to continue" : "Proceed to next step"}
+                        title={!hasDownloadedProposal && !isMemberReadOnly ? "Please download the form to continue" : "Proceed to next step"}
                       >
                         <span>Next Step</span> <ChevronRight size={13} />
                       </button>
                     )}
 
                     {proposalStep === 3 && (
+                      isMemberReadOnly ? (
+                        <div
+                          className="px-4 sm:px-6 py-2 sm:py-2.5 bg-gray-100 border border-gray-200 text-gray-400 font-black rounded-lg flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] uppercase tracking-tight sm:tracking-widest shrink-0 cursor-not-allowed"
+                          title="Members have read-only access. Submissions must be performed by an officer."
+                        >
+                          <Lock size={13} />
+                          <span>Read-Only Mode</span>
+                        </div>
+                      ) : (
+                        <button
+                          type="submit"
+                          disabled={isResubmitDisabled || isSaving}
+                          className={`px-4 sm:px-6 py-2 sm:py-2.5 font-black rounded-lg transition-all shadow-md flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] uppercase tracking-tight sm:tracking-widest shrink-0 ${
+                            isResubmitDisabled || isSaving
+                              ? 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-60'
+                              : 'bg-primary-green text-white hover:bg-green-700 hover:scale-105 active:scale-95 shadow-green-600/20'
+                          }`}
+                          title={
+                            isResubmitDisabled
+                              ? (is02F1Returned && !hasFormChanges
+                                  ? "Edit the form content fields to enable the Resubmit button."
+                                  : "Please upload replacement .pdf files for all returned attachments.")
+                              : "Resubmit Document"
+                          }
+                        >
+                          {isSaving ? <Loader2 className="animate-spin" size={13} /> : (isReturnedDocument ? <RefreshCcw size={13} /> : <Send size={13} />)}
+                          <span>{isReturnedDocument ? 'Resubmit' : 'Register'}</span>
+                        </button>
+                      )
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {!isMemberReadOnly && (Object.keys(localFiles).length > 0 || existingAttachments.length > 0) && (
+                      <button
+                        type="button"
+                        onClick={() => clearFormOptions('attachments')}
+                        className="px-2.5 sm:px-4 py-2 sm:py-2.5 bg-white border border-gray-200 text-gray-500 font-black rounded-lg hover:bg-gray-50 transition-all flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] uppercase shadow-sm tracking-tight sm:tracking-widest shrink-0"
+                      >
+                        <Eraser size={13} /> <span className="hidden xs:inline">Clear Attachments</span><span className="xs:hidden">Clear</span>
+                      </button>
+                    )}
+                    {!isMemberReadOnly && (
+                      <button
+                        type="button"
+                        onClick={handleSaveDraft}
+                        disabled={isSaving}
+                        className="px-3 sm:px-5 py-2 sm:py-2.5 bg-amber-50 text-amber-600 border border-amber-200 font-black rounded-lg hover:bg-amber-100 transition-all flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] uppercase shadow-sm tracking-tight sm:tracking-widest shrink-0"
+                      >
+                        <Save size={13} /> <span>Save Draft</span>
+                      </button>
+                    )}
+                    {isMemberReadOnly ? (
+                      <div
+                        className="px-4 sm:px-6 py-2 sm:py-2.5 bg-gray-100 border border-gray-200 text-gray-400 font-black rounded-lg flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] uppercase tracking-tight sm:tracking-widest shrink-0 cursor-not-allowed"
+                        title="Members have read-only access. Submissions must be performed by an officer."
+                      >
+                        <Lock size={13} />
+                        <span>Read-Only Mode</span>
+                      </div>
+                    ) : (
                       <button
                         type="submit"
                         disabled={isResubmitDisabled || isSaving}
@@ -3404,55 +3588,16 @@ const SubmitNewDocument = () => {
                         }`}
                         title={
                           isResubmitDisabled
-                            ? (is02F1Returned && !hasFormChanges
-                                ? "Edit the form content fields to enable the Resubmit button."
-                                : "Please upload replacement .pdf files for all returned attachments.")
-                            : "Resubmit Document"
+                            ? (isReturnedDocument
+                                ? "Upload replacement .pdf files for all returned attachments."
+                                : "Please attach files for all required documents before registering.")
+                            : ""
                         }
                       >
                         {isSaving ? <Loader2 className="animate-spin" size={13} /> : (isReturnedDocument ? <RefreshCcw size={13} /> : <Send size={13} />)}
                         <span>{isReturnedDocument ? 'Resubmit' : 'Register'}</span>
                       </button>
                     )}
-                  </>
-                ) : (
-                  <>
-                    {(Object.keys(localFiles).length > 0 || existingAttachments.length > 0) && (
-                      <button
-                        type="button"
-                        onClick={() => clearFormOptions('attachments')}
-                        className="px-2.5 sm:px-4 py-2 sm:py-2.5 bg-white border border-gray-200 text-gray-500 font-black rounded-lg hover:bg-gray-50 transition-all flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] uppercase shadow-sm tracking-tight sm:tracking-widest shrink-0"
-                      >
-                        <Eraser size={13} /> <span className="hidden xs:inline">Clear Attachments</span><span className="xs:hidden">Clear</span>
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={handleSaveDraft}
-                      disabled={isSaving}
-                      className="px-3 sm:px-5 py-2 sm:py-2.5 bg-amber-50 text-amber-600 border border-amber-200 font-black rounded-lg hover:bg-amber-100 transition-all flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] uppercase shadow-sm tracking-tight sm:tracking-widest shrink-0"
-                    >
-                      <Save size={13} /> <span>Save Draft</span>
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isResubmitDisabled || isSaving}
-                      className={`px-4 sm:px-6 py-2 sm:py-2.5 font-black rounded-lg transition-all shadow-md flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] uppercase tracking-tight sm:tracking-widest shrink-0 ${
-                        isResubmitDisabled || isSaving
-                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-60'
-                          : 'bg-primary-green text-white hover:bg-green-700 hover:scale-105 active:scale-95 shadow-green-600/20'
-                      }`}
-                      title={
-                        isResubmitDisabled
-                          ? (isReturnedDocument
-                              ? "Upload replacement .pdf files for all returned attachments."
-                              : "Please attach files for all required documents before registering.")
-                          : ""
-                      }
-                    >
-                      {isSaving ? <Loader2 className="animate-spin" size={13} /> : (isReturnedDocument ? <RefreshCcw size={13} /> : <Send size={13} />)}
-                      <span>{isReturnedDocument ? 'Resubmit' : 'Register'}</span>
-                    </button>
                   </>
                 )}
               </div>

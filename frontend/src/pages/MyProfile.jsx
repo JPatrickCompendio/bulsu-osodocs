@@ -1,111 +1,140 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
 import { 
-  User as UserIcon, 
-  Mail, 
-  Shield, 
-  Clock, 
-  Calendar, 
-  Camera, 
-  Save, 
-  Lock, 
-  CheckCircle2, 
   AlertCircle,
+  CheckCircle2,
+  X,
+  Plus,
   Loader2,
-  Eye,
-  EyeOff,
-  Building2,
-  Users,
-  UserCheck,
-  Award,
+  User as UserIcon,
+  Shield,
+  ShieldCheck,
+  Mail,
   Hash,
   Phone,
-  Plus,
-  Trash2,
-  Edit3,
-  X
+  Calendar,
+  Camera,
+  Clock
 } from 'lucide-react';
+
+import { apiFetch } from '../config/api';
+
+import OrgProfileHeader from '../components/profile/OrgProfileHeader';
+import IdentityPanel from '../components/profile/IdentityPanel';
+import OrganizationRecord from '../components/profile/OrganizationRecord';
+import BoardRoster from '../components/profile/BoardRoster';
+import TermHistory from '../components/profile/TermHistory';
+import AccountSettings from '../components/profile/AccountSettings';
+import SecurityPanel from '../components/profile/SecurityPanel';
 import PageHeader from '../components/PageHeader';
 import Avatar from '../components/Avatar';
 
 const MyProfile = () => {
-  const { user, refreshUser } = useAuth();
-  
-  // Profile Info State
-  const [fullName, setFullName] = useState('');
-  const [abbreviation, setAbbreviation] = useState('');
-  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const { user, refreshUser, activeMember } = useAuth();
 
-  // Executive Members State (for org-president)
+  // Saving states
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const fileInputRef = useRef(null);
+
+  // School Years state (identically matching UserManagement.jsx)
+  const [activeSy, setActiveSy] = useState(null);
+  const [allSchoolYears, setAllSchoolYears] = useState([]);
+  const [selectedSyId, setSelectedSyId] = useState('');
+
+  // User detail state (matching UserManagement.jsx: detailData, detailLoading, academicYearSnapshots)
+  const [detailData, setDetailData] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [academicYearSnapshots, setAcademicYearSnapshots] = useState([]);
+
+  // Executive Members state
   const [members, setMembers] = useState([]);
+  const [allOrgMembers, setAllOrgMembers] = useState([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
-  const [activeSy, setActiveSy] = useState(null);
-  const [allSchoolYears, setAllSchoolYears] = useState([]);
-  const [selectedSyId, setSelectedSyId] = useState(null);
-  const isViewingActiveSy = Boolean(activeSy && selectedSyId === activeSy.id);
+  const [isSavingMember, setIsSavingMember] = useState(false);
+  const [positionSelection, setPositionSelection] = useState('Vice President');
+  const [customPosition, setCustomPosition] = useState('');
   const [memberForm, setMemberForm] = useState({
     full_name: '',
-    position: '',
+    position: 'Vice President',
     student_number: '',
     contact_number: '',
   });
-  
-  // Password State
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [isSavingPassword, setIsSavingPassword] = useState(false);
-  
-  // Image State
-  const [isUploadingImage, setIsUploadingImage] = useState(false);
-  const fileInputRef = useRef(null);
-  
+
   // Toast State
   const [toast, setToast] = useState(null);
 
-  useEffect(() => {
-    const fetchSchoolYears = async () => {
-      try {
-        const { data: activeData } = await supabase
-          .from('school_years')
-          .select('*')
-          .eq('is_active', true)
-          .maybeSingle();
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
 
-        const { data: allData } = await supabase
-          .from('school_years')
-          .select('*')
-          .order('start_date', { ascending: false });
-
-        if (activeData) {
-          setActiveSy(activeData);
-          setSelectedSyId(activeData.id);
-        } else if (allData && allData.length > 0) {
-          setActiveSy(allData[0]);
-          setSelectedSyId(allData[0].id);
+  // 1. Fetch School Years using apiFetch('/api/school-years') (matching UserManagement.jsx lines 134-149)
+  const fetchSchoolYears = async () => {
+    try {
+      const res = await apiFetch('/api/school-years');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data)) {
+        const sys = data.data;
+        setAllSchoolYears(sys);
+        const active = sys.find((s) => s.is_active) || sys[0];
+        if (active) {
+          setActiveSy(active);
+          if (!selectedSyId) {
+            setSelectedSyId(active.id);
+          }
         }
-        if (allData) {
-          setAllSchoolYears(allData);
-        }
-      } catch (err) {
-        console.warn('Error fetching school years in MyProfile:', err);
       }
-    };
+    } catch (err) {
+      console.error('Error fetching school years:', err);
+    }
+  };
+
+  // 2. Fetch User Detail using apiFetch(`/api/users/${userId}/detail?syId=${targetSy}`) (matching UserManagement.jsx lines 181-196)
+  const fetchUserDetail = async (userId, syId) => {
+    if (!userId) return;
+    setDetailLoading(true);
+    try {
+      const targetSy = syId || selectedSyId;
+      const syParam = targetSy ? `&syId=${targetSy}` : '';
+      const response = await apiFetch(`/api/users/${userId}/detail?t=${Date.now()}${syParam}`, { cache: 'no-store' });
+      const result = await response.json();
+      if (result.success && result.data) {
+        setDetailData(result.data);
+        if (result.data.academicYearSnapshots) {
+          setAcademicYearSnapshots(result.data.academicYearSnapshots);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching user detail:', error);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  // Initialize school years
+  useEffect(() => {
     fetchSchoolYears();
   }, []);
 
+  // Fetch detail whenever selected school year or user ID changes (matching UserManagement.jsx lines 198-202)
   useEffect(() => {
-    if (user) {
-      setFullName(user.full_name || user.username || '');
-      setAbbreviation(user.abbreviation || '');
-      if (user.role === 'org-president') {
-        loadMembers(selectedSyId);
-      }
+    if (user?.id) {
+      fetchUserDetail(user.id, selectedSyId);
     }
-  }, [user?.id, user?.role, user?.organization_id, selectedSyId]);
+  }, [selectedSyId, user?.id]);
+
+  // Load executive board members for the selected term
+  useEffect(() => {
+    if (user && user.role === 'org-president') {
+      loadMembers(selectedSyId);
+      loadAllHistoricalMembers();
+    }
+  }, [selectedSyId, user?.id, user?.role, user?.organization_id]);
 
   const loadMembers = async (targetSyId = null) => {
     if (!user?.id) return;
@@ -153,103 +182,21 @@ const MyProfile = () => {
     }
   };
 
-  const handleSaveMember = async (e) => {
-    e.preventDefault();
-    if (!isViewingActiveSy) {
-      showToast('Executive members can only be added or edited for the active school year.', 'error');
-      return;
-    }
-    if (!memberForm.full_name.trim() || !memberForm.position.trim()) {
-      showToast('Please provide both full name and position.', 'error');
-      return;
-    }
-
+  const loadAllHistoricalMembers = async () => {
+    if (!user?.id) return;
     try {
-      const targetSy = selectedSyId || activeSy?.id || null;
-      if (editingMember) {
-        const updatePayload = {
-          full_name: memberForm.full_name.trim(),
-          position: memberForm.position.trim(),
-          student_number: memberForm.student_number.trim() || null,
-          contact_number: memberForm.contact_number.trim() || null,
-          updated_at: new Date().toISOString()
-        };
-        if (targetSy) {
-          updatePayload.school_year_id = editingMember.school_year_id || targetSy;
-        }
-
-        let { error } = await supabase
-          .from('organization_members')
-          .update(updatePayload)
-          .eq('id', editingMember.id);
-
-        if (error && error.message?.includes('school_year_id')) {
-          delete updatePayload.school_year_id;
-          const retry = await supabase.from('organization_members').update(updatePayload).eq('id', editingMember.id);
-          error = retry.error;
-        }
-
-        if (error) throw error;
-        showToast('Executive member updated successfully!');
-      } else {
-        const insertPayload = {
-          organization_id: user.organization_id || null,
-          user_id: user.id,
-          full_name: memberForm.full_name.trim(),
-          position: memberForm.position.trim(),
-          student_number: memberForm.student_number.trim() || null,
-          contact_number: memberForm.contact_number.trim() || null,
-          school_year_id: targetSy,
-        };
-
-        let { error } = await supabase
-          .from('organization_members')
-          .insert([insertPayload]);
-
-        if (error && error.message?.includes('school_year_id')) {
-          delete insertPayload.school_year_id;
-          const retry = await supabase.from('organization_members').insert([insertPayload]);
-          error = retry.error;
-        }
-
-        if (error) throw error;
-        showToast('Executive member added successfully!');
-      }
-
-      setIsMemberModalOpen(false);
-      setEditingMember(null);
-      setMemberForm({ full_name: '', position: '', student_number: '', contact_number: '' });
-      await loadMembers(selectedSyId);
-    } catch (err) {
-      console.error('Error saving member:', err);
-      showToast(err.message || 'Failed to save executive member', 'error');
-    }
-  };
-
-  const handleDeleteMember = async (id) => {
-    if (!isViewingActiveSy) {
-      showToast('Executive members can only be removed from the active school year.', 'error');
-      return;
-    }
-    if (!window.confirm('Are you sure you want to remove this executive member?')) return;
-    try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('organization_members')
-        .delete()
-        .eq('id', id);
+        .select('*')
+        .or(`user_id.eq.${user.id},organization_id.eq.${user.organization_id || '00000000-0000-0000-0000-000000000000'}`)
+        .order('created_at', { ascending: true });
 
-      if (error) throw error;
-      showToast('Executive member removed.');
-      await loadMembers(selectedSyId);
+      if (!error && data) {
+        setAllOrgMembers(data);
+      }
     } catch (err) {
-      console.error('Error deleting member:', err);
-      showToast('Failed to remove executive member', 'error');
+      console.warn('Error loading historical members:', err);
     }
-  };
-
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 4000);
   };
 
   const createAuditLog = async (description) => {
@@ -260,25 +207,24 @@ const MyProfile = () => {
         description: description,
       }]);
       if (error) {
-        console.warn('Could not create audit log (may require submission_id):', error);
+        console.warn('Could not create audit log:', error);
       }
     } catch (err) {
       console.warn('Audit log error:', err);
     }
   };
 
+  // 3. Profile Image Upload
   const handleProfileImageUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
     const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
     if (!validTypes.includes(file.type)) {
       showToast('Please upload a valid image (JPG, PNG, WEBP)', 'error');
       return;
     }
 
-    // Validate file size (5MB max)
     if (file.size > 5 * 1024 * 1024) {
       showToast('Image size must be less than 5MB', 'error');
       return;
@@ -316,22 +262,30 @@ const MyProfile = () => {
     }
   };
 
-  const handleUpdateProfile = async (e) => {
-    e.preventDefault();
-    if (!fullName.trim()) {
+  // 4. Update Profile Details
+  const handleUpdateProfile = async ({ fullName, abbreviation, contactNumber }) => {
+    if (!isPresident) {
+      showToast('Only the Organization President can modify organization details.', 'error');
+      return false;
+    }
+    if (!fullName?.trim()) {
       showToast('Full Name is required', 'error');
-      return;
+      return false;
     }
 
     setIsSavingProfile(true);
     try {
-      const payload = { full_name: fullName.trim() };
+      const payload = { 
+        full_name: fullName.trim(),
+        contact_no: contactNumber?.trim() || null,
+      };
+
       if (user.role === 'org-president') {
-        const trimmedAbbr = abbreviation.trim();
+        const trimmedAbbr = abbreviation?.trim() || '';
         if (trimmedAbbr.length > 15) {
           showToast('Organization Abbreviation cannot exceed 15 characters', 'error');
           setIsSavingProfile(false);
-          return;
+          return false;
         }
 
         if (trimmedAbbr) {
@@ -343,9 +297,9 @@ const MyProfile = () => {
             .maybeSingle();
 
           if (existingUserAbbr) {
-            showToast(`An organization with the abbreviation "${trimmedAbbr}" already exists. Duplicate abbreviations are not allowed.`, 'error');
+            showToast(`An organization with the abbreviation "${trimmedAbbr}" already exists.`, 'error');
             setIsSavingProfile(false);
-            return;
+            return false;
           }
         }
 
@@ -359,45 +313,63 @@ const MyProfile = () => {
 
       if (error) throw error;
 
-      await createAuditLog(`Updated profile full name to: ${fullName.trim()}`);
+      // Keep organization_academic_years in sync for active school year if record exists (matching admin logic)
+      if (user.role === 'org-president' && activeSy?.id) {
+        const targetOrgId = user.organization_id || user.id;
+        try {
+          await supabase
+            .from('organization_academic_years')
+            .update({
+              president_name: fullName.trim(),
+              contact_no: contactNumber?.trim() || null,
+              updated_at: new Date().toISOString()
+            })
+            .eq('school_year_id', activeSy.id)
+            .or(`organization_id.eq.${targetOrgId},organization_id.eq.${user.id}`);
+          await loadHistoricalAcademicYears();
+        } catch (_) {}
+      }
+
+      await createAuditLog(`Updated profile details: ${fullName.trim()}`);
+      await fetchUserDetail(user.id, selectedSyId);
       await refreshUser();
-      showToast('Profile updated successfully!');
+      showToast('Profile details updated successfully!');
+      return true;
     } catch (err) {
       console.error('Profile update error:', err);
       showToast(err.message || 'Failed to update profile', 'error');
+      return false;
     } finally {
       setIsSavingProfile(false);
     }
   };
 
-  const handleChangePassword = async (e) => {
-    e.preventDefault();
+  // 5. Change Password
+  const handleChangePassword = async ({ currentPassword, newPassword, confirmPassword }) => {
+    if (!isPresident) {
+      return { success: false, error: 'Only the Organization President can change the account password.' };
+    }
     if (newPassword.length < 6) {
-      showToast('New password must be at least 6 characters', 'error');
-      return;
+      return { success: false, error: 'New password must be at least 6 characters' };
     }
     if (newPassword !== confirmPassword) {
-      showToast('New passwords do not match', 'error');
-      return;
+      return { success: false, error: 'New passwords do not match' };
     }
     if (!currentPassword) {
-      showToast('Current password is required', 'error');
-      return;
+      return { success: false, error: 'Current password is required' };
     }
 
     setIsSavingPassword(true);
     try {
-      // Re-authenticate to verify current password
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email: user.email,
         password: currentPassword
       });
 
       if (signInError) {
-        throw new Error('Incorrect current password');
+        return { success: false, error: 'Incorrect current password' };
       }
 
-      // Update to new password
       const { error: updateError } = await supabase.auth.updateUser({
         password: newPassword
       });
@@ -406,555 +378,650 @@ const MyProfile = () => {
 
       await createAuditLog('Changed account password');
       showToast('Password changed successfully!');
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
+      return { success: true };
     } catch (err) {
       console.error('Password change error:', err);
-      showToast(err.message || 'Failed to change password', 'error');
+      return { success: false, error: err.message || 'Failed to change password' };
     } finally {
       setIsSavingPassword(false);
     }
   };
 
-  const getCoAdvisersList = () => {
-    if (!user?.co_advisers) return [];
-    if (Array.isArray(user.co_advisers)) return user.co_advisers.filter(Boolean);
-    if (typeof user.co_advisers === 'string') {
+  // 6. Member Modal Save
+  const handleSaveMember = async (e) => {
+    e.preventDefault();
+    if (!isPresident) {
+      showToast('Only the Organization President can add or edit executive members.', 'error');
+      return;
+    }
+    if (!isViewingActiveSy) {
+      showToast('Executive members can only be added or edited for the active school year.', 'error');
+      return;
+    }
+    const resolvedPosition = (positionSelection === 'Other' ? customPosition : positionSelection).trim();
+    if (!memberForm.full_name.trim() || !resolvedPosition) {
+      showToast('Please provide both full name and position / role.', 'error');
+      return;
+    }
+
+    setIsSavingMember(true);
+    try {
+      const targetSy = selectedSyId || activeSy?.id || null;
+      if (editingMember) {
+        const updatePayload = {
+          full_name: memberForm.full_name.trim(),
+          position: resolvedPosition,
+          student_number: memberForm.student_number.trim() || null,
+          contact_number: memberForm.contact_number.trim() || null,
+          updated_at: new Date().toISOString()
+        };
+        if (targetSy) {
+          updatePayload.school_year_id = editingMember.school_year_id || targetSy;
+        }
+
+        let { error } = await supabase
+          .from('organization_members')
+          .update(updatePayload)
+          .eq('id', editingMember.id);
+
+        if (error && error.message?.includes('school_year_id')) {
+          delete updatePayload.school_year_id;
+          const retry = await supabase.from('organization_members').update(updatePayload).eq('id', editingMember.id);
+          error = retry.error;
+        }
+
+        if (error) throw error;
+        showToast('Executive member updated successfully!');
+      } else {
+        const insertPayload = {
+          organization_id: user.organization_id || null,
+          user_id: user.id,
+          full_name: memberForm.full_name.trim(),
+          position: resolvedPosition,
+          student_number: memberForm.student_number.trim() || null,
+          contact_number: memberForm.contact_number.trim() || null,
+          school_year_id: targetSy,
+        };
+
+        let { error } = await supabase
+          .from('organization_members')
+          .insert([insertPayload]);
+
+        if (error && error.message?.includes('school_year_id')) {
+          delete insertPayload.school_year_id;
+          const retry = await supabase.from('organization_members').insert([insertPayload]);
+          error = retry.error;
+        }
+
+        if (error) throw error;
+        showToast('Executive member added successfully!');
+      }
+
+      setIsMemberModalOpen(false);
+      setEditingMember(null);
+      setPositionSelection('Vice President');
+      setCustomPosition('');
+      setMemberForm({ full_name: '', position: 'Vice President', student_number: '', contact_number: '' });
+      await loadMembers(selectedSyId);
+      await loadAllHistoricalMembers();
+    } catch (err) {
+      console.error('Error saving member:', err);
+      showToast(err.message || 'Failed to save executive member', 'error');
+    } finally {
+      setIsSavingMember(false);
+    }
+  };
+
+  // 7. Delete Member
+  const handleDeleteMember = async (id) => {
+    if (!isPresident) {
+      showToast('Only the Organization President can remove executive members.', 'error');
+      return;
+    }
+    if (!isViewingActiveSy) {
+      showToast('Executive members can only be removed from the active school year.', 'error');
+      return;
+    }
+    if (!window.confirm('Are you sure you want to remove this executive member?')) return;
+    try {
+      const { error } = await supabase
+        .from('organization_members')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      showToast('Executive member removed.');
+      await loadMembers(selectedSyId);
+      await loadAllHistoricalMembers();
+    } catch (err) {
+      console.error('Error deleting member:', err);
+      showToast('Failed to remove executive member', 'error');
+    }
+  };
+
+  // Advisers parsing helper (identical to parseCoAdvisersList in UserManagement.jsx)
+  const parseCoAdvisers = (raw) => {
+    if (Array.isArray(raw)) return raw.filter(Boolean);
+    if (typeof raw === 'string' && raw.trim()) {
       try {
-        const parsed = JSON.parse(user.co_advisers);
+        const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) return parsed.filter(Boolean);
+        return [raw.trim()];
       } catch {
-        return user.co_advisers.split(',').map(s => s.trim()).filter(Boolean);
+        return raw.split(',').map((s) => s.trim()).filter(Boolean);
       }
     }
     return [];
   };
 
+  const getAdvisersForTerm = (adviserName, rawCoAdvisers) => {
+    const list = [];
+    if (adviserName && adviserName.trim()) {
+      list.push({ name: adviserName.trim(), role: 'Primary Adviser' });
+    }
+    const coList = parseCoAdvisers(rawCoAdvisers);
+    coList.forEach((ca) => {
+      list.push({ name: ca, role: 'Co-Adviser' });
+    });
+    return list;
+  };
+
+  const profile = user ? (detailData?.user || user) : null;
+  const selectedSyObj = allSchoolYears.find((s) => s.id === selectedSyId) || activeSy;
+  const isViewingActiveSy = selectedSyObj ? selectedSyObj.is_active : true;
+  const shortYear = (selectedSyObj?.name || '2026 – 2027').replace(/^A\.?Y\.?\s*/i, '');
+
+  // Compute terms history data - same logic as admin UserManagement fetching from organization_academic_years
+  const termsHistory = useMemo(() => {
+    const currentAdvisers = getAdvisersForTerm(user?.adviser_name, user?.co_advisers);
+
+    if (allSchoolYears.length === 0) {
+      return [{
+        id: 'current-term',
+        academicYear: activeSy?.name || 'A.Y. 2026 – 2027',
+        shortYear: (activeSy?.name || '2026 – 2027').replace(/^A\.?Y\.?\s*/i, ''),
+        status: 'current',
+        president: {
+          name: profile?.full_name || user?.full_name || 'Organization President',
+          studentNumber: profile?.student_no || user?.student_no || '',
+          contactNumber: profile?.contact_no || user?.contact_no || '',
+        },
+        advisers: currentAdvisers,
+        memberCount: profile?.no_member ?? user?.no_member ?? 0,
+        board: members.map((m) => ({
+          id: m.id,
+          name: m.full_name,
+          position: m.position,
+          email: m.student_number ? `SN: ${m.student_number}` : (m.contact_number || ''),
+        })),
+      }];
+    }
+
+    // Only include school years that have an actual record in organization_academic_years or is the active school year
+    const recordedSchoolYears = allSchoolYears.filter((sy) => {
+      const isCur = Boolean(sy.is_active || (activeSy && sy.id === activeSy.id));
+      const hasSnap = academicYearSnapshots.some((s) => s.school_year_id === sy.id);
+      return isCur || hasSnap;
+    });
+
+    return recordedSchoolYears.map((sy) => {
+      const isCur = Boolean(sy.is_active || (activeSy && sy.id === activeSy.id));
+      const snap = academicYearSnapshots.find((s) => s.school_year_id === sy.id);
+
+      const syMembers = isCur
+        ? members
+        : allOrgMembers.filter((m) => m.school_year_id === sy.id);
+
+      const presMember = syMembers.find(
+        (m) => m.is_president || m.position?.toLowerCase().includes('president')
+      );
+
+      const presName = snap?.president_name || (isCur ? (user?.full_name || profile?.full_name) : null) || presMember?.full_name || 'President';
+      const presStudentNo = snap?.student_no ?? (isCur ? (user?.student_no || profile?.student_no) : null) ?? presMember?.student_number ?? '';
+      const presContactNo = snap?.contact_no ?? (isCur ? (user?.contact_no || profile?.contact_no) : null) ?? presMember?.contact_number ?? '';
+      const adviserName = snap ? snap.adviser_name : (isCur ? (user?.adviser_name || profile?.adviser_name) : null);
+      const coAdvs = snap ? snap.co_advisers : (isCur ? (user?.co_advisers || profile?.co_advisers) : null);
+      const memberCount = snap ? (snap.no_member ?? 0) : (isCur ? (user?.no_member || profile?.no_member || 0) : 0);
+
+      const termAdvisers = getAdvisersForTerm(adviserName, coAdvs);
+
+      return {
+        id: sy.id,
+        academicYear: sy.name,
+        shortYear: sy.name.replace(/^A\.?Y\.?\s*/i, ''),
+        status: isCur ? 'current' : 'archived',
+        president: {
+          name: presName,
+          studentNumber: presStudentNo,
+          contactNumber: presContactNo,
+        },
+        advisers: termAdvisers,
+        memberCount: memberCount,
+        board: syMembers.map((m) => ({
+          id: m.id,
+          name: m.full_name,
+          position: m.position,
+          email: m.student_number ? `SN: ${m.student_number}` : (m.contact_number || ''),
+        })),
+        note: sy.theme ? `Theme: ${sy.theme}` : undefined,
+      };
+    });
+  }, [allSchoolYears, activeSy, user, profile, members, allOrgMembers, academicYearSnapshots]);
+
   if (!user) return null;
 
-  const coAdvisersList = getCoAdvisersList();
+  const effectiveFullName = profile?.full_name || user.full_name || user.username || '';
+  const effectiveStudentNo = profile?.student_no ?? user.student_no ?? 'N/A';
+  const effectiveContactNo = profile?.contact_no ?? user.contact_no ?? '';
+  const effectiveMemberCount = profile?.no_member ?? user.no_member ?? 0;
+  const effectiveAdviserName = profile?.adviser_name || user.adviser_name;
+  const effectiveCoAdvisers = profile?.co_advisers || user.co_advisers;
 
+  const organizationData = {
+    name: profile?.org_name || user.org_name || profile?.full_name || user.full_name || 'Organization Name',
+    abbreviation: profile?.abbreviation || user.abbreviation || '',
+    college: profile?.college || user.college || 'College of Information and Communications Technology',
+    officialEmail: profile?.email || user.email || '',
+    crestUrl: profile?.profile_image || user.profile_image || user.avatarUrl,
+  };
+
+  const isPresident = !activeMember || activeMember.is_president === true;
+
+  // Resolve the active operator's member record if an officer is operating
+  const activeOperatorRecord = useMemo(() => {
+    if (isPresident) return null;
+    const found =
+      members.find((m) => m.id === activeMember?.id) ||
+      allOrgMembers.find((m) => m.id === activeMember?.id) ||
+      members.find((m) => m.full_name && activeMember?.full_name && m.full_name.trim().toLowerCase() === activeMember.full_name.trim().toLowerCase()) ||
+      allOrgMembers.find((m) => m.full_name && activeMember?.full_name && m.full_name.trim().toLowerCase() === activeMember.full_name.trim().toLowerCase());
+    return found ? { ...activeMember, ...found } : activeMember;
+  }, [isPresident, activeMember, members, allOrgMembers]);
+
+  const presidentAccountData = {
+    fullName: effectiveFullName,
+    email: profile?.email || user.email || '',
+    studentNumber: effectiveStudentNo,
+    contactNumber: effectiveContactNo,
+    profileImage: profile?.profile_image || user.profile_image || user.avatarUrl,
+    position: (profile?.role || user.role) === 'org-president' ? 'Organization President' : ((profile?.role || user.role) || 'Officer'),
+    activeSince: new Date(profile?.joined_date || user.joined_date || profile?.created_at || user.created_at || Date.now()).toLocaleDateString(undefined, { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    }),
+    isActive: profile?.status !== 'Inactive' && !profile?.status?.startsWith('Suspended'),
+    isOperator: false,
+    isPresident: true,
+  };
+
+  const operatorAccountData = (!isPresident && activeOperatorRecord) ? {
+    fullName: activeOperatorRecord.full_name || activeMember?.full_name || 'Active Officer',
+    email: activeOperatorRecord.email || profile?.email || user.email || '',
+    studentNumber: activeOperatorRecord.student_number || activeOperatorRecord.student_no || activeMember?.student_number || 'N/A',
+    contactNumber: activeOperatorRecord.contact_number || activeOperatorRecord.contact_no || activeMember?.contact_number || 'N/A',
+    profileImage: activeOperatorRecord.avatar_url || activeOperatorRecord.profile_image || profile?.profile_image || user.profile_image || user.avatarUrl,
+    position: activeOperatorRecord.position || activeMember?.position || 'Officer',
+    activeSince: activeOperatorRecord.created_at
+      ? new Date(activeOperatorRecord.created_at).toLocaleDateString(undefined, {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        })
+      : new Date(profile?.joined_date || user.joined_date || profile?.created_at || user.created_at || Date.now()).toLocaleDateString(undefined, {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        }),
+    isActive: true,
+    isOperator: true,
+    isPresident: false,
+  } : presidentAccountData;
+
+  const identityAccountData = isPresident ? presidentAccountData : operatorAccountData;
+
+  const nonOrgAccountData = useMemo(() => {
+    const roleTitleMap = {
+      'admin': 'Administrator',
+      'chairman': 'Department Chairman',
+      'vice-chairman': 'Department Vice-Chairman',
+      'dean': 'College Dean',
+    };
+    const roleKey = (profile?.role || user.role || '').toLowerCase();
+    const roleName = roleTitleMap[roleKey] || (roleKey ? roleKey.replace('-', ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Staff');
+
+    const badgeMap = {
+      'admin': 'Active Admin',
+      'chairman': 'Active Chairman',
+      'vice-chairman': 'Active Vice-Chairman',
+      'dean': 'Active Dean',
+    };
+    const badgeText = badgeMap[roleKey] || 'Active';
+
+    return {
+      fullName: effectiveFullName,
+      email: profile?.email || user.email || '',
+      studentNumber: '',
+      contactNumber: effectiveContactNo || 'N/A',
+      profileImage: profile?.profile_image || user.profile_image || user.avatarUrl,
+      position: roleName,
+      badgeText: badgeText,
+      activeSince: new Date(profile?.joined_date || user.joined_date || profile?.created_at || user.created_at || Date.now()).toLocaleDateString(undefined, { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      }),
+      isActive: profile?.status !== 'Inactive' && !profile?.status?.startsWith('Suspended') && user.status !== 'Inactive' && !user.status?.startsWith('Suspended'),
+      isPresident: true,
+    };
+  }, [user, profile, effectiveFullName, effectiveContactNo]);
+
+  const currentTermData = {
+    id: selectedSyObj?.id || 'current-term',
+    academicYear: selectedSyObj?.name || 'A.Y. 2026 – 2027',
+    shortYear: shortYear,
+    status: isViewingActiveSy ? 'current' : 'archived',
+    memberCount: effectiveMemberCount,
+    advisers: getAdvisersForTerm(effectiveAdviserName, effectiveCoAdvisers),
+  };
+
+  // Render for Non-Organization Accounts (Admin, Dean, Chairperson, etc.)
+  if (user.role !== 'org-president') {
+    return (
+      <div className="animate-in fade-in duration-300 pb-16">
+        {toast && (
+          <div className={`fixed top-10 right-10 z-[200] flex items-center gap-4 px-6 py-4 rounded-xl shadow-xl animate-in slide-in-from-right-full ${
+            toast.type === 'error' ? 'bg-danger-500 text-white' : 'bg-forest-700 text-white'
+          }`}>
+            {toast.type === 'error' ? <AlertCircle size={20} /> : <CheckCircle2 size={20} />}
+            <span className="font-bold text-sm">{toast.message}</span>
+          </div>
+        )}
+
+        <div className="mb-8">
+          <PageHeader 
+            title="My Profile" 
+            subtitle="Manage your personal information and account security" 
+            icon={UserIcon} 
+            iconColor="emerald" 
+          />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+          {/* Left Column: Sticky Identity Panel */}
+          <div className="space-y-6 lg:col-span-1 lg:sticky lg:top-6">
+            <IdentityPanel
+              account={nonOrgAccountData}
+              organization={{}}
+              onImageUpload={handleProfileImageUpload}
+              isUploadingImage={isUploadingImage}
+              canEditImage={true}
+              showStudentNumber={false}
+              isOrg={false}
+            />
+          </div>
+
+          <div className="space-y-6 lg:col-span-2">
+            <AccountSettings
+              account={nonOrgAccountData}
+              isOrg={false}
+              isPresident={true}
+              onSave={handleUpdateProfile}
+              isSaving={isSavingProfile}
+            />
+            <SecurityPanel
+              onChangePassword={handleChangePassword}
+              isSaving={isSavingPassword}
+              isPresident={true}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Render for Student Organizations (Matching Provided Design Specification & Admin User Management)
   return (
-    <div className="animate-in fade-in duration-500 pb-16">
+    <div className="min-h-full w-full font-sans pb-16 animate-in fade-in duration-300">
       {toast && (
-        <div className={`fixed top-10 right-10 z-[200] flex items-center gap-4 px-6 py-4 rounded-xl shadow-xl animate-in slide-in-from-right-full ${
-          toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-primary-green text-white'
+        <div className={`fixed top-10 right-10 z-[350] flex items-center gap-4 px-6 py-4 rounded-xl shadow-xl animate-in slide-in-from-right-full ${
+          toast.type === 'error' ? 'bg-danger-500 text-white' : 'bg-forest-700 text-white'
         }`}>
           {toast.type === 'error' ? <AlertCircle size={20} /> : <CheckCircle2 size={20} />}
           <span className="font-bold text-sm">{toast.message}</span>
         </div>
       )}
 
-      <div className="mb-10">
+      {/* Profile Page Header - matching design of other pages */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 sm:mb-8 border-b border-gray-100 pb-4 sm:pb-6 gap-4">
         <PageHeader 
           title="My Profile" 
           subtitle="Manage your personal information, organization details, and account security" 
           icon={UserIcon} 
-          iconColor="slate" 
+          iconColor="emerald" 
         />
+
+        {(organizationData.abbreviation || shortYear) && (
+          <div className="flex items-center gap-2 rounded-full border border-forest-100 bg-forest-50 px-3.5 py-1.5 text-xs font-semibold text-forest-700 shadow-2xs">
+            <ShieldCheck className="h-4 w-4 text-forest-600" aria-hidden="true" />
+            <span>
+              {organizationData.abbreviation}
+              {organizationData.abbreviation && shortYear ? ' · ' : ''}
+              {shortYear}
+            </span>
+          </div>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Left Column: Avatar & Account Summary */}
-        <div className="space-y-8 lg:col-span-1">
-          {/* Avatar Card */}
-          <div className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm text-center relative overflow-hidden group">
-            <div className="w-32 h-32 mx-auto rounded-full bg-primary-green border-4 border-white shadow-xl flex items-center justify-center text-white text-4xl font-black relative overflow-hidden mb-6">
-              <Avatar 
-                profileImage={user.avatarUrl || user.profile_image} 
-                name={user.full_name || user.username} 
-                className="w-full h-full object-cover" 
-                fallbackClassName="bg-primary-green text-white text-4xl font-black"
-              />
-              
-              {/* Overlay for upload */}
-              <label className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer backdrop-blur-sm">
-                <input 
-                  type="file" 
-                  className="hidden" 
-                  accept="image/png, image/jpeg, image/jpg, image/webp" 
-                  onChange={handleProfileImageUpload}
-                  ref={fileInputRef}
-                  disabled={isUploadingImage}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+        {/* Left Column: Sticky Identity Panel */}
+        <div className="space-y-6 lg:col-span-1 lg:sticky lg:top-6">
+          <IdentityPanel
+            account={identityAccountData}
+            organization={organizationData}
+            onImageUpload={handleProfileImageUpload}
+            isUploadingImage={isUploadingImage}
+            canEditImage={isPresident}
+          />
+        </div>
+
+        {/* Right Column: Record, Roster, History, Settings & Security */}
+        <div className="space-y-6 lg:col-span-2">
+          {/* 1. Official Organization Record (Read-only) */}
+          <OrganizationRecord
+            organization={organizationData}
+            term={currentTermData}
+          />
+
+          {/* 2. Executive Board Roster for Current Term */}
+          <BoardRoster
+            academicYear={selectedSyObj?.name || 'A.Y. 2026 – 2027'}
+            members={members}
+            editable={isViewingActiveSy}
+            isPresident={isPresident}
+            onAddOfficer={() => {
+              if (!isPresident) {
+                showToast('Only the Organization President can add executive members.', 'error');
+                return;
+              }
+              setEditingMember(null);
+              setPositionSelection('Vice President');
+              setCustomPosition('');
+              setMemberForm({ full_name: '', position: 'Vice President', student_number: '', contact_number: '' });
+              setIsMemberModalOpen(true);
+            }}
+            onEditOfficer={(member) => {
+              if (!isPresident) {
+                showToast('Only the Organization President can edit executive members.', 'error');
+                return;
+              }
+              setEditingMember(member);
+              const pos = (member.position || '').trim();
+              const standardRoles = ['Vice President', 'Member'];
+              const matched = standardRoles.find(r => r.toLowerCase() === pos.toLowerCase());
+              if (matched) {
+                setPositionSelection(matched);
+                setCustomPosition('');
+              } else if (pos) {
+                setPositionSelection('Other');
+                setCustomPosition(pos);
+              } else {
+                setPositionSelection('Member');
+                setCustomPosition('');
+              }
+              setMemberForm({
+                full_name: member.full_name || member.name || '',
+                position: pos || 'Member',
+                student_number: member.student_number || '',
+                contact_number: member.contact_number || ''
+              });
+              setIsMemberModalOpen(true);
+            }}
+            onDeleteOfficer={handleDeleteMember}
+          />
+
+          {/* 3. Term History Timeline Accordion */}
+          <TermHistory terms={termsHistory} />
+
+          {/* 4. Account Details Settings */}
+          <AccountSettings
+            account={presidentAccountData}
+            abbreviation={organizationData.abbreviation}
+            isOrg={true}
+            isPresident={isPresident}
+            onSave={handleUpdateProfile}
+            isSaving={isSavingProfile}
+          />
+
+          {/* 5. Password & Security Panel (Org President only) */}
+          {isPresident && (
+            <SecurityPanel
+              isPresident={isPresident}
+              onChangePassword={handleChangePassword}
+              isSaving={isSavingPassword}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Add / Edit Executive Board Member Modal */}
+      {isMemberModalOpen && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-card p-6 border border-line relative animate-in zoom-in-95 duration-150">
+            <button
+              onClick={() => setIsMemberModalOpen(false)}
+              className="absolute top-5 right-5 text-ink-faint hover:text-ink p-1 rounded-lg hover:bg-canvas transition-colors cursor-pointer"
+              aria-label="Close modal"
+            >
+              <X size={18} />
+            </button>
+
+            <h3 className="text-lg font-bold text-forest-800 mb-1">
+              {editingMember ? 'Edit Executive Officer' : 'Add Executive Officer'}
+            </h3>
+            <p className="text-xs text-ink-muted mb-5">
+              Register officers who operate this account for the current school year.
+            </p>
+
+            <form onSubmit={handleSaveMember} className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-ink-faint uppercase tracking-wider mb-1 block">
+                  Full Name <span className="text-danger-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={memberForm.full_name}
+                  onChange={(e) => setMemberForm({ ...memberForm, full_name: e.target.value })}
+                  placeholder="e.g. Maria Santos"
+                  className="w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-forest-400 focus:ring-2 focus:ring-forest-100"
                 />
-                {isUploadingImage ? (
-                  <Loader2 className="animate-spin text-white" size={24} />
-                ) : (
-                  <div className="flex flex-col items-center gap-2">
-                    <Camera className="text-white" size={24} />
-                    <span className="text-white text-[10px] font-bold uppercase tracking-wider">Update Photo</span>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-ink-faint uppercase tracking-wider mb-1 block">
+                  Role / Position <span className="text-danger-500">*</span>
+                </label>
+                <select
+                  required
+                  value={positionSelection}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setPositionSelection(val);
+                    if (val !== 'Other') {
+                      setMemberForm((prev) => ({ ...prev, position: val }));
+                    } else {
+                      setMemberForm((prev) => ({ ...prev, position: customPosition }));
+                    }
+                  }}
+                  className="w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm text-ink outline-none transition-colors focus:border-forest-400 focus:ring-2 focus:ring-forest-100 cursor-pointer"
+                >
+                  <option value="Vice President">Vice President</option>
+                  <option value="Member">Member</option>
+                  <option value="Other">Other (Specify custom title...)</option>
+                </select>
+
+                {positionSelection === 'Other' && (
+                  <div className="mt-2.5 animate-in fade-in duration-150">
+                    <input
+                      type="text"
+                      required
+                      value={customPosition}
+                      onChange={(e) => {
+                        setCustomPosition(e.target.value);
+                        setMemberForm((prev) => ({ ...prev, position: e.target.value }));
+                      }}
+                      placeholder="e.g. Secretary, Treasurer, Auditor"
+                      className="w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-forest-400 focus:ring-2 focus:ring-forest-100"
+                    />
                   </div>
                 )}
-              </label>
-            </div>
-            
-            <h2 className="text-xl font-black text-gray-800">{user.full_name || user.username}</h2>
-            <p className="text-primary-green font-bold text-xs uppercase tracking-wider mt-1 mb-4">
-              {user.role === 'org-president' ? 'Organization President' : user.role}
-            </p>
-            
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-50 text-green-600 text-xs font-bold uppercase tracking-wider border border-green-100">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-              {user.status || 'Active'}
-            </div>
-          </div>
-
-          {/* Account Details Card (Read-Only) */}
-          <div className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm">
-            <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-              <Shield size={16} /> Account Details
-            </h3>
-            
-            <div className="space-y-6">
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Email Address</label>
-                <div className="flex items-center gap-3 text-gray-700 font-medium bg-gray-50 p-3 rounded-xl border border-gray-100">
-                  <Mail size={16} className="text-gray-400 shrink-0" />
-                  <span className="truncate text-sm">{user.email}</span>
-                </div>
               </div>
-              
-              {user.role === 'org-president' ? (
-                <>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Student Number</label>
-                    <div className="flex items-center gap-3 text-gray-700 font-medium bg-gray-50 p-3 rounded-xl border border-gray-100 text-sm">
-                      <Hash size={16} className="text-gray-400 shrink-0" />
-                      <span className="truncate">{user.student_no || 'N/A'}</span>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Contact Number</label>
-                    <div className="flex items-center gap-3 text-gray-700 font-medium bg-gray-50 p-3 rounded-xl border border-gray-100 text-sm">
-                      <Phone size={16} className="text-gray-400 shrink-0" />
-                      <span className="truncate">{user.contact_no || 'N/A'}</span>
-                    </div>
-                  </div>
-                </>
-              ) : (
+
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Contact Number</label>
-                  <div className="flex items-center gap-3 text-gray-700 font-medium bg-gray-50 p-3 rounded-xl border border-gray-100 text-sm">
-                    <Phone size={16} className="text-gray-400 shrink-0" />
-                    <span className="truncate">{user.contact_no || 'N/A'}</span>
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Active Since</label>
-                <div className="flex items-center gap-3 text-gray-700 font-medium bg-gray-50 p-3 rounded-xl border border-gray-100 text-sm">
-                  <Calendar size={16} className="text-gray-400 shrink-0" />
-                  <span>{new Date(user.joined_date || user.created_at || Date.now()).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Column: Information & Settings */}
-        <div className="space-y-8 lg:col-span-2">
-          
-          {/* Organization & Adviser Details Card (for Org President) */}
-          {user.role === 'org-president' && (
-            <div className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-1.5 h-full bg-primary-green"></div>
-              
-              <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
-                <h3 className="text-xl font-black text-gray-800 flex items-center gap-3">
-                  <Building2 className="text-primary-green" size={24} />
-                  Organization & Adviser Details
-                </h3>
-                <span className="text-[11px] font-bold px-3 py-1 bg-primary-green/10 text-primary-green rounded-full uppercase tracking-wider">
-                  Official Information
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Organization Name */}
-                <div className="bg-gray-50/90 p-4 rounded-2xl border border-gray-100">
-                  <label className="text-xs font-medium text-gray-500 mb-1 block flex items-center gap-1.5">
-                    <Building2 size={13} className="text-primary-green" /> Organization Name
-                  </label>
-                  <p className="font-medium text-gray-800 text-sm">{user.org_name || 'N/A'}</p>
-                </div>
-
-                {/* Abbreviation & Member Count */}
-                <div className="bg-gray-50/90 p-4 rounded-2xl border border-gray-100">
-                  <label className="text-xs font-medium text-gray-500 mb-1 block flex items-center gap-1.5">
-                    <Users size={13} className="text-primary-green" /> Active Members & Abbreviation
-                  </label>
-                  <p className="font-medium text-gray-800 text-sm flex items-center gap-2">
-                    <span>{user.no_member ? `${user.no_member} Members` : 'N/A'}</span>
-                    {user.abbreviation && (
-                      <span className="text-xs font-medium px-2 py-0.5 bg-gray-200 text-gray-700 rounded-md">
-                        {user.abbreviation}
-                      </span>
-                    )}
-                  </p>
-                </div>
-
-                {/* Primary Adviser */}
-                <div className="bg-gray-50/90 p-4.5 rounded-2xl border border-gray-100 md:col-span-2">
-                  <label className="text-xs font-medium text-gray-500 mb-1.5 block flex items-center gap-1.5">
-                    <UserCheck size={14} className="text-primary-green" /> Primary Adviser
-                  </label>
-                  <p className="font-medium text-gray-800 text-sm">
-                    {user.adviser_name || 'None listed'}
-                  </p>
-                </div>
-
-                {/* Co-Advisers */}
-                <div className="bg-gray-50/90 p-4.5 rounded-2xl border border-gray-100 md:col-span-2">
-                  <label className="text-xs font-medium text-gray-500 mb-2 block flex items-center gap-1.5">
-                    <Users size={14} className="text-primary-green" /> Co-Advisers
-                  </label>
-                  {coAdvisersList.length > 0 ? (
-                    <div className="flex flex-wrap gap-2 pt-1">
-                      {coAdvisersList.map((adviser, idx) => (
-                        <span 
-                          key={idx} 
-                          className="px-3.5 py-1.5 bg-white border border-gray-200 rounded-xl text-xs font-medium text-gray-700 shadow-sm flex items-center gap-2"
-                        >
-                          <div className="w-1.5 h-1.5 rounded-full bg-primary-green"></div>
-                          {adviser}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-gray-400 font-medium italic">No co-advisers registered</p>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Edit Profile Information */}
-          <form onSubmit={handleUpdateProfile} className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-1.5 h-full bg-primary-green"></div>
-            <h3 className="text-xl font-black text-gray-800 mb-6 flex items-center gap-3">
-              Personal Information
-            </h3>
-            
-            <div className="space-y-6">
-              <div>
-                <label className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-2 block">Full Name</label>
-                <input 
-                  type="text" 
-                  required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-primary-green focus:bg-white focus:ring-4 focus:ring-primary-green/10 font-medium text-gray-800 outline-none transition-all"
-                  placeholder="Enter your full name"
-                />
-                <p className="text-[10px] text-gray-400 font-medium mt-2 flex items-center gap-1">
-                  <AlertCircle size={12} /> This is how your name will appear on official documents and approval logs.
-                </p>
-              </div>
-              
-              {user.role === 'org-president' && (
-                <div>
-                  <label className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-2 block">Organization Abbreviation</label>
-                  <input 
-                    type="text" 
-                    value={abbreviation}
-                    onChange={(e) => setAbbreviation(e.target.value)}
-                    maxLength={15}
-                    className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-primary-green focus:bg-white focus:ring-4 focus:ring-primary-green/10 font-medium text-gray-800 outline-none transition-all"
-                    placeholder="e.g. ASICS"
+                  <label className="text-xs font-semibold text-ink-faint uppercase tracking-wider mb-1 block">Student No.</label>
+                  <input
+                    type="text"
+                    value={memberForm.student_number}
+                    onChange={(e) => setMemberForm({ ...memberForm, student_number: e.target.value })}
+                    placeholder="e.g. 2023200438"
+                    className="w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-forest-400 focus:ring-2 focus:ring-forest-100"
                   />
-                  <p className="text-[10px] text-gray-400 font-medium mt-2 flex items-center gap-1">
-                    <AlertCircle size={12} /> Used to generate your document tracking numbers.
-                  </p>
                 </div>
-              )}
-              
-              <div className="flex justify-end pt-4 border-t border-gray-50">
-                <button 
-                  type="submit" 
-                  disabled={isSavingProfile || (fullName === (user.full_name || user.username) && abbreviation === (user.abbreviation || ''))}
-                  className="flex items-center gap-2 px-6 py-3 bg-primary-green text-white font-bold rounded-xl hover:bg-green-700 hover:shadow-lg hover:shadow-green-700/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                >
-                  {isSavingProfile ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
-                  Save Changes
-                </button>
-              </div>
-            </div>
-          </form>
-
-          {/* Executive Board Members Section (for Org President) */}
-          {user?.role === 'org-president' && (
-            <div className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-600"></div>
-              
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div>
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <h3 className="text-xl font-black text-gray-800 flex items-center gap-2">
-                      <Users className="text-blue-600" size={22} /> Executive Board Members
-                    </h3>
-                    {(() => {
-                      const curSy = allSchoolYears.find(s => s.id === selectedSyId) || activeSy;
-                      return curSy ? (
-                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                          {curSy.name} {curSy.is_active ? '(Active)' : ''}
-                        </span>
-                      ) : null;
-                    })()}
-                  </div>
-                  <p className="text-xs text-gray-500 font-medium mt-1">
-                    Register officers (VP, Secretary, Treasurer) who operate this account for the selected school year.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  {allSchoolYears.length > 1 && (
-                    <select
-                      value={selectedSyId || ''}
-                      onChange={(e) => setSelectedSyId(e.target.value)}
-                      className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-700 outline-none cursor-pointer focus:ring-2 focus:ring-blue-500/20"
-                      title="Select School Year"
-                    >
-                      {allSchoolYears.map((sy) => (
-                        <option key={sy.id} value={sy.id}>
-                          {sy.name} {sy.is_active ? '★' : ''}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  {isViewingActiveSy ? (
-                    <button
-                      onClick={() => {
-                        setEditingMember(null);
-                        setMemberForm({ full_name: '', position: '', student_number: '', contact_number: '' });
-                        setIsMemberModalOpen(true);
-                      }}
-                      className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all text-xs shadow-md shrink-0"
-                    >
-                      <Plus size={16} /> Add Executive Member
-                    </button>
-                  ) : (
-                    <div className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-500 text-xs font-semibold rounded-xl border border-gray-200 shrink-0" title="Historical and upcoming terms are read-only">
-                      <Lock size={13} className="text-gray-400" />
-                      <span>Read-Only Term</span>
-                    </div>
-                  )}
+                  <label className="text-xs font-semibold text-ink-faint uppercase tracking-wider mb-1 block">Contact No.</label>
+                  <input
+                    type="text"
+                    value={memberForm.contact_number}
+                    onChange={(e) => setMemberForm({ ...memberForm, contact_number: e.target.value })}
+                    placeholder="e.g. 09123456789"
+                    className="w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-forest-400 focus:ring-2 focus:ring-forest-100"
+                  />
                 </div>
               </div>
 
-              {loadingMembers ? (
-                <div className="py-8 text-center text-gray-400 text-sm font-medium">Loading executive members...</div>
-              ) : members.length === 0 ? (
-                <div className="p-8 rounded-2xl bg-gray-50/60 border border-dashed border-gray-200 text-center">
-                  <UserCheck className="mx-auto text-gray-300 mb-2" size={32} />
-                  <p className="text-sm font-bold text-gray-700">No Executive Members Added Yet</p>
-                  <p className="text-xs text-gray-400 mt-1 max-w-md mx-auto">
-                    Add your organization officers so they can select their name when using this shared account.
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {members.map((m) => (
-                    <div key={m.id} className="p-4 rounded-2xl border border-gray-100 bg-gray-50/50 hover:bg-gray-50 transition-all flex items-center justify-between gap-3">
-                      <div>
-                        <p className="font-bold text-sm text-gray-900">{m.full_name}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-black uppercase rounded-full">
-                            {m.position}
-                          </span>
-                          {m.student_number && (
-                            <span className="text-[11px] text-gray-400 font-medium">#{m.student_number}</span>
-                          )}
-                        </div>
-                      </div>
-
-                      {isViewingActiveSy && (
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => {
-                              setEditingMember(m);
-                              setMemberForm({
-                                full_name: m.full_name || '',
-                                position: m.position || '',
-                                student_number: m.student_number || '',
-                                contact_number: m.contact_number || ''
-                              });
-                              setIsMemberModalOpen(true);
-                            }}
-                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                            title="Edit member"
-                          >
-                            <Edit3 size={16} />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteMember(m.id)}
-                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                            title="Delete member"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Member Modal */}
-          {isMemberModalOpen && (
-            <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
-              <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 border border-gray-100 relative">
+              <div className="flex justify-end gap-3 pt-4 border-t border-line">
                 <button
+                  type="button"
                   onClick={() => setIsMemberModalOpen(false)}
-                  className="absolute top-6 right-6 text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100"
+                  className="px-4 py-2 bg-canvas text-ink-muted font-semibold rounded-lg text-xs hover:bg-gray-200 transition-colors cursor-pointer"
                 >
-                  <X size={18} />
+                  Cancel
                 </button>
-
-                <h3 className="text-lg font-black text-gray-900 mb-1">
-                  {editingMember ? 'Edit Executive Member' : 'Add Executive Member'}
-                </h3>
-                <p className="text-xs text-gray-500 font-medium mb-6">
-                  Provide officer details for shared account operation attribution.
-                </p>
-
-                <form onSubmit={handleSaveMember} className="space-y-4">
-                  <div>
-                    <label className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-1 block">
-                      Full Name <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={memberForm.full_name}
-                      onChange={(e) => setMemberForm({ ...memberForm, full_name: e.target.value })}
-                      placeholder="e.g. Maria Santos"
-                      className="w-full px-4 py-2.5 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-blue-600 outline-none text-sm font-medium"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-1 block">
-                      Position / Role <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={memberForm.position}
-                      onChange={(e) => setMemberForm({ ...memberForm, position: e.target.value })}
-                      placeholder="e.g. Vice President, Secretary, Treasurer"
-                      className="w-full px-4 py-2.5 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-blue-600 outline-none text-sm font-medium"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-1 block">Student No.</label>
-                      <input
-                        type="text"
-                        value={memberForm.student_number}
-                        onChange={(e) => setMemberForm({ ...memberForm, student_number: e.target.value })}
-                        placeholder="e.g. 2021101234"
-                        className="w-full px-4 py-2.5 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-blue-600 outline-none text-sm font-medium"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-1 block">Contact No.</label>
-                      <input
-                        type="text"
-                        value={memberForm.contact_number}
-                        onChange={(e) => setMemberForm({ ...memberForm, contact_number: e.target.value })}
-                        placeholder="e.g. 09123456789"
-                        className="w-full px-4 py-2.5 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-blue-600 outline-none text-sm font-medium"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
-                    <button
-                      type="button"
-                      onClick={() => setIsMemberModalOpen(false)}
-                      className="px-4 py-2 bg-gray-100 text-gray-700 font-bold rounded-xl text-xs hover:bg-gray-200"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-5 py-2 bg-blue-600 text-white font-bold rounded-xl text-xs hover:bg-blue-700 shadow-md"
-                    >
-                      {editingMember ? 'Save Changes' : 'Add Member'}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-
-          {/* Change Password */}
-          <form onSubmit={handleChangePassword} className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-1.5 h-full bg-secondary-gold"></div>
-            <h3 className="text-xl font-black text-gray-800 mb-6 flex items-center gap-3">
-              Change Password
-            </h3>
-            
-            <div className="space-y-5 max-w-md">
-              <div>
-                <label className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-2 block">Current Password</label>
-                <input 
-                  type="password" 
-                  required
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-secondary-gold focus:bg-white outline-none transition-all font-medium text-sm"
-                  placeholder="Enter current password"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-2 block">New Password</label>
-                <input 
-                  type="password" 
-                  required
-                  minLength={6}
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-secondary-gold focus:bg-white outline-none transition-all font-medium text-sm"
-                  placeholder="Enter new password (min. 6 characters)"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-2 block">Confirm New Password</label>
-                <input 
-                  type="password" 
-                  required
-                  minLength={6}
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-secondary-gold focus:bg-white outline-none transition-all font-medium text-sm"
-                  placeholder="Confirm new password"
-                />
-              </div>
-              
-              <div className="flex justify-end pt-4 border-t border-gray-50">
-                <button 
-                  type="submit" 
-                  disabled={isSavingPassword || !currentPassword || !newPassword || !confirmPassword}
-                  className="flex items-center gap-2 px-6 py-3 bg-gray-800 text-white font-bold rounded-xl hover:bg-gray-900 hover:shadow-lg hover:shadow-gray-900/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                <button
+                  type="submit"
+                  disabled={isSavingMember}
+                  className="inline-flex items-center gap-1.5 px-5 py-2 bg-forest-600 text-white font-semibold rounded-lg text-xs hover:bg-forest-700 transition-colors shadow-2xs cursor-pointer disabled:opacity-50"
                 >
-                  {isSavingPassword ? <Loader2 className="animate-spin" size={18} /> : <Lock size={18} />}
-                  Update Password
+                  {isSavingMember && <Loader2 className="animate-spin h-3.5 w-3.5" />}
+                  {editingMember ? 'Save Changes' : 'Add Officer'}
                 </button>
               </div>
-            </div>
-          </form>
-
+            </form>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

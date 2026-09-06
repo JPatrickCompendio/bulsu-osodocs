@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { UserCheck, Shield, ChevronRight, User } from 'lucide-react';
 
-const MemberSelectorModal = ({ isOpen, members = [], presidentUser, onSelectMember }) => {
+const MemberSelectorModal = ({ isOpen, members = [], presidentUser, currentMemberId, onSelectMember }) => {
   if (!isOpen) return null;
 
-  const [selectedId, setSelectedId] = useState('president');
+  const [selectedId, setSelectedId] = useState(currentMemberId || 'president');
 
   const handleConfirm = () => {
     if (selectedId === 'president') {
@@ -12,15 +12,24 @@ const MemberSelectorModal = ({ isOpen, members = [], presidentUser, onSelectMemb
         id: 'president',
         full_name: presidentUser?.full_name || 'Organization President',
         position: 'Organization President',
+        student_number: presidentUser?.student_no || '',
+        contact_number: presidentUser?.contact_no || '',
+        email: presidentUser?.email || '',
+        created_at: presidentUser?.joined_date || presidentUser?.created_at,
         is_president: true,
       });
     } else {
       const match = members.find((m) => m.id === selectedId);
       if (match) {
         onSelectMember({
+          ...match,
           id: match.id,
           full_name: match.full_name,
           position: match.position,
+          student_number: match.student_number || match.student_no || '',
+          contact_number: match.contact_number || match.contact_no || '',
+          email: match.email || '',
+          created_at: match.created_at,
           is_president: false,
         });
       }

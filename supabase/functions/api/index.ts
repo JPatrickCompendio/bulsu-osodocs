@@ -141,14 +141,21 @@ async function syncSubmissionWindowAnnouncements(supabase: ReturnType<typeof get
       // 1. Persist OPEN announcement if window is open
       const isOpen = (!startDate || now >= startDate) && (!endDate || now <= endDate);
       if (isOpen) {
-        const { data: existingOpen } = await supabase
+        const { data: existingAnns } = await supabase
           .from('announcements')
-          .select('id')
+          .select('id, content, created_at')
           .eq('title', openTitle)
-          .maybeSingle();
+          .order('created_at', { ascending: false });
 
-        if (!existingOpen) {
-          const openContent = `The submission window for ${windowTitle} is currently OPEN${startFormatted && endFormatted ? ` from ${startFormatted} to ${endFormatted}` : ''}. Organizations can submit required documents via the Submit New Document page.`;
+        const alreadyAnnounced = (existingAnns || []).some((ann: { content?: string }) => {
+          const c = String(ann.content || '');
+          if (c.includes(`<!-- event_id:${w.id} -->`)) return true;
+          if (startFormatted && endFormatted && c.includes(startFormatted) && c.includes(endFormatted)) return true;
+          return false;
+        });
+
+        if (!alreadyAnnounced) {
+          const openContent = `The submission window for ${windowTitle} is currently OPEN${startFormatted && endFormatted ? ` from ${startFormatted} to ${endFormatted}` : ''}. Organizations can submit required documents via the Submit New Document page.<!-- event_id:${w.id} -->`;
           await supabase.from('announcements').insert([{
             title: openTitle,
             content: openContent,
@@ -158,6 +165,17 @@ async function syncSubmissionWindowAnnouncements(supabase: ReturnType<typeof get
             created_at: w.created_at || new Date().toISOString(),
             updated_at: new Date().toISOString(),
           }]);
+        } else {
+          // If identical duplicate rows exist for THIS EXACT event/window, keep newest and clean extra copies
+          const dupesForThisWindow = (existingAnns || []).filter((ann: { content?: string }) => {
+            const c = String(ann.content || '');
+            return c.includes(`<!-- event_id:${w.id} -->`) ||
+              (startFormatted && endFormatted && c.includes(startFormatted) && c.includes(endFormatted));
+          });
+          if (dupesForThisWindow.length > 1) {
+            const extraIds = dupesForThisWindow.slice(1).map((r: { id: string }) => r.id);
+            await supabase.from('announcements').delete().in('id', extraIds);
+          }
         }
       }
 
@@ -166,14 +184,23 @@ async function syncSubmissionWindowAnnouncements(supabase: ReturnType<typeof get
         const diffMs = endDate.getTime() - now.getTime();
         if (diffMs > 0 && diffMs <= oneDayMs * 1.5) {
           const closingTitle = `⚠️ Submission Window Closing Soon: ${windowTitle}`;
-          const { data: existingClosing } = await supabase
-            .from('announcements')
-            .select('id')
-            .eq('title', closingTitle)
-            .maybeSingle();
+          const closingDateFormatted = endDate.toLocaleDateString();
 
-          if (!existingClosing) {
-            const closingContent = `Notice: The submission window for ${windowTitle} will CLOSE on ${endDate.toLocaleDateString()} (within 24 hours). Please complete and submit all required documents immediately via the Submit New Document tab.`;
+          const { data: existingClosingAnns } = await supabase
+            .from('announcements')
+            .select('id, content, created_at')
+            .eq('title', closingTitle)
+            .order('created_at', { ascending: false });
+
+          const alreadyClosingAnnounced = (existingClosingAnns || []).some((ann: { content?: string }) => {
+            const c = String(ann.content || '');
+            if (c.includes(`<!-- closing_event_id:${w.id} -->`)) return true;
+            if (closingDateFormatted && c.includes(closingDateFormatted)) return true;
+            return false;
+          });
+
+          if (!alreadyClosingAnnounced) {
+            const closingContent = `Notice: The submission window for ${windowTitle} will CLOSE on ${closingDateFormatted} (within 24 hours). Please complete and submit all required documents immediately via the Submit New Document tab.<!-- closing_event_id:${w.id} -->`;
             await supabase.from('announcements').insert([{
               title: closingTitle,
               content: closingContent,
@@ -183,6 +210,16 @@ async function syncSubmissionWindowAnnouncements(supabase: ReturnType<typeof get
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             }]);
+          } else {
+            const dupesForThisClosing = (existingClosingAnns || []).filter((ann: { content?: string }) => {
+              const c = String(ann.content || '');
+              return c.includes(`<!-- closing_event_id:${w.id} -->`) ||
+                (closingDateFormatted && c.includes(closingDateFormatted));
+            });
+            if (dupesForThisClosing.length > 1) {
+              const extraIds = dupesForThisClosing.slice(1).map((r: { id: string }) => r.id);
+              await supabase.from('announcements').delete().in('id', extraIds);
+            }
           }
         }
       }
@@ -549,22 +586,45 @@ async function handleGetUserDetail(id: string, url?: URL) {
     targetSy = activeSy;
   }
 
-  if (user.role === 'org-president' && targetSy?.id && user.organization_id) {
-    const { data: snap } = await supabase
-      .from('organization_academic_years')
-      .select('*')
-      .eq('organization_id', user.organization_id)
-      .eq('school_year_id', targetSy.id)
-      .maybeSingle();
+  let academicYearSnapshots: Array<Record<string, unknown>> = [];
+  if (user.role === 'org-president') {
+    const targetOrgId = user.organization_id || user.id;
+    if (targetSy?.id) {
+      let snapQuery = supabase
+        .from('organization_academic_years')
+        .select('*')
+        .eq('school_year_id', targetSy.id);
 
-    if (snap) {
-      user.full_name = snap.president_name || user.full_name;
-      user.student_no = snap.student_no ?? user.student_no;
-      user.contact_no = snap.contact_no ?? user.contact_no;
-      user.adviser_name = snap.adviser_name ?? user.adviser_name;
-      user.co_advisers = snap.co_advisers ?? user.co_advisers;
-      user.no_member = snap.no_member ?? user.no_member;
+      if (user.organization_id && user.organization_id !== user.id) {
+        snapQuery = snapQuery.or(`organization_id.eq.${user.organization_id},organization_id.eq.${user.id}`);
+      } else {
+        snapQuery = snapQuery.eq('organization_id', targetOrgId);
+      }
+
+      const { data: snap } = await snapQuery.maybeSingle();
+
+      if (snap) {
+        user.full_name = snap.president_name || user.full_name;
+        user.student_no = snap.student_no ?? user.student_no;
+        user.contact_no = snap.contact_no ?? user.contact_no;
+        user.adviser_name = snap.adviser_name ?? user.adviser_name;
+        user.co_advisers = snap.co_advisers ?? user.co_advisers;
+        user.no_member = snap.no_member ?? user.no_member;
+      }
     }
+
+    let allSnapsQuery = supabase
+      .from('organization_academic_years')
+      .select('*');
+
+    if (user.organization_id && user.organization_id !== user.id) {
+      allSnapsQuery = allSnapsQuery.or(`organization_id.eq.${user.organization_id},organization_id.eq.${user.id}`);
+    } else {
+      allSnapsQuery = allSnapsQuery.eq('organization_id', targetOrgId);
+    }
+
+    const { data: allSnaps } = await allSnapsQuery.order('created_at', { ascending: false });
+    academicYearSnapshots = allSnaps || [];
   }
 
   let submissions: Array<Record<string, unknown>> = [];
@@ -714,6 +774,7 @@ async function handleGetUserDetail(id: string, url?: URL) {
           hasYearEnd,
         },
         activeSchoolYear: targetSy,
+        academicYearSnapshots,
       },
     });
   } else {
@@ -795,6 +856,7 @@ async function handleGetUserDetail(id: string, url?: URL) {
         activityHistory,
         pendingReviewCount: reviewedDocuments.length,
         activeSchoolYear: targetSy,
+        academicYearSnapshots: [],
       },
     });
   }
@@ -1983,7 +2045,7 @@ async function handleGetAnnouncements() {
     return jsonResponse({ error: 'Failed to fetch announcements', details: error.message }, 500);
   }
 
-  return jsonResponse({ success: true, data });
+  return jsonResponse({ success: true, data: data || [] });
 }
 
 async function handlePostAnnouncements(body: Record<string, unknown>) {
@@ -3103,18 +3165,31 @@ async function handlePostAcademicEvents(body: Record<string, unknown>) {
       const announceTitle = `📢 Submission Window Opened: ${windowTitle}`;
       const announceContent = `The submission window for ${windowTitle} is now OPEN${startFormatted && endFormatted ? ` from ${startFormatted} to ${endFormatted}` : ''}. Organizations can submit required documents via the Submit New Document page.`;
 
-      const annObj: Record<string, unknown> = {
-        title: announceTitle,
-        content: announceContent,
-        target_audience: 'all-orgs',
-        is_active: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      annObj.created_by = created_by || await getDefaultAdminUserId(supabase);
+      const { data: existingAnns } = await supabase
+        .from('announcements')
+        .select('id, content')
+        .eq('title', announceTitle);
 
-      const { error: annErr } = await supabase.from('announcements').insert([annObj]);
-      if (annErr) console.error('Failed to create opening window announcement:', annErr);
+      const alreadyExists = (existingAnns || []).some((ann: { content?: string }) => {
+        const c = String(ann.content || '');
+        return c.includes(`<!-- event_id:${createdEv.id} -->`) || 
+          (startFormatted && endFormatted && c.includes(startFormatted) && c.includes(endFormatted));
+      });
+
+      if (!alreadyExists) {
+        const annObj: Record<string, unknown> = {
+          title: announceTitle,
+          content: `${announceContent}<!-- event_id:${createdEv.id} -->`,
+          target_audience: 'all-orgs',
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        annObj.created_by = created_by || await getDefaultAdminUserId(supabase);
+
+        const { error: annErr } = await supabase.from('announcements').insert([annObj]);
+        if (annErr) console.error('Failed to create opening window announcement:', annErr);
+      }
     } catch (e) {
       console.error('Failed to create opening window announcement:', e);
     }
@@ -3158,14 +3233,13 @@ async function handlePutAcademicEvents(id: string, body: Record<string, unknown>
       const announceTitle = `📢 Submission Window Opened: ${windowTitle}`;
       const announceContent = `The submission window for ${windowTitle} is now OPEN${startFormatted && endFormatted ? ` from ${startFormatted} to ${endFormatted}` : ''}. Organizations can submit required documents via the Submit New Document page.`;
 
-      const { data: existingAnn } = await supabase
+      const { data: existingAnns } = await supabase
         .from('announcements')
         .select('id')
         .eq('title', announceTitle)
-        .eq('is_active', true)
-        .maybeSingle();
+        .limit(1);
 
-      if (!existingAnn) {
+      if (!existingAnns || existingAnns.length === 0) {
         const annCreatedBy = (body.created_by as string) || await getDefaultAdminUserId(supabase);
         const annObj: Record<string, unknown> = {
           title: announceTitle,

@@ -602,7 +602,7 @@ const Header = ({ onToggleMobileMenu, onOpenMemberModal }) => {
                     <div className="text-right hidden sm:block">
                       <p className="text-sm font-bold text-gray-800 truncate max-w-[200px]">{navTitle}</p>
                       <p className="text-[10px] text-gray-400 font-semibold truncate max-w-[200px]">
-                        {activeOperatorName ? `Operator: ${activeOperatorName}` : navSubtitle}
+                        {activeOperatorName || navSubtitle}
                       </p>
                     </div>
                     <Avatar
@@ -1145,6 +1145,7 @@ const DashboardLayout = () => {
         isOpen={showMemberModal}
         members={orgMembers}
         presidentUser={user}
+        currentMemberId={activeMember?.is_president ? 'president' : (activeMember?.id || 'president')}
         onSelectMember={(selected) => {
           setActiveMember(selected);
           setShowMemberModal(false);

@@ -8,7 +8,8 @@ import {
   CheckCircle,
   X,
   Megaphone,
-  Power,
+  Archive,
+  ArchiveRestore,
   UploadCloud,
   Paperclip,
   ExternalLink
@@ -23,6 +24,7 @@ const AnnouncementManagement = () => {
   const [announcements, setAnnouncements] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [activeTab, setActiveTab] = useState('active'); // 'active' | 'archived'
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedFiles, setSelectedFiles] = useState([]);
@@ -47,7 +49,7 @@ const AnnouncementManagement = () => {
       setLoading(true);
       const res = await apiClient.get(apiUrl('/api/announcements'));
       if (res.data.success) {
-        setAnnouncements(res.data.data);
+        setAnnouncements(res.data.data || []);
       }
     } catch (err) {
       setError('Failed to fetch announcements.');
@@ -249,16 +251,23 @@ const AnnouncementManagement = () => {
 
   const toggleActive = async (ann) => {
     try {
+      const willBeActive = !ann.is_active;
       await apiClient.put(apiUrl(`/api/announcements/${ann.id}`), {
         ...ann,
-        is_active: !ann.is_active
+        is_active: willBeActive
       });
       fetchAnnouncements();
       window.dispatchEvent(new CustomEvent('announcement-updated'));
+      showToast(willBeActive ? 'Announcement restored to active.' : 'Announcement archived.');
     } catch (err) {
       console.error('Error toggling status:', err);
+      showToast('Failed to update announcement status.');
     }
   };
+
+  const activeAnnouncements = announcements.filter(a => a.is_active !== false);
+  const archivedAnnouncements = announcements.filter(a => a.is_active === false);
+  const displayedAnnouncements = activeTab === 'active' ? activeAnnouncements : archivedAnnouncements;
 
   return (
     <div>
@@ -285,14 +294,50 @@ const AnnouncementManagement = () => {
         </div>
       )}
 
+      {/* Module Tabs: Active vs Archived */}
+      <div className="flex items-center gap-2 mb-6 bg-white p-1.5 rounded-2xl border border-gray-100 shadow-2xs w-fit">
+        <button
+          type="button"
+          onClick={() => setActiveTab('active')}
+          className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 ${
+            activeTab === 'active'
+              ? 'bg-primary-green text-white shadow-md'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+          }`}
+        >
+          <Megaphone size={15} /> Active ({activeAnnouncements.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('archived')}
+          className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 ${
+            activeTab === 'archived'
+              ? 'bg-primary-green text-white shadow-md'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+          }`}
+        >
+          <Archive size={15} /> Archived ({archivedAnnouncements.length})
+        </button>
+      </div>
+
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-gray-500">Loading announcements...</div>
-        ) : announcements.length === 0 ? (
+        ) : displayedAnnouncements.length === 0 ? (
           <div className="p-12 text-center flex flex-col items-center">
-            <Megaphone size={48} className="text-gray-300 mb-4" />
-            <h3 className="text-xl font-medium text-gray-700">No Announcements</h3>
-            <p className="text-gray-500 mt-1">Click the button above to create your first announcement.</p>
+            {activeTab === 'active' ? (
+              <>
+                <Megaphone size={48} className="text-gray-300 mb-4" />
+                <h3 className="text-xl font-medium text-gray-700">No Active Announcements</h3>
+                <p className="text-gray-500 mt-1">Click the button above to create your first announcement.</p>
+              </>
+            ) : (
+              <>
+                <Archive size={48} className="text-gray-300 mb-4" />
+                <h3 className="text-xl font-medium text-gray-700">No Archived Announcements</h3>
+                <p className="text-gray-500 mt-1">Announcements you archive will appear here.</p>
+              </>
+            )}
           </div>
         ) : (
           <div>
@@ -301,13 +346,12 @@ const AnnouncementManagement = () => {
                 <tr className="bg-[#073c2d] border-b border-[#073c2d] text-white font-medium text-xs sm:text-sm">
                   <th className="px-3 sm:p-4 text-white">Title</th>
                   <th className="hidden sm:table-cell p-4 text-white">Audience</th>
-                  <th className="px-3 sm:p-4 text-white">Status</th>
                   <th className="hidden md:table-cell p-4 text-white">Date Created</th>
                   <th className="px-3 sm:p-4 text-right text-white">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {announcements.map((ann) => (
+                {displayedAnnouncements.map((ann) => (
                   <tr key={ann.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
                     <td className="px-3 sm:p-4">
                       <div className="font-medium text-xs sm:text-sm text-gray-800 line-clamp-1">{ann.title}</div>
@@ -318,32 +362,39 @@ const AnnouncementManagement = () => {
                         {ann.target_audience && ann.target_audience.startsWith('org:') ? `Org: ${ann.target_audience.substring(4)}` : ann.target_audience}
                       </span>
                     </td>
-                    <td className="px-3 sm:p-4">
-                      <button 
-                        onClick={() => toggleActive(ann)}
-                        className={`flex items-center gap-1 px-2.5 sm:px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                          ann.is_active 
-                            ? 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100' 
-                            : 'bg-gray-50 text-gray-500 border border-gray-200 hover:bg-gray-100'
-                        }`}
-                      >
-                        <Power size={12} className="sm:w-3.5 sm:h-3.5" />
-                        {ann.is_active ? 'Active' : 'Inactive'}
-                      </button>
-                    </td>
                     <td className="hidden md:table-cell p-4 text-sm text-gray-500">
                       {new Date(ann.created_at).toLocaleDateString()}
                     </td>
                     <td className="px-3 sm:p-4">
                       <div className="flex items-center justify-end gap-1 sm:gap-2">
                         <button 
+                          type="button"
+                          onClick={() => toggleActive(ann)}
+                          title={ann.is_active !== false ? "Archive announcement" : "Restore / Unarchive announcement"}
+                          className={`p-1.5 sm:p-2 rounded-lg transition-colors ${
+                            ann.is_active !== false 
+                              ? 'text-gray-400 hover:text-amber-600 hover:bg-amber-50' 
+                              : 'text-amber-600 hover:text-emerald-600 hover:bg-emerald-50'
+                          }`}
+                        >
+                          {ann.is_active !== false ? (
+                            <Archive size={16} className="sm:w-4 sm:h-4" />
+                          ) : (
+                            <ArchiveRestore size={16} className="sm:w-4 sm:h-4" />
+                          )}
+                        </button>
+                        <button 
+                          type="button"
                           onClick={() => openModal(ann)}
+                          title="Edit announcement"
                           className="p-1.5 sm:p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
                         >
                           <Edit2 size={16} className="sm:w-4 sm:h-4" />
                         </button>
                         <button 
+                          type="button"
                           onClick={() => handleDelete(ann)}
+                          title="Delete announcement"
                           className="p-1.5 sm:p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                         >
                           <Trash2 size={16} className="sm:w-4 sm:h-4" />
@@ -535,7 +586,7 @@ const AnnouncementManagement = () => {
                     className="w-4 h-4 text-primary-green rounded border-gray-300 focus:ring-primary-green"
                   />
                   <label htmlFor="is_active" className="text-sm font-medium text-gray-700">
-                    Active (visible to target audience)
+                    Active (uncheck to archive this announcement)
                   </label>
                 </div>
               </div>
