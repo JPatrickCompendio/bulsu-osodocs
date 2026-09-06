@@ -1006,20 +1006,14 @@ const UserManagement = () => {
                           <Ban size={12} /> Suspend Account
                         </button>
                       )}
-                      {profile.role !== 'admin' && (
+                      {profile.role !== 'admin' && !(profile.has_submissions || detailData?.user?.has_submissions || (detailData?.documentLogs && detailData.documentLogs.length > 0)) && (
                         <button
-                          disabled={Boolean(profile.has_submissions || detailData?.user?.has_submissions)}
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (profile.has_submissions || detailData?.user?.has_submissions) return;
                             handleDeleteClick(profile);
                           }}
-                          className={`px-4 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 transition-all shadow-sm ${
-                            (profile.has_submissions || detailData?.user?.has_submissions)
-                              ? 'bg-red-950/40 text-red-300/50 cursor-not-allowed border border-red-800/30'
-                              : 'bg-red-600 hover:bg-red-700 text-white'
-                          }`}
-                          title={(profile.has_submissions || detailData?.user?.has_submissions) ? "Cannot delete: Account has active document submissions in the system" : "Delete Account"}
+                          className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-full text-xs font-bold flex items-center gap-1 transition-all shadow-sm"
+                          title="Delete Account"
                         >
                           <Trash2 size={12} /> Delete Account
                         </button>
@@ -1647,22 +1641,18 @@ const UserManagement = () => {
                                   >
                                     <Pencil size={14} className="sm:w-4 sm:h-4" />
                                   </button>
-                                  <button
-                                    disabled={Boolean(org.has_submissions)}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (org.has_submissions) return;
-                                      handleDeleteClick(org);
-                                    }}
-                                    className={`p-1.5 sm:p-2 transition-colors rounded-lg ${
-                                      org.has_submissions
-                                        ? 'text-gray-300 bg-gray-100/60 cursor-not-allowed opacity-50'
-                                        : 'text-gray-400 hover:text-red-600 bg-gray-50 hover:bg-red-50'
-                                    }`}
-                                    title={org.has_submissions ? "Cannot delete: Organization has active document submissions in the system" : "Delete Account"}
-                                  >
-                                    <Trash2 size={14} className="sm:w-4 sm:h-4" />
-                                  </button>
+                                  {!org.has_submissions && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteClick(org);
+                                      }}
+                                      className="p-1.5 sm:p-2 text-gray-400 hover:text-red-600 bg-gray-50 hover:bg-red-50 transition-colors rounded-lg"
+                                      title="Delete Account"
+                                    >
+                                      <Trash2 size={14} className="sm:w-4 sm:h-4" />
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </td>
@@ -1776,23 +1766,17 @@ const UserManagement = () => {
                                 >
                                   <Pencil size={14} className="sm:w-4 sm:h-4" />
                                 </button>
-                                {personnel.role !== 'admin' && (
-                                    <button
-                                      disabled={Boolean(personnel.has_submissions)}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (personnel.has_submissions) return;
-                                        handleDeleteClick(personnel);
-                                      }}
-                                      className={`p-1.5 sm:p-2 transition-colors rounded-lg ${
-                                        personnel.has_submissions
-                                          ? 'text-gray-300 bg-gray-100/60 cursor-not-allowed opacity-50'
-                                          : 'text-gray-400 hover:text-red-600 bg-gray-50 hover:bg-red-50'
-                                      }`}
-                                      title={personnel.has_submissions ? "Cannot delete: Personnel has active document submissions in the system" : "Delete Account"}
-                                    >
-                                      <Trash2 size={14} className="sm:w-4 sm:h-4" />
-                                    </button>
+                                {personnel.role !== 'admin' && !personnel.has_submissions && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteClick(personnel);
+                                    }}
+                                    className="p-1.5 sm:p-2 text-gray-400 hover:text-red-600 bg-gray-50 hover:bg-red-50 transition-colors rounded-lg"
+                                    title="Delete Account"
+                                  >
+                                    <Trash2 size={14} className="sm:w-4 sm:h-4" />
+                                  </button>
                                 )}
                               </div>
                             </td>
@@ -2196,6 +2180,19 @@ const UserManagement = () => {
                       pattern="^09[0-9]{9}$"
                       maxLength="11"
                       title="Contact number must be an 11-digit mobile number starting with 09"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Student Number (Optional if student)</label>
+                    <input
+                      type="text"
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-green text-gray-800"
+                      placeholder="e.g. 2021-123456"
+                      value={formData.student_no}
+                      onChange={(e) => {
+                        const cleaned = e.target.value.replace(/[^\d-]/g, '');
+                        setFormData({ ...formData, student_no: cleaned });
+                      }}
                     />
                   </div>
                   {!isEditMode && (
