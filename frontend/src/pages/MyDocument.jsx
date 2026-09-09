@@ -883,6 +883,14 @@ export const MyDocuments = () => {
 
   const handleSaveAttachmentFeedback = async () => {
     if (!previewFile || !selectedDoc || !reviewAction) return;
+    const roleNorm = String(user?.role || '').toLowerCase().trim();
+    if (!roleNorm || roleNorm === 'org-president' || roleNorm === 'chairman' || roleNorm === 'vice chairman' || roleNorm === 'vice-chairman' || roleNorm === 'dean') {
+      return;
+    }
+    const currentStatusStr = String(selectedDoc?.raw?.status || selectedDoc?.status || '').toLowerCase().trim();
+    if (['approved', 'returned', 'disapproved', 'completed', 'rejected'].includes(currentStatusStr) || currentStatusStr.includes('approved') || currentStatusStr.includes('returned')) {
+      return;
+    }
     if (reviewAction === 'others' && !reviewComments.trim()) {
       setReviewCommentsError(true);
       return;
@@ -904,6 +912,14 @@ export const MyDocuments = () => {
 
   const handleApproveAttachment = async () => {
     if (!previewFile || !selectedDoc) return;
+    const roleNorm = String(user?.role || '').toLowerCase().trim();
+    if (!roleNorm || roleNorm === 'org-president' || roleNorm === 'chairman' || roleNorm === 'vice chairman' || roleNorm === 'vice-chairman' || roleNorm === 'dean') {
+      return;
+    }
+    const currentStatusStr = String(selectedDoc?.raw?.status || selectedDoc?.status || '').toLowerCase().trim();
+    if (['approved', 'returned', 'disapproved', 'completed', 'rejected'].includes(currentStatusStr) || currentStatusStr.includes('approved') || currentStatusStr.includes('returned')) {
+      return;
+    }
     setLocallyApproved((prev) => [...new Set([...prev, previewFile.id])]);
     setLocallyReturned((prev) => {
       const next = { ...prev };
@@ -5148,15 +5164,58 @@ export const MyDocuments = () => {
                     <div className="space-y-6">
                       {(() => {
                         const isLatestVersion = !selectedVersionId || selectedVersionId === (selectedDoc?.raw?.current_version_id || selectedDoc?.current_version_id);
+                        const currentStatusStr = String(selectedDoc?.raw?.status || selectedDoc?.status || currentVersion?.status || '').toLowerCase().trim();
+                        const isDeanApprovedStage = currentStatusStr === 'dean approved' || currentStatusStr.includes('dean approved');
+                        const userRoleNorm = String(user?.role || '').toLowerCase().trim();
+
+                        const isTerminalStatus =
+                          ['approved', 'returned', 'disapproved', 'completed', 'rejected', 'cancelled'].includes(currentStatusStr) ||
+                          currentStatusStr.includes('approved') ||
+                          currentStatusStr.includes('returned') ||
+                          currentStatusStr.includes('disapproved') ||
+                          currentStatusStr.includes('rejected') ||
+                          currentStatusStr.includes('completed') ||
+                          currentStatusStr.includes('retrieval') ||
+                          currentStatusStr.includes('accomplishment');
+
+                        const canReviewCurrentAttachment = (() => {
+                          if (!isLatestVersion) return false;
+                          if (!userRoleNorm || userRoleNorm === 'org-president') return false;
+                          if (isDeanApprovedStage) return false;
+                          if (isTerminalStatus) return false;
+
+                          // Reviewers like Chairman, Vice Chairman, Dean do all document reviewing in Inbox, never in My Documents
+                          if (userRoleNorm === 'chairman' || userRoleNorm === 'vice chairman' || userRoleNorm === 'vice-chairman' || userRoleNorm === 'dean') {
+                            return false;
+                          }
+
+                          // On My Documents, only Admin and OSO Staff have review actions, and only during active review stages
+                          if (userRoleNorm === 'admin' || userRoleNorm === 'oso-staff') {
+                            const isActionableStage =
+                              currentStage === 'MAIN_CAMPUS_REVIEW' ||
+                              (isSdsStage && !isSdsApprovedLog) ||
+                              selectedDoc?.category === 'Pending Hard Copy' ||
+                              selectedDoc?.category === 'Hard Copy' ||
+                              selectedDoc?.category === 'Final In-Campus review' ||
+                              currentStage === 'FINAL_LOCAL_CAMPUS_REVIEW';
+
+                            return Boolean(isActionableStage);
+                          }
+
+                          return false;
+                        })();
+
                         return (
                           <div>
                             <h4 className="font-bold text-gray-800 text-base mb-1">
-                              {isLatestVersion ? 'Attachment Review Panel' : 'Attachment Information'}
+                              {canReviewCurrentAttachment ? 'Attachment Review Panel' : 'Attachment Information'}
                             </h4>
                             <p className="text-gray-400 text-xs leading-relaxed">
-                              {isLatestVersion
-                                ? 'Review or return this attachment as part of the current approval step.'
-                                : `Viewing attachment for Version ${currentVersion?.version_number || 1}. Historical versions are read-only.`}
+                              {!isLatestVersion
+                                ? `Viewing attachment for Version ${currentVersion?.version_number || 1}. Historical versions are read-only.`
+                                : canReviewCurrentAttachment
+                                  ? 'Review or return this attachment as part of the current approval step.'
+                                  : 'Viewing attachment in read-only mode.'}
                             </p>
                           </div>
                         );
@@ -5182,11 +5241,47 @@ export const MyDocuments = () => {
                       )}
 
                       {(() => {
+                        const isLatestVersion = !selectedVersionId || selectedVersionId === (selectedDoc?.raw?.current_version_id || selectedDoc?.current_version_id);
                         const currentStatusStr = String(selectedDoc?.raw?.status || selectedDoc?.status || currentVersion?.status || '').toLowerCase().trim();
                         const isDeanApprovedStage = currentStatusStr === 'dean approved' || currentStatusStr.includes('dean approved');
-                        const isLatestVersion = !selectedVersionId || selectedVersionId === (selectedDoc?.raw?.current_version_id || selectedDoc?.current_version_id);
+                        const userRoleNorm = String(user?.role || '').toLowerCase().trim();
 
-                        if (user?.role === 'org-president' || isDeanApprovedStage || !isLatestVersion) {
+                        const isTerminalStatus =
+                          ['approved', 'returned', 'disapproved', 'completed', 'rejected', 'cancelled'].includes(currentStatusStr) ||
+                          currentStatusStr.includes('approved') ||
+                          currentStatusStr.includes('returned') ||
+                          currentStatusStr.includes('disapproved') ||
+                          currentStatusStr.includes('rejected') ||
+                          currentStatusStr.includes('completed') ||
+                          currentStatusStr.includes('retrieval') ||
+                          currentStatusStr.includes('accomplishment');
+
+                        const canReviewCurrentAttachment = (() => {
+                          if (!isLatestVersion) return false;
+                          if (!userRoleNorm || userRoleNorm === 'org-president') return false;
+                          if (isDeanApprovedStage) return false;
+                          if (isTerminalStatus) return false;
+
+                          if (userRoleNorm === 'chairman' || userRoleNorm === 'vice chairman' || userRoleNorm === 'vice-chairman' || userRoleNorm === 'dean') {
+                            return false;
+                          }
+
+                          if (userRoleNorm === 'admin' || userRoleNorm === 'oso-staff') {
+                            const isActionableStage =
+                              currentStage === 'MAIN_CAMPUS_REVIEW' ||
+                              (isSdsStage && !isSdsApprovedLog) ||
+                              selectedDoc?.category === 'Pending Hard Copy' ||
+                              selectedDoc?.category === 'Hard Copy' ||
+                              selectedDoc?.category === 'Final In-Campus review' ||
+                              currentStage === 'FINAL_LOCAL_CAMPUS_REVIEW';
+
+                            return Boolean(isActionableStage);
+                          }
+
+                          return false;
+                        })();
+
+                        if (!canReviewCurrentAttachment) {
                           return null;
                         }
 
@@ -5247,9 +5342,45 @@ export const MyDocuments = () => {
                     </div>
 
                     {(() => {
+                      const isLatestVersion = !selectedVersionId || selectedVersionId === (selectedDoc?.raw?.current_version_id || selectedDoc?.current_version_id);
                       const currentStatusStr = String(selectedDoc?.raw?.status || selectedDoc?.status || currentVersion?.status || '').toLowerCase().trim();
                       const isDeanApprovedStage = currentStatusStr === 'dean approved' || currentStatusStr.includes('dean approved');
-                      const isLatestVersion = !selectedVersionId || selectedVersionId === (selectedDoc?.raw?.current_version_id || selectedDoc?.current_version_id);
+                      const userRoleNorm = String(user?.role || '').toLowerCase().trim();
+
+                      const isTerminalStatus =
+                        ['approved', 'returned', 'disapproved', 'completed', 'rejected', 'cancelled'].includes(currentStatusStr) ||
+                        currentStatusStr.includes('approved') ||
+                        currentStatusStr.includes('returned') ||
+                        currentStatusStr.includes('disapproved') ||
+                        currentStatusStr.includes('rejected') ||
+                        currentStatusStr.includes('completed') ||
+                        currentStatusStr.includes('retrieval') ||
+                        currentStatusStr.includes('accomplishment');
+
+                      const canReviewCurrentAttachment = (() => {
+                        if (!isLatestVersion) return false;
+                        if (!userRoleNorm || userRoleNorm === 'org-president') return false;
+                        if (isDeanApprovedStage) return false;
+                        if (isTerminalStatus) return false;
+
+                        if (userRoleNorm === 'chairman' || userRoleNorm === 'vice chairman' || userRoleNorm === 'vice-chairman' || userRoleNorm === 'dean') {
+                          return false;
+                        }
+
+                        if (userRoleNorm === 'admin' || userRoleNorm === 'oso-staff') {
+                          const isActionableStage =
+                            currentStage === 'MAIN_CAMPUS_REVIEW' ||
+                            (isSdsStage && !isSdsApprovedLog) ||
+                            selectedDoc?.category === 'Pending Hard Copy' ||
+                            selectedDoc?.category === 'Hard Copy' ||
+                            selectedDoc?.category === 'Final In-Campus review' ||
+                            currentStage === 'FINAL_LOCAL_CAMPUS_REVIEW';
+
+                          return Boolean(isActionableStage);
+                        }
+
+                        return false;
+                      })();
 
                       if (isDeanApprovedStage) {
                         return (
@@ -5261,8 +5392,52 @@ export const MyDocuments = () => {
                         );
                       }
 
-                      if (user?.role === 'org-president' || !isLatestVersion) {
-                        return null;
+                      if (!canReviewCurrentAttachment) {
+                        const fileAction = String(fileLog?.review_action || '').toLowerCase();
+                        const isFileReturned = RETURN_REASONS.includes(fileAction) || Boolean(locallyReturned && locallyReturned[previewFile.id]);
+                        const isDocReturned = currentStatusStr === 'returned' || currentStatusStr.includes('returned');
+                        const isDocDisapproved = currentStatusStr === 'disapproved' || currentStatusStr.includes('disapproved') || currentStatusStr.includes('rejected');
+                        const isApprovedState = !requiresReview || currentStatusStr === 'approved' || currentStatusStr.includes('approved') || fileAction === 'approved' || (locallyApproved && locallyApproved.includes(previewFile.id));
+
+                        if (isFileReturned || isDocReturned) {
+                          return (
+                            <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 text-center mt-6">
+                              <RotateCcw size={20} className="text-amber-600 mx-auto mb-2" />
+                              <p className="text-xs font-bold text-amber-700 uppercase tracking-wider">Returned</p>
+                              <p className="text-xs text-amber-600 mt-1">
+                                {isFileReturned ? 'This attachment was marked for return.' : 'This document has already been returned.'}
+                              </p>
+                            </div>
+                          );
+                        }
+
+                        if (isDocDisapproved) {
+                          return (
+                            <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-center mt-6">
+                              <X size={20} className="text-red-600 mx-auto mb-2" />
+                              <p className="text-xs font-bold text-red-700 uppercase tracking-wider">Disapproved</p>
+                              <p className="text-xs text-red-600 mt-1">This document has been disapproved.</p>
+                            </div>
+                          );
+                        }
+
+                        if (isApprovedState) {
+                          return (
+                            <div className="bg-green-50 border border-green-100 rounded-xl p-4 text-center mt-6">
+                              <CheckCircle size={20} className="text-green-600 mx-auto mb-2" />
+                              <p className="text-xs font-bold text-green-700 uppercase tracking-wider">Already Approved</p>
+                              <p className="text-xs text-green-600 mt-1">This attachment is approved and finalized.</p>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 text-center mt-6">
+                            <FileText size={20} className="text-gray-400 mx-auto mb-2" />
+                            <p className="text-xs font-bold text-gray-600 uppercase tracking-wider">Read Only</p>
+                            <p className="text-xs text-gray-500 mt-1">Attachment review actions are not available for this document.</p>
+                          </div>
+                        );
                       }
 
                       return (
