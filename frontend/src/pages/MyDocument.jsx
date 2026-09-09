@@ -296,7 +296,7 @@ export const MyDocuments = () => {
     if (isSuspended) {
       setShowSuspendedModal(true);
     } else {
-      setIsResubmitModalOpen(true);
+      navigate(`/submit?submissionId=${selectedDoc.id}&step=3`);
     }
   };
 

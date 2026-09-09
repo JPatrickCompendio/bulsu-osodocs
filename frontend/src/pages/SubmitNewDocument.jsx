@@ -1298,34 +1298,7 @@ const SubmitNewDocument = () => {
       const approvedSet = new Set();
       const RETURN_REASONS = ['missing-requirements', 'incorrect-format', 'incomplete-information', 'others', 'returned', 'revisions-required', 'disapproved'];
 
-      // Check if any attachment has an explicit returned log
-      const hasExplicitReturnedAttLog = versionAttachments.some((att) => {
-        const fileLog = (logsData || []).find(l => l.attachment_id === att.id);
-        const reviewAction = String(fileLog?.review_action || '').toLowerCase();
-        return fileLog && RETURN_REASONS.includes(reviewAction);
-      });
-
-      versionAttachments.forEach((att) => {
-        const reqId = att.requirement_id;
-        const fileLog = (logsData || []).find(l => l.attachment_id === att.id);
-        const reviewAction = String(fileLog?.review_action || '').toLowerCase();
-
-        if (fileLog && RETURN_REASONS.includes(reviewAction)) {
-          returnedSet.add(reqId);
-        } else if (fileLog && reviewAction === 'approved') {
-          approvedSet.add(reqId);
-        } else {
-          if (hasExplicitReturnedAttLog) {
-            // Other attachments were NOT returned, so mark them as approved/locked
-            approvedSet.add(reqId);
-          } else if (isReturnedSub) {
-            // Default fallback if overall submission was returned without specific attachment logs
-            returnedSet.add(reqId);
-          }
-        }
-      });
-
-      // Check for incomplete or missing requirements log in latest return
+      // Check for incomplete or missing requirements log in latest return first
       const latestReturnLog = (logsData || []).find(l => {
         if (l.attachment_id) return false;
         const at = String(l.action_type || '').toLowerCase();
@@ -1362,14 +1335,57 @@ const SubmitNewDocument = () => {
           }
         }
       }
+
+      // Also map flagged titles to requirement IDs and vice-versa
+      (reqs || []).forEach(r => {
+        const titleLower = String(r.title || '').toLowerCase().trim();
+        if (flaggedMissingSet.has(titleLower) || flaggedMissingSet.has(r.id) || flaggedMissingSet.has(String(r.id))) {
+          flaggedMissingSet.add(r.id);
+          flaggedMissingSet.add(String(r.id));
+          flaggedMissingSet.add(titleLower);
+        }
+      });
       setFlaggedMissingReqIds(flaggedMissingSet);
+
+      // Check if any attachment in the active version has an explicit returned log
+      const hasExplicitReturnedAttLog = versionAttachments.some((att) => {
+        const fileLog = (logsData || []).find(l => l.attachment_id === att.id);
+        const reviewAction = String(fileLog?.review_action || '').toLowerCase();
+        return fileLog && RETURN_REASONS.includes(reviewAction);
+      });
+
+      const isResubmittedVersion = (version?.version_number || 1) > 1;
+
+      versionAttachments.forEach((att) => {
+        const reqId = att.requirement_id;
+        const fileLog = (logsData || []).find(l => l.attachment_id === att.id);
+        const reviewAction = String(fileLog?.review_action || '').toLowerCase();
+
+        if (fileLog && RETURN_REASONS.includes(reviewAction)) {
+          returnedSet.add(reqId);
+        } else if (fileLog && reviewAction === 'approved') {
+          approvedSet.add(reqId);
+        } else {
+          // If the attachment wasn't explicitly returned in this cycle:
+          // 1. If incomplete requirements was flagged, existing files were NOT rejected -> locked
+          // 2. If another attachment was explicitly returned, unreturned files are approved -> locked
+          // 3. If this is version 2+ (carried over from v1), unreturned files remain approved -> locked
+          if (isIncReqReturn || hasExplicitReturnedAttLog || isResubmittedVersion) {
+            approvedSet.add(reqId);
+          } else if (isReturnedSub) {
+            // Blanket return fallback only if version 1 was returned with no specific attachment logs and no inc-req flagged
+            returnedSet.add(reqId);
+          }
+        }
+      });
 
       setReturnedReqIds(returnedSet);
       setApprovedReqIds(approvedSet);
 
       // Check if 02F1 Activity Proposal Form (Requirement ID 78 or referenceCode 02F1) is in returnedSet
       const is02F1InReturned = (reqs || []).some(r => {
-        if (!returnedSet.has(r.id)) return false;
+        const isRet = returnedSet.has(r.id) || returnedSet.has(String(r.id)) || returnedSet.has(Number(r.id));
+        if (!isRet) return false;
         const code = String(r.referenceCode || '').toLowerCase();
         const title = String(r.title || '').toLowerCase();
         return r.id === 78 || code.includes('02f1') || title.includes('02f1') || title.includes('activity proposal form');
@@ -1551,7 +1567,14 @@ const SubmitNewDocument = () => {
   }, [location.search]);
 
   const existingAttachmentMap = useMemo(() => {
-    return Object.fromEntries(existingAttachments.map((item) => [item.requirement_id, item]));
+    const map = {};
+    (existingAttachments || []).forEach((item) => {
+      if (item.requirement_id) {
+        map[item.requirement_id] = item;
+        map[String(item.requirement_id)] = item;
+      }
+    });
+    return map;
   }, [existingAttachments]);
 
   const isReturnedDocument = useMemo(() => {
@@ -1594,10 +1617,19 @@ const SubmitNewDocument = () => {
     const ids = new Set();
     Object.keys(localFiles || {}).forEach(id => ids.add(String(id)));
     (existingAttachments || []).forEach(att => {
-      if (att.requirement_id) ids.add(String(att.requirement_id));
+      const rId = String(att.requirement_id);
+      const isReturned = isReturnedDocument && (
+        returnedReqIds.has(att.requirement_id) ||
+        returnedReqIds.has(rId) ||
+        returnedReqIds.has(Number(att.requirement_id))
+      );
+      // Returned attachments require a new file upload to be counted as attached
+      if (att.requirement_id && !isReturned) {
+        ids.add(rId);
+      }
     });
     return ids;
-  }, [localFiles, existingAttachments]);
+  }, [localFiles, existingAttachments, isReturnedDocument, returnedReqIds]);
 
   const isAllRequiredAttached = useMemo(() => {
     const docTypeName = (selectedType?.name || '').toLowerCase();
@@ -1613,13 +1645,19 @@ const SubmitNewDocument = () => {
 
     const requiredReqs = requirements.filter(r => {
       const isOpt = r?.is_optional === true || String(r?.is_optional).toLowerCase() === 'true' || String(r?.title || '').toLowerCase().includes('(optional)');
-      return !isOpt;
+      const isFlagged = isReturnedDocument && (
+        flaggedMissingReqIds.has(r.id) ||
+        flaggedMissingReqIds.has(String(r.id)) ||
+        flaggedMissingReqIds.has(String(r?.title || '').toLowerCase().trim())
+      );
+      // Optional requirements that were explicitly flagged missing by a reviewer become mandatory to comply with
+      return (!isOpt) || isFlagged;
     });
 
     if (requiredReqs.length === 0) return true;
 
     return requiredReqs.every(r => attachedRequirementIds.has(String(r.id)));
-  }, [selectedType, requirements, attachedRequirementIds]);
+  }, [selectedType, requirements, attachedRequirementIds, isReturnedDocument, flaggedMissingReqIds]);
 
   const isResubmitDisabled = useMemo(() => {
     if (isSaving) return true;
@@ -1629,22 +1667,60 @@ const SubmitNewDocument = () => {
     }
 
     if (isReturnedDocument) {
-      // For returned documents:
       // 1. If 02F1 Activity Proposal Form was returned, hasFormChanges MUST be true
       if (is02F1Returned && !hasFormChanges) return true;
 
-      // 2. All non-optional returned requirements MUST have a replacement file in localFiles
+      // 2. All returned requirements MUST have a replacement file in localFiles
       for (const reqId of returnedReqIds) {
-        const reqObj = requirements.find(r => String(r.id) === String(reqId));
-        const isOpt = reqObj?.is_optional === true || String(reqObj?.is_optional).toLowerCase() === 'true' || String(reqObj?.title || '').toLowerCase().includes('(optional)');
-        if (!isOpt && !localFiles[reqId]) {
+        const hasReplacement = localFiles[reqId] || localFiles[String(reqId)] || localFiles[Number(reqId)];
+        if (!hasReplacement) {
           return true;
+        }
+      }
+
+      // 3. Flagged missing requirements (even if originally optional) MUST have an attached file
+      for (const req of requirements) {
+        const isFlagged = flaggedMissingReqIds.has(req.id) ||
+                          flaggedMissingReqIds.has(String(req.id)) ||
+                          flaggedMissingReqIds.has(String(req?.title || '').toLowerCase().trim());
+        if (isFlagged) {
+          const hasFile = localFiles[req.id] || localFiles[String(req.id)] || existingAttachmentMap[req.id] || existingAttachmentMap[String(req.id)];
+          if (!hasFile) {
+            return true;
+          }
         }
       }
     }
 
     return false;
-  }, [isSaving, isAllRequiredAttached, isReturnedDocument, is02F1Returned, hasFormChanges, returnedReqIds, localFiles]);
+  }, [isSaving, isAllRequiredAttached, isReturnedDocument, is02F1Returned, hasFormChanges, returnedReqIds, flaggedMissingReqIds, requirements, localFiles, existingAttachmentMap]);
+
+  const resubmitDisabledReason = useMemo(() => {
+    if (!isReturnedDocument) return "Please attach files for all required documents before registering.";
+    if (is02F1Returned && !hasFormChanges) return "Edit the form content fields to enable the Resubmit button.";
+    
+    // Check missing flagged requirements first
+    for (const req of requirements) {
+      const isFlagged = flaggedMissingReqIds.has(req.id) ||
+                        flaggedMissingReqIds.has(String(req.id)) ||
+                        flaggedMissingReqIds.has(String(req?.title || '').toLowerCase().trim());
+      const hasFile = localFiles[req.id] || localFiles[String(req.id)] || existingAttachmentMap[req.id] || existingAttachmentMap[String(req.id)];
+      if (isFlagged && !hasFile) {
+        return `Compliance Required: Please attach the missing requirement flagged by reviewer: "${req.title}".`;
+      }
+    }
+
+    // Check returned requirements
+    for (const reqId of returnedReqIds) {
+      const hasReplacement = localFiles[reqId] || localFiles[String(reqId)] || localFiles[Number(reqId)];
+      if (!hasReplacement) {
+        const reqObj = requirements.find(r => String(r.id) === String(reqId));
+        return `Please upload a replacement .pdf file for returned attachment: "${reqObj?.title || 'Returned Requirement'}".`;
+      }
+    }
+
+    return "Please attach all required documents before resubmitting.";
+  }, [isReturnedDocument, is02F1Returned, hasFormChanges, requirements, flaggedMissingReqIds, localFiles, existingAttachmentMap, returnedReqIds]);
 
   const getReqCount = (typeId, subtypeObj) => {
     const sId = subtypeObj ? subtypeObj.id : null;
@@ -1756,7 +1832,14 @@ const SubmitNewDocument = () => {
         // 2. Identify old returned attachment DB IDs to exclude from copy
         const oldAttachments = existingAttachments || [];
         const returnedAttachmentDbIds = oldAttachments
-          .filter(att => returnedReqIds.has(att.requirement_id) || !approvedReqIds.has(att.requirement_id))
+          .filter(att => {
+            const rId = att.requirement_id;
+            return (
+              returnedReqIds.has(rId) ||
+              returnedReqIds.has(String(rId)) ||
+              returnedReqIds.has(Number(rId))
+            );
+          })
           .map(att => att.id);
 
         // 3. Copy approved attachments from old version to new version
@@ -1968,6 +2051,34 @@ const SubmitNewDocument = () => {
       docTypeName.includes('renewal') ||
       docTypeName.includes('year end') || docTypeName.includes('year-end') || docTypeName.includes('year_end');
 
+    if (isReturnedDocument) {
+      // Check for unfulfilled flagged missing requirements (even if originally optional)
+      const missingFlagged = requirements.filter(r => {
+        const isFlagged = flaggedMissingReqIds.has(r.id) ||
+                          flaggedMissingReqIds.has(String(r.id)) ||
+                          flaggedMissingReqIds.has(String(r?.title || '').toLowerCase().trim());
+        const hasFile = localFiles[r.id] || localFiles[String(r.id)] || existingAttachmentMap[r.id] || existingAttachmentMap[String(r.id)];
+        return isFlagged && !hasFile;
+      });
+
+      if (missingFlagged.length > 0) {
+        showToast(`Compliance Required: You cannot resubmit without attaching the missing requirement flagged by reviewer: "${missingFlagged[0].title}".`, 'error');
+        return;
+      }
+
+      // Check for unfulfilled returned requirements
+      const unfulfilledReturned = requirements.filter(r => {
+        const isReturned = returnedReqIds.has(r.id) || returnedReqIds.has(String(r.id)) || returnedReqIds.has(Number(r.id));
+        const hasNewFile = localFiles[r.id] || localFiles[String(r.id)] || localFiles[Number(r.id)];
+        return isReturned && !hasNewFile;
+      });
+
+      if (unfulfilledReturned.length > 0) {
+        showToast(`Please upload replacement files for all returned attachments: "${unfulfilledReturned[0].title}".`, 'error');
+        return;
+      }
+    }
+
     if (isStrictRequirementDoc) {
       const missingReqs = requirements.filter(r => !attachedIds.has(String(r.id)));
       if (missingReqs.length > 0) {
@@ -1975,9 +2086,19 @@ const SubmitNewDocument = () => {
         return;
       }
     } else {
-      const requiredReqs = requirements.filter(r => !r.is_optional && String(r.is_optional) !== 'true' && !r.title.toLowerCase().includes('(optional)'));
-      if (attachedIds.size < requiredReqs.length) {
-        showToast(`Please attach all ${requiredReqs.length} required documents before registering.`, 'error');
+      const requiredReqs = requirements.filter(r => {
+        const isOpt = r?.is_optional === true || String(r?.is_optional).toLowerCase() === 'true' || String(r?.title || '').toLowerCase().includes('(optional)');
+        const isFlagged = isReturnedDocument && (
+          flaggedMissingReqIds.has(r.id) ||
+          flaggedMissingReqIds.has(String(r.id)) ||
+          flaggedMissingReqIds.has(String(r?.title || '').toLowerCase().trim())
+        );
+        return (!isOpt) || isFlagged;
+      });
+
+      const missingRequired = requiredReqs.filter(r => !attachedIds.has(String(r.id)));
+      if (missingRequired.length > 0) {
+        showToast(`Please attach all required documents before registering: "${missingRequired[0].title}".`, 'error');
         return;
       }
     }
@@ -2158,10 +2279,14 @@ const SubmitNewDocument = () => {
   const renderRequirementsList = (isModal = false) => (
     <div className={`space-y-4 ${isModal ? '' : 'w-full max-w-5xl mx-auto'}`}>
       {requirements.map((req, i) => {
-        const existing = existingAttachmentMap[req.id];
+        const existing = existingAttachmentMap[req.id] || existingAttachmentMap[String(req.id)];
         const isApprovedReq = isReturnedDocument && (approvedReqIds.has(req.id) || approvedReqIds.has(String(req.id)) || approvedReqIds.has(Number(req.id)));
         const isReturnedReq = isReturnedDocument && (returnedReqIds.has(req.id) || returnedReqIds.has(String(req.id)) || returnedReqIds.has(Number(req.id)));
-        const isFlaggedMissing = flaggedMissingReqIds.has(req.id) || flaggedMissingReqIds.has(String(req.title || '').toLowerCase());
+        const isFlaggedMissing = isReturnedDocument && (
+          flaggedMissingReqIds.has(req.id) ||
+          flaggedMissingReqIds.has(String(req.id)) ||
+          flaggedMissingReqIds.has(String(req.title || '').toLowerCase().trim())
+        );
         const isOptionalReq =
           req?.is_optional === true ||
           String(req?.is_optional).toLowerCase() === 'true' ||
@@ -2196,6 +2321,11 @@ const SubmitNewDocument = () => {
                       <AlertCircle size={10} /> Incomplete Requirement Flagged by Reviewer
                     </span>
                   )}
+                  {isFlaggedMissing && (
+                    <span className="px-2.5 py-0.5 bg-red-100 text-red-700 text-[9px] font-black uppercase rounded-full border border-red-200">
+                      Compliance Required
+                    </span>
+                  )}
                   {isApprovedReq && (
                     <span className="px-2.5 py-0.5 bg-green-100 text-green-700 text-[9px] font-black uppercase rounded flex items-center gap-1">
                       <Lock size={10} /> Approved (Locked)
@@ -2206,8 +2336,13 @@ const SubmitNewDocument = () => {
                       Returned (Action Required)
                     </span>
                   )}
-                  {isOptionalReq && (
+                  {isOptionalReq && !isFlaggedMissing && (
                     <span className="px-2.5 py-0.5 bg-yellow-100 text-yellow-800 text-[9px] font-black uppercase rounded border border-yellow-200">
+                      Optional
+                    </span>
+                  )}
+                  {isOptionalReq && isFlaggedMissing && (
+                    <span className="px-2.5 py-0.5 bg-gray-100 text-gray-500 text-[9px] font-black uppercase rounded line-through border border-gray-200" title="Originally optional, but flagged by reviewer and mandatory for resubmission">
                       Optional
                     </span>
                   )}
@@ -3536,10 +3671,8 @@ const SubmitNewDocument = () => {
                           }`}
                           title={
                             isResubmitDisabled
-                              ? (is02F1Returned && !hasFormChanges
-                                  ? "Edit the form content fields to enable the Resubmit button."
-                                  : "Please upload replacement .pdf files for all returned attachments.")
-                              : "Resubmit Document"
+                              ? resubmitDisabledReason
+                              : (isReturnedDocument ? "Resubmit Document" : "Register Document")
                           }
                         >
                           {isSaving ? <Loader2 className="animate-spin" size={13} /> : (isReturnedDocument ? <RefreshCcw size={13} /> : <Send size={13} />)}
@@ -3588,10 +3721,8 @@ const SubmitNewDocument = () => {
                         }`}
                         title={
                           isResubmitDisabled
-                            ? (isReturnedDocument
-                                ? "Upload replacement .pdf files for all returned attachments."
-                                : "Please attach files for all required documents before registering.")
-                            : ""
+                            ? resubmitDisabledReason
+                            : (isReturnedDocument ? "Resubmit Document" : "Register Document")
                         }
                       >
                         {isSaving ? <Loader2 className="animate-spin" size={13} /> : (isReturnedDocument ? <RefreshCcw size={13} /> : <Send size={13} />)}
