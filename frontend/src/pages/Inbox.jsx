@@ -843,23 +843,32 @@ export const Inbox = () => {
   const { showToast, ToastComponent } = useToast();
   const [subtypesMap, setSubtypesMap] = React.useState({});
 
-  // Fetch subtypes on mount
+  // Fetch subtypes and initial submissions on mount once
   React.useEffect(() => {
-    const fetchSubtypes = async () => {
-      const { data } = await supabase.from('document_subtypes').select('id, name');
-      if (data) {
-        const map = {};
-        data.forEach(st => { map[st.id] = st; });
-        setSubtypesMap(map);
+    let isMounted = true;
+    const initData = async () => {
+      let map = {};
+      try {
+        const { data } = await supabase.from('document_subtypes').select('id, name');
+        if (data) {
+          data.forEach(st => { map[st.id] = st; });
+          if (isMounted) setSubtypesMap(map);
+        }
+      } catch (e) {
+        console.warn('Failed to load subtypes:', e);
+      }
+      if (isMounted) {
+        await fetchSubmissions(map);
       }
     };
-    fetchSubtypes();
+    initData();
+    return () => { isMounted = false; };
   }, []);
 
   const currentData = viewMode === 'inbox' ? inboxData : archiveData;
 
   // Supabase Fetch Submissions Function
-  const fetchSubmissions = async () => {
+  const fetchSubmissions = async (mapOverride = null) => {
     try {
       setLoading(true);
       
@@ -878,8 +887,7 @@ export const Inbox = () => {
             'oso staff review', 'OSO Staff Review', 'oso_staff_review'
           ];
 
-      // Try with submission_logs join
-      let { data, error } = await supabase
+      const { data, error } = await supabase
         .from('submissions')
         .select(SUBMISSION_SELECT)
         .in('status', statusFilter)
@@ -899,18 +907,37 @@ export const Inbox = () => {
             submission_attachments (*, requirements(*))
           )
         `;
-        const fallbackRes = await supabase
+        const { data: fallbackData, error: fallbackError } = await supabase
           .from('submissions')
           .select(FALLBACK_SELECT)
           .in('status', statusFilter)
           .order('created_at', { ascending: false });
 
-        if (fallbackRes.error) throw fallbackRes.error;
-        data = fallbackRes.data;
+        if (fallbackError) throw fallbackError;
+        
+        const activeSubtypes = mapOverride || subtypesMap;
+        const mapped = (fallbackData || [])
+          .filter((sub) => {
+            if (isAdmin) {
+              const logs = sub.submission_logs || [];
+              const hasApproved = logs.some(l => {
+                const phase = String(l.workflow_phase || '').toLowerCase();
+                const action = String(l.action_type || l.review_action || '').toLowerCase();
+                return (phase.includes('sds') || phase.includes('admin')) && (action === 'approved' || action === 'approve');
+              });
+              if (hasApproved) return false;
+            }
+            return true;
+          })
+          .map((sub) => mapInboxSubmission(sub, user, activeSubtypes));
+
+        setInboxData(mapped);
+        return;
       }
 
+      const activeSubtypes = mapOverride || subtypesMap;
       const mapped = (data || [])
-        .filter(sub => {
+        .filter((sub) => {
           if (isAdmin) {
             const rawStatus = String(sub.status || '').toLowerCase().trim();
             if (
@@ -934,7 +961,7 @@ export const Inbox = () => {
           }
           return true;
         })
-        .map((sub) => mapInboxSubmission(sub, user, subtypesMap));
+        .map((sub) => mapInboxSubmission(sub, user, activeSubtypes));
 
       setInboxData(mapped);
     } catch (err) {
@@ -956,16 +983,6 @@ export const Inbox = () => {
   };
 
   React.useEffect(() => {
-    fetchSubmissions();
-  }, []);
-
-  React.useEffect(() => {
-    if (Object.keys(subtypesMap).length > 0) {
-      fetchSubmissions();
-    }
-  }, [subtypesMap]);
-
-  React.useEffect(() => {
     if (!user?.id) return;
 
     const handleRefresh = () => fetchSubmissions();
@@ -973,7 +990,6 @@ export const Inbox = () => {
     window.addEventListener('inbox-updated', handleRefresh);
     window.addEventListener('submission-submitted', handleRefresh);
     window.addEventListener('document-status-changed', handleRefresh);
-    window.addEventListener('focus', handleRefresh);
 
     const channelId = `inbox_realtime_${user.id}_${Math.random().toString(36).substring(2, 9)}`;
     const channel = supabase.channel(channelId)
@@ -986,17 +1002,12 @@ export const Inbox = () => {
       .on('broadcast', { event: 'inbox-update' }, () => {
         handleRefresh();
       })
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          handleRefresh();
-        }
-      });
+      .subscribe();
 
     return () => {
       window.removeEventListener('inbox-updated', handleRefresh);
       window.removeEventListener('submission-submitted', handleRefresh);
       window.removeEventListener('document-status-changed', handleRefresh);
-      window.removeEventListener('focus', handleRefresh);
       supabase.removeChannel(channel);
     };
   }, [user]);

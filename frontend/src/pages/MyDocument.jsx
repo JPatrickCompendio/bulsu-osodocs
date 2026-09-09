@@ -33,6 +33,7 @@ import {
 import * as reqService from '../services/requirementService';
 import PageHeader from '../components/PageHeader';
 import { useToast } from '../hooks/useToast';
+import { compressImage } from '../utils/imageCompressionUtils';
 
 const getStatusColor = (status) => {
   const s = (status || '').toLowerCase().trim();
@@ -1300,6 +1301,7 @@ export const MyDocuments = () => {
           )
         `)
         .neq('status', 'draft')
+        .not('status', 'in', '("completed","Completed")')
         .order('created_at', { ascending: false });
 
       if (subsErr) throw subsErr;
@@ -1731,12 +1733,13 @@ export const MyDocuments = () => {
           : selectedDoc.raw?.submission_versions?.id);
 
       if (externalProofFile) {
-        const safeFileName = externalProofFile.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
+        const compressedProof = await compressImage(externalProofFile, { maxWidth: 1600, maxHeight: 1600, quality: 0.82 });
+        const safeFileName = compressedProof.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
         const filePath = `external-proof/${selectedDoc.id}/${Date.now()}-${safeFileName}`;
 
         const { error: uploadErr } = await supabase.storage
           .from('documents')
-          .upload(filePath, externalProofFile, { cacheControl: '3600', upsert: false });
+          .upload(filePath, compressedProof, { cacheControl: '36000', upsert: false });
 
         if (uploadErr) throw uploadErr;
       }
@@ -3981,12 +3984,13 @@ export const MyDocuments = () => {
                         }
 
                         await Promise.all(
-                          accomReportFiles.map((file, index) => {
-                            const safeFileName = file.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
+                          accomReportFiles.map(async (file, index) => {
+                            const compressed = await compressImage(file, { maxWidth: 1600, maxHeight: 1600, quality: 0.82 });
+                            const safeFileName = compressed.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
                             const filePath = `accom-report/${submissionId}/${Date.now()}-${index}-${safeFileName}`;
                             return supabase.storage
                               .from('documents')
-                              .upload(filePath, file, { cacheControl: '3600', upsert: false });
+                              .upload(filePath, compressed, { cacheControl: '36000', upsert: false });
                           })
                         );
 

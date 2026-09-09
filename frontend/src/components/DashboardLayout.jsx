@@ -184,28 +184,15 @@ const Header = ({ onToggleMobileMenu, onOpenMemberModal }) => {
 
       if (announcements && announcements.length > 0) {
         const targetedAnnouncements = announcements.filter(a => isAnnouncementTargetedToUser(a, user));
-        const annPromises = targetedAnnouncements.map(async (a) => {
-          let hasAttachment = false;
-          try {
-            const { data: files } = await supabase.storage.from('documents').list(`announcements/${a.id}`);
-            if (files && files.filter(f => f.name !== '.emptyFolderPlaceholder').length > 0) {
-              hasAttachment = true;
-            }
-          } catch (e) {
-            console.warn('Error checking announcement files:', e);
-          }
-          return {
-            id: `ann_${a.id}`,
-            type: 'announcement',
-            title: a.title,
-            message: a.content,
-            timestamp: a.created_at,
-            source: a,
-            hasAttachment: hasAttachment,
-          };
-        });
-
-        const annNotifs = await Promise.all(annPromises);
+        const annNotifs = targetedAnnouncements.map((a) => ({
+          id: `ann_${a.id}`,
+          type: 'announcement',
+          title: a.title,
+          message: a.content,
+          timestamp: a.created_at,
+          source: a,
+          hasAttachment: Boolean(a.has_attachment || a.attachment_url || a.attachments?.length),
+        }));
         notifs.push(...annNotifs);
       }
 
@@ -407,7 +394,7 @@ const Header = ({ onToggleMobileMenu, onOpenMemberModal }) => {
 
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 15000);
+    const interval = setInterval(fetchNotifications, 120000);
     window.addEventListener('inbox-updated', fetchNotifications);
     window.addEventListener('document-status-changed', fetchNotifications);
     return () => {
