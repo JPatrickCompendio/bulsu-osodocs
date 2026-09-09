@@ -18,6 +18,7 @@ import { apiClient, apiUrl } from '../config/apiClient';
 import { supabase } from '../supabaseClient';
 import PageHeader from '../components/PageHeader';
 import { useToast } from '../hooks/useToast';
+import { compressImage } from '../utils/imageCompressionUtils';
 
 const AnnouncementManagement = () => {
   const { user } = useAuth();
@@ -104,9 +105,11 @@ const AnnouncementManagement = () => {
     try {
       const folderPath = `announcements/${announcementId}`;
       
-      const uploadPromises = selectedFiles.map(file => {
-        const filePath = `${folderPath}/${file.name}`;
-        return supabase.storage.from('documents').upload(filePath, file, {
+      const uploadPromises = selectedFiles.map(async (file) => {
+        const fileToUpload = await compressImage(file, { maxWidth: 1600, maxHeight: 1600, quality: 0.82 });
+        const filePath = `${folderPath}/${fileToUpload.name}`;
+        return supabase.storage.from('documents').upload(filePath, fileToUpload, {
+          cacheControl: '36000',
           upsert: true
         });
       });

@@ -127,15 +127,24 @@ const SubmissionTimeline = ({
     });
   }, [timelineLogs, submissionStatus, allVersions, viewingVersionId, currentVersionId]);
 
+  const proofSignedUrlCache = React.useRef(new Map());
+
   const resolveProofUrl = async (reference) => {
     const raw = String(reference || '').trim();
     if (!raw) return null;
 
     const { bucket, path } = getStorageReference(reference);
     if (path) {
+      const cacheKey = `${bucket}:${path}`;
+      if (proofSignedUrlCache.current.has(cacheKey)) {
+        return proofSignedUrlCache.current.get(cacheKey);
+      }
       try {
         const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
-        if (!error && data?.signedUrl) return data.signedUrl;
+        if (!error && data?.signedUrl) {
+          proofSignedUrlCache.current.set(cacheKey, data.signedUrl);
+          return data.signedUrl;
+        }
       } catch (err) {
         console.error('Failed to resolve proof URL:', err);
       }
@@ -174,9 +183,17 @@ const SubmissionTimeline = ({
           nextLinks[proofKey] = reference || null;
           continue;
         }
+
+        const cacheKey = `documents:${cleanPath}`;
+        if (proofSignedUrlCache.current.has(cacheKey)) {
+          nextLinks[proofKey] = proofSignedUrlCache.current.get(cacheKey);
+          continue;
+        }
+
         try {
           const { data, error } = await supabase.storage.from('documents').createSignedUrl(cleanPath, 3600);
           if (!cancelled && !error && data?.signedUrl) {
+            proofSignedUrlCache.current.set(cacheKey, data.signedUrl);
             nextLinks[proofKey] = data.signedUrl;
           }
         } catch (err) {

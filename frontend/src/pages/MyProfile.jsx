@@ -29,6 +29,7 @@ import AccountSettings from '../components/profile/AccountSettings';
 import SecurityPanel from '../components/profile/SecurityPanel';
 import PageHeader from '../components/PageHeader';
 import Avatar from '../components/Avatar';
+import { compressImage } from '../utils/imageCompressionUtils';
 
 const MyProfile = () => {
   const { user, refreshUser, activeMember } = useAuth();
@@ -232,12 +233,13 @@ const MyProfile = () => {
 
     setIsUploadingImage(true);
     try {
+      const compressed = await compressImage(file, { maxWidth: 1000, maxHeight: 1000, quality: 0.82 });
       const filePath = `${user.id}/avatar.jpg`;
       
       const { error: uploadError } = await supabase.storage
         .from('profile_img')
-        .upload(filePath, file, {
-          cacheControl: '0',
+        .upload(filePath, compressed, {
+          cacheControl: '36000',
           upsert: true
         });
 
@@ -251,7 +253,7 @@ const MyProfile = () => {
       if (updateError) throw updateError;
 
       await createAuditLog('Updated profile picture');
-      await refreshUser();
+      await refreshUser(Date.now());
       showToast('Profile picture updated successfully!');
     } catch (err) {
       console.error('Image upload error:', err);
@@ -622,7 +624,7 @@ const MyProfile = () => {
     abbreviation: profile?.abbreviation || user.abbreviation || '',
     college: profile?.college || user.college || 'College of Information and Communications Technology',
     officialEmail: profile?.email || user.email || '',
-    crestUrl: profile?.profile_image || user.profile_image || user.avatarUrl,
+    crestUrl: user.avatarUrl || profile?.profile_image || user.profile_image,
   };
 
   const isPresident = !activeMember || activeMember.is_president === true;
@@ -643,7 +645,7 @@ const MyProfile = () => {
     email: profile?.email || user.email || '',
     studentNumber: effectiveStudentNo,
     contactNumber: effectiveContactNo,
-    profileImage: profile?.profile_image || user.profile_image || user.avatarUrl,
+    profileImage: user.avatarUrl || profile?.profile_image || user.profile_image,
     position: (profile?.role || user.role) === 'org-president' ? 'Organization President' : ((profile?.role || user.role) || 'Officer'),
     activeSince: new Date(profile?.joined_date || user.joined_date || profile?.created_at || user.created_at || Date.now()).toLocaleDateString(undefined, { 
       year: 'numeric', 
@@ -660,7 +662,7 @@ const MyProfile = () => {
     email: activeOperatorRecord.email || profile?.email || user.email || '',
     studentNumber: activeOperatorRecord.student_number || activeOperatorRecord.student_no || activeMember?.student_number || 'N/A',
     contactNumber: activeOperatorRecord.contact_number || activeOperatorRecord.contact_no || activeMember?.contact_number || 'N/A',
-    profileImage: activeOperatorRecord.avatar_url || activeOperatorRecord.profile_image || profile?.profile_image || user.profile_image || user.avatarUrl,
+    profileImage: activeOperatorRecord.avatar_url || user.avatarUrl || activeOperatorRecord.profile_image || profile?.profile_image || user.profile_image,
     position: activeOperatorRecord.position || activeMember?.position || 'Officer',
     activeSince: activeOperatorRecord.created_at
       ? new Date(activeOperatorRecord.created_at).toLocaleDateString(undefined, {
@@ -703,7 +705,7 @@ const MyProfile = () => {
       email: profile?.email || user.email || '',
       studentNumber: '',
       contactNumber: effectiveContactNo || 'N/A',
-      profileImage: profile?.profile_image || user.profile_image || user.avatarUrl,
+      profileImage: user.avatarUrl || profile?.profile_image || user.profile_image,
       position: roleName,
       badgeText: badgeText,
       activeSince: new Date(profile?.joined_date || user.joined_date || profile?.created_at || user.created_at || Date.now()).toLocaleDateString(undefined, { 

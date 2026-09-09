@@ -136,13 +136,65 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
   const [scopeTab, setScopeTab] = React.useState('all');
   const [selectedVersionId, setSelectedVersionId] = React.useState(null);
   const [isAccomplishmentReportOpen, setIsAccomplishmentReportOpen] = React.useState(false);
+  const [accomImagesLoaded, setAccomImagesLoaded] = React.useState(false);
+  const completedSignedUrlCache = React.useRef(new Map());
+
+  const loadAccomplishmentImages = React.useCallback(async () => {
+    if (accomImagesLoaded || !submissionId) return;
+    try {
+      const { data: files, error: listErr } = await supabase.storage
+        .from('documents')
+        .list(`accom-report/${submissionId}`);
+
+      if (!listErr && files && files.length > 0) {
+        const imageFiles = files.filter((file) => /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(file.name));
+        const imageUrls = await Promise.all(
+          imageFiles.map(async (file) => {
+            const path = `accom-report/${submissionId}/${file.name}`;
+            const cacheKey = `accom:${path}`;
+            if (completedSignedUrlCache.current.has(cacheKey)) {
+              return { ...file, url: completedSignedUrlCache.current.get(cacheKey), path };
+            }
+            try {
+              const { data } = await supabase.storage.from('documents').createSignedUrl(path, 86400);
+              if (data?.signedUrl) {
+                completedSignedUrlCache.current.set(cacheKey, data.signedUrl);
+                return { ...file, url: data.signedUrl, path };
+              }
+            } catch (error) {
+              console.warn('Signed URL unavailable for accomplishment image:', error);
+            }
+            return { ...file, url: getStoragePublicUrl(path), path };
+          })
+        );
+        setAccomplishmentImages(imageUrls.filter(Boolean));
+      }
+    } catch (err) {
+      console.error('Error fetching accomplishment images:', err);
+    } finally {
+      setAccomImagesLoaded(true);
+    }
+  }, [submissionId, accomImagesLoaded]);
+
+  React.useEffect(() => {
+    if (isAccomplishmentReportOpen) {
+      loadAccomplishmentImages();
+    }
+  }, [isAccomplishmentReportOpen, loadAccomplishmentImages]);
 
   const resolveExternalProofUrl = async (storagePath) => {
     const cleanPath = String(storagePath || '').replace(/^proof_path:/i, '').trim();
     if (!cleanPath) return '';
+    const cacheKey = `proof:${cleanPath}`;
+    if (completedSignedUrlCache.current.has(cacheKey)) {
+      return completedSignedUrlCache.current.get(cacheKey);
+    }
     try {
-      const { data, error } = await supabase.storage.from('documents').createSignedUrl(cleanPath, 3600);
-      if (!error && data?.signedUrl) return data.signedUrl;
+      const { data, error } = await supabase.storage.from('documents').createSignedUrl(cleanPath, 86400);
+      if (!error && data?.signedUrl) {
+        completedSignedUrlCache.current.set(cacheKey, data.signedUrl);
+        return data.signedUrl;
+      }
     } catch (err) {
       console.error('Failed to resolve external proof URL:', err);
     }
@@ -187,18 +239,24 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
       if (finalPath.startsWith('documents/')) {
         finalPath = finalPath.replace('documents/', '');
       }
-      const { data, error } = await supabase.storage.from('documents').createSignedUrl(finalPath, 3600);
+      const cacheKey = `attachment:${finalPath}`;
+      let signedUrl = completedSignedUrlCache.current.get(cacheKey);
 
-      if (error || !data?.signedUrl) {
-        console.error('Failed to get signed URL for attachment:', error);
-        return;
+      if (!signedUrl) {
+        const { data, error } = await supabase.storage.from('documents').createSignedUrl(finalPath, 86400);
+        if (error || !data?.signedUrl) {
+          console.error('Failed to get signed URL for attachment:', error);
+          return;
+        }
+        signedUrl = data.signedUrl;
+        completedSignedUrlCache.current.set(cacheKey, signedUrl);
       }
 
       if (action === 'view') {
-        setPreviewUrl(data.signedUrl);
+        setPreviewUrl(signedUrl);
       } else if (action === 'download') {
         const link = document.createElement('a');
-        link.href = data.signedUrl;
+        link.href = signedUrl;
         link.download = fileName;
         document.body.appendChild(link);
         link.click();
@@ -243,34 +301,13 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
         if (!accomErr) {
           setAccomplishmentReport(accomReport || null);
           if (accomReport) {
-            const { data: files, error: listErr } = await supabase.storage
-              .from('documents')
-              .list(`accom-report/${submissionId}`);
-
-            if (!listErr) {
-              const imageFiles = (files || []).filter((file) => /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(file.name));
-              const imageUrls = await Promise.all(
-                imageFiles.map(async (file) => {
-                  const path = `accom-report/${submissionId}/${file.name}`;
-                  try {
-                    const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600);
-                    if (data?.signedUrl) return { ...file, url: data.signedUrl, path };
-                  } catch (error) {
-                    console.warn('Signed URL unavailable for accomplishment image:', error);
-                  }
-                  return { ...file, url: getStoragePublicUrl(path), path };
-                })
-              );
-              setAccomplishmentImages(imageUrls.filter(Boolean));
-            }
-          } else {
-            setAccomplishmentImages([]);
+            await loadAccomplishmentImages();
           }
         } else {
           console.error('Error fetching accomplishment report:', accomErr);
         }
 
-        // Fetch External Proofs
+        // Fetch External Proofs on demand / with 24hr signed URL caching
         try {
           const { data: extFiles, error: extListErr } = await supabase.storage
             .from('documents')
@@ -281,9 +318,16 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
             const proofUrls = await Promise.all(
               proofFiles.map(async (file) => {
                 const path = `external-proof/${submissionId}/${file.name}`;
+                const cacheKey = `ext-proof:${path}`;
+                if (completedSignedUrlCache.current.has(cacheKey)) {
+                  return { ...file, url: completedSignedUrlCache.current.get(cacheKey), path };
+                }
                 try {
-                  const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600);
-                  if (data?.signedUrl) return { ...file, url: data.signedUrl, path };
+                  const { data } = await supabase.storage.from('documents').createSignedUrl(path, 86400);
+                  if (data?.signedUrl) {
+                    completedSignedUrlCache.current.set(cacheKey, data.signedUrl);
+                    return { ...file, url: data.signedUrl, path };
+                  }
                 } catch (error) {
                   console.warn('Signed URL unavailable for external proof:', error);
                 }

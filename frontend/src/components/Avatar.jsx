@@ -29,7 +29,7 @@ const Avatar = ({ profileImage, profileImg, name, className = '', fallbackClassN
                     .createSignedUrl(cleanPath, 86400);
 
                 if (signedData?.signedUrl && isMounted) {
-                    setResolvedUrl(`${signedData.signedUrl}&t=${Date.now()}`);
+                    setResolvedUrl(signedData.signedUrl);
                     return;
                 }
             } catch (e) {
@@ -38,7 +38,7 @@ const Avatar = ({ profileImage, profileImg, name, className = '', fallbackClassN
 
             const { data } = supabase.storage.from('profile_img').getPublicUrl(cleanPath);
             if (data?.publicUrl && isMounted) {
-                setResolvedUrl(`${data.publicUrl}?t=${Date.now()}`);
+                setResolvedUrl(data.publicUrl);
             }
         };
 

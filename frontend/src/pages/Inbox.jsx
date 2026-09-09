@@ -2598,12 +2598,14 @@ export const Inbox = () => {
                           <Mail size={32} />
                         </div>
                         <p className="text-gray-400 font-semibold uppercase tracking-wider text-xs">No documents in this view</p>
-                        <button 
-                          onClick={() => setViewMode('inbox')}
-                          className="text-primary-green font-bold text-sm hover:underline"
-                        >
-                          Go back to Inbox
-                        </button>
+                        {viewMode !== 'inbox' && (
+                          <button 
+                            onClick={() => setViewMode('inbox')}
+                            className="text-primary-green font-bold text-sm hover:underline"
+                          >
+                            Go back to Inbox
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

@@ -163,29 +163,34 @@ export const AuthProvider = ({ children }) => {
         };
     }, [user?.id, user?.status]);
 
-    const resolveAvatarUrl = async (imagePath) => {
+    const resolveAvatarUrl = async (imagePath, updatedAt, customVersion) => {
         if (!imagePath) return null;
-        if (imagePath.startsWith('http') || imagePath.startsWith('data:')) {
+        if (imagePath.startsWith('http') || imagePath.startsWith('blob:')) {
             return imagePath;
         }
         const cleanPath = imagePath.replace(/^(profile_img\/|profile_image\/|avatars\/)/, '');
+        const versionTag = customVersion 
+            ? `v=${customVersion}` 
+            : (updatedAt ? `v=${new Date(updatedAt).getTime()}` : `v=1`);
         try {
             const { data: signedData } = await supabase.storage
                 .from('profile_img')
                 .createSignedUrl(cleanPath, 86400);
 
             if (signedData?.signedUrl) {
-                return `${signedData.signedUrl}&t=${Date.now()}`;
+                return signedData.signedUrl.includes('?') 
+                    ? `${signedData.signedUrl}&${versionTag}` 
+                    : `${signedData.signedUrl}?${versionTag}`;
             }
         } catch (err) {
             console.warn('Signed avatar fetch error:', err);
         }
 
         const { data: pubData } = supabase.storage.from('profile_img').getPublicUrl(cleanPath);
-        return pubData?.publicUrl ? `${pubData.publicUrl}?t=${Date.now()}` : null;
+        return pubData?.publicUrl ? `${pubData.publicUrl}?${versionTag}` : null;
     };
 
-    const fetchProfile = async (authUser) => {
+    const fetchProfile = async (authUser, customVersion) => {
         try {
             const { data: profile, error } = await supabase
                 .from('users')
@@ -194,7 +199,7 @@ export const AuthProvider = ({ children }) => {
                 .maybeSingle();
 
             if (!error && profile) {
-                const avatarUrl = await resolveAvatarUrl(profile.profile_image);
+                const avatarUrl = await resolveAvatarUrl(profile.profile_image, profile.updated_at || profile.created_at, customVersion);
                 setUser((prev) => {
                     return {
                         ...prev,
@@ -231,7 +236,7 @@ export const AuthProvider = ({ children }) => {
 
             if (profileError) throw new Error(profileError.message);
 
-            const avatarUrl = await resolveAvatarUrl(profile.profile_image);
+            const avatarUrl = await resolveAvatarUrl(profile.profile_image, profile.updated_at || profile.created_at);
 
             setUser((prev) => {
                 if (prev?.avatarUrl && prev.avatarUrl !== avatarUrl) {
@@ -260,11 +265,11 @@ export const AuthProvider = ({ children }) => {
         setUser(null);
     };
 
-    const refreshUser = async () => {
+    const refreshUser = async (customVersion) => {
         try {
             const { data: { session } } = await supabase.auth.getSession();
             if (session?.user) {
-                await fetchProfile(session.user);
+                await fetchProfile(session.user, customVersion);
             }
         } catch (err) {
             console.error('Failed to refresh user profile:', err);
