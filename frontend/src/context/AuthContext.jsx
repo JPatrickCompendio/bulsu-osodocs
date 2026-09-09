@@ -138,28 +138,10 @@ export const AuthProvider = ({ children }) => {
             // BroadcastChannel fallback
         }
 
-        // 4. Lightweight polling sync fallback (every 3 seconds)
-        const pollInterval = setInterval(async () => {
-            try {
-                const { data: latest } = await supabase
-                    .from('users')
-                    .select('status')
-                    .eq('id', user.id)
-                    .maybeSingle();
-
-                if (latest && latest.status !== user.status) {
-                    setUser((prev) => (prev ? { ...prev, status: latest.status } : null));
-                }
-            } catch (err) {
-                // Silent catch
-            }
-        }, 3000);
-
         return () => {
             supabase.removeChannel(postgresChannel);
             supabase.removeChannel(broadcastChannel);
             if (bc) bc.close();
-            clearInterval(pollInterval);
         };
     }, [user?.id, user?.status]);
 

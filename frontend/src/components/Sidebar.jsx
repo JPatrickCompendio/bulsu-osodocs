@@ -107,15 +107,12 @@ const Sidebar = ({ isOpen, onClose }) => {
 
         const { data, error } = await supabase
           .from('submissions')
-          .select('id, status');
+          .select('id')
+          .or('status.ilike.%completed%,status.ilike.%disapproved%,status.ilike.%rejected%');
 
         if (!error && isMounted) {
-          const completedList = (data || []).filter(sub => {
-            const s = String(sub.status || '').toLowerCase();
-            return s === 'completed' || s.includes('disapproved') || s === 'rejected';
-          });
           const readIds = JSON.parse(localStorage.getItem('completed_read_ids') || '[]');
-          const unreadCount = completedList.filter(sub => !readIds.includes(sub.id)).length;
+          const unreadCount = (data || []).filter(sub => !readIds.includes(sub.id)).length;
           setCompletedCount(unreadCount);
         }
       } catch (err) {
@@ -133,16 +130,13 @@ const Sidebar = ({ isOpen, onClose }) => {
 
         const { data, error } = await supabase
           .from('submissions')
-          .select('id, status')
-          .eq('user_id', user.id);
+          .select('id')
+          .eq('user_id', user.id)
+          .ilike('status', 'returned');
 
         if (!error && isMounted) {
-          const returnedList = (data || []).filter(sub => {
-            const s = String(sub.status || '').toLowerCase();
-            return s === 'returned';
-          });
           const readIds = JSON.parse(localStorage.getItem('mydocs_returned_read_ids') || '[]');
-          const unreadCount = returnedList.filter(sub => !readIds.includes(sub.id)).length;
+          const unreadCount = (data || []).filter(sub => !readIds.includes(sub.id)).length;
           setMyDocsCount(unreadCount);
         }
       } catch (err) {
@@ -166,11 +160,6 @@ const Sidebar = ({ isOpen, onClose }) => {
     window.addEventListener('my-docs-updated', handleGlobalStatusChange);
     window.addEventListener('document-status-changed', handleGlobalStatusChange);
     window.addEventListener('submission-submitted', handleGlobalStatusChange);
-    window.addEventListener('focus', handleGlobalStatusChange);
-
-    const pollInterval = setInterval(() => {
-      handleGlobalStatusChange();
-    }, 6000);
 
     const channelId = `sidebar_realtime_${user.id}_${Math.random().toString(36).substring(2, 9)}`;
     const channel = supabase.channel(channelId)
@@ -191,13 +180,11 @@ const Sidebar = ({ isOpen, onClose }) => {
 
     return () => {
       isMounted = false;
-      clearInterval(pollInterval);
       window.removeEventListener('inbox-updated', handleGlobalStatusChange);
       window.removeEventListener('completed-updated', handleGlobalStatusChange);
       window.removeEventListener('my-docs-updated', handleGlobalStatusChange);
       window.removeEventListener('document-status-changed', handleGlobalStatusChange);
       window.removeEventListener('submission-submitted', handleGlobalStatusChange);
-      window.removeEventListener('focus', handleGlobalStatusChange);
       supabase.removeChannel(channel);
     };
   }, [user]);

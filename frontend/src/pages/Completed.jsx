@@ -266,6 +266,7 @@ const FilterDropdown = ({ label, value, options, onChange, isOpen, onToggle, act
               )
             )
           `)
+          .or('status.ilike.%completed%,status.ilike.%disapproved%,status.ilike.%rejected%')
           .order('updated_at', { ascending: false });
 
         if (isOrgPresident) {
