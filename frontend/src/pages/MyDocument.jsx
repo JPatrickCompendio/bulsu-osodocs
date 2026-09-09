@@ -5142,10 +5142,21 @@ export const MyDocuments = () => {
 
                   <div className="w-full md:w-96 bg-white p-4 sm:p-8 flex flex-col justify-between overflow-y-auto shrink-0 md:shrink">
                     <div className="space-y-6">
-                      <div>
-                        <h4 className="font-bold text-gray-800 text-base mb-1">Attachment Review Panel</h4>
-                        <p className="text-gray-400 text-xs leading-relaxed">Review or return this attachment as part of the current approval step.</p>
-                      </div>
+                      {(() => {
+                        const isLatestVersion = !selectedVersionId || selectedVersionId === (selectedDoc?.raw?.current_version_id || selectedDoc?.current_version_id);
+                        return (
+                          <div>
+                            <h4 className="font-bold text-gray-800 text-base mb-1">
+                              {isLatestVersion ? 'Attachment Review Panel' : 'Attachment Information'}
+                            </h4>
+                            <p className="text-gray-400 text-xs leading-relaxed">
+                              {isLatestVersion
+                                ? 'Review or return this attachment as part of the current approval step.'
+                                : `Viewing attachment for Version ${currentVersion?.version_number || 1}. Historical versions are read-only.`}
+                            </p>
+                          </div>
+                        );
+                      })()}
 
                       {previewDisplayLog && (
                         <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
@@ -5169,8 +5180,9 @@ export const MyDocuments = () => {
                       {(() => {
                         const currentStatusStr = String(selectedDoc?.raw?.status || selectedDoc?.status || currentVersion?.status || '').toLowerCase().trim();
                         const isDeanApprovedStage = currentStatusStr === 'dean approved' || currentStatusStr.includes('dean approved');
+                        const isLatestVersion = !selectedVersionId || selectedVersionId === (selectedDoc?.raw?.current_version_id || selectedDoc?.current_version_id);
 
-                        if (user?.role === 'org-president' || isDeanApprovedStage) {
+                        if (user?.role === 'org-president' || isDeanApprovedStage || !isLatestVersion) {
                           return null;
                         }
 
@@ -5233,6 +5245,7 @@ export const MyDocuments = () => {
                     {(() => {
                       const currentStatusStr = String(selectedDoc?.raw?.status || selectedDoc?.status || currentVersion?.status || '').toLowerCase().trim();
                       const isDeanApprovedStage = currentStatusStr === 'dean approved' || currentStatusStr.includes('dean approved');
+                      const isLatestVersion = !selectedVersionId || selectedVersionId === (selectedDoc?.raw?.current_version_id || selectedDoc?.current_version_id);
 
                       if (isDeanApprovedStage) {
                         return (
@@ -5244,7 +5257,7 @@ export const MyDocuments = () => {
                         );
                       }
 
-                      if (user?.role === 'org-president') {
+                      if (user?.role === 'org-president' || !isLatestVersion) {
                         return null;
                       }
 
