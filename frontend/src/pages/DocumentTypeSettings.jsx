@@ -21,8 +21,45 @@ import {
   Settings,
   ChevronDown,
   ChevronUp,
+  Eye,
+  RotateCcw,
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
+
+const getStoragePath = (filePath) => {
+  let path = String(filePath || '').trim();
+  if (path.startsWith('http')) {
+    const bucketMarker = '/documents/';
+    const index = path.indexOf(bucketMarker);
+    if (index !== -1) {
+      path = path.substring(index + bucketMarker.length);
+    }
+  }
+  const queryIndex = path.indexOf('?');
+  if (queryIndex !== -1) {
+    path = path.substring(0, queryIndex);
+  }
+  if (path.startsWith('documents/')) {
+    path = path.substring('documents/'.length);
+  }
+  return path;
+};
+
+const getFileNameFromUrl = (url) => {
+  if (!url) return '';
+  const cleanPath = getStoragePath(url);
+  const rawName = cleanPath.split('/').pop() || '';
+  const timestampRegex = /^\d{10,14}-/;
+  const cleanName = rawName.replace(timestampRegex, '');
+  return cleanName || rawName;
+};
+
+const formatFileSize = (bytes) => {
+  if (!bytes || isNaN(bytes)) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
 
 const DocumentTypeSettings = () => {
   const { typeId } = useParams();
@@ -63,10 +100,39 @@ const DocumentTypeSettings = () => {
     description: '',
     file: null,
     file_url: '',
+    original_file_url: '',
     is_optional: false,
     requirement_scope: 'OSAS',
   });
   const reqFileRef = useRef(null);
+  const [isPreviewingTemplate, setIsPreviewingTemplate] = useState(false);
+
+  const handleViewTemplate = async (e) => {
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+    if (reqForm.file) {
+      const objectUrl = URL.createObjectURL(reqForm.file);
+      window.open(objectUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (!reqForm.file_url) return;
+
+    setIsPreviewingTemplate(true);
+    try {
+      const finalPath = getStoragePath(reqForm.file_url);
+      const url = await reqService.generateSignedUrl(finalPath);
+      if (url) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      } else {
+        showToast('Could not generate preview link', 'error');
+      }
+    } catch (err) {
+      console.error('Failed to preview template:', err);
+      showToast('Failed to open template preview', 'error');
+    } finally {
+      setIsPreviewingTemplate(false);
+    }
+  };
 
   const isProposal = typeFormData.name.toLowerCase().includes('activity proposal');
 
@@ -133,9 +199,19 @@ const DocumentTypeSettings = () => {
   };
 
   const resetReqForm = () => {
-    setReqForm({ title: '', referenceCode: '', description: '', file: null, file_url: '', is_optional: false, requirement_scope: 'OSAS' });
+    setReqForm({
+      title: '',
+      referenceCode: '',
+      description: '',
+      file: null,
+      file_url: '',
+      original_file_url: '',
+      is_optional: false,
+      requirement_scope: 'OSAS',
+    });
     setEditingReqId(null);
     setShowAddForm(false);
+    if (reqFileRef.current) reqFileRef.current.value = '';
   };
 
   const startEditRequirement = (req) => {
@@ -147,9 +223,11 @@ const DocumentTypeSettings = () => {
       description: req.description || '',
       file: null,
       file_url: req.file_url || '',
+      original_file_url: req.file_url || '',
       is_optional: req.is_optional || false,
       requirement_scope: req.requirement_scope || 'OSAS',
     });
+    if (reqFileRef.current) reqFileRef.current.value = '';
   };
 
   const handleSaveType = async (e) => {
@@ -199,13 +277,19 @@ const DocumentTypeSettings = () => {
           }
         }
         finalFilePath = await reqService.uploadTemplate(reqForm.file, documentType.name, subtypeSlug);
+      } else if (!reqForm.file_url && editingReqId) {
+        const existing = requirements.find((r) => r.id === editingReqId);
+        if (existing?.file_url) {
+          await reqService.deleteStorageFile(existing.file_url).catch(() => {});
+        }
+        finalFilePath = null;
       }
 
       const payload = {
         title: reqForm.title,
         referenceCode: reqForm.referenceCode,
         description: reqForm.description,
-        file_url: finalFilePath,
+        file_url: finalFilePath || null,
         subtype_id: subType, // New field instead of proposal_type
         updatedAt: new Date().toISOString(),
         is_optional: reqForm.is_optional || false,
@@ -374,23 +458,178 @@ const DocumentTypeSettings = () => {
         />
       </div>
       <div>
-        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Template</label>
-        <div
-          onClick={() => reqFileRef.current?.click()}
-          className="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center cursor-pointer hover:border-primary-green/40 bg-white"
-        >
-          <Upload className="mx-auto text-gray-300 mb-2" size={24} />
-          <p className="text-xs font-bold text-gray-500">
-            {reqForm.file ? reqForm.file.name : reqForm.file_url ? 'Template uploaded (click to replace)' : 'Upload PDF or DOCX'}
-          </p>
-          <input
-            type="file"
-            ref={reqFileRef}
-            className="hidden"
-            accept=".pdf,.docx"
-            onChange={(e) => e.target.files[0] && setReqForm({ ...reqForm, file: e.target.files[0] })}
-          />
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">
+            Template File
+          </label>
+          {reqForm.original_file_url && !reqForm.file_url && !reqForm.file && (
+            <button
+              type="button"
+              onClick={() => setReqForm({ ...reqForm, file_url: reqForm.original_file_url })}
+              className="text-[11px] font-bold text-primary-green hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              <RotateCcw size={12} />
+              Undo template removal
+            </button>
+          )}
         </div>
+
+        {/* State 1: A new local file was selected */}
+        {reqForm.file ? (
+          <div className="bg-emerald-50/70 border-2 border-emerald-200 rounded-xl p-4 flex items-center justify-between gap-4 transition-all">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                <FileText size={20} />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-black text-emerald-950 truncate">
+                    {reqForm.file.name}
+                  </span>
+                  <span className="text-[10px] bg-emerald-200/80 text-emerald-900 font-bold px-2 py-0.5 rounded-full shrink-0">
+                    New {formatFileSize(reqForm.file.size)}
+                  </span>
+                </div>
+                <p className="text-[11px] text-emerald-700 font-medium mt-0.5 truncate">
+                  {reqForm.original_file_url
+                    ? `Replaces: ${getFileNameFromUrl(reqForm.original_file_url)}`
+                    : 'Ready to upload on save'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={handleViewTemplate}
+                title="Preview selected file"
+                className="p-2 text-emerald-700 hover:text-emerald-900 hover:bg-emerald-100/60 rounded-lg transition-all cursor-pointer"
+              >
+                <Eye size={17} />
+              </button>
+              <button
+                type="button"
+                onClick={() => reqFileRef.current?.click()}
+                title="Choose different file"
+                className="px-3 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-100/60 hover:bg-emerald-200/70 rounded-lg transition-all cursor-pointer"
+              >
+                Change
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setReqForm({
+                    ...reqForm,
+                    file: null,
+                    file_url: reqForm.original_file_url || '',
+                  });
+                  if (reqFileRef.current) reqFileRef.current.value = '';
+                }}
+                title="Cancel replacement"
+                className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+        ) : reqForm.file_url ? (
+          /* State 2: Existing attachment from database */
+          <div className="bg-white border-2 border-emerald-100/80 rounded-xl p-4 flex items-center justify-between gap-4 shadow-sm hover:border-emerald-200 transition-all">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-lg bg-emerald-50 text-primary-green flex items-center justify-center shrink-0 border border-emerald-100">
+                <FileText size={20} />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-black text-gray-800 truncate" title={getFileNameFromUrl(reqForm.file_url)}>
+                    {getFileNameFromUrl(reqForm.file_url)}
+                  </span>
+                  <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200/60 font-bold px-2 py-0.5 rounded-full shrink-0">
+                    Existing Template
+                  </span>
+                </div>
+                <p className="text-[11px] text-gray-400 font-medium mt-0.5">
+                  Click Replace to select a new file, or X to remove attachment
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={handleViewTemplate}
+                disabled={isPreviewingTemplate}
+                title="View existing template"
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded-lg transition-all cursor-pointer"
+              >
+                {isPreviewingTemplate ? <Loader2 size={14} className="animate-spin" /> : <Eye size={15} />}
+                <span>View</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => reqFileRef.current?.click()}
+                title="Replace with new file"
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-50 rounded-lg transition-all cursor-pointer"
+              >
+                <Upload size={14} />
+                <span>Replace</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setReqForm({
+                    ...reqForm,
+                    file: null,
+                    file_url: '',
+                  });
+                  if (reqFileRef.current) reqFileRef.current.value = '';
+                  showToast('Template removed. Click Save Changes to apply.', 'info');
+                }}
+                title="Remove template attachment"
+                className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* State 3: No file attached / Dropzone */
+          <div
+            onClick={() => reqFileRef.current?.click()}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (e.dataTransfer.files?.[0]) {
+                setReqForm({ ...reqForm, file: e.dataTransfer.files[0] });
+              }
+            }}
+            className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-all bg-white hover:bg-gray-50/50 ${
+              reqForm.original_file_url
+                ? 'border-amber-200 hover:border-amber-300'
+                : 'border-gray-200 hover:border-primary-green/50'
+            }`}
+          >
+            <Upload className={`mx-auto mb-2 ${reqForm.original_file_url ? 'text-amber-500' : 'text-gray-300'}`} size={24} />
+            <p className="text-xs font-bold text-gray-700">
+              {reqForm.original_file_url ? 'Upload replacement PDF or DOCX' : 'Upload PDF or DOCX template'}
+            </p>
+            <p className="text-[10px] text-gray-400 font-medium mt-1">
+              Click to browse or drag and drop file here (Supports .pdf, .docx)
+            </p>
+          </div>
+        )}
+
+        <input
+          type="file"
+          ref={reqFileRef}
+          className="hidden"
+          accept=".pdf,.docx"
+          onChange={(e) => {
+            if (e.target.files?.[0]) {
+              setReqForm({ ...reqForm, file: e.target.files[0] });
+            }
+          }}
+        />
       </div>
       <div className="flex items-center justify-between bg-white border border-gray-200 px-5 py-4 rounded-xl mt-2">
         <div>
