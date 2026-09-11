@@ -31,5 +31,6 @@ export { default as SchoolYearPage } from './SchoolYearPage';
 export { default as AcademicEventsPage } from './AcademicEventsPage';
 export { default as SubmissionWindowsPage } from './SubmissionWindowsPage';
 export { default as OrganizationActivitiesPage } from './OrganizationActivitiesPage';
+export { default as ListOfOrganizations } from './ListOfOrganizations';
 
 

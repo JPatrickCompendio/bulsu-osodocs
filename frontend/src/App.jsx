@@ -17,6 +17,7 @@ import {
   AcademicEventsPage,
   SubmissionWindowsPage,
   OrganizationActivitiesPage,
+  ListOfOrganizations,
 } from './pages/Pages';
 import Completed from './pages/Completed';
 import UserManagement from './pages/UserManagement';
@@ -51,6 +52,13 @@ const App = () => {
             } />
             <Route path="/profile" element={<MyProfile />} />
             
+            {/* Organizations Directory (Read-only for Chairman, Vice Chairman, etc.) */}
+            <Route path="/organizations" element={
+              <ProtectedRoute allowedRoles={['admin', 'chairman', 'vice-chairman', 'vice chairman', 'oso-staff']}>
+                <ListOfOrganizations />
+              </ProtectedRoute>
+            } />
+
             {/* Admin only */}
             <Route path="/users" element={
               <ProtectedRoute allowedRoles={['admin']}>
