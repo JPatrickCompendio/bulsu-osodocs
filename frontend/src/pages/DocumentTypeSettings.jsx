@@ -27,6 +27,41 @@ import {
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 
+const getStoragePath = (filePath) => {
+  let path = String(filePath || '').trim();
+  if (path.startsWith('http')) {
+    const bucketMarker = '/documents/';
+    const index = path.indexOf(bucketMarker);
+    if (index !== -1) {
+      path = path.substring(index + bucketMarker.length);
+    }
+  }
+  const queryIndex = path.indexOf('?');
+  if (queryIndex !== -1) {
+    path = path.substring(0, queryIndex);
+  }
+  if (path.startsWith('documents/')) {
+    path = path.substring('documents/'.length);
+  }
+  return path;
+};
+
+const getFileNameFromUrl = (url) => {
+  if (!url) return '';
+  const cleanPath = getStoragePath(url);
+  const rawName = cleanPath.split('/').pop() || '';
+  const timestampRegex = /^\d{10,14}-/;
+  const cleanName = rawName.replace(timestampRegex, '');
+  return cleanName || rawName;
+};
+
+const formatFileSize = (bytes) => {
+  if (!bytes || isNaN(bytes)) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
 const DocumentTypeSettings = () => {
   const { typeId } = useParams();
   const navigate = useNavigate();
@@ -66,10 +101,39 @@ const DocumentTypeSettings = () => {
     description: '',
     file: null,
     file_url: '',
+    original_file_url: '',
     is_optional: false,
     requirement_scope: 'OSAS',
   });
   const reqFileRef = useRef(null);
+  const [isPreviewingTemplate, setIsPreviewingTemplate] = useState(false);
+
+  const handleViewTemplate = async (e) => {
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+    if (reqForm.file) {
+      const objectUrl = URL.createObjectURL(reqForm.file);
+      window.open(objectUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (!reqForm.file_url) return;
+
+    setIsPreviewingTemplate(true);
+    try {
+      const finalPath = getStoragePath(reqForm.file_url);
+      const url = await reqService.generateSignedUrl(finalPath);
+      if (url) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      } else {
+        showToast('Could not generate preview link', 'error');
+      }
+    } catch (err) {
+      console.error('Failed to preview template:', err);
+      showToast('Failed to open template preview', 'error');
+    } finally {
+      setIsPreviewingTemplate(false);
+    }
+  };
 
   const isProposal = typeFormData.name.toLowerCase().includes('activity proposal');
 
@@ -170,23 +234,36 @@ const DocumentTypeSettings = () => {
   };
 
   const resetReqForm = () => {
-    setReqForm({ title: '', referenceCode: '', description: '', file: null, file_url: '', is_optional: false, requirement_scope: 'OSAS' });
+    setReqForm({
+      title: '',
+      referenceCode: '',
+      description: '',
+      file: null,
+      file_url: '',
+      original_file_url: '',
+      is_optional: false,
+      requirement_scope: 'OSAS',
+    });
     setEditingReqId(null);
     setShowAddForm(false);
+    if (reqFileRef.current) reqFileRef.current.value = '';
   };
 
   const startEditRequirement = (req) => {
     setEditingReqId(req.id);
     setShowAddForm(false);
+    const existingFileUrl = req.file_url || req.fileUrl || req.template_url || req.file_path || '';
     setReqForm({
-      title: req.title,
+      title: req.title || '',
       referenceCode: req.referenceCode || '',
       description: req.description || '',
       file: null,
-      file_url: req.file_url || '',
+      file_url: existingFileUrl,
+      original_file_url: existingFileUrl,
       is_optional: req.is_optional || false,
       requirement_scope: req.requirement_scope || 'OSAS',
     });
+    if (reqFileRef.current) reqFileRef.current.value = '';
   };
 
   const handleSaveType = async (e) => {
@@ -289,6 +366,12 @@ const DocumentTypeSettings = () => {
 
       if (reqForm.file) {
         finalFilePath = await reqService.uploadTemplate(reqForm.file, documentType.name, subtypeSlug);
+      } else if (!reqForm.file_url && editingReqId) {
+        const existing = requirements.find((r) => r.id === editingReqId);
+        if (existing?.file_url) {
+          await reqService.deleteStorageFile(existing.file_url).catch(() => {});
+        }
+        finalFilePath = null;
       }
 
       const payload = {
@@ -297,6 +380,8 @@ const DocumentTypeSettings = () => {
         description: reqForm.description,
         file_url: finalFilePath,
         subtype_id: subType,
+        file_url: finalFilePath || null,
+        subtype_id: subType, // New field instead of proposal_type
         updatedAt: new Date().toISOString(),
         is_optional: reqForm.is_optional || false,
         requirement_scope: reqForm.requirement_scope || 'OSAS',
