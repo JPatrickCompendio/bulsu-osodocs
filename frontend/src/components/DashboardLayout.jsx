@@ -63,8 +63,8 @@ const isAnnouncementTargetedToUser = (ann, user) => {
     return role === 'oso-staff' || role === 'chairman' || role === 'vice-chairman';
   }
 
-  if (targetLower === 'sds-coordinator' || targetLower === 'sds_coordinator') {
-    return role === 'sds-coordinator';
+  if (targetLower === 'sds-coordinator' || targetLower === 'sds_coordinator' || targetLower === 'admin') {
+    return role === 'sds-coordinator' || role === 'admin';
   }
 
   if (targetLower === 'chairman') {

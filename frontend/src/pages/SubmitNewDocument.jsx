@@ -862,6 +862,32 @@ const SubmitNewDocument = () => {
     return missing;
   };
 
+  const checkSchedulesForBlockedDates = () => {
+    const schedules = proposalDetails.schedules || [];
+    for (const sched of schedules) {
+      if (!sched.activity_date) continue;
+      const startDateStr = sched.activity_date.split('T')[0];
+      const endDateStr = sched.end_date ? sched.end_date.split('T')[0] : startDateStr;
+
+      const startDate = new Date(startDateStr);
+      const endDate = new Date(endDateStr);
+
+      let current = new Date(startDate);
+      while (current <= endDate) {
+        const yyyy = current.getFullYear();
+        const mm = String(current.getMonth() + 1).padStart(2, '0');
+        const dd = String(current.getDate()).padStart(2, '0');
+        const dateStr = `${yyyy}-${mm}-${dd}`;
+
+        if (!validateDateSelection(dateStr)) {
+          return false;
+        }
+        current.setDate(current.getDate() + 1);
+      }
+    }
+    return true;
+  };
+
   const handleNextFromStep1 = () => {
     if (isMemberReadOnly) {
       setProposalStep(2);
@@ -882,6 +908,11 @@ const SubmitNewDocument = () => {
       }, 100);
       return;
     }
+
+    if (!checkSchedulesForBlockedDates()) {
+      return;
+    }
+
     setShowValidationHighlights(false);
     setProposalStep(2);
   };
@@ -1909,7 +1940,13 @@ const SubmitNewDocument = () => {
         }
       }
 
-      // 2. Upload all local files to bucket in parallel
+      // 2. Save Proposal Details first if it's an Activity Proposal (to validate blocked dates before uploading files)
+      const isProposal = selectedType.name.toLowerCase().includes('activity proposal');
+      if (isProposal) {
+        await subService.saveProposalDetails(versionId, proposalDetails, selectedSubtypeObj?.id || null, subType);
+      }
+
+      // 3. Upload all local files to bucket in parallel
       const newlyUploaded = await Promise.all(
         Object.entries(localFiles).map(async ([reqId, file]) => {
           const path = await subService.uploadSubmissionFile(file, selectedType.name, submissionId, versionNumber, subType, reqId);
@@ -1929,12 +1966,6 @@ const SubmitNewDocument = () => {
           files: '[]', // because localFiles is cleared
           details: JSON.stringify(proposalDetails)
         };
-      }
-
-      // 3. Save Proposal Details if it's an Activity Proposal
-      const isProposal = selectedType.name.toLowerCase().includes('activity proposal');
-      if (isProposal) {
-        await subService.saveProposalDetails(versionId, proposalDetails, selectedSubtypeObj?.id || null, subType);
       }
 
       // 4. If status is 'submitted', finalize it
@@ -2849,7 +2880,7 @@ const SubmitNewDocument = () => {
                 </div>
               )}
 
-              {proposalStep === 1 && (
+              {isProposal && proposalStep === 1 && (
                 <div className="bg-white p-4 sm:p-6 md:p-8 rounded-2xl shadow-sm border border-gray-100 space-y-4 sm:space-y-6 animate-in fade-in slide-in-from-right-4 duration-500 mt-2 sm:mt-3">
                   <div className="flex items-center gap-3 pb-4 border-b border-gray-100">
                     <div className="w-8 h-8 bg-primary-green/10 rounded-lg flex items-center justify-center text-primary-green shrink-0">
@@ -3504,7 +3535,7 @@ const SubmitNewDocument = () => {
                       </fieldset>
                     </div>
                   )}
-                  {proposalStep === 2 && (
+                  {isProposal && proposalStep === 2 && (
                     <div className="bg-white p-3 sm:p-6 rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-right-4 duration-500 overflow-hidden">
                       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
                         <div className="flex items-center gap-4">
@@ -3548,7 +3579,7 @@ const SubmitNewDocument = () => {
                     </div>
                   )}
 
-                  {proposalStep === 3 && (
+                  {isProposal && proposalStep === 3 && (
                     <div className="bg-white p-4 sm:p-8 rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-right-4 duration-500">
                       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 pb-6 border-b border-gray-100 mb-6">
                         <div className="w-10 h-10 bg-primary-green/10 rounded-xl flex items-center justify-center text-primary-green shrink-0">

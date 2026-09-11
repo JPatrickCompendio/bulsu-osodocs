@@ -26,8 +26,23 @@ import {
   MoreHorizontal,
   Plus,
   ListChecks,
+  Clock,
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
+
+const formatModifiedDate = (dateStr) => {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+};
 
 const getStoragePath = (filePath) => {
   let path = String(filePath || '').trim();
@@ -489,6 +504,7 @@ const ListOfRequirements = () => {
                     <th className="hidden sm:table-cell px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] text-white">Code</th>
                     <th className="hidden lg:table-cell px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] text-white">Description</th>
                     <th className="hidden md:table-cell px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] text-white">Attachment</th>
+                    <th className="hidden xl:table-cell px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] text-white">Last Modified</th>
                     <th className="px-3 sm:px-6 py-4 font-black text-[10px] uppercase tracking-[0.2em] text-right text-white">Action</th>
                   </tr>
                 </thead>
@@ -517,6 +533,10 @@ const ListOfRequirements = () => {
                               )}
                             </div>
                             <span className="font-semibold text-sm sm:text-base text-gray-800 leading-tight">{req.title}</span>
+                            <span className="text-[10px] text-gray-400 font-medium flex items-center gap-1 xl:hidden mt-0.5">
+                              <Clock size={11} className="shrink-0" />
+                              Modified: {formatModifiedDate(req.updated_at || req.updatedAt || req.created_at)}
+                            </span>
                           </div>
                         </td>
                         <td className="hidden sm:table-cell px-6 py-4">
@@ -540,6 +560,12 @@ const ListOfRequirements = () => {
                           ) : (
                             <span className="font-black text-xs text-gray-400 uppercase">None</span>
                           )}
+                        </td>
+                        <td className="hidden xl:table-cell px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5 text-gray-500 font-medium text-xs">
+                            <Clock size={14} className="text-gray-400 shrink-0" />
+                            <span>{formatModifiedDate(req.updated_at || req.updatedAt || req.created_at)}</span>
+                          </div>
                         </td>
                         <td className="px-3 sm:px-6 py-4 relative">
                           <div className="flex justify-end relative">

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../config/api';
+import { apiClient, apiUrl } from '../config/apiClient';
 import * as reqService from '../services/requirementService';
 import * as subtypeService from '../services/subtypeService';
 import { supabase } from '../supabaseClient';
@@ -21,6 +22,8 @@ import {
   Settings,
   ChevronDown,
   ChevronUp,
+  Eye,
+  Paperclip,
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 
@@ -84,6 +87,40 @@ const DocumentTypeSettings = () => {
     if (!documentType?.id) return;
     loadSubtypes(documentType.id);
   }, [documentType?.id]);
+
+  const [previewFile, setPreviewFile] = useState(null);
+  const [filePreviewUrl, setFilePreviewUrl] = useState('');
+
+  useEffect(() => {
+    const fetchUrl = async () => {
+      if (!previewFile?.url) {
+        setFilePreviewUrl('');
+        return;
+      }
+      let path = String(previewFile.url || '').trim();
+      if (path.startsWith('http')) {
+        const bucketMarker = '/documents/';
+        const index = path.indexOf(bucketMarker);
+        if (index !== -1) path = path.substring(index + bucketMarker.length);
+      }
+      const queryIndex = path.indexOf('?');
+      if (queryIndex !== -1) path = path.substring(0, queryIndex);
+      if (path.startsWith('documents/')) path = path.substring('documents/'.length);
+
+      try {
+        const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600);
+        if (data?.signedUrl) {
+          setFilePreviewUrl(data.signedUrl);
+          return;
+        }
+      } catch (e) {
+        console.error('Failed to get signed URL:', e);
+      }
+      const { data } = supabase.storage.from('documents').getPublicUrl(path);
+      setFilePreviewUrl(data?.publicUrl || '');
+    };
+    fetchUrl();
+  }, [previewFile]);
 
   useEffect(() => {
     if (!documentType?.id) return;
@@ -179,6 +216,58 @@ const DocumentTypeSettings = () => {
     }
   };
 
+  const sendRequirementNotifications = async (reqTitle, actionType = 'updated') => {
+    if (!user) return;
+    const role = String(user.role || '').toLowerCase().trim();
+    const isOsoStaff = role === 'chairman' || role === 'vice-chairman' || role === 'vice_chairman' || role === 'oso-staff' || role === 'oso staff' || role.includes('chairman') || role.includes('oso');
+    const isSdsCoordinator = role === 'admin' || role === 'sds-coordinator' || role === 'sds_coordinator' || role.includes('sds');
+
+    const roleLabel = isOsoStaff ? 'OSO Staff' : (isSdsCoordinator ? 'SDS Coordinator' : 'Administrator');
+    const docTypeName = documentType?.name || 'Category';
+    const notifTitle = `Requirement Document ${actionType === 'created' ? 'Added' : 'Updated'}`;
+    const notifContent = `${roleLabel} (${user.full_name || 'Staff'}) ${actionType === 'created' ? 'added a new requirement' : 'updated the requirement template'} "${reqTitle}" under ${docTypeName}. Please check the List of Requirements.`;
+
+    const audiences = [];
+    if (isOsoStaff) {
+      audiences.push('sds-coordinator', 'all-orgs');
+    } else if (isSdsCoordinator) {
+      audiences.push('oso-staff', 'all-orgs');
+    } else {
+      audiences.push('oso-staff', 'sds-coordinator', 'all-orgs');
+    }
+
+    try {
+      await Promise.all(
+        audiences.map((target_audience) =>
+          apiClient.post(apiUrl('/api/announcements'), {
+            title: notifTitle,
+            content: notifContent,
+            target_audience,
+            is_active: true,
+            created_by: user.id,
+          })
+        )
+      );
+      window.dispatchEvent(new CustomEvent('announcement-updated'));
+    } catch (err) {
+      console.warn('API announcement creation failed, trying direct DB insert fallback:', err);
+      try {
+        const inserts = audiences.map((target_audience) => ({
+          title: notifTitle,
+          content: notifContent,
+          target_audience,
+          is_active: true,
+          created_by: user.id,
+          created_at: new Date().toISOString()
+        }));
+        await supabase.from('announcements').insert(inserts);
+        window.dispatchEvent(new CustomEvent('announcement-updated'));
+      } catch (fallbackErr) {
+        console.error('Fallback announcement insert failed:', fallbackErr);
+      }
+    }
+  };
+
   const handleSaveRequirement = async (e) => {
     e.preventDefault();
     if (!documentType?.id) {
@@ -191,13 +280,14 @@ const DocumentTypeSettings = () => {
       const currentSubtypeObj = subtypes.find(s => s.id === subType);
       const subtypeSlug = currentSubtypeObj ? currentSubtypeObj.name : null;
 
-      if (reqForm.file) {
-        if (editingReqId) {
-          const existing = requirements.find((r) => r.id === editingReqId);
-          if (existing?.file_url) {
-            await reqService.deleteStorageFile(existing.file_url).catch(() => {});
-          }
+      if (editingReqId) {
+        const existing = requirements.find((r) => r.id === editingReqId);
+        if (existing?.file_url && (reqForm.file || !reqForm.file_url)) {
+          await reqService.deleteStorageFile(existing.file_url).catch(() => {});
         }
+      }
+
+      if (reqForm.file) {
         finalFilePath = await reqService.uploadTemplate(reqForm.file, documentType.name, subtypeSlug);
       }
 
@@ -206,7 +296,7 @@ const DocumentTypeSettings = () => {
         referenceCode: reqForm.referenceCode,
         description: reqForm.description,
         file_url: finalFilePath,
-        subtype_id: subType, // New field instead of proposal_type
+        subtype_id: subType,
         updatedAt: new Date().toISOString(),
         is_optional: reqForm.is_optional || false,
         requirement_scope: reqForm.requirement_scope || 'OSAS',
@@ -215,9 +305,11 @@ const DocumentTypeSettings = () => {
       if (editingReqId) {
         await reqService.updateRequirement(editingReqId, payload);
         showToast('Requirement updated');
+        await sendRequirementNotifications(reqForm.title, 'updated');
       } else {
         await reqService.createRequirement({ ...payload, documentTypeID: documentType.id });
         showToast('Requirement created');
+        await sendRequirementNotifications(reqForm.title, 'created');
       }
       resetReqForm();
       loadRequirements(documentType.id, subType);
@@ -374,23 +466,88 @@ const DocumentTypeSettings = () => {
         />
       </div>
       <div>
-        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Template</label>
-        <div
-          onClick={() => reqFileRef.current?.click()}
-          className="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center cursor-pointer hover:border-primary-green/40 bg-white"
-        >
-          <Upload className="mx-auto text-gray-300 mb-2" size={24} />
-          <p className="text-xs font-bold text-gray-500">
-            {reqForm.file ? reqForm.file.name : reqForm.file_url ? 'Template uploaded (click to replace)' : 'Upload PDF or DOCX'}
-          </p>
-          <input
-            type="file"
-            ref={reqFileRef}
-            className="hidden"
-            accept=".pdf,.docx"
-            onChange={(e) => e.target.files[0] && setReqForm({ ...reqForm, file: e.target.files[0] })}
-          />
-        </div>
+        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Template File</label>
+        {reqForm.file ? (
+          <div className="border-2 border-emerald-200 bg-emerald-50/50 rounded-xl p-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-9 h-9 bg-emerald-100 rounded-lg flex items-center justify-center text-primary-green shrink-0">
+                <FileText size={18} />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-gray-800 truncate max-w-[200px] sm:max-w-xs">{reqForm.file.name}</span>
+                  <span className="text-[9px] bg-emerald-200 text-emerald-800 px-2 py-0.5 rounded font-black uppercase shrink-0">New Selection</span>
+                </div>
+                <p className="text-[10px] text-gray-500 font-medium mt-0.5">Click X to cancel and clear this file selection</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setReqForm({ ...reqForm, file: null })}
+              className="p-2 bg-red-100 hover:bg-red-200 text-red-600 rounded-lg transition-all shrink-0 cursor-pointer"
+              title="Remove selected file"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        ) : reqForm.file_url ? (
+          <div className="border-2 border-blue-200 bg-blue-50/40 rounded-xl p-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600 shrink-0">
+                <Paperclip size={18} />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-gray-800 truncate max-w-[180px] sm:max-w-xs" title={reqForm.file_url.split('/').pop()}>
+                    {reqForm.file_url.split('/').pop()}
+                  </span>
+                  <span className="text-[9px] bg-blue-200 text-blue-800 px-2 py-0.5 rounded font-black uppercase shrink-0">Current Template</span>
+                </div>
+                <div className="flex items-center gap-3 mt-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewFile({ title: reqForm.title || 'Requirement Template', url: reqForm.file_url })}
+                    className="text-[11px] font-bold text-blue-700 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Eye size={13} /> Preview File
+                  </button>
+                  <span className="text-gray-300">•</span>
+                  <button
+                    type="button"
+                    onClick={() => reqFileRef.current?.click()}
+                    className="text-[11px] font-bold text-gray-600 hover:text-primary-green hover:underline cursor-pointer"
+                  >
+                    Replace File
+                  </button>
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setReqForm({ ...reqForm, file_url: '', file: null })}
+              className="p-2 bg-red-100 hover:bg-red-200 text-red-600 rounded-lg transition-all shrink-0 cursor-pointer"
+              title="Remove attached template file"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        ) : (
+          <div
+            onClick={() => reqFileRef.current?.click()}
+            className="border-2 border-dashed border-gray-200 hover:border-primary-green/50 rounded-xl p-4 text-center cursor-pointer bg-white transition-all group"
+          >
+            <Upload className="mx-auto text-gray-300 group-hover:text-primary-green transition-colors mb-2" size={24} />
+            <p className="text-xs font-bold text-gray-600 group-hover:text-primary-green">Upload PDF or DOCX Template (Optional)</p>
+            <p className="text-[10px] text-gray-400 font-medium mt-0.5">Click to browse files</p>
+          </div>
+        )}
+        <input
+          type="file"
+          ref={reqFileRef}
+          className="hidden"
+          accept=".pdf,.docx"
+          onChange={(e) => e.target.files[0] && setReqForm({ ...reqForm, file: e.target.files[0] })}
+        />
       </div>
       <div className="flex items-center justify-between bg-white border border-gray-200 px-5 py-4 rounded-xl mt-2">
         <div>
@@ -723,6 +880,14 @@ const DocumentTypeSettings = () => {
                           {req.description && (
                             <p className="text-xs text-gray-500 font-medium mt-2 line-clamp-2">{req.description}</p>
                           )}
+                          {req.file_url ? (
+                            <div className="mt-2 flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg w-fit border border-emerald-100">
+                              <Paperclip size={13} className="shrink-0 text-emerald-600" />
+                              <span className="truncate max-w-[250px]">{req.file_url.split('/').pop()}</span>
+                            </div>
+                          ) : (
+                            <span className="mt-2 inline-block text-[10px] font-bold text-gray-400 uppercase tracking-wider">No template attached</span>
+                          )}
                         </div>
                       </div>
                       <div className="flex gap-2 shrink-0">
@@ -947,6 +1112,68 @@ const DocumentTypeSettings = () => {
                   </div>
                 </form>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PDF / DOCX Preview Modal Overlay */}
+      {previewFile && (
+        <div 
+          onClick={() => setPreviewFile(null)}
+          className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100000] flex items-center justify-center p-2.5 sm:p-4 animate-in fade-in duration-300"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl sm:rounded-3xl w-[95vw] sm:max-w-5xl h-[88vh] sm:h-[85vh] flex flex-col overflow-hidden shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300 my-auto"
+          >
+            {/* Header */}
+            <div className="bg-gray-50 border-b border-gray-100 px-4 sm:px-8 py-3.5 sm:py-5 flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 shrink-0">
+                  <Paperclip size={18} className="sm:w-5 sm:h-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-bold text-gray-800 text-sm sm:text-lg truncate max-w-[200px] sm:max-w-md" title={previewFile.title}>
+                    {previewFile.title}
+                  </h3>
+                  <p className="text-gray-400 text-[10px] sm:text-xs font-medium max-w-[180px] sm:max-w-sm truncate" title={previewFile.url?.split('/').pop()}>
+                    File: {previewFile.url?.split('/').pop()}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewFile(null)}
+                className="p-2 sm:p-2.5 bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-900 rounded-full transition-all shrink-0 cursor-pointer shadow-xs"
+                aria-label="Close preview"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 flex flex-col overflow-hidden bg-gray-100 p-2.5 sm:p-6">
+              <div className="flex-1 bg-white rounded-xl sm:rounded-2xl overflow-hidden shadow-sm border border-gray-200/50 relative">
+                {previewFile.url?.toLowerCase().includes('.pdf') ? (
+                  <iframe
+                    src={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=Fit` : null}
+                    className="w-full h-full border-0 rounded-xl sm:rounded-2xl"
+                    title="PDF Preview"
+                  />
+                ) : previewFile.url?.toLowerCase().includes('.docx') ? (
+                  <iframe
+                    src={filePreviewUrl ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(filePreviewUrl)}` : null}
+                    className="w-full h-full border-0 rounded-xl sm:rounded-2xl"
+                    title="Word Preview"
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center p-4 sm:p-6 text-center">
+                    <FileText size={40} className="text-gray-300 mb-3 sm:w-12 sm:h-12 animate-bounce" />
+                    <h4 className="font-bold text-gray-700 text-xs sm:text-sm mb-1">Loading Preview...</h4>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
