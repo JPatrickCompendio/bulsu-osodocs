@@ -217,13 +217,14 @@ const DocumentTypeSettings = () => {
   const startEditRequirement = (req) => {
     setEditingReqId(req.id);
     setShowAddForm(false);
+    const existingFileUrl = req.file_url || req.fileUrl || req.template_url || req.file_path || '';
     setReqForm({
-      title: req.title,
+      title: req.title || '',
       referenceCode: req.referenceCode || '',
       description: req.description || '',
       file: null,
-      file_url: req.file_url || '',
-      original_file_url: req.file_url || '',
+      file_url: existingFileUrl,
+      original_file_url: existingFileUrl,
       is_optional: req.is_optional || false,
       requirement_scope: req.requirement_scope || 'OSAS',
     });
