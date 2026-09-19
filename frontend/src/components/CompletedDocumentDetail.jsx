@@ -109,14 +109,14 @@ const formatSubmittedLabel = (dateStr) => {
 };
 
 const isImageProof = (file) => {
-  const name = String(file?.file_name || '').toLowerCase();
-  const url = String(file?.file_url || '').toLowerCase();
+  const name = String(file?.file_name || file?.name || '').toLowerCase();
+  const url = String(file?.file_url || file?.url || '').toLowerCase();
+  if (name.endsWith('.pdf') || url.includes('.pdf')) return false;
   return (
     name.endsWith('.jpg') ||
     name.endsWith('.jpeg') ||
     name.endsWith('.png') ||
     name.endsWith('.webp') ||
-    url.includes('accom-report') ||
     url.endsWith('.jpg') ||
     url.endsWith('.jpeg') ||
     url.endsWith('.png') ||
@@ -130,6 +130,7 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
   const [timelineLogs, setTimelineLogs] = React.useState([]);
   const [accomplishmentReport, setAccomplishmentReport] = React.useState(null);
   const [accomplishmentImages, setAccomplishmentImages] = React.useState([]);
+  const [financialReportFiles, setFinancialReportFiles] = React.useState([]);
   const [externalProofs, setExternalProofs] = React.useState([]);
   const [isFilesOpen, setIsFilesOpen] = React.useState(true);
   const [previewUrl, setPreviewUrl] = React.useState(null);
@@ -341,6 +342,43 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
         } catch (extErr) {
           console.error('Error fetching external proofs:', extErr);
           setExternalProofs([]);
+        }
+
+        // Fetch Financial Report documents
+        try {
+          const { data: finData, error: finErr } = await supabase.storage
+            .from('documents')
+            .list(`financial-report/${submissionId}`);
+
+          if (!finErr && finData && finData.length > 0) {
+            const validFinFiles = finData.filter((file) => /\.(jpg|jpeg|png|gif|webp|bmp|pdf)$/i.test(file.name));
+            const finUrls = await Promise.all(
+              validFinFiles.map(async (file) => {
+                const path = `financial-report/${submissionId}/${file.name}`;
+                const isPdf = /\.pdf$/i.test(file.name);
+                const cacheKey = `fin:${path}`;
+                if (completedSignedUrlCache.current.has(cacheKey)) {
+                  return { ...file, url: completedSignedUrlCache.current.get(cacheKey), path, isPdf };
+                }
+                try {
+                  const { data } = await supabase.storage.from('documents').createSignedUrl(path, 86400);
+                  if (data?.signedUrl) {
+                    completedSignedUrlCache.current.set(cacheKey, data.signedUrl);
+                    return { ...file, url: data.signedUrl, path, isPdf };
+                  }
+                } catch (error) {
+                  console.warn('Signed URL unavailable for financial report file:', error);
+                }
+                return { ...file, url: getStoragePublicUrl(path), path, isPdf };
+              })
+            );
+            setFinancialReportFiles(finUrls.filter(Boolean));
+          } else {
+            setFinancialReportFiles([]);
+          }
+        } catch (finErr) {
+          console.error('Error fetching financial report files in completed detail:', finErr);
+          setFinancialReportFiles([]);
         }
 
         const { data: logs, error: logsErr } = await supabase
@@ -949,6 +987,56 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
             ) : (
               <p className="text-sm text-gray-500 italic py-4">No proof of activity images uploaded.</p>
             )}
+          </div>
+        )}
+
+        {viewingLatestVersion && financialReportFiles.length > 0 && (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-6 shadow-sm">
+            <div className="flex items-center justify-between border-b border-emerald-200/80 pb-3 mb-4">
+              <h3 className="text-sm font-black text-emerald-950 uppercase tracking-widest">
+                Financial Report Documents
+              </h3>
+              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                {financialReportFiles.length} File{financialReportFiles.length > 1 ? 's' : ''}
+              </span>
+            </div>
+
+            <div className="space-y-2.5">
+              {financialReportFiles.map((file, idx) => (
+                <div key={file.path || idx} className="flex items-center justify-between p-3.5 bg-white border border-emerald-100 rounded-2xl shadow-xs">
+                  <div className="flex items-center gap-3 min-w-0 flex-1 pr-3">
+                    {file.isPdf ? (
+                      <div className="w-9 h-9 rounded-xl bg-red-100 text-red-700 font-black text-xs flex items-center justify-center shrink-0 border border-red-200">
+                        PDF
+                      </div>
+                    ) : (
+                      <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 overflow-hidden border border-blue-200">
+                        <img src={file.url} alt="receipt" className="w-full h-full object-cover" />
+                      </div>
+                    )}
+                    <span className="text-xs sm:text-sm font-semibold text-gray-800 truncate">{file.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewUrl(file.url)}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1 shadow-xs"
+                    >
+                      <Eye size={13} />
+                      <span>View</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAttachmentAction(file.path, 'download', file.name)}
+                      className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-colors flex items-center gap-1"
+                    >
+                      <Download size={13} />
+                      <span>Download</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

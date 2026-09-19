@@ -235,13 +235,10 @@ const SubmissionTimeline = ({
             const proofKey = log.id || `${log.created_at}-${idx}`;
             const proofUrl = proofLinks[proofKey] || extractProofReference(log);
             const isAccomplishmentLog = log.workflow_phase === 'accomplishment' ||
-              log.action_type === 'accomplishment_report' ||
-              String(log.description || '').toLowerCase().includes('accomplishment') ||
-              String(log.comment || '').toLowerCase().includes('accomplishment');
+              log.action_type === 'accomplishment_report';
 
-            let visibleComment = isAccomplishmentLog
-              ? 'Activity accomplishment report submitted'
-              : stripProofReferenceFromText(log.comment || log.description || '');
+            const rawComment = stripProofReferenceFromText(log.comment || log.description || '');
+            let visibleComment = rawComment || (isAccomplishmentLog ? 'Activity accomplishment report submitted' : '');
 
             visibleComment = visibleComment.replace(/\bOSD Admin\b/gi, 'SDS Coordinator');
             visibleComment = visibleComment.replace(/\[Performed by [^\]]+\]/gi, '').trim();

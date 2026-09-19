@@ -40,7 +40,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       try {
         const normRole = String(user.role || '').toLowerCase().trim();
         const isAdmin = normRole === 'admin' || normRole.includes('sds');
-        const isStaff = normRole === 'chairman' || normRole === 'vice-chairman' || normRole === 'oso-staff' || normRole === 'oso staff';
+        const isStaff = normRole === 'chairman' || normRole === 'vice-chairman' || normRole === 'vice chairman' || normRole === 'oso-staff' || normRole === 'oso staff';
 
         let statusFilters = [];
         if (isAdmin) {
@@ -55,7 +55,9 @@ const Sidebar = ({ isOpen, onClose }) => {
           statusFilters = [
             'submitted', 'Submitted',
             'pending', 'Pending',
-            'oso staff review', 'OSO Staff Review', 'oso_staff_review'
+            'oso staff review', 'OSO Staff Review', 'oso_staff_review',
+            'oso staff (pending report)', 'OSO Staff (Pending Report)', 'pending report', 'Pending Report',
+            'oso staff report review', 'report review', 'Report Review'
           ];
         }
         
@@ -100,15 +102,24 @@ const Sidebar = ({ isOpen, onClose }) => {
     const fetchCompletedCount = async () => {
       try {
         const normRole = String(user.role || '').toLowerCase().trim();
-        if (!['admin', 'chairman', 'vice-chairman', 'sds-coordinator', 'oso-staff'].some(r => normRole.includes(r))) {
+        const isOrgPresident = normRole === 'org-president';
+        const isStaffOrAdmin = ['admin', 'chairman', 'vice-chairman', 'vice chairman', 'sds-coordinator', 'oso-staff', 'oso staff'].some(r => normRole.includes(r));
+
+        if (!isOrgPresident && !isStaffOrAdmin) {
           if (isMounted) setCompletedCount(0);
           return;
         }
 
-        const { data, error } = await supabase
+        let query = supabase
           .from('submissions')
           .select('id')
           .or('status.ilike.%completed%,status.ilike.%disapproved%,status.ilike.%rejected%');
+
+        if (isOrgPresident) {
+          query = query.eq('user_id', user.id);
+        }
+
+        const { data, error } = await query;
 
         if (!error && isMounted) {
           const readIds = JSON.parse(localStorage.getItem('completed_read_ids') || '[]');
@@ -148,11 +159,16 @@ const Sidebar = ({ isOpen, onClose }) => {
     fetchCompletedCount();
     fetchMyDocsCount();
     
+    let debounceTimer = null;
     const handleGlobalStatusChange = () => {
       if (!isMounted) return;
-      fetchInboxCount();
-      fetchCompletedCount();
-      fetchMyDocsCount();
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        if (!isMounted) return;
+        fetchInboxCount();
+        fetchCompletedCount();
+        fetchMyDocsCount();
+      }, 300);
     };
 
     window.addEventListener('inbox-updated', handleGlobalStatusChange);
@@ -172,14 +188,11 @@ const Sidebar = ({ isOpen, onClose }) => {
       .on('broadcast', { event: 'inbox-update' }, () => {
         handleGlobalStatusChange();
       })
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          handleGlobalStatusChange();
-        }
-      });
+      .subscribe();
 
     return () => {
       isMounted = false;
+      if (debounceTimer) clearTimeout(debounceTimer);
       window.removeEventListener('inbox-updated', handleGlobalStatusChange);
       window.removeEventListener('completed-updated', handleGlobalStatusChange);
       window.removeEventListener('my-docs-updated', handleGlobalStatusChange);

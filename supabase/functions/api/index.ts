@@ -4342,6 +4342,7 @@ export type WorkflowStageKey =
   | 'MAIN_CAMPUS_REVIEW'
   | 'DOCUMENT_RETRIEVAL'
   | 'ACCOMPLISHMENT_REPORT'
+  | 'REPORT_REVIEW'
   | 'COMPLETED'
   | 'RETURNED'
   | 'DISAPPROVED';
@@ -4357,6 +4358,7 @@ export const STAGE_DISPLAY_LABELS: Record<WorkflowStageKey, string> = {
   MAIN_CAMPUS_REVIEW: 'Main Campus Review',
   DOCUMENT_RETRIEVAL: 'Document Retrieval',
   ACCOMPLISHMENT_REPORT: 'Accomplishment Report',
+  REPORT_REVIEW: 'Pending Report Review',
   COMPLETED: 'Completed',
   RETURNED: 'Returned for Edits',
   DISAPPROVED: 'Disapproved',
@@ -4368,13 +4370,15 @@ export function normalizeStatusToStage(statusStr: string | null | undefined): Wo
 
   if (s === 'draft') return 'DRAFT';
   if (s === 'submitted' || s === 'pending') return 'OSO_REVIEW';
-  if (s.includes('oso staff') || s.includes('oso review') || s.includes('oso approved')) return 'OSO_REVIEW';
+  if (s.includes('oso staff') && !s.includes('pending report') && !s.includes('report review')) return 'OSO_REVIEW';
+  if (s.includes('oso review') || s.includes('oso approved')) return 'OSO_REVIEW';
   if (s.includes('sds coordinator review') || s.includes('sds review') || s.includes('sds coordinator')) return 'SDS_REVIEW';
   if (s === 'to forward' || s.includes('hardcopy')) return 'HARDCOPY_SUBMISSION';
   if (s.includes('signatories')) return 'SIGNATORIES';
   if (s.includes('dean review') || s.includes('dean approved') || s.includes('final local campus review')) return 'FINAL_LOCAL_CAMPUS_REVIEW';
   if (s.includes('main campus review') || s.includes('main campus') || s.includes('sent to main campus')) return 'MAIN_CAMPUS_REVIEW';
   if (s === 'approved' || s.includes('ready for retrieval') || s.includes('document retrieval') || s.includes('retrieved')) return 'DOCUMENT_RETRIEVAL';
+  if (s.includes('pending report') || s.includes('report review') || s === 'oso staff (pending report)') return 'REPORT_REVIEW';
   if (s.includes('waiting for accomplishment report') || s.includes('accomplishment report')) return 'ACCOMPLISHMENT_REPORT';
   if (s === 'completed') return 'COMPLETED';
   if (s === 'returned') return 'RETURNED';
@@ -4395,6 +4399,7 @@ export function stageToDbStatus(stage: WorkflowStageKey): string {
     case 'MAIN_CAMPUS_REVIEW': return 'main campus review';
     case 'DOCUMENT_RETRIEVAL': return 'ready for retrieval';
     case 'ACCOMPLISHMENT_REPORT': return 'waiting for accomplishment report';
+    case 'REPORT_REVIEW': return 'oso staff (pending report)';
     case 'COMPLETED': return 'completed';
     case 'RETURNED': return 'returned';
     case 'DISAPPROVED': return 'disapproved';
@@ -4427,6 +4432,7 @@ export const WORKFLOW_CONFIGS: Record<string, {
       'MAIN_CAMPUS_REVIEW',
       'DOCUMENT_RETRIEVAL',
       'ACCOMPLISHMENT_REPORT',
+      'REPORT_REVIEW',
       'COMPLETED'
     ],
     allowedRoles: {
@@ -4440,6 +4446,7 @@ export const WORKFLOW_CONFIGS: Record<string, {
       MAIN_CAMPUS_REVIEW: ['admin', 'chairman', 'vice-chairman', 'oso-staff'],
       DOCUMENT_RETRIEVAL: ['admin', 'chairman', 'vice-chairman', 'oso-staff', 'org-president'],
       ACCOMPLISHMENT_REPORT: ['admin', 'chairman', 'vice-chairman', 'oso-staff', 'org-president'],
+      REPORT_REVIEW: ['admin', 'chairman', 'vice-chairman', 'oso-staff'],
       RETURNED: ['org-president'],
     },
     transitions: {
@@ -4450,7 +4457,8 @@ export const WORKFLOW_CONFIGS: Record<string, {
       FINAL_LOCAL_CAMPUS_REVIEW: { approve: 'FINAL_LOCAL_CAMPUS_REVIEW', forward: 'MAIN_CAMPUS_REVIEW', return: 'RETURNED', disapprove: 'DISAPPROVED' },
       MAIN_CAMPUS_REVIEW: { approve: 'DOCUMENT_RETRIEVAL', ready_for_retrieval: 'DOCUMENT_RETRIEVAL', forward: 'DOCUMENT_RETRIEVAL', return: 'RETURNED', disapprove: 'DISAPPROVED' },
       DOCUMENT_RETRIEVAL: { ready_for_retrieval: 'DOCUMENT_RETRIEVAL', document_retrieved: 'DOCUMENT_RETRIEVAL', confirm_retrieval: 'ACCOMPLISHMENT_REPORT', approve: 'ACCOMPLISHMENT_REPORT', return: 'RETURNED' },
-      ACCOMPLISHMENT_REPORT: { approve: 'COMPLETED', submit_report: 'COMPLETED', return: 'RETURNED' },
+      ACCOMPLISHMENT_REPORT: { approve: 'REPORT_REVIEW', submit_report: 'REPORT_REVIEW', return: 'RETURNED' },
+      REPORT_REVIEW: { approve: 'COMPLETED', return: 'ACCOMPLISHMENT_REPORT' },
       RETURNED: { resubmit: 'OSO_REVIEW' }
     }
   },
@@ -4789,6 +4797,10 @@ export function generateDescriptiveLogMessage(
     return `Retrieval confirmed by ${roleTitle}`;
   }
 
+  if (action === 'submit_report') {
+    return `Submitted Accomplishment and Financial Reports by ${roleTitle}`;
+  }
+
   if (action === 'approve') {
     switch (currentStage) {
       case 'OSO_REVIEW':
@@ -4805,6 +4817,8 @@ export function generateDescriptiveLogMessage(
         return `Approved by Main Campus`;
       case 'ACCOMPLISHMENT_REPORT':
         return `Accomplishment Report approved by ${roleTitle}`;
+      case 'REPORT_REVIEW':
+        return `Accomplishment and Financial Reports approved by ${roleTitle}`;
       default:
         return `Approved by ${roleTitle}`;
     }
@@ -4820,6 +4834,8 @@ export function generateDescriptiveLogMessage(
         return `Returned on Final In-Campus Review`;
       case 'MAIN_CAMPUS_REVIEW':
         return `Returned by Main Campus`;
+      case 'REPORT_REVIEW':
+        return `Report returned by ${roleTitle}`;
       default:
         return `Returned by ${roleTitle}`;
     }

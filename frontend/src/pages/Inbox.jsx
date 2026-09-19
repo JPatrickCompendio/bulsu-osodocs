@@ -91,6 +91,12 @@ const getStoragePath = (filePath) => {
   return path;
 };
 
+const getStoragePublicUrl = (filePath) => {
+  const cleanPath = getStoragePath(filePath);
+  const { data } = supabase.storage.from('documents').getPublicUrl(cleanPath);
+  return data?.publicUrl || '';
+};
+
 const SUBMISSION_SELECT = `
   *,
   users (org_name, abbreviation, student_no, full_name, role),
@@ -757,6 +763,198 @@ export const Inbox = () => {
     }
   };
 
+  // Dedicated states for Accomplishment and Financial Report Validation in Inbox
+  const [reportAccomplishment, setReportAccomplishment] = React.useState(null);
+  const [reportAccomPdfs, setReportAccomPdfs] = React.useState([]);
+  const [reportAccomImages, setReportAccomImages] = React.useState([]);
+  const [reportFinancialFiles, setReportFinancialFiles] = React.useState([]);
+  const [reportLoading, setReportLoading] = React.useState(false);
+  const [reportTabFilter, setReportTabFilter] = React.useState('all'); // 'all' | 'accomplishment' | 'financial'
+  const [reportPreviewFile, setReportPreviewFile] = React.useState(null);
+  const [reportPreviewAction, setReportPreviewAction] = React.useState(''); // '', 'incorrect-format', 'incomplete-information', 'others'
+  const [reportPreviewComments, setReportPreviewComments] = React.useState('');
+  const [reportCommentsError, setReportCommentsError] = React.useState(false);
+  const [reportDecisions, setReportDecisions] = React.useState({}); // { [fileId]: { decision: 'approve' | 'return', action: string, comments: string } }
+  const [isReportSubmitting, setIsReportSubmitting] = React.useState(false);
+
+  const handleOpenReportPreview = (type, file) => {
+    const fileId = file.id || file.path || file.name;
+    const fileWithId = { ...file, id: fileId, type };
+    setReportPreviewFile(fileWithId);
+    setReportCommentsError(false);
+
+    const existing = reportDecisions[fileId];
+    if (existing && existing.decision === 'return') {
+      setReportPreviewAction(existing.action || 'others');
+      setReportPreviewComments(existing.comments || '');
+    } else {
+      setReportPreviewAction('');
+      setReportPreviewComments('');
+    }
+  };
+
+  const handleApproveReportFile = () => {
+    if (!reportPreviewFile) return;
+    const fileId = reportPreviewFile.id || reportPreviewFile.path || reportPreviewFile.name;
+    setReportDecisions((prev) => ({
+      ...prev,
+      [fileId]: {
+        decision: 'approve',
+        action: '',
+        comments: ''
+      }
+    }));
+    showToast(`${reportPreviewFile.name || 'Document'} marked as Approved!`);
+    setReportPreviewFile(null);
+  };
+
+  const handleReturnReportFile = () => {
+    if (!reportPreviewFile) return;
+    if (!reportPreviewAction) {
+      showToast('Please select a Review Action before returning.');
+      return;
+    }
+    if (reportPreviewAction === 'others' && !reportPreviewComments.trim()) {
+      setReportCommentsError(true);
+      showToast('Review comments are required when "Others" is selected.');
+      return;
+    }
+
+    const actionText =
+      reportPreviewAction === 'incorrect-format'
+        ? 'Incorrect Format'
+        : reportPreviewAction === 'incomplete-information'
+          ? 'Incomplete Information'
+          : 'Revision Required';
+
+    const finalComment = reportPreviewComments.trim()
+      ? `${actionText}: ${reportPreviewComments.trim()}`
+      : actionText;
+
+    const fileId = reportPreviewFile.id || reportPreviewFile.path || reportPreviewFile.name;
+    setReportDecisions((prev) => ({
+      ...prev,
+      [fileId]: {
+        decision: 'return',
+        action: reportPreviewAction,
+        comments: finalComment
+      }
+    }));
+    showToast(`${reportPreviewFile.name || 'Document'} marked for return.`);
+    setReportPreviewFile(null);
+  };
+
+  const fetchReportReviewData = async (submissionId) => {
+    if (!submissionId) {
+      setReportAccomplishment(null);
+      setReportAccomPdfs([]);
+      setReportAccomImages([]);
+      setReportFinancialFiles([]);
+      setReportTabFilter('all');
+      setReportPreviewFile(null);
+      setReportPreviewAction('');
+      setReportPreviewComments('');
+      setReportDecisions({});
+      return;
+    }
+    try {
+      setReportLoading(true);
+      setReportTabFilter('all');
+      setReportPreviewFile(null);
+      setReportPreviewAction('');
+      setReportPreviewComments('');
+      setReportDecisions({});
+
+      // 1. Fetch activity_accomplishments
+      const { data: accomData, error: accomErr } = await supabase
+        .from('activity_accomplishments')
+        .select('*')
+        .eq('submission_id', submissionId)
+        .maybeSingle();
+
+      if (!accomErr) {
+        setReportAccomplishment(accomData || null);
+      } else {
+        console.warn('Error fetching accomplishment data in Inbox:', accomErr);
+        setReportAccomplishment(null);
+      }
+
+      // 2. Fetch accomplishment files (generated PDF document & proof images)
+      try {
+        const { data: files, error: listErr } = await supabase.storage
+          .from('documents')
+          .list(`accom-report/${submissionId}`);
+
+        if (!listErr && files && files.length > 0) {
+          // A. Accomplishment PDF Documents
+          const pdfFiles = files.filter((file) => /\.pdf$/i.test(file.name));
+          const pdfUrls = await Promise.all(
+            pdfFiles.map(async (file) => {
+              const path = `accom-report/${submissionId}/${file.name}`;
+              try {
+                const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600);
+                if (data?.signedUrl) return { ...file, url: data.signedUrl, path, isPdf: true };
+              } catch (e) {}
+              return { ...file, url: getStoragePublicUrl(path), path, isPdf: true };
+            })
+          );
+          setReportAccomPdfs(pdfUrls.filter(Boolean));
+
+          // B. Proof Images
+          const imageFiles = files.filter((file) => /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(file.name));
+          const imageUrls = await Promise.all(
+            imageFiles.map(async (file) => {
+              const path = `accom-report/${submissionId}/${file.name}`;
+              try {
+                const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600);
+                if (data?.signedUrl) return { ...file, url: data.signedUrl, path };
+              } catch (e) {}
+              return { ...file, url: getStoragePublicUrl(path), path };
+            })
+          );
+          setReportAccomImages(imageUrls.filter(Boolean));
+        } else {
+          setReportAccomPdfs([]);
+          setReportAccomImages([]);
+        }
+      } catch (err) {
+        setReportAccomPdfs([]);
+        setReportAccomImages([]);
+      }
+
+      // 3. Fetch financial report files
+      try {
+        const { data: finFiles, error: finListErr } = await supabase.storage
+          .from('documents')
+          .list(`financial-report/${submissionId}`);
+
+        if (!finListErr && finFiles && finFiles.length > 0) {
+          const validFinFiles = finFiles.filter((file) => /\.(jpg|jpeg|png|gif|webp|bmp|pdf)$/i.test(file.name));
+          const finUrls = await Promise.all(
+            validFinFiles.map(async (file) => {
+              const path = `financial-report/${submissionId}/${file.name}`;
+              const isPdf = /\.pdf$/i.test(file.name);
+              try {
+                const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600);
+                if (data?.signedUrl) return { ...file, url: data.signedUrl, path, isPdf };
+              } catch (e) {}
+              return { ...file, url: getStoragePublicUrl(path), path, isPdf };
+            })
+          );
+          setReportFinancialFiles(finUrls.filter(Boolean));
+        } else {
+          setReportFinancialFiles([]);
+        }
+      } catch (err) {
+        setReportFinancialFiles([]);
+      }
+    } catch (e) {
+      console.error('Error in fetchReportReviewData:', e);
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
   React.useEffect(() => {
     if (selectedDoc) {
       const allVersions = Array.isArray(selectedDoc.raw?.submission_versions)
@@ -766,11 +964,13 @@ export const Inbox = () => {
       const activeVersion = allVersions.find(v => v.id === currentVersionIdToUse) || allVersions[0];
       fetchTimelineLogs(selectedDoc.id);
       fetchAttachmentReturnLogs(selectedDoc.id);
+      fetchReportReviewData(selectedDoc.id);
       setLocallyApproved([]);
       setLocallyReturned({});
     } else {
       setTimelineLogs([]);
       setAttachmentReturnLogs([]);
+      fetchReportReviewData(null);
       setLocallyApproved([]);
       setLocallyReturned({});
     }
@@ -884,7 +1084,8 @@ export const Inbox = () => {
         : [
             'submitted', 'Submitted',
             'pending', 'Pending',
-            'oso staff review', 'OSO Staff Review', 'oso_staff_review'
+            'oso staff review', 'OSO Staff Review', 'oso_staff_review',
+            'oso staff (pending report)', 'OSO Staff (Pending Report)', 'pending report', 'Pending Report', 'oso staff report review'
           ];
 
       const { data, error } = await supabase
@@ -1112,6 +1313,146 @@ export const Inbox = () => {
       showToast('Failed to return submission.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleReportReviewSubmit = async () => {
+    if (!selectedDoc) return;
+
+    // Collect all report items to validate
+    const accomItems = (reportAccomPdfs.length > 0 ? reportAccomPdfs : (reportAccomplishment ? [{
+      id: `report-accomplishment`,
+      name: 'Accomplishment_Report.pdf',
+      path: `accom-report/${selectedDoc.id}/Accomplishment_Report.pdf`,
+      url: reportAccomImages[0]?.url || ''
+    }] : [])).map((f, idx) => ({ ...f, id: f.id || f.path || `report-accomplishment-${idx}`, type: 'accomplishment' }));
+
+    const finItems = reportFinancialFiles.map((f, idx) => ({
+      ...f,
+      id: f.id || f.path || `report-financial-${idx}`,
+      type: 'financial',
+      name: f.name || 'Financial_Report.pdf'
+    }));
+
+    const allItems = [...accomItems, ...finItems];
+
+    if (allItems.length === 0) {
+      showToast('No report documents found to review.');
+      return;
+    }
+
+    const unreviewed = allItems.filter(f => !reportDecisions[f.id]?.decision);
+    if (unreviewed.length > 0) {
+      showToast(`Please review all attached files first (${unreviewed.length} pending).`);
+      return;
+    }
+
+    const returnedItems = allItems.filter(f => reportDecisions[f.id]?.decision === 'return');
+    const invalidReturns = returnedItems.filter(f => !reportDecisions[f.id]?.comments?.trim());
+    if (invalidReturns.length > 0) {
+      showToast('Please provide return remarks for all returned files.');
+      return;
+    }
+
+    const isAllApproved = allItems.every(f => reportDecisions[f.id]?.decision === 'approve');
+
+    try {
+      setIsReportSubmitting(true);
+      const submissionId = selectedDoc.id;
+      const activeVersionId = selectedDoc.raw?.current_version_id || 
+        (Array.isArray(selectedDoc.raw?.submission_versions) 
+          ? selectedDoc.raw?.submission_versions[0]?.id 
+          : selectedDoc.raw?.submission_versions?.id);
+
+      const userRole = String(user?.role || '').toLowerCase();
+      const roleTitle = userRole === 'chairman' ? 'Chairman' : (userRole.includes('vice chairman') ? 'Vice Chairman' : 'OSO Staff');
+
+      if (isAllApproved) {
+        // All individual files approved -> Move document to Completed
+        const { error: subErr } = await supabase
+          .from('submissions')
+          .update({
+            status: 'completed',
+            remarks: 'Accomplishment and Financial Reports approved'
+          })
+          .eq('id', submissionId);
+
+        if (subErr) throw subErr;
+
+        // Insert log in submission_logs
+        await supabase.from('submission_logs').insert([{
+          submission_id: submissionId,
+          submission_version_id: activeVersionId,
+          user_id: user.id,
+          workflow_phase: 'report_review',
+          action_type: 'approved',
+          review_action: 'approved',
+          description: `Accomplishment and Financial Reports approved by ${roleTitle}`,
+          comment: `Accomplishment and Financial Reports approved (${allItems.length} files verified).`,
+          created_at: new Date().toISOString()
+        }]);
+
+        showToast('Accomplishment and Financial Reports approved! Document completed.');
+      } else {
+        // One or more files returned -> Return to Org President with detailed remarks
+        const remarksParts = [];
+        
+        const accomReturned = returnedItems.filter(f => f.type === 'accomplishment');
+        const finReturned = returnedItems.filter(f => f.type === 'financial');
+
+        if (accomReturned.length > 0) {
+          accomReturned.forEach(f => {
+            remarksParts.push(`[Accomplishment Report Returned]: ${reportDecisions[f.id]?.comments}`);
+          });
+        } else {
+          remarksParts.push(`[Accomplishment Report]: Approved`);
+        }
+
+        if (finReturned.length > 0) {
+          finReturned.forEach(f => {
+            remarksParts.push(`[Financial Report Returned - ${f.name}]: ${reportDecisions[f.id]?.comments}`);
+          });
+        } else {
+          remarksParts.push(`[Financial Report]: Approved`);
+        }
+
+        const combinedRemarks = remarksParts.join('\n\n');
+
+        const { error: subErr } = await supabase
+          .from('submissions')
+          .update({
+            status: 'waiting for accomplishment report',
+            remarks: combinedRemarks
+          })
+          .eq('id', submissionId);
+
+        if (subErr) throw subErr;
+
+        await supabase.from('submission_logs').insert([{
+          submission_id: submissionId,
+          submission_version_id: activeVersionId,
+          user_id: user.id,
+          workflow_phase: 'report_review',
+          action_type: 'returned',
+          review_action: 'returned',
+          description: `Report revisions requested by ${roleTitle}`,
+          comment: combinedRemarks,
+          created_at: new Date().toISOString()
+        }]);
+
+        showToast('Reports returned to Organization President for revisions.');
+      }
+
+      await fetchSubmissions();
+      setSelectedDoc(null);
+      window.dispatchEvent(new CustomEvent('inbox-updated'));
+      window.dispatchEvent(new CustomEvent('document-status-changed'));
+      window.dispatchEvent(new CustomEvent('completed-updated'));
+    } catch (err) {
+      console.error('Error submitting report review:', err);
+      showToast(err?.message || 'Failed to submit report review.');
+    } finally {
+      setIsReportSubmitting(false);
     }
   };
 
@@ -1391,7 +1732,14 @@ export const Inbox = () => {
     // 1. Status Filter
     if (filterType !== 'All') {
       const isPendingMatch = filterType.toLowerCase() === 'pending' && 
-        (item.status.toLowerCase() === 'pending' || item.status.toLowerCase() === 'oso staff review' || item.status.toLowerCase() === 'sds coordinator review');
+        (
+          item.status.toLowerCase() === 'pending' ||
+          item.status.toLowerCase() === 'oso staff review' ||
+          item.status.toLowerCase() === 'sds coordinator review' ||
+          item.status.toLowerCase().includes('pending report') ||
+          item.status.toLowerCase().includes('report review') ||
+          item.status.toLowerCase() === 'oso staff (pending report)'
+        );
       if (!isPendingMatch && item.status.toLowerCase() !== filterType.toLowerCase()) {
         return false;
       }
@@ -1692,24 +2040,233 @@ export const Inbox = () => {
         </div>
         )}
 
-        {/* Attached Files Section - Collapsible with Live Data */}
-        <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 mb-6 sm:mb-10 transition-all duration-500">
-          <button 
-            onClick={() => setIsFilesOpen(!isFilesOpen)}
-            className="w-full bg-[#525252] text-white px-4 sm:px-8 py-3.5 sm:py-4 flex items-center justify-between hover:brightness-110 transition-all outline-none"
-          >
-            <div className="flex items-center gap-3">
-              <Paperclip size={18} className="text-white opacity-80 sm:w-5 sm:h-5" />
-              <span className="text-xs font-bold uppercase tracking-widest">Attached File</span>
-            </div>
-            <ChevronDown size={18} className={`transition-transform duration-500 ${isFilesOpen ? 'rotate-180' : ''}`} />
-          </button>
+        {/* Attached Files Section */}
+        {(() => {
+          const rawStatusLower = String(selectedDoc?.raw?.status || selectedDoc?.status || '').toLowerCase().trim();
+          const isReportReview =
+            rawStatusLower.includes('pending report') ||
+            rawStatusLower.includes('report review') ||
+            rawStatusLower === 'oso staff (pending report)';
+
+          return (
+            <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 mb-6 sm:mb-10 transition-all duration-500">
+              <button 
+                onClick={() => setIsFilesOpen(!isFilesOpen)}
+                className="w-full bg-[#525252] text-white px-4 sm:px-8 py-3.5 sm:py-4 flex items-center justify-between hover:brightness-110 transition-all outline-none"
+              >
+                <div className="flex items-center gap-3">
+                  <Paperclip size={18} className="text-white opacity-80 sm:w-5 sm:h-5" />
+                  <span className="text-xs font-bold uppercase tracking-widest">{isReportReview ? 'Accomplishment and Financial Report' : 'Requirements'}</span>
+                </div>
+                <ChevronDown size={18} className={`transition-transform duration-500 ${isFilesOpen ? 'rotate-180' : ''}`} />
+              </button>
           
           {isFilesOpen && (
             <div className="p-3.5 sm:p-6 space-y-3 animate-in slide-in-from-top-4 duration-500">
-              {selectedDoc.attachments && selectedDoc.attachments.length > 0 && (
+              {isReportReview ? (
+                (() => {
+                  const accomItems = (reportAccomPdfs.length > 0 ? reportAccomPdfs : (reportAccomplishment ? [{
+                    id: `report-accomplishment`,
+                    name: 'Accomplishment_Report.pdf',
+                    path: `accom-report/${selectedDoc.id}/Accomplishment_Report.pdf`,
+                    url: reportAccomImages[0]?.url || ''
+                  }] : [])).map((f, idx) => {
+                    const fileId = f.id || f.path || `report-accomplishment-${idx}`;
+                    const dec = reportDecisions[fileId];
+                    return {
+                      ...f,
+                      id: fileId,
+                      type: 'accomplishment',
+                      name: f.name || 'Accomplishment_Report.pdf',
+                      decision: dec?.decision || null,
+                      comments: dec?.comments || ''
+                    };
+                  });
+
+                  const finItems = reportFinancialFiles.map((f, idx) => {
+                    const fileId = f.id || f.path || `report-financial-${idx}`;
+                    const dec = reportDecisions[fileId];
+                    return {
+                      ...f,
+                      id: fileId,
+                      type: 'financial',
+                      name: f.name || 'Financial_Report.pdf',
+                      decision: dec?.decision || null,
+                      comments: dec?.comments || ''
+                    };
+                  });
+
+                  const totalCount = accomItems.length + finItems.length;
+                  const filteredItems = reportTabFilter === 'accomplishment'
+                    ? accomItems
+                    : reportTabFilter === 'financial'
+                      ? finItems
+                      : [...accomItems, ...finItems];
+
+                  return (
+                    <>
+                      {/* Tabs for Report Review */}
+                      <div className="hidden sm:flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 mb-3">
+                        <button
+                          type="button"
+                          onClick={() => setReportTabFilter('all')}
+                          className={`px-3 py-1.5 rounded-lg transition-all ${
+                            reportTabFilter === 'all'
+                              ? 'bg-emerald-600 text-white shadow-xs font-black'
+                              : 'text-gray-600 hover:text-gray-800'
+                          }`}
+                        >
+                          All ({totalCount})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setReportTabFilter('accomplishment')}
+                          className={`px-3 py-1.5 rounded-lg transition-all ${
+                            reportTabFilter === 'accomplishment'
+                              ? 'bg-emerald-600 text-white shadow-xs font-black'
+                              : 'text-gray-600 hover:text-gray-800'
+                          }`}
+                        >
+                          Accomplishment Report ({accomItems.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setReportTabFilter('financial')}
+                          className={`px-3 py-1.5 rounded-lg transition-all ${
+                            reportTabFilter === 'financial'
+                              ? 'bg-emerald-600 text-white shadow-xs font-black'
+                              : 'text-gray-600 hover:text-gray-800'
+                          }`}
+                        >
+                          Financial Report ({finItems.length})
+                        </button>
+                      </div>
+
+                      {/* Mobile Select */}
+                      <div className="block sm:hidden w-full mb-3">
+                        <select
+                          value={reportTabFilter}
+                          onChange={(e) => setReportTabFilter(e.target.value)}
+                          className="w-full bg-white border border-gray-200 text-emerald-700 font-bold text-xs rounded-xl p-2.5 shadow-sm outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer"
+                        >
+                          <option value="all">All ({totalCount})</option>
+                          <option value="accomplishment">Accomplishment Report ({accomItems.length})</option>
+                          <option value="financial">Financial Report ({finItems.length})</option>
+                        </select>
+                      </div>
+
+                      {/* List of Report Documents */}
+                      {reportLoading ? (
+                        <div className="py-8 text-center text-gray-400 text-sm flex items-center justify-center gap-2">
+                          <Clock size={16} className="animate-spin" />
+                          <span>Loading submitted reports...</span>
+                        </div>
+                      ) : filteredItems.length > 0 ? (
+                        filteredItems.map((file, idx) => {
+                          const fileName = file.name || 'Report Document';
+                          const isReturned = file.decision === 'return';
+                          const isApproved = file.decision === 'approve';
+
+                          let containerBg = 'bg-[#525252]';
+                          let textColor = 'text-white';
+                          let subtitleColor = 'text-gray-300';
+                          let iconStyle = 'bg-white/10 text-white/80';
+                          let badgeStyle = 'bg-white/10 text-white/90 border border-white/20';
+
+                          if (isReturned) {
+                            containerBg = 'bg-[#f59e0b]';
+                            textColor = 'text-[#451a03]';
+                            subtitleColor = 'text-[#78350f]';
+                            iconStyle = 'bg-[#78350f]/10 text-[#78350f]';
+                            badgeStyle = 'bg-amber-100 text-amber-800 border border-amber-200';
+                          } else if (isApproved) {
+                            containerBg = 'bg-green-600 shadow-md';
+                            textColor = 'text-white';
+                            subtitleColor = 'text-green-100';
+                            iconStyle = 'bg-white/20 text-white';
+                            badgeStyle = 'bg-white/20 text-white border border-white/30 font-black';
+                          }
+
+                          return (
+                            <div
+                              key={file.id || idx}
+                              onClick={() => handleOpenReportPreview(file.type, file)}
+                              className={`${containerBg} rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 group hover:brightness-110 transition-all cursor-pointer overflow-hidden`}
+                            >
+                              <div className="flex items-start sm:items-center gap-2.5 sm:gap-4 min-w-0 flex-1 w-full sm:w-auto">
+                                <div className={`w-9 h-9 sm:w-10 sm:h-10 ${iconStyle} rounded-lg flex items-center justify-center shrink-0 mt-0.5 sm:mt-0`}>
+                                  <Paperclip size={18} />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="mb-1 flex flex-wrap items-center gap-1.5 sm:gap-2">
+                                    <span className={`text-[8px] sm:text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${badgeStyle}`}>
+                                      {file.type === 'accomplishment' ? 'Accomplishment Report' : 'Financial Report'}
+                                    </span>
+                                    {isApproved && (
+                                      <span className="text-[8px] sm:text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider bg-white/20 text-white border border-white/30 shrink-0">
+                                        ✓ APPROVED
+                                      </span>
+                                    )}
+                                    {isReturned && (
+                                      <span className="text-[8px] sm:text-[9px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-amber-100/90 text-amber-900 border border-amber-300/80 shrink-0">
+                                        RETURNED
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className={`${textColor} font-semibold text-xs sm:text-sm break-all line-clamp-2 max-w-full sm:max-w-md`} title={fileName}>
+                                    {fileName}
+                                  </p>
+                                  {isReturned && file.comments ? (
+                                    <p className="mt-0.5 text-[11px] sm:text-xs italic font-medium text-[#78350f] max-w-lg">
+                                      OSO Staff's Comment: "{file.comments}"
+                                    </p>
+                                  ) : (
+                                    <p className={`${subtitleColor} text-[9px] sm:text-[10px] uppercase font-bold mt-0.5`}>
+                                      {isApproved ? '✓ Approved by OSO Staff' : 'Attached Document'}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+                                <button 
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenReportPreview(file.type, file);
+                                  }}
+                                  className="bg-secondary-gold text-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-bold hover:brightness-110 transition-all shadow-md text-center shrink-0 flex items-center gap-1.5"
+                                >
+                                  <Eye size={14} />
+                                  <span>View</span>
+                                </button>
+                                <button 
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDownload(file.path || file.file_url || file.url, fileName);
+                                  }}
+                                  className="bg-secondary-gold text-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-[11px] sm:text-xs font-bold hover:brightness-110 transition-all shadow-md text-center shrink-0 flex items-center gap-1.5"
+                                >
+                                  <Download size={14} />
+                                  <span>Download</span>
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="py-8 text-center text-xs text-gray-400 italic">
+                          No report documents found in this tab.
+                        </div>
+                      )}
+                    </>
+                  );
+                })()
+              ) : (
                 <>
-                  <div className="hidden sm:flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 mb-3">
+                  {selectedDoc.attachments && selectedDoc.attachments.length > 0 && (
+                    <>
+                      <div className="hidden sm:flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 mb-3">
                     <button
                       type="button"
                       onClick={() => setDocDetailTabFilter('all')}
@@ -1961,9 +2518,13 @@ export const Inbox = () => {
                   </button>
                 </div>
               )}
+                </>
+              )}
             </div>
           )}
         </div>
+          );
+        })()}
 
         <SubmissionTimeline
           timelineLogs={timelineLogs}
@@ -2062,6 +2623,76 @@ export const Inbox = () => {
           const disableActions = disabledByReview || disabledByVersion;
           const disableApprove = disableActions || hasLocallyReturnedAttachments || selectedIncompleteReqs.length > 0 || !isPreviewLoaded;
           const disableReturn = disableActions || !hasReturnedAttachments;
+          const isReportReview =
+            statusLower.includes('pending report') ||
+            statusLower.includes('report review') ||
+            statusLower === 'oso staff (pending report)';
+
+          if (isReportReview) {
+            const accomItems = (reportAccomPdfs.length > 0 ? reportAccomPdfs : (reportAccomplishment ? [{
+              id: `report-accomplishment`,
+              name: 'Accomplishment_Report.pdf',
+              path: `accom-report/${selectedDoc.id}/Accomplishment_Report.pdf`,
+              url: reportAccomImages[0]?.url || ''
+            }] : [])).map((f, idx) => ({ ...f, id: f.id || f.path || `report-accomplishment-${idx}`, type: 'accomplishment' }));
+
+            const finItems = reportFinancialFiles.map((f, idx) => ({
+              ...f,
+              id: f.id || f.path || `report-financial-${idx}`,
+              type: 'financial',
+              name: f.name || 'Financial_Report.pdf'
+            }));
+
+            const allItems = [...accomItems, ...finItems];
+            const hasItems = allItems.length > 0;
+            const allApproved = hasItems && allItems.every((f) => reportDecisions[f.id]?.decision === 'approve');
+            const returnedItems = allItems.filter((f) => reportDecisions[f.id]?.decision === 'return');
+            const hasValidReturns = returnedItems.length > 0 && returnedItems.every((f) => Boolean(reportDecisions[f.id]?.comments?.trim()));
+            const unreviewedCount = allItems.filter((f) => !reportDecisions[f.id]?.decision).length;
+
+            const canApprove = allApproved;
+            const canReturn = hasValidReturns;
+
+            return (
+              <div className="fixed bottom-3 sm:bottom-10 left-1/2 -translate-x-1/2 z-50 w-[95vw] sm:w-auto flex justify-center">
+                <div className="bg-white/90 backdrop-blur-2xl px-2 sm:px-10 py-2 sm:py-5 rounded-2xl sm:rounded-[2rem] border border-white/50 shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex items-center justify-center gap-1.5 sm:gap-6 w-full sm:w-auto max-w-full animate-in slide-in-from-bottom-12 duration-1000">
+                  <button 
+                    onClick={handleReportReviewSubmit}
+                    disabled={!canApprove || isReportSubmitting}
+                    title={!canApprove ? (unreviewedCount > 0 ? `Please review all attached files (${unreviewedCount} pending).` : 'All attached report files must be approved first.') : ''}
+                    className={`flex items-center gap-1.5 sm:gap-3 px-2.5 sm:px-8 py-2 sm:py-3.5 bg-primary-green text-white rounded-xl sm:rounded-2xl font-bold transition-all shadow-lg shadow-primary-green/20 group shrink-0 ${
+                      !canApprove || isReportSubmitting
+                        ? 'opacity-40 cursor-not-allowed'
+                        : 'hover:scale-105 active:scale-95'
+                    }`}
+                  >
+                    <CheckCircle size={16} className="sm:w-5 sm:h-5 group-hover:rotate-12 transition-transform" />
+                    <span className="uppercase text-[10px] sm:text-xs tracking-wider sm:tracking-widest">
+                      {isReportSubmitting ? 'Submitting...' : 'Approve'}
+                    </span>
+                  </button>
+                  
+                  <div className="hidden sm:block h-10 w-[1px] bg-gray-200/50"></div>
+   
+                  <button 
+                    onClick={handleReportReviewSubmit}
+                    disabled={!canReturn || isReportSubmitting}
+                    title={!canReturn ? 'At least one report file must be marked for Return with remarks provided.' : ''}
+                    className={`flex items-center gap-1.5 sm:gap-3 px-2.5 sm:px-8 py-2 sm:py-3.5 bg-amber-500 text-white rounded-xl sm:rounded-2xl font-bold transition-all shadow-lg shadow-amber-500/20 group shrink-0 ${
+                      !canReturn || isReportSubmitting
+                        ? 'opacity-40 cursor-not-allowed'
+                        : 'hover:scale-105 active:scale-95'
+                    }`}
+                  >
+                    <RotateCcw size={16} className="sm:w-5 sm:h-5 group-hover:-rotate-45 transition-transform" />
+                    <span className="uppercase text-[10px] sm:text-xs tracking-wider sm:tracking-widest">
+                      {isReportSubmitting ? 'Submitting...' : 'Return'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            );
+          }
 
           if (!isLatestVersion || isTerminalStatus) return null;
 
@@ -2123,6 +2754,195 @@ export const Inbox = () => {
                   <X size={16} className="sm:w-5 sm:h-5 group-hover:scale-110 transition-transform" />
                   <span className="uppercase text-[10px] sm:text-xs tracking-wider sm:tracking-widest">Disapprove</span>
                 </button>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Report Document Preview Overlay Modal */}
+        {reportPreviewFile && (() => {
+          return (
+            <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[9999] flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-300">
+              <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-5xl h-[92vh] md:h-[85vh] flex flex-col overflow-hidden shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300">
+                {/* Header */}
+                <div className="bg-gray-50 border-b border-gray-100 px-4 sm:px-8 py-3.5 sm:py-5 flex items-center justify-between shrink-0">
+                  <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 pr-2">
+                    <div className="w-8 h-8 sm:w-10 sm:h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 shrink-0">
+                      <Paperclip size={18} className="sm:w-5 sm:h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-bold text-gray-800 text-sm sm:text-lg truncate">
+                        {reportPreviewFile.name || 'Report Document'}
+                      </h3>
+                      <p className="text-gray-400 text-[10px] sm:text-xs font-medium">
+                        Review & Verify {reportPreviewFile.type === 'accomplishment' ? 'Accomplishment Report' : 'Financial Report'}
+                      </p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setReportPreviewFile(null)}
+                    className="p-2 sm:p-2.5 hover:bg-gray-200 rounded-full transition-colors text-gray-400 hover:text-gray-800 shrink-0"
+                  >
+                    <X size={18} className="sm:w-5 sm:h-5" />
+                  </button>
+                </div>
+
+                {/* Body */}
+                <div className="flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
+                  {/* Left Side: Preview iframe */}
+                  <div className="flex-1 bg-gray-100 p-3 sm:p-6 flex flex-col h-[65vh] md:h-full min-h-[380px] md:min-h-0 overflow-hidden border-b md:border-b-0 md:border-r border-gray-200 shrink-0 md:shrink">
+                    <div className="flex-1 bg-white rounded-xl sm:rounded-2xl overflow-y-auto -webkit-overflow-scrolling-touch touch-pan-y shadow-sm border border-gray-200/50 relative h-full w-full">
+                      {reportPreviewFile.url ? (
+                        <object
+                          data={`${reportPreviewFile.url}#toolbar=1&navpanes=0&view=FitH`}
+                          type="application/pdf"
+                          className="w-full h-full min-h-full border-0 rounded-xl sm:rounded-2xl relative z-10 pointer-events-auto touch-pan-y"
+                        >
+                          <iframe
+                            src={`${reportPreviewFile.url}#toolbar=1&navpanes=0&view=FitH`}
+                            className="w-full h-full min-h-full border-0 rounded-xl sm:rounded-2xl relative z-10 pointer-events-auto touch-pan-y"
+                            title="Report Preview"
+                          />
+                        </object>
+                      ) : (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
+                          <FileText size={44} className="text-gray-300 mb-3 animate-bounce" />
+                          <h4 className="font-bold text-gray-700 text-xs sm:text-sm mb-1">Preview loading or unavailable</h4>
+                          <p className="text-gray-400 text-[10px] sm:text-xs max-w-xs mb-4">You can download it to view locally on your device.</p>
+                          <button 
+                            onClick={() => handleDownload(reportPreviewFile.path || reportPreviewFile.url, reportPreviewFile.name || 'Report Document')}
+                            className="bg-indigo-600 text-white px-5 py-2 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-md inline-flex items-center gap-2"
+                          >
+                            Download Document
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Proof Photos Thumbnail Strip if Accomplishment Report */}
+                    {reportPreviewFile.type === 'accomplishment' && reportAccomImages.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-gray-200 bg-white/70 backdrop-blur-sm rounded-xl p-2.5 shrink-0 max-h-36 overflow-y-auto">
+                        <p className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-2">
+                          Attached Proof Photos ({reportAccomImages.length})
+                        </p>
+                        <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                          {reportAccomImages.map((img, idx) => (
+                            <a key={img.path || idx} href={img.url} target="_blank" rel="noreferrer" className="aspect-video rounded-lg overflow-hidden border border-gray-200 hover:opacity-80 transition-opacity">
+                              <img src={img.url} alt="Proof" className="w-full h-full object-cover" />
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right Side: Review Panel */}
+                  <div className="w-full md:w-96 bg-white p-4 sm:p-8 flex flex-col justify-between overflow-y-auto shrink-0 md:shrink">
+                    <div className="space-y-6">
+                      <div>
+                        <h4 className="font-bold text-gray-800 text-base mb-1">Document Review Panel</h4>
+                        <p className="text-gray-400 text-xs leading-relaxed">
+                          Provide your decision and choose structural remarks for feedback.
+                        </p>
+                      </div>
+
+                      <div className="h-[1px] bg-gray-100"></div>
+
+                      {/* Review Action Dropdown */}
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block">Review Action</label>
+                        <select 
+                          value={reportPreviewAction}
+                          onChange={(e) => {
+                            setReportPreviewAction(e.target.value);
+                            if (reportCommentsError) setReportCommentsError(false);
+                          }}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-700 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer text-gray-800"
+                        >
+                          <option value="">None / Approved</option>
+                          <option value="incorrect-format">Incorrect Format</option>
+                          <option value="incomplete-information">Incomplete Information</option>
+                          <option value="others">Others</option>
+                        </select>
+                      </div>
+
+                      {/* Comments Textarea */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className={`text-xs font-bold uppercase tracking-widest block ${reportCommentsError ? 'text-red-600 font-extrabold' : 'text-gray-500'}`}>
+                            Review Comments {reportPreviewAction === 'others' && <span className="text-red-500 font-bold">*</span>}
+                          </label>
+                          {reportCommentsError && (
+                            <span className="text-xs font-bold text-red-600 flex items-center gap-1">
+                              <AlertCircle size={12} /> Required
+                            </span>
+                          )}
+                        </div>
+                        <textarea 
+                          value={reportPreviewComments}
+                          onChange={(e) => {
+                            setReportPreviewComments(e.target.value);
+                            if (reportCommentsError && e.target.value.trim()) setReportCommentsError(false);
+                          }}
+                          placeholder="Enter review comments..."
+                          rows={5}
+                          className={`w-full text-sm font-medium transition-all resize-none ${
+                            reportCommentsError
+                              ? 'bg-red-50/50 border-2 border-red-500 rounded-xl p-4 text-gray-800 focus:outline-none focus:ring-2 focus:ring-red-500/30'
+                              : 'bg-gray-50 border border-gray-200 rounded-xl p-4 text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-gray-800'
+                          }`}
+                        />
+                        {reportCommentsError && (
+                          <p className="text-xs text-red-600 font-bold flex items-center gap-1 mt-1 animate-in fade-in duration-200">
+                            <AlertCircle size={13} className="shrink-0 text-red-600" />
+                            Review comments are required when "Others" is selected.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Actions Buttons matching user screenshot */}
+                    <div className="space-y-3 pt-6 border-t border-gray-100 mt-6">
+                      {(() => {
+                        const fileId = reportPreviewFile?.id || reportPreviewFile?.path || reportPreviewFile?.name;
+                        const currentDecision = reportDecisions[fileId]?.decision;
+                        if (currentDecision === 'approve') {
+                          return (
+                            <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-center mb-1">
+                              <CheckCircle size={18} className="text-green-600 mx-auto mb-1" />
+                              <p className="text-xs font-bold text-green-700 uppercase tracking-wider">Already Approved</p>
+                              <p className="text-[11px] text-green-600 mt-0.5">No re-approval needed. You can still return this file if you find an issue.</p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
+
+                      <button 
+                        type="button"
+                        onClick={handleApproveReportFile}
+                        className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-green-600/10 uppercase text-xs tracking-wider cursor-pointer hover:scale-[1.01] active:scale-95"
+                      >
+                        <CheckCircle size={16} />
+                        <span>Approve Attachment</span>
+                      </button>
+                      
+                      <button 
+                        type="button"
+                        onClick={handleReturnReportFile}
+                        disabled={!reportPreviewAction}
+                        className={`w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold transition-all shadow-lg shadow-amber-500/10 uppercase text-xs tracking-wider ${
+                          !reportPreviewAction
+                            ? 'bg-[#fed7aa] text-white opacity-80 cursor-not-allowed'
+                            : 'bg-amber-500 hover:bg-amber-600 text-white cursor-pointer hover:scale-[1.01] active:scale-95'
+                        }`}
+                      >
+                        <RotateCcw size={16} />
+                        <span>Return for Edits</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           );

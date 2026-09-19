@@ -75,14 +75,29 @@ const AccomplishmentReportPreviewModal = ({
     const buildInitialHtml = () => {
       let proofsHtml = '';
       if (proofImages && proofImages.length > 0) {
-        proofsHtml = proofImages
-          .map((img) => {
-            const src = img?.file_url || img?.url;
-            if (!src) return '';
-            return `<div style="margin-bottom: 20px; text-align: center;"><img src="${src}" class="default-center-img" style="max-width: 80%; max-height: 400px; object-fit: contain; margin: 0 auto;" /></div>`;
-          })
-          .filter(Boolean)
-          .join('');
+        const validProofs = proofImages
+          .map((img) => img?.file_url || img?.url)
+          .filter(Boolean);
+
+        if (validProofs.length === 1) {
+          proofsHtml = `
+            <div style="text-align: center; margin-top: 15px; margin-bottom: 15px; page-break-inside: avoid; break-inside: avoid;">
+              <div style="display: inline-block; background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px; max-width: 90%;">
+                <img src="${validProofs[0]}" class="default-center-img" style="max-width: 100%; max-height: 320px; object-fit: contain; display: block; margin: 0 auto;" />
+              </div>
+            </div>
+          `;
+        } else if (validProofs.length > 1) {
+          proofsHtml = `
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 15px; margin-bottom: 15px;">
+              ${validProofs.map((src) => `
+                <div style="page-break-inside: avoid; break-inside: avoid; text-align: center; background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px; display: flex; align-items: center; justify-content: center; min-height: 180px; max-height: 240px; box-sizing: border-box;">
+                  <img src="${src}" class="default-center-img" style="max-width: 100%; max-height: 220px; object-fit: contain; display: block; margin: 0 auto;" />
+                </div>
+              `).join('')}
+            </div>
+          `;
+        }
       }
 
       const subtypeName = submission?.document_subtypes?.name || 'MAIN CAMPUS';

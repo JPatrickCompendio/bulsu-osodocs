@@ -293,10 +293,29 @@ const phaseMatchers = {
   accomplishment_report: (log) => {
     const type = norm(log?.action_type);
     const review = norm(log?.review_action);
+    const phase = norm(log?.workflow_phase);
+    const desc = norm(log?.description);
     return (
       type === 'accomplishment report' ||
       review.includes('accomplishment') ||
+      phase === 'accomplishment' ||
+      desc.includes('accomplishment report') ||
       logText(log).includes('accomplishment report')
+    );
+  },
+  report_review: (log) => {
+    const type = norm(log?.action_type);
+    const review = norm(log?.review_action);
+    const phase = norm(log?.workflow_phase);
+    const desc = norm(log?.description);
+    return (
+      phase.includes('report') ||
+      type.includes('report') ||
+      review.includes('report') ||
+      desc.includes('report validation') ||
+      desc.includes('reports approved') ||
+      desc.includes('report revisions requested') ||
+      logText(log).includes('report review')
     );
   }
 };
@@ -337,6 +356,13 @@ const STATUS_TO_NEXT_PHASE = {
 
   'waiting for accomplishment report': 'accomplishment_report',
   'accomplishment report': 'accomplishment_report',
+  'approved(report submission)': 'accomplishment_report',
+  'approved (report submission)': 'accomplishment_report',
+
+  'oso staff (pending report)': 'report_review',
+  'pending report': 'report_review',
+  'report review': 'report_review',
+  'oso staff report review': 'report_review',
 
   returned: 'resubmitted'
 };
@@ -350,7 +376,8 @@ const PHASE_SEQUENCE = [
   'approved_external',
   'ready_for_retrieval',
   'document_retrieved',
-  'accomplishment_report'
+  'accomplishment_report',
+  'report_review'
 ];
 
 const PENDING_PHASE_TEMPLATES = {
@@ -441,10 +468,19 @@ const PENDING_PHASE_TEMPLATES = {
     action_type: 'accomplishment_report',
     review_action: 'accomplishment-report-submitted',
     workflow_phase: 'approved',
-    description: 'Accomplishment report submission',
-    users: { full_name: 'Pending', role: 'org-president' },
+    description: 'Awaiting Accomplishment and Financial Report submission by Organization President.',
+    users: { full_name: 'Pending Submission', role: 'org-president' },
     displayName: 'Organization President',
     displayRole: 'ORG-PRESIDENT'
+  },
+  report_review: {
+    action_type: 'report_review',
+    review_action: 'pending-report-review',
+    workflow_phase: 'report_review',
+    description: 'Awaiting Accomplishment and Financial Report validation by OSO Staff (Chairman / Vice Chairman).',
+    users: { full_name: 'Pending Report Validation', role: 'chairman' },
+    displayName: 'Chairman / Vice Chairman',
+    displayRole: 'CHAIRMAN'
   }
 };
 

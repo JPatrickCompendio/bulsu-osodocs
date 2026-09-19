@@ -117,8 +117,8 @@ function isWorkflowLogRelevantForRole(role, log, submission) {
   if (status === 'draft') return false;
   if (['created', 'viewed', 'attachment_review', 'draft'].includes(actionType)) return false;
 
-  // (ADMIN / SDS / OSO STAFF)
-  if (normRole === 'admin' || normRole === 'oso-staff' || normRole === 'sds-coordinator') {
+  // (ADMIN / SDS)
+  if (normRole === 'admin' || normRole === 'sds-coordinator') {
     // Explicitly EXCLUDE Chairman or Vice Chairman approvals, returns, or forwarding logs from Admin
     if (phase.includes('chairman') || desc.includes('by chairman') || desc.includes('by vice chairman')) {
       return false;
@@ -128,18 +128,36 @@ function isWorkflowLogRelevantForRole(role, log, submission) {
     if (actionType.includes('retriev') || desc.includes('retriev')) return true;
 
     // 2) Retain notification when Org President submits accomplishment report
-    if (phase === 'accomplishment' || actionType.includes('accomplishment') || desc.includes('accomplishment')) return true;
+    if (phase === 'accomplishment' || phase.includes('report') || actionType.includes('accomplishment') || desc.includes('accomplishment')) return true;
 
     return false;
   }
 
-  // (CHAIRMAN & VICE-CHAIRMAN)
-  if (normRole === 'chairman' || normRole === 'vice-chairman') {
+  // (CHAIRMAN & VICE-CHAIRMAN & OSO STAFF)
+  if (
+    normRole === 'chairman' ||
+    normRole === 'vice-chairman' ||
+    normRole === 'vice chairman' ||
+    normRole.includes('vice') ||
+    normRole === 'oso-staff' ||
+    normRole === 'oso staff'
+  ) {
     // Retain 'submitted' notification permanently for Chairman (even after Chairman approves or returns)
     if (actionType === 'submitted' || desc.includes('submitted')) return true;
 
-    // Retain accomplishment report submission
-    if (phase === 'accomplishment' || actionType.includes('accomplishment') || desc.includes('accomplishment')) return true;
+    // Retain accomplishment and financial report submission
+    if (
+      phase === 'accomplishment' ||
+      phase === 'report_review' ||
+      phase.includes('report') ||
+      actionType.includes('accomplishment') ||
+      actionType.includes('report') ||
+      desc.includes('accomplishment') ||
+      desc.includes('financial') ||
+      desc.includes('pending report') ||
+      status.includes('pending report') ||
+      status.includes('report')
+    ) return true;
 
     return false;
   }
@@ -253,7 +271,16 @@ const Header = ({ onToggleMobileMenu, onOpenMemberModal }) => {
             notifs.push(...workflowItems);
           }
         }
-      } else if (user.role === 'admin' || user.role === 'chairman' || user.role === 'vice-chairman') {
+      } else if (
+        user.role === 'admin' ||
+        user.role === 'chairman' ||
+        user.role === 'vice-chairman' ||
+        user.role === 'vice chairman' ||
+        user.role === 'oso-staff' ||
+        user.role === 'oso staff' ||
+        String(user.role).toLowerCase().includes('vice') ||
+        String(user.role).toLowerCase().includes('sds')
+      ) {
         // A) Workflow Logs (Accomplishment reports, org submissions, document retrievals)
         const { data: logs, error: logsErr } = await supabase
           .from('submission_logs')
@@ -291,9 +318,25 @@ const Header = ({ onToggleMobileMenu, onOpenMemberModal }) => {
             const ownerName = sub.users?.full_name || '';
 
             let statusAction = rawActionType.replace(/_/g, ' ').toUpperCase();
-            if (rawActionType === 'submitted' || rawActionType === 'forwarded') {
+            const subStatusLower = String(sub.status || '').toLowerCase();
+            const isReportPhase =
+              subStatusLower.includes('pending report') ||
+              subStatusLower.includes('report review') ||
+              subStatusLower === 'oso staff (pending report)' ||
+              String(l.workflow_phase || '').toLowerCase().includes('report') ||
+              String(l.review_action || '').toLowerCase().includes('report');
+
+            if (isReportPhase) {
+              statusAction = 'REPORT REVIEW';
+            } else if (rawActionType === 'submitted' || rawActionType === 'forwarded') {
               statusAction = 'PENDING REVIEW';
             }
+
+            const descText = (String(l.description || '') + ' ' + String(l.comment || '')).toLowerCase();
+            const isReportSubmitMsg = isReportPhase && (rawActionType === 'submitted' || descText.includes('report'));
+            const message = isReportSubmitMsg
+              ? (l.description || l.comment || `${orgAbbr || 'Organization'} submitted Accomplishment and Financial Reports for review.`)
+              : (l.description || l.comment || l.message || 'Status changed');
 
             return {
               id: `log_${l.id}`,
@@ -305,7 +348,7 @@ const Header = ({ onToggleMobileMenu, onOpenMemberModal }) => {
               orgAbbr,
               ownerName,
               title: mainTitle,
-              message: l.description || l.comment || l.message || 'Status changed',
+              message,
               timestamp: l.created_at,
               source: {
                 ...l,
@@ -324,17 +367,28 @@ const Header = ({ onToggleMobileMenu, onOpenMemberModal }) => {
           .select('id, tracking_number, status, created_at, updated_at, documentType:document_type_id(name), users:user_id(full_name, org_name, abbreviation)')
           .neq('status', 'draft');
 
-        // Admin ONLY sees submissions that have reached Admin review stage (excluding 'submitted', 'disapproved', 'returned' which belong to Chairman/Org President)
-        if (user.role === 'admin') {
+        const normUserRole = String(user.role || '').toLowerCase();
+        if (normUserRole === 'admin' || normUserRole.includes('sds')) {
           queueQuery = queueQuery
             .neq('status', 'submitted')
             .neq('status', 'disapproved')
             .neq('status', 'returned');
+        } else {
+          // Chairman, Vice Chairman, OSO Staff
+          queueQuery = queueQuery
+            .in('status', [
+              'submitted', 'Submitted',
+              'pending', 'Pending',
+              'oso staff review', 'OSO Staff Review',
+              'oso staff (pending report)', 'OSO Staff (Pending Report)',
+              'pending report', 'Pending Report',
+              'report review', 'Report Review'
+            ]);
         }
 
         const { data: queueSubs } = await queueQuery
-          .order('created_at', { ascending: false })
-          .limit(25);
+          .order('updated_at', { ascending: false, nullsFirst: false })
+          .limit(30);
 
         if (queueSubs && queueSubs.length > 0) {
           const unhandledQueueSubs = queueSubs.filter(s => !logSubIdsSet.has(s.id));
@@ -350,7 +404,17 @@ const Header = ({ onToggleMobileMenu, onOpenMemberModal }) => {
               const docType = getDocumentTypeName(sub);
               const activityTitle = queueTitleMap[sub.id] || '';
               const mainTitle = formatHeadlineTitle(sub, activityTitle, 40);
-              const statusAction = 'PENDING REVIEW';
+
+              const subStatusLower = String(sub.status || '').toLowerCase();
+              const isReportPhase =
+                subStatusLower.includes('pending report') ||
+                subStatusLower.includes('report review') ||
+                subStatusLower === 'oso staff (pending report)';
+
+              const statusAction = isReportPhase ? 'REPORT REVIEW' : 'PENDING REVIEW';
+              const message = isReportPhase
+                ? `${orgName} submitted Accomplishment & Financial Reports for review.`
+                : `${orgName} submitted ${docType} for review.`;
 
               return {
                 id: `queue_${sub.id}`,
@@ -362,7 +426,7 @@ const Header = ({ onToggleMobileMenu, onOpenMemberModal }) => {
                 orgAbbr,
                 ownerName,
                 title: mainTitle,
-                message: `${orgName} submitted ${docType} for review.`,
+                message,
                 timestamp: sub.updated_at || sub.created_at,
                 source: {
                   submission_id: sub.id,
