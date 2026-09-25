@@ -1,5 +1,5 @@
-const SUPABASE_URL = 'https://ngvnkvzpaynlwvajlxis.supabase.co';
-const API_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ndm5rdnpwYXlubHd2YWpseGlzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0Njc4NzAsImV4cCI6MjA5NDA0Mzg3MH0.2wduUJA0m-LHwpd3yFVot5zBkuCFmC35XLRG5KR6bQA';
+const SUPABASE_URL = 'https://nnjgtzqyyglmplspmtjd.supabase.co';
+const API_KEY = 'sb_publishable_6Mj1yCKGPgpACtFispbiVg_vlhqNx5Z';
 const API_URL = `${SUPABASE_URL}/functions/v1/api`;
 
 async function apiCall(path, method = 'GET', body = null) {

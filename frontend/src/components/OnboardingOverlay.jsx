@@ -17,7 +17,7 @@ export default function OnboardingOverlay() {
   
   // Image State
   const [isUploadingImage, setIsUploadingImage] = useState(false);
-  const [avatarUrl, setAvatarUrl] = useState(user?.profile_image ? `https://yqsqxoywdbdmsqejysxj.supabase.co/storage/v1/object/public/profile_img/${user.profile_image}` : null);
+  const [avatarUrl, setAvatarUrl] = useState(user?.profile_image ? `https://nnjgtzqyyglmplspmtjd.supabase.co/storage/v1/object/public/profile_img/${user.profile_image}` : null);
   const fileInputRef = useRef(null);
   
   const [error, setError] = useState(null);

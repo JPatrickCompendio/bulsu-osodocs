@@ -1,6 +1,6 @@
 const { createClient } = require('@supabase/supabase-js');
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://jysqefwobzoxfldwrmpz.supabase.co';
+const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://nnjgtzqyyglmplspmtjd.supabase.co';
 const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp5c3FlZndvYnpveGZsZHdybXB6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjA1MDg3NzYsImV4cCI6MjAzNjA4NDc3Nn0.xxx';
 
 // Using actual anon key from .env if possible

@@ -1,4 +1,4 @@
-const API_URL = 'https://ngvnkvzpaynlwvajlxis.supabase.co/functions/v1/api';
+const API_URL = 'https://nnjgtzqyyglmplspmtjd.supabase.co/functions/v1/api';
 
 async function testMainCampusWorkflow() {
   console.log('Now approving at MAIN_CAMPUS_REVIEW stage...');

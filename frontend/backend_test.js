@@ -5,7 +5,7 @@ try {
   envFile = fs.readFileSync('./.env', 'utf8');
 } catch(e) {}
 
-let supabaseUrl = 'https://ngvnkvzpaynlwvajlxis.supabase.co';
+let supabaseUrl = 'https://nnjgtzqyyglmplspmtjd.supabase.co';
 let supabaseAnonKey = '';
 
 if (envFile) {
