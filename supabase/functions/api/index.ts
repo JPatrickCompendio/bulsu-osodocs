@@ -532,12 +532,25 @@ async function handleGetUsers() {
     if (l.user_id) usersWithSubmissions.add(String(l.user_id));
   });
 
+  const { data: orgsData } = await supabase.from('organizations').select('id, name, abbreviation');
+  const orgMap = new Map<string, { id: string; name?: string; abbreviation?: string }>();
+  (orgsData || []).forEach((o: any) => {
+    if (o.id) orgMap.set(String(o.id), o);
+  });
+
   const emailMap = await getAuthEmailsMap();
-  const enriched = (data || []).map((u) => ({
-    ...u,
-    email: emailMap.get(u.id) || null,
-    has_submissions: usersWithSubmissions.has(String(u.id)) || (u.organization_id ? usersWithSubmissions.has(String(u.organization_id)) : false),
-  }));
+  const enriched = (data || []).map((u) => {
+    const matchedOrg = u.organization_id ? orgMap.get(String(u.organization_id)) : null;
+    const finalAbbr = u.abbreviation || matchedOrg?.abbreviation || null;
+    const finalOrgName = u.org_name || matchedOrg?.name || null;
+    return {
+      ...u,
+      abbreviation: finalAbbr,
+      org_name: finalOrgName,
+      email: emailMap.get(u.id) || null,
+      has_submissions: usersWithSubmissions.has(String(u.id)) || (u.organization_id ? usersWithSubmissions.has(String(u.organization_id)) : false),
+    };
+  });
   return jsonResponse(enriched);
 }
 
@@ -548,6 +561,18 @@ async function handleGetUserDetail(id: string, url?: URL) {
   const { data: user, error } = await supabase.from('users').select('*').eq('id', id).single();
   if (error || !user) {
     return jsonResponse({ error: 'User not found' }, 404);
+  }
+
+  if (user.organization_id) {
+    const { data: orgRec } = await supabase
+      .from('organizations')
+      .select('name, abbreviation')
+      .eq('id', user.organization_id)
+      .maybeSingle();
+    if (orgRec) {
+      if (!user.abbreviation && orgRec.abbreviation) user.abbreviation = orgRec.abbreviation;
+      if (!user.org_name && orgRec.name) user.org_name = orgRec.name;
+    }
   }
 
   const orgId = user.organization_id;
@@ -1579,6 +1604,8 @@ async function handlePutUsers(id: string, body: Record<string, unknown>) {
       }
 
       targetAbbr = trimmedAbbr;
+    } else if (existingUser?.abbreviation) {
+      targetAbbr = existingUser.abbreviation;
     }
   }
 
@@ -1596,7 +1623,7 @@ async function handlePutUsers(id: string, body: Record<string, unknown>) {
   };
 
   if (abbreviation !== undefined) {
-    updatePayload.abbreviation = targetAbbr;
+    updatePayload.abbreviation = targetAbbr || existingUser?.abbreviation || null;
   }
 
   if (profile_image !== undefined && profile_image !== null && profile_image !== '') {
@@ -1618,11 +1645,19 @@ async function handlePutUsers(id: string, body: Record<string, unknown>) {
   const isOrg = (role || existingUser?.role) === 'org-president';
   const orgId = existingUser?.organization_id || id;
 
-  if (existingUser?.organization_id && abbreviation !== undefined) {
-    await supabase
-      .from('organizations')
-      .update({ abbreviation: targetAbbr })
-      .eq('id', existingUser.organization_id);
+  if (existingUser?.organization_id) {
+    const orgUpdate: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (targetAbbr !== null && targetAbbr !== undefined) orgUpdate.abbreviation = targetAbbr;
+    if (org_name) orgUpdate.name = org_name;
+    if (joined_date) orgUpdate.formation_date = joined_date;
+    await supabase.from('organizations').update(orgUpdate).eq('id', existingUser.organization_id);
+  } else if (isOrg) {
+    const orgName = org_name || existingUser?.org_name;
+    if (orgName) {
+      const orgUpdate: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (targetAbbr) orgUpdate.abbreviation = targetAbbr;
+      await supabase.from('organizations').update(orgUpdate).ilike('name', orgName.trim());
+    }
   }
 
   // Synchronize changes to organization_academic_years table for current/selected AY
@@ -1972,12 +2007,21 @@ async function handleGetOrganizationsByAy(url: URL) {
     if (l.user_id) usersWithSubmissions.add(String(l.user_id));
   });
 
+  const { data: orgsData } = await supabase.from('organizations').select('id, name, abbreviation');
+  const orgMap = new Map<string, { id: string; name?: string; abbreviation?: string }>();
+  (orgsData || []).forEach((o: any) => {
+    if (o.id) orgMap.set(String(o.id), o);
+  });
+
   const emailMap = await getAuthEmailsMap();
 
   const enriched: any[] = [];
 
   (usersData || []).forEach((u: any) => {
     const orgId = u.organization_id || u.id;
+    const matchedOrg = u.organization_id ? orgMap.get(String(u.organization_id)) : orgMap.get(String(u.id));
+    const finalAbbr = u.abbreviation || matchedOrg?.abbreviation || null;
+    const finalOrgName = u.org_name || matchedOrg?.name || null;
     const orgSnaps = orgSnapshotsMap.get(orgId) || (u.organization_id ? orgSnapshotsMap.get(u.id) : []) || [];
     
     const currentSnap = orgSnaps.find((s: any) => s.school_year_id === targetSyId);
@@ -2029,6 +2073,8 @@ async function handleGetOrganizationsByAy(url: URL) {
 
     enriched.push({
       ...u,
+      abbreviation: finalAbbr,
+      org_name: finalOrgName,
       email: emailMap.get(u.id) || null,
       ay_snapshot: currentSnap || null,
       renewal_status: statusLabel === 'Renewed' ? 'RENEWED' : (statusLabel === 'New' ? 'NEW' : 'NOT_RENEWED'),

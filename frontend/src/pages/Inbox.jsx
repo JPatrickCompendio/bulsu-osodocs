@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { transitionSubmission } from '../services/submissionService';
 import SubmissionTimeline from '../components/SubmissionTimeline';
-import { parseObjectivesList, calculateProposalDuration } from '../utils/submissionLogUtils';
+import { parseObjectivesList, calculateProposalDuration, filterLatestBatchFiles } from '../utils/submissionLogUtils';
 import PageHeader from '../components/PageHeader';
 import { useToast } from '../hooks/useToast';
 import * as reqService from '../services/requirementService';
@@ -215,7 +215,28 @@ const mapInboxSubmission = (sub, viewer, subtypesMap = {}) => {
       hour12: true,
     }),
     timestamp: new Date(latestLogTime).getTime(),
-    isNew: rawStatus === 'submitted' || rawStatus === 'pending',
+    isNew: (rawStatus === 'submitted' || rawStatus === 'pending') && !(() => {
+      return Boolean(
+        (activeVersion && (activeVersion.version_number || 1) > 1) ||
+        (Array.isArray(sub.submission_versions) && sub.submission_versions.length > 1) ||
+        /resubmitted/i.test(sub.remarks || '') ||
+        (Array.isArray(sub.submission_logs) && sub.submission_logs.some(l => {
+          const at = String(l.action_type || l.review_action || '').toLowerCase();
+          const desc = String(l.description || l.comment || '').toLowerCase();
+          return at === 'resubmitted' || at === 'resubmit' || desc.includes('resubmitted');
+        }))
+      );
+    })(),
+    isResubmitted: Boolean(
+      (activeVersion && (activeVersion.version_number || 1) > 1) ||
+      (Array.isArray(sub.submission_versions) && sub.submission_versions.length > 1) ||
+      /resubmitted/i.test(sub.remarks || '') ||
+      (Array.isArray(sub.submission_logs) && sub.submission_logs.some(l => {
+        const at = String(l.action_type || l.review_action || '').toLowerCase();
+        const desc = String(l.description || l.comment || '').toLowerCase();
+        return at === 'resubmitted' || at === 'resubmit' || desc.includes('resubmitted');
+      }))
+    ),
     pic: customDetails.person_in_charge || sub.users?.full_name || 'N/A',
     studentId: customDetails.student_id_no || 'N/A',
     contact: customDetails.contact_number || 'N/A',
@@ -402,6 +423,39 @@ export const Inbox = () => {
     }
 
     return filteredLogs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  };
+
+  const extractCleanFileComment = (rawText, file) => {
+    if (!rawText || typeof rawText !== 'string') return '';
+    const text = rawText.trim();
+    const fileName = file?.name || file?.file_name || '';
+    const escapedName = fileName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+
+    if (file?.type === 'accomplishment') {
+      const accomMatch = text.match(/\[Accomplishment Report Returned\]:?\s*([^[]+)/i);
+      if (accomMatch && accomMatch[1]) return accomMatch[1].trim();
+    }
+
+    if (file?.type === 'financial' || escapedName) {
+      if (escapedName) {
+        const finSpecific = text.match(new RegExp('\\[Financial Report Returned - ' + escapedName + '\\]:?\\s*([^[]+)', 'i'));
+        if (finSpecific && finSpecific[1]) return finSpecific[1].trim();
+        const genericFile = text.match(new RegExp('\\[' + escapedName + '[^\\]]*\\]:?\\s*([^[]+)', 'i'));
+        if (genericFile && genericFile[1]) return genericFile[1].trim();
+      }
+      const finGeneral = text.match(/\[Financial Report Returned[^\]]*\]:?\s*([^[]+)/i);
+      if (finGeneral && finGeneral[1]) return finGeneral[1].trim();
+    }
+
+    if (text.includes('[') && text.includes(']')) {
+      const cat = file?.category || file?.categoryLabel || '';
+      if (cat) {
+        const catMatch = text.match(new RegExp('\\[' + cat.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&') + '[^\\]]*\\]:?\\s*([^[]+)', 'i'));
+        if (catMatch && catMatch[1]) return catMatch[1].trim();
+      }
+    }
+
+    return text;
   };
 
   const getActiveVersionId = (doc, versionOverride = null) => {
@@ -888,8 +942,9 @@ export const Inbox = () => {
         if (!listErr && files && files.length > 0) {
           // A. Accomplishment PDF Documents
           const pdfFiles = files.filter((file) => /\.pdf$/i.test(file.name));
+          const latestBatchPdfs = filterLatestBatchFiles(pdfFiles);
           const pdfUrls = await Promise.all(
-            pdfFiles.map(async (file) => {
+            latestBatchPdfs.map(async (file) => {
               const path = `accom-report/${submissionId}/${file.name}`;
               try {
                 const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600);
@@ -902,8 +957,9 @@ export const Inbox = () => {
 
           // B. Proof Images
           const imageFiles = files.filter((file) => /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(file.name));
+          const latestBatchImages = filterLatestBatchFiles(imageFiles);
           const imageUrls = await Promise.all(
-            imageFiles.map(async (file) => {
+            latestBatchImages.map(async (file) => {
               const path = `accom-report/${submissionId}/${file.name}`;
               try {
                 const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600);
@@ -930,8 +986,9 @@ export const Inbox = () => {
 
         if (!finListErr && finFiles && finFiles.length > 0) {
           const validFinFiles = finFiles.filter((file) => /\.(jpg|jpeg|png|gif|webp|bmp|pdf)$/i.test(file.name));
+          const latestBatchFinFiles = filterLatestBatchFiles(validFinFiles);
           const finUrls = await Promise.all(
-            validFinFiles.map(async (file) => {
+            latestBatchFinFiles.map(async (file) => {
               const path = `financial-report/${submissionId}/${file.name}`;
               const isPdf = /\.pdf$/i.test(file.name);
               try {
@@ -948,6 +1005,21 @@ export const Inbox = () => {
       } catch (err) {
         setReportFinancialFiles([]);
       }
+
+      // 4. Initialize pre-approved decisions if applicable
+      const rawRemarks = String(selectedDoc?.raw?.remarks || selectedDoc?.remarks || '').trim();
+      const isAccomApprovedPrior =
+        /\[Accomplishment Report\]:\s*Approved/i.test(rawRemarks) ||
+        /Accomplishment Report previously approved/i.test(rawRemarks);
+      const isFinApprovedPrior =
+        /\[Financial Report\]:\s*Approved/i.test(rawRemarks) ||
+        /Financial Report previously approved/i.test(rawRemarks);
+
+      const initialDecisions = {};
+      if (isAccomApprovedPrior) {
+        initialDecisions['report-accomplishment'] = { decision: 'approve', comments: '' };
+      }
+      setReportDecisions(initialDecisions);
     } catch (e) {
       console.error('Error in fetchReportReviewData:', e);
     } finally {
@@ -1341,7 +1413,21 @@ export const Inbox = () => {
       return;
     }
 
-    const unreviewed = allItems.filter(f => !reportDecisions[f.id]?.decision);
+    const rawRemarks = String(selectedDoc?.raw?.remarks || selectedDoc?.remarks || '').trim();
+    const isAccomApprovedPrior =
+      /\[Accomplishment Report\]:\s*Approved/i.test(rawRemarks) ||
+      /Accomplishment Report previously approved/i.test(rawRemarks);
+    const isFinApprovedPrior =
+      /\[Financial Report\]:\s*Approved/i.test(rawRemarks) ||
+      /Financial Report previously approved/i.test(rawRemarks);
+
+    const unreviewed = allItems.filter(f => {
+      if (reportDecisions[f.id]?.decision) return false;
+      if (f.type === 'accomplishment' && isAccomApprovedPrior) return false;
+      if (f.type === 'financial' && isFinApprovedPrior) return false;
+      return true;
+    });
+
     if (unreviewed.length > 0) {
       showToast(`Please review all attached files first (${unreviewed.length} pending).`);
       return;
@@ -1354,7 +1440,13 @@ export const Inbox = () => {
       return;
     }
 
-    const isAllApproved = allItems.every(f => reportDecisions[f.id]?.decision === 'approve');
+    const isAllApproved = allItems.every(f => {
+      const dec = reportDecisions[f.id]?.decision;
+      if (dec) return dec === 'approve';
+      if (f.type === 'accomplishment' && isAccomApprovedPrior) return true;
+      if (f.type === 'financial' && isFinApprovedPrior) return true;
+      return false;
+    });
 
     try {
       setIsReportSubmitting(true);
@@ -2065,6 +2157,14 @@ export const Inbox = () => {
             <div className="p-3.5 sm:p-6 space-y-3 animate-in slide-in-from-top-4 duration-500">
               {isReportReview ? (
                 (() => {
+                  const rawRemarks = String(selectedDoc?.raw?.remarks || selectedDoc?.remarks || '').trim();
+                  const isAccomApprovedPrior =
+                    /\[Accomplishment Report\]:\s*Approved/i.test(rawRemarks) ||
+                    /Accomplishment Report previously approved/i.test(rawRemarks);
+                  const isFinApprovedPrior =
+                    /\[Financial Report\]:\s*Approved/i.test(rawRemarks) ||
+                    /Financial Report previously approved/i.test(rawRemarks);
+
                   const accomItems = (reportAccomPdfs.length > 0 ? reportAccomPdfs : (reportAccomplishment ? [{
                     id: `report-accomplishment`,
                     name: 'Accomplishment_Report.pdf',
@@ -2072,13 +2172,14 @@ export const Inbox = () => {
                     url: reportAccomImages[0]?.url || ''
                   }] : [])).map((f, idx) => {
                     const fileId = f.id || f.path || `report-accomplishment-${idx}`;
-                    const dec = reportDecisions[fileId];
+                    const dec = reportDecisions[fileId] || reportDecisions['report-accomplishment'];
+                    const decision = dec ? dec.decision : (isAccomApprovedPrior ? 'approve' : null);
                     return {
                       ...f,
                       id: fileId,
                       type: 'accomplishment',
                       name: f.name || 'Accomplishment_Report.pdf',
-                      decision: dec?.decision || null,
+                      decision: decision,
                       comments: dec?.comments || ''
                     };
                   });
@@ -2086,12 +2187,13 @@ export const Inbox = () => {
                   const finItems = reportFinancialFiles.map((f, idx) => {
                     const fileId = f.id || f.path || `report-financial-${idx}`;
                     const dec = reportDecisions[fileId];
+                    const decision = dec ? dec.decision : (isFinApprovedPrior ? 'approve' : null);
                     return {
                       ...f,
                       id: fileId,
                       type: 'financial',
                       name: f.name || 'Financial_Report.pdf',
-                      decision: dec?.decision || null,
+                      decision: decision,
                       comments: dec?.comments || ''
                     };
                   });
@@ -2540,9 +2642,10 @@ export const Inbox = () => {
           const allVersions = Array.isArray(selectedDoc.raw?.submission_versions) 
             ? [...selectedDoc.raw.submission_versions].sort((a, b) => b.version_number - a.version_number)
             : [selectedDoc.raw?.submission_versions].filter(Boolean);
-          const currentVersionIdToUse = selectedVersionId || selectedDoc.raw?.current_version_id;
+          const latestVersionId = selectedDoc.raw?.current_version_id || selectedDoc.current_version_id || allVersions[0]?.id;
+          const currentVersionIdToUse = selectedVersionId || latestVersionId;
           const activeVersion = allVersions.find(v => v.id === currentVersionIdToUse) || allVersions[0];
-          const isLatestVersion = activeVersion?.id === selectedDoc.raw?.current_version_id;
+          const isLatestVersion = Boolean(!selectedVersionId || selectedVersionId === latestVersionId || (activeVersion && latestVersionId && activeVersion.id === latestVersionId));
           const currentVersionNumber = activeVersion?.version_number || 1;
           const isResubmittedVersion = currentVersionNumber > 1;
           const previousVersion = allVersions.find(
@@ -2629,29 +2732,58 @@ export const Inbox = () => {
             statusLower === 'oso staff (pending report)';
 
           if (isReportReview) {
+            if (!isLatestVersion) return null;
+            const rawRemarks = String(selectedDoc?.raw?.remarks || selectedDoc?.remarks || '').trim();
+            const isAccomApprovedPrior =
+              /\[Accomplishment Report\]:\s*Approved/i.test(rawRemarks) ||
+              /Accomplishment Report previously approved/i.test(rawRemarks);
+            const isFinApprovedPrior =
+              /\[Financial Report\]:\s*Approved/i.test(rawRemarks) ||
+              /Financial Report previously approved/i.test(rawRemarks);
+
             const accomItems = (reportAccomPdfs.length > 0 ? reportAccomPdfs : (reportAccomplishment ? [{
               id: `report-accomplishment`,
               name: 'Accomplishment_Report.pdf',
               path: `accom-report/${selectedDoc.id}/Accomplishment_Report.pdf`,
               url: reportAccomImages[0]?.url || ''
-            }] : [])).map((f, idx) => ({ ...f, id: f.id || f.path || `report-accomplishment-${idx}`, type: 'accomplishment' }));
+            }] : [])).map((f, idx) => {
+              const fileId = f.id || f.path || `report-accomplishment-${idx}`;
+              const dec = reportDecisions[fileId] || reportDecisions['report-accomplishment'];
+              const decision = dec ? dec.decision : (isAccomApprovedPrior ? 'approve' : null);
+              return {
+                ...f,
+                id: fileId,
+                type: 'accomplishment',
+                name: f.name || 'Accomplishment_Report.pdf',
+                decision,
+                comments: dec?.comments || ''
+              };
+            });
 
-            const finItems = reportFinancialFiles.map((f, idx) => ({
-              ...f,
-              id: f.id || f.path || `report-financial-${idx}`,
-              type: 'financial',
-              name: f.name || 'Financial_Report.pdf'
-            }));
+            const finItems = reportFinancialFiles.map((f, idx) => {
+              const fileId = f.id || f.path || `report-financial-${idx}`;
+              const dec = reportDecisions[fileId];
+              const decision = dec ? dec.decision : (isFinApprovedPrior ? 'approve' : null);
+              return {
+                ...f,
+                id: fileId,
+                type: 'financial',
+                name: f.name || 'Financial_Report.pdf',
+                decision,
+                comments: dec?.comments || ''
+              };
+            });
 
             const allItems = [...accomItems, ...finItems];
             const hasItems = allItems.length > 0;
-            const allApproved = hasItems && allItems.every((f) => reportDecisions[f.id]?.decision === 'approve');
-            const returnedItems = allItems.filter((f) => reportDecisions[f.id]?.decision === 'return');
-            const hasValidReturns = returnedItems.length > 0 && returnedItems.every((f) => Boolean(reportDecisions[f.id]?.comments?.trim()));
-            const unreviewedCount = allItems.filter((f) => !reportDecisions[f.id]?.decision).length;
+            const unreviewedCount = allItems.filter((f) => !f.decision).length;
+            const allReviewed = hasItems && unreviewedCount === 0;
+            const allApproved = hasItems && allItems.every((f) => f.decision === 'approve');
+            const returnedItems = allItems.filter((f) => f.decision === 'return');
+            const hasValidReturns = returnedItems.length > 0 && returnedItems.every((f) => Boolean(f.comments?.trim() || reportDecisions[f.id]?.comments?.trim()));
 
-            const canApprove = allApproved;
-            const canReturn = hasValidReturns;
+            const canApprove = allReviewed && allApproved;
+            const canReturn = allReviewed && hasValidReturns;
 
             return (
               <div className="fixed bottom-3 sm:bottom-10 left-1/2 -translate-x-1/2 z-50 w-[95vw] sm:w-auto flex justify-center">
@@ -2677,7 +2809,7 @@ export const Inbox = () => {
                   <button 
                     onClick={handleReportReviewSubmit}
                     disabled={!canReturn || isReportSubmitting}
-                    title={!canReturn ? 'At least one report file must be marked for Return with remarks provided.' : ''}
+                    title={!canReturn ? (unreviewedCount > 0 ? `Please review all attached files first (${unreviewedCount} pending).` : 'At least one report file must be marked for Return with remarks provided.') : ''}
                     className={`flex items-center gap-1.5 sm:gap-3 px-2.5 sm:px-8 py-2 sm:py-3.5 bg-amber-500 text-white rounded-xl sm:rounded-2xl font-bold transition-all shadow-lg shadow-amber-500/20 group shrink-0 ${
                       !canReturn || isReportSubmitting
                         ? 'opacity-40 cursor-not-allowed'
@@ -2838,109 +2970,154 @@ export const Inbox = () => {
 
                   {/* Right Side: Review Panel */}
                   <div className="w-full md:w-96 bg-white p-4 sm:p-8 flex flex-col justify-between overflow-y-auto shrink-0 md:shrink">
-                    <div className="space-y-6">
-                      <div>
-                        <h4 className="font-bold text-gray-800 text-base mb-1">Document Review Panel</h4>
-                        <p className="text-gray-400 text-xs leading-relaxed">
-                          Provide your decision and choose structural remarks for feedback.
-                        </p>
-                      </div>
+                    {(() => {
+                      const allVersions = Array.isArray(selectedDoc?.raw?.submission_versions) 
+                        ? [...selectedDoc.raw.submission_versions].sort((a, b) => b.version_number - a.version_number)
+                        : [selectedDoc?.raw?.submission_versions].filter(Boolean);
+                      const latestVersionId = selectedDoc?.raw?.current_version_id || selectedDoc?.current_version_id || allVersions[0]?.id;
+                      const currentVersionIdToUse = selectedVersionId || latestVersionId;
+                      const activeVersion = allVersions.find(v => v.id === currentVersionIdToUse) || allVersions[0];
+                      const isLatestVersion = Boolean(!selectedVersionId || selectedVersionId === latestVersionId || (activeVersion && latestVersionId && activeVersion.id === latestVersionId));
 
-                      <div className="h-[1px] bg-gray-100"></div>
-
-                      {/* Review Action Dropdown */}
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block">Review Action</label>
-                        <select 
-                          value={reportPreviewAction}
-                          onChange={(e) => {
-                            setReportPreviewAction(e.target.value);
-                            if (reportCommentsError) setReportCommentsError(false);
-                          }}
-                          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-700 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer text-gray-800"
-                        >
-                          <option value="">None / Approved</option>
-                          <option value="incorrect-format">Incorrect Format</option>
-                          <option value="incomplete-information">Incomplete Information</option>
-                          <option value="others">Others</option>
-                        </select>
-                      </div>
-
-                      {/* Comments Textarea */}
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <label className={`text-xs font-bold uppercase tracking-widest block ${reportCommentsError ? 'text-red-600 font-extrabold' : 'text-gray-500'}`}>
-                            Review Comments {reportPreviewAction === 'others' && <span className="text-red-500 font-bold">*</span>}
-                          </label>
-                          {reportCommentsError && (
-                            <span className="text-xs font-bold text-red-600 flex items-center gap-1">
-                              <AlertCircle size={12} /> Required
-                            </span>
-                          )}
-                        </div>
-                        <textarea 
-                          value={reportPreviewComments}
-                          onChange={(e) => {
-                            setReportPreviewComments(e.target.value);
-                            if (reportCommentsError && e.target.value.trim()) setReportCommentsError(false);
-                          }}
-                          placeholder="Enter review comments..."
-                          rows={5}
-                          className={`w-full text-sm font-medium transition-all resize-none ${
-                            reportCommentsError
-                              ? 'bg-red-50/50 border-2 border-red-500 rounded-xl p-4 text-gray-800 focus:outline-none focus:ring-2 focus:ring-red-500/30'
-                              : 'bg-gray-50 border border-gray-200 rounded-xl p-4 text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-gray-800'
-                          }`}
-                        />
-                        {reportCommentsError && (
-                          <p className="text-xs text-red-600 font-bold flex items-center gap-1 mt-1 animate-in fade-in duration-200">
-                            <AlertCircle size={13} className="shrink-0 text-red-600" />
-                            Review comments are required when "Others" is selected.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Actions Buttons matching user screenshot */}
-                    <div className="space-y-3 pt-6 border-t border-gray-100 mt-6">
-                      {(() => {
-                        const fileId = reportPreviewFile?.id || reportPreviewFile?.path || reportPreviewFile?.name;
-                        const currentDecision = reportDecisions[fileId]?.decision;
-                        if (currentDecision === 'approve') {
-                          return (
-                            <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-center mb-1">
-                              <CheckCircle size={18} className="text-green-600 mx-auto mb-1" />
-                              <p className="text-xs font-bold text-green-700 uppercase tracking-wider">Already Approved</p>
-                              <p className="text-[11px] text-green-600 mt-0.5">No re-approval needed. You can still return this file if you find an issue.</p>
+                      if (!isLatestVersion) {
+                        return (
+                          <div className="space-y-6 flex flex-col justify-between h-full">
+                            <div className="space-y-4">
+                              <div>
+                                <h4 className="font-bold text-gray-800 text-base mb-1">Attachment Information</h4>
+                                <p className="text-gray-400 text-xs leading-relaxed">
+                                  Viewing report for Version {activeVersion?.version_number || 1}. Historical versions are read-only.
+                                </p>
+                              </div>
+                              <div className="h-[1px] bg-gray-100"></div>
+                              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
+                                <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">Historical Version</p>
+                                <p className="text-[11px] text-amber-700 mt-1">
+                                  Validation cannot be provided on an older version. Please switch to the latest version to review this report.
+                                </p>
+                              </div>
                             </div>
-                          );
-                        }
-                        return null;
-                      })()}
+                            <div className="pt-4 border-t border-gray-100">
+                              <button
+                                type="button"
+                                onClick={() => setReportPreviewFile(null)}
+                                className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-bold transition-all text-xs tracking-wider uppercase cursor-pointer"
+                              >
+                                Close Preview
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      }
 
-                      <button 
-                        type="button"
-                        onClick={handleApproveReportFile}
-                        className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-green-600/10 uppercase text-xs tracking-wider cursor-pointer hover:scale-[1.01] active:scale-95"
-                      >
-                        <CheckCircle size={16} />
-                        <span>Approve Attachment</span>
-                      </button>
-                      
-                      <button 
-                        type="button"
-                        onClick={handleReturnReportFile}
-                        disabled={!reportPreviewAction}
-                        className={`w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold transition-all shadow-lg shadow-amber-500/10 uppercase text-xs tracking-wider ${
-                          !reportPreviewAction
-                            ? 'bg-[#fed7aa] text-white opacity-80 cursor-not-allowed'
-                            : 'bg-amber-500 hover:bg-amber-600 text-white cursor-pointer hover:scale-[1.01] active:scale-95'
-                        }`}
-                      >
-                        <RotateCcw size={16} />
-                        <span>Return for Edits</span>
-                      </button>
-                    </div>
+                      return (
+                        <>
+                          <div className="space-y-6">
+                            <div>
+                              <h4 className="font-bold text-gray-800 text-base mb-1">Document Review Panel</h4>
+                              <p className="text-gray-400 text-xs leading-relaxed">
+                                Provide your decision and choose structural remarks for feedback.
+                              </p>
+                            </div>
+
+                            <div className="h-[1px] bg-gray-100"></div>
+
+                            {/* Review Action Dropdown */}
+                            <div className="space-y-2">
+                              <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block">Review Action</label>
+                              <select 
+                                value={reportPreviewAction}
+                                onChange={(e) => {
+                                  setReportPreviewAction(e.target.value);
+                                  if (reportCommentsError) setReportCommentsError(false);
+                                }}
+                                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-700 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer text-gray-800"
+                              >
+                                <option value="">None / Approved</option>
+                                <option value="incorrect-format">Incorrect Format</option>
+                                <option value="incomplete-information">Incomplete Information</option>
+                                <option value="others">Others</option>
+                              </select>
+                            </div>
+
+                            {/* Comments Textarea */}
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <label className={`text-xs font-bold uppercase tracking-widest block ${reportCommentsError ? 'text-red-600 font-extrabold' : 'text-gray-500'}`}>
+                                  Review Comments {reportPreviewAction === 'others' && <span className="text-red-500 font-bold">*</span>}
+                                </label>
+                                {reportCommentsError && (
+                                  <span className="text-xs font-bold text-red-600 flex items-center gap-1">
+                                    <AlertCircle size={12} /> Required
+                                  </span>
+                                )}
+                              </div>
+                              <textarea 
+                                value={reportPreviewComments}
+                                onChange={(e) => {
+                                  setReportPreviewComments(e.target.value);
+                                  if (reportCommentsError && e.target.value.trim()) setReportCommentsError(false);
+                                }}
+                                placeholder="Enter review comments..."
+                                rows={5}
+                                className={`w-full text-sm font-medium transition-all resize-none ${
+                                  reportCommentsError
+                                    ? 'bg-red-50/50 border-2 border-red-500 rounded-xl p-4 text-gray-800 focus:outline-none focus:ring-2 focus:ring-red-500/30'
+                                    : 'bg-gray-50 border border-gray-200 rounded-xl p-4 text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-gray-800'
+                                }`}
+                              />
+                              {reportCommentsError && (
+                                <p className="text-xs text-red-600 font-bold flex items-center gap-1 mt-1 animate-in fade-in duration-200">
+                                  <AlertCircle size={13} className="shrink-0 text-red-600" />
+                                  Review comments are required when "Others" is selected.
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Actions Buttons matching user screenshot */}
+                          <div className="space-y-3 pt-6 border-t border-gray-100 mt-6">
+                            {(() => {
+                              const fileId = reportPreviewFile?.id || reportPreviewFile?.path || reportPreviewFile?.name;
+                              const currentDecision = reportDecisions[fileId]?.decision;
+                              if (currentDecision === 'approve') {
+                                return (
+                                  <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-center mb-1">
+                                    <CheckCircle size={18} className="text-green-600 mx-auto mb-1" />
+                                    <p className="text-xs font-bold text-green-700 uppercase tracking-wider">Already Approved</p>
+                                    <p className="text-[11px] text-green-600 mt-0.5">No re-approval needed. You can still return this file if you find an issue.</p>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
+
+                            <button 
+                              type="button"
+                              onClick={handleApproveReportFile}
+                              className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-green-600/10 uppercase text-xs tracking-wider cursor-pointer hover:scale-[1.01] active:scale-95"
+                            >
+                              <CheckCircle size={16} />
+                              <span>Approve Attachment</span>
+                            </button>
+                            
+                            <button 
+                              type="button"
+                              onClick={handleReturnReportFile}
+                              disabled={!reportPreviewAction}
+                              className={`w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold transition-all shadow-lg shadow-amber-500/10 uppercase text-xs tracking-wider ${
+                                !reportPreviewAction
+                                  ? 'bg-[#fed7aa] text-white opacity-80 cursor-not-allowed'
+                                  : 'bg-amber-500 hover:bg-amber-600 text-white cursor-pointer hover:scale-[1.01] active:scale-95'
+                              }`}
+                            >
+                              <RotateCcw size={16} />
+                              <span>Return for Edits</span>
+                            </button>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
@@ -2962,9 +3139,14 @@ export const Inbox = () => {
           const fileLog = getLatestAttachmentLog(timelineLogs, previewFile.id, activeVersion, allVersions);
           const previewReturnHistory = getFileReturnHistory(previewFile, allVersions, attachmentReturnLogs, activeVersion);
           const latestPreviewReturn = previewReturnHistory[0] || null;
-          const previewDisplayLog =
+          const rawDisplayLog =
             latestPreviewReturn ||
             (RETURN_REASONS.includes(String(fileLog?.review_action || '').toLowerCase()) ? fileLog : null);
+
+          const previewDisplayLog = rawDisplayLog ? {
+            ...rawDisplayLog,
+            comment: extractCleanFileComment(rawDisplayLog.comment || rawDisplayLog.description, previewFile)
+          } : null;
 
           return (
             <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[9999] flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-300">
@@ -3500,18 +3682,27 @@ export const Inbox = () => {
                   <tr 
                     key={item.id} 
                     className={`group transition-all duration-300 cursor-pointer ${
-                      item.isNew ? 'bg-red-50/20' : 'bg-transparent'
-                    } hover:bg-gray-50/50`}
+                      item.isResubmitted
+                        ? 'bg-orange-50/25 hover:bg-orange-50/50'
+                        : item.isNew
+                          ? 'bg-emerald-50/20 hover:bg-emerald-50/40'
+                          : 'bg-transparent hover:bg-gray-50/50'
+                    }`}
                     onClick={() => { logDocumentViewed(item); setSelectedDoc(item); }}
                   >
                     <td className="px-3 sm:px-6 py-4 sm:py-5">
                       <div className="flex items-center gap-2 sm:gap-3">
-                        {item.isNew && (
-                          <div className="relative flex-shrink-0">
-                            <div className="w-2.5 h-2.5 bg-amber-500 rounded-full shadow-sm"></div>
-                            <div className="absolute inset-0 w-2.5 h-2.5 bg-amber-500 rounded-full animate-ping opacity-75"></div>
+                        {item.isResubmitted ? (
+                          <div className="relative flex-shrink-0" title="Resubmitted / Corrected Document">
+                            <div className="w-2.5 h-2.5 bg-orange-500 rounded-full shadow-sm"></div>
+                            <div className="absolute inset-0 w-2.5 h-2.5 bg-orange-500 rounded-full animate-ping opacity-75"></div>
                           </div>
-                        )}
+                        ) : item.isNew ? (
+                          <div className="relative flex-shrink-0" title="New Submission">
+                            <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-sm"></div>
+                            <div className="absolute inset-0 w-2.5 h-2.5 bg-emerald-500 rounded-full animate-ping opacity-75"></div>
+                          </div>
+                        ) : null}
                         <div className="min-w-0 flex-1">
                           {(() => {
                             const fullTitle = item.isActivityProposal ? item.title : `${item.org} ${item.type} ${activeSy ? activeSy.name : ''}`.toUpperCase();

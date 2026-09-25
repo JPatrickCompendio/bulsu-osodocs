@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
 import { 
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   X,
   Plus,
@@ -15,7 +16,8 @@ import {
   Phone,
   Calendar,
   Camera,
-  Clock
+  Clock,
+  Trash2
 } from 'lucide-react';
 
 import { apiFetch } from '../config/api';
@@ -55,6 +57,10 @@ const MyProfile = () => {
   const [allOrgMembers, setAllOrgMembers] = useState([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
+  const [showVpLimitModal, setShowVpLimitModal] = useState(false);
+  const [memberToDelete, setMemberToDelete] = useState(null);
+  const [isDeleteMemberModalOpen, setIsDeleteMemberModalOpen] = useState(false);
+  const [isDeletingMember, setIsDeletingMember] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
   const [isSavingMember, setIsSavingMember] = useState(false);
   const [positionSelection, setPositionSelection] = useState('Vice President');
@@ -65,6 +71,14 @@ const MyProfile = () => {
     student_number: '',
     contact_number: '',
   });
+
+  // Identify if a Vice President is already assigned in the current term
+  const existingVp = useMemo(() => {
+    return members.find((m) => {
+      const pos = (m.position || '').trim().toLowerCase();
+      return pos === 'vice president' || pos === 'vice-president' || pos === 'vp';
+    });
+  }, [members]);
 
   // Toast State
   const [toast, setToast] = useState(null);
@@ -265,7 +279,15 @@ const MyProfile = () => {
   };
 
   // 4. Update Profile Details
-  const handleUpdateProfile = async ({ fullName, abbreviation, contactNumber }) => {
+  const handleUpdateProfile = async ({
+    fullName,
+    abbreviation,
+    contactNumber,
+    studentNumber,
+    noMember,
+    adviserName,
+    coAdvisers,
+  }) => {
     if (!isPresident) {
       showToast('Only the Organization President can modify organization details.', 'error');
       return false;
@@ -273,6 +295,14 @@ const MyProfile = () => {
     if (!fullName?.trim()) {
       showToast('Full Name is required', 'error');
       return false;
+    }
+
+    if (contactNumber && contactNumber.trim()) {
+      const cleanContact = contactNumber.trim();
+      if (!/^09\d{9}$/.test(cleanContact)) {
+        showToast('Contact number must start with 09 and be exactly 11 digits (e.g. 09123456789).', 'error');
+        return false;
+      }
     }
 
     setIsSavingProfile(true);
@@ -306,6 +336,10 @@ const MyProfile = () => {
         }
 
         payload.abbreviation = trimmedAbbr;
+        payload.student_no = studentNumber?.trim() || null;
+        payload.no_member = (noMember !== undefined && noMember !== null && noMember !== '') ? parseInt(noMember, 10) : null;
+        payload.adviser_name = adviserName?.trim() || null;
+        payload.co_advisers = Array.isArray(coAdvisers) ? coAdvisers.filter(Boolean) : [];
       }
 
       const { error } = await supabase
@@ -315,27 +349,52 @@ const MyProfile = () => {
 
       if (error) throw error;
 
-      // Keep organization_academic_years in sync for active school year if record exists (matching admin logic)
+      // Keep organization_academic_years in sync for active school year if record exists or insert if missing
       if (user.role === 'org-president' && activeSy?.id) {
         const targetOrgId = user.organization_id || user.id;
         try {
-          await supabase
+          const oayPayload = {
+            president_name: fullName.trim(),
+            contact_no: contactNumber?.trim() || null,
+            student_no: studentNumber?.trim() || null,
+            no_member: (noMember !== undefined && noMember !== null && noMember !== '') ? parseInt(noMember, 10) : null,
+            adviser_name: adviserName?.trim() || null,
+            co_advisers: Array.isArray(coAdvisers) ? coAdvisers.filter(Boolean) : [],
+            updated_at: new Date().toISOString()
+          };
+
+          const { data: existingSnap } = await supabase
             .from('organization_academic_years')
-            .update({
-              president_name: fullName.trim(),
-              contact_no: contactNumber?.trim() || null,
-              updated_at: new Date().toISOString()
-            })
+            .select('id')
             .eq('school_year_id', activeSy.id)
-            .or(`organization_id.eq.${targetOrgId},organization_id.eq.${user.id}`);
+            .or(`organization_id.eq.${targetOrgId},organization_id.eq.${user.id}`)
+            .maybeSingle();
+
+          if (existingSnap) {
+            await supabase
+              .from('organization_academic_years')
+              .update(oayPayload)
+              .eq('id', existingSnap.id);
+          } else {
+            await supabase
+              .from('organization_academic_years')
+              .insert([{
+                organization_id: targetOrgId,
+                school_year_id: activeSy.id,
+                ...oayPayload,
+                created_at: new Date().toISOString()
+              }]);
+          }
           await loadHistoricalAcademicYears();
-        } catch (_) {}
+        } catch (oayErr) {
+          console.warn('Sync organization_academic_years warning:', oayErr);
+        }
       }
 
       await createAuditLog(`Updated profile details: ${fullName.trim()}`);
       await fetchUserDetail(user.id, selectedSyId);
       await refreshUser();
-      showToast('Profile details updated successfully!');
+      showToast('Profile and academic year details updated successfully!');
       return true;
     } catch (err) {
       console.error('Profile update error:', err);
@@ -406,6 +465,23 @@ const MyProfile = () => {
       return;
     }
 
+    // 1. Single Vice President validation
+    const posLower = resolvedPosition.toLowerCase();
+    const isVpRole = posLower === 'vice president' || posLower === 'vice-president' || posLower === 'vp';
+    if (isVpRole && existingVp && (!editingMember || String(editingMember.id) !== String(existingVp.id))) {
+      setShowVpLimitModal(true);
+      return;
+    }
+
+    // 2. Contact Number validation (Must start with 09 and be 11 digits)
+    const rawContact = (memberForm.contact_number || '').trim();
+    if (rawContact) {
+      if (!/^09\d{9}$/.test(rawContact)) {
+        showToast('Contact number must start with 09 and be exactly 11 digits (e.g. 09123456789).', 'error');
+        return;
+      }
+    }
+
     setIsSavingMember(true);
     try {
       const targetSy = selectedSyId || activeSy?.id || null;
@@ -414,7 +490,7 @@ const MyProfile = () => {
           full_name: memberForm.full_name.trim(),
           position: resolvedPosition,
           student_number: memberForm.student_number.trim() || null,
-          contact_number: memberForm.contact_number.trim() || null,
+          contact_number: rawContact || null,
           updated_at: new Date().toISOString()
         };
         if (targetSy) {
@@ -441,7 +517,7 @@ const MyProfile = () => {
           full_name: memberForm.full_name.trim(),
           position: resolvedPosition,
           student_number: memberForm.student_number.trim() || null,
-          contact_number: memberForm.contact_number.trim() || null,
+          contact_number: rawContact || null,
           school_year_id: targetSy,
         };
 
@@ -461,11 +537,14 @@ const MyProfile = () => {
 
       setIsMemberModalOpen(false);
       setEditingMember(null);
-      setPositionSelection('Vice President');
+      const defaultPos = existingVp ? 'Member' : 'Vice President';
+      setPositionSelection(defaultPos);
       setCustomPosition('');
-      setMemberForm({ full_name: '', position: 'Vice President', student_number: '', contact_number: '' });
+      setMemberForm({ full_name: '', position: defaultPos, student_number: '', contact_number: '' });
       await loadMembers(selectedSyId);
       await loadAllHistoricalMembers();
+      // Notify other components (DashboardLayout, MemberSelectorModal) immediately
+      window.dispatchEvent(new CustomEvent('organization-members-updated'));
     } catch (err) {
       console.error('Error saving member:', err);
       showToast(err.message || 'Failed to save executive member', 'error');
@@ -474,8 +553,8 @@ const MyProfile = () => {
     }
   };
 
-  // 7. Delete Member
-  const handleDeleteMember = async (id) => {
+  // 7. Delete Member Handlers
+  const handleOpenDeleteMemberModal = (memberOrId) => {
     if (!isPresident) {
       showToast('Only the Organization President can remove executive members.', 'error');
       return;
@@ -484,20 +563,35 @@ const MyProfile = () => {
       showToast('Executive members can only be removed from the active school year.', 'error');
       return;
     }
-    if (!window.confirm('Are you sure you want to remove this executive member?')) return;
+    const target = typeof memberOrId === 'object' && memberOrId !== null
+      ? memberOrId 
+      : members.find((m) => m.id === memberOrId) || { id: memberOrId };
+    setMemberToDelete(target);
+    setIsDeleteMemberModalOpen(true);
+  };
+
+  const handleConfirmDeleteMember = async () => {
+    if (!memberToDelete?.id) return;
+    setIsDeletingMember(true);
     try {
       const { error } = await supabase
         .from('organization_members')
         .delete()
-        .eq('id', id);
+        .eq('id', memberToDelete.id);
 
       if (error) throw error;
       showToast('Executive member removed.');
+      setIsDeleteMemberModalOpen(false);
+      setMemberToDelete(null);
       await loadMembers(selectedSyId);
       await loadAllHistoricalMembers();
+      // Notify other components (DashboardLayout, MemberSelectorModal) immediately
+      window.dispatchEvent(new CustomEvent('organization-members-updated'));
     } catch (err) {
       console.error('Error deleting member:', err);
       showToast('Failed to remove executive member', 'error');
+    } finally {
+      setIsDeletingMember(false);
     }
   };
 
@@ -643,8 +737,11 @@ const MyProfile = () => {
   const presidentAccountData = {
     fullName: effectiveFullName,
     email: profile?.email || user.email || '',
-    studentNumber: effectiveStudentNo,
+    studentNumber: effectiveStudentNo !== 'N/A' ? effectiveStudentNo : '',
     contactNumber: effectiveContactNo,
+    noMember: effectiveMemberCount,
+    adviserName: effectiveAdviserName || '',
+    coAdvisers: effectiveCoAdvisers || [],
     profileImage: user.avatarUrl || profile?.profile_image || user.profile_image,
     position: (profile?.role || user.role) === 'org-president' ? 'Organization President' : ((profile?.role || user.role) || 'Officer'),
     activeSince: new Date(profile?.joined_date || user.joined_date || profile?.created_at || user.created_at || Date.now()).toLocaleDateString(undefined, { 
@@ -847,9 +944,11 @@ const MyProfile = () => {
                 return;
               }
               setEditingMember(null);
-              setPositionSelection('Vice President');
+              const hasVp = Boolean(existingVp);
+              const initialPos = hasVp ? 'Member' : 'Vice President';
+              setPositionSelection(initialPos);
               setCustomPosition('');
-              setMemberForm({ full_name: '', position: 'Vice President', student_number: '', contact_number: '' });
+              setMemberForm({ full_name: '', position: initialPos, student_number: '', contact_number: '' });
               setIsMemberModalOpen(true);
             }}
             onEditOfficer={(member) => {
@@ -859,10 +958,14 @@ const MyProfile = () => {
               }
               setEditingMember(member);
               const pos = (member.position || '').trim();
-              const standardRoles = ['Vice President', 'Member'];
-              const matched = standardRoles.find(r => r.toLowerCase() === pos.toLowerCase());
-              if (matched) {
-                setPositionSelection(matched);
+              const isVp = pos.toLowerCase() === 'vice president' || pos.toLowerCase() === 'vice-president' || pos.toLowerCase() === 'vp';
+              const isMember = pos.toLowerCase() === 'member';
+
+              if (isVp) {
+                setPositionSelection('Vice President');
+                setCustomPosition('');
+              } else if (isMember) {
+                setPositionSelection('Member');
                 setCustomPosition('');
               } else if (pos) {
                 setPositionSelection('Other');
@@ -879,7 +982,7 @@ const MyProfile = () => {
               });
               setIsMemberModalOpen(true);
             }}
-            onDeleteOfficer={handleDeleteMember}
+            onDeleteOfficer={handleOpenDeleteMemberModal}
           />
 
           {/* 3. Term History Timeline Accordion */}
@@ -947,6 +1050,10 @@ const MyProfile = () => {
                   value={positionSelection}
                   onChange={(e) => {
                     const val = e.target.value;
+                    if (val === 'Vice President' && existingVp && (!editingMember || String(editingMember.id) !== String(existingVp.id))) {
+                      setShowVpLimitModal(true);
+                      return;
+                    }
                     setPositionSelection(val);
                     if (val !== 'Other') {
                       setMemberForm((prev) => ({ ...prev, position: val }));
@@ -956,7 +1063,12 @@ const MyProfile = () => {
                   }}
                   className="w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm text-ink outline-none transition-colors focus:border-forest-400 focus:ring-2 focus:ring-forest-100 cursor-pointer"
                 >
-                  <option value="Vice President">Vice President</option>
+                  <option 
+                    value="Vice President"
+                    disabled={Boolean(existingVp && (!editingMember || String(editingMember.id) !== String(existingVp.id)))}
+                  >
+                    Vice President {existingVp && (!editingMember || String(editingMember.id) !== String(existingVp.id)) ? '(Limit Reached - 1 only)' : ''}
+                  </option>
                   <option value="Member">Member</option>
                   <option value="Other">Other (Specify custom title...)</option>
                 </select>
@@ -968,8 +1080,15 @@ const MyProfile = () => {
                       required
                       value={customPosition}
                       onChange={(e) => {
-                        setCustomPosition(e.target.value);
-                        setMemberForm((prev) => ({ ...prev, position: e.target.value }));
+                        const val = e.target.value;
+                        setCustomPosition(val);
+                        setMemberForm((prev) => ({ ...prev, position: val }));
+                      }}
+                      onBlur={(e) => {
+                        const val = e.target.value.trim().toLowerCase();
+                        if ((val === 'vice president' || val === 'vice-president' || val === 'vp') && existingVp && (!editingMember || String(editingMember.id) !== String(existingVp.id))) {
+                          setShowVpLimitModal(true);
+                        }
                       }}
                       placeholder="e.g. Secretary, Treasurer, Auditor"
                       className="w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-forest-400 focus:ring-2 focus:ring-forest-100"
@@ -992,12 +1111,25 @@ const MyProfile = () => {
                 <div>
                   <label className="text-xs font-semibold text-ink-faint uppercase tracking-wider mb-1 block">Contact No.</label>
                   <input
-                    type="text"
+                    type="tel"
+                    maxLength={11}
                     value={memberForm.contact_number}
-                    onChange={(e) => setMemberForm({ ...memberForm, contact_number: e.target.value })}
+                    onChange={(e) => {
+                      const numeric = e.target.value.replace(/\D/g, '').slice(0, 11);
+                      setMemberForm({ ...memberForm, contact_number: numeric });
+                    }}
                     placeholder="e.g. 09123456789"
-                    className="w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-forest-400 focus:ring-2 focus:ring-forest-100"
+                    className={`w-full rounded-lg border px-3 py-2.5 text-sm text-ink outline-none transition-colors placeholder:text-ink-faint focus:ring-2 ${
+                      memberForm.contact_number && (!memberForm.contact_number.startsWith('09') || memberForm.contact_number.length !== 11)
+                        ? 'border-amber-400 bg-amber-50/20 focus:border-amber-500 focus:ring-amber-100'
+                        : 'border-line bg-white focus:border-forest-400 focus:ring-forest-100'
+                    }`}
                   />
+                  {memberForm.contact_number && (!memberForm.contact_number.startsWith('09') || memberForm.contact_number.length !== 11) && (
+                    <p className="text-[10px] text-amber-600 mt-1 font-medium leading-tight">
+                      Must start with 09 and be 11 digits ({memberForm.contact_number.length}/11)
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -1019,6 +1151,155 @@ const MyProfile = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Vice President Role Limit Modal */}
+      {showVpLimitModal && (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 border border-gray-100 relative animate-in zoom-in-95 duration-200">
+            <button
+              onClick={() => setShowVpLimitModal(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+              aria-label="Close"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="flex items-start gap-4 mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                <AlertTriangle size={24} />
+              </div>
+              <div className="pt-0.5">
+                <h3 className="text-lg font-bold text-gray-900 leading-tight">
+                  Vice President Limit
+                </h3>
+                <span className="inline-block mt-1 px-2.5 py-0.5 bg-amber-50 text-amber-700 text-xs font-semibold rounded-full border border-amber-200/60">
+                  Only 1 Vice President Allowed
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-3 text-sm text-gray-600 bg-gray-50/80 rounded-xl p-4 border border-gray-100 mb-5">
+              <p>
+                An organization is only permitted to have <strong>one Vice President</strong> on the executive board for this academic term.
+              </p>
+              {existingVp && (
+                <div className="bg-white rounded-lg p-3 border border-gray-200/70 shadow-xs flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block">Current Vice President</span>
+                    <span className="font-bold text-gray-900 text-sm">{existingVp.full_name || existingVp.name}</span>
+                  </div>
+                  <span className="text-xs px-2.5 py-0.5 bg-primary-green/10 text-primary-green font-bold rounded-md">
+                    Assigned
+                  </span>
+                </div>
+              )}
+              <p className="text-xs text-gray-500">
+                To designate a different member as Vice President, please edit or remove the current Vice President first.
+              </p>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowVpLimitModal(false)}
+                className="w-full sm:w-auto px-5 py-2.5 bg-primary-green text-white font-bold rounded-xl text-sm hover:bg-emerald-700 transition-all shadow-md shadow-primary-green/20 cursor-pointer"
+              >
+                Understood
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remove Executive Member Confirmation Modal */}
+      {isDeleteMemberModalOpen && memberToDelete && (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 border border-gray-100 relative animate-in zoom-in-95 duration-200">
+            <button
+              onClick={() => {
+                if (!isDeletingMember) {
+                  setIsDeleteMemberModalOpen(false);
+                  setMemberToDelete(null);
+                }
+              }}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+              aria-label="Close"
+              disabled={isDeletingMember}
+            >
+              <X size={18} />
+            </button>
+
+            <div className="flex items-start gap-4 mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+                <Trash2 size={24} />
+              </div>
+              <div className="pt-0.5">
+                <h3 className="text-lg font-bold text-gray-900 leading-tight">
+                  Remove Executive Member
+                </h3>
+                <span className="inline-block mt-1 px-2.5 py-0.5 bg-red-50 text-red-700 text-xs font-semibold rounded-full border border-red-200/60">
+                  Confirm Removal
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-3 text-sm text-gray-600 bg-gray-50/80 rounded-xl p-4 border border-gray-100 mb-5">
+              <p>
+                Are you sure you want to remove this officer from the executive board for this academic term?
+              </p>
+              <div className="bg-white rounded-lg p-3 border border-gray-200/70 shadow-xs flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block">Officer</span>
+                  <span className="font-bold text-gray-900 text-sm">
+                    {memberToDelete.full_name || memberToDelete.name || 'Executive Officer'}
+                  </span>
+                  {memberToDelete.student_number && (
+                    <span className="text-xs text-gray-500 block">SN: {memberToDelete.student_number}</span>
+                  )}
+                </div>
+                <span className="text-xs px-2.5 py-1 bg-red-50 text-red-700 font-bold rounded-md border border-red-100">
+                  {memberToDelete.position || 'Member'}
+                </span>
+              </div>
+              <p className="text-xs text-gray-500">
+                This action will remove their record and privileges for this term.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                disabled={isDeletingMember}
+                onClick={() => {
+                  setIsDeleteMemberModalOpen(false);
+                  setMemberToDelete(null);
+                }}
+                className="px-4 py-2.5 bg-gray-100 text-gray-700 font-semibold rounded-xl text-sm hover:bg-gray-200 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingMember}
+                onClick={handleConfirmDeleteMember}
+                className="px-5 py-2.5 bg-red-600 text-white font-bold rounded-xl text-sm hover:bg-red-700 transition-all shadow-md shadow-red-600/20 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingMember ? (
+                  <>
+                    <Loader2 className="animate-spin h-4 w-4" />
+                    <span>Removing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4" />
+                    <span>Remove Officer</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

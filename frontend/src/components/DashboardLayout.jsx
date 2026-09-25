@@ -1137,6 +1137,16 @@ const DashboardLayout = () => {
   useEffect(() => {
     fetchCurrentMembers();
   }, [user?.id, user?.role, user?.organization_id, activeMember]);
+
+  useEffect(() => {
+    const handleMembersUpdated = () => {
+      fetchCurrentMembers();
+    };
+    window.addEventListener('organization-members-updated', handleMembersUpdated);
+    return () => {
+      window.removeEventListener('organization-members-updated', handleMembersUpdated);
+    };
+  }, [user?.id, user?.role, user?.organization_id]);
   
   const isSuspended = user?.status?.startsWith('Suspended') && user?.role === 'org-president';
   const prevStatusRef = useRef(user?.status);
@@ -1181,7 +1191,10 @@ const DashboardLayout = () => {
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <Header 
           onToggleMobileMenu={() => setIsMobileMenuOpen(true)} 
-          onOpenMemberModal={() => setShowMemberModal(true)}
+          onOpenMemberModal={() => {
+            fetchCurrentMembers();
+            setShowMemberModal(true);
+          }}
         />
         <main className="flex-1 overflow-y-auto p-2 sm:p-4 md:p-6 relative">
           <PageTransition>

@@ -87,7 +87,7 @@ export function BoardRoster({
                   </button>
                   <button
                     type="button"
-                    onClick={() => onDeleteOfficer && onDeleteOfficer(member.id)}
+                    onClick={() => onDeleteOfficer && onDeleteOfficer(member)}
                     aria-label={`Remove ${member.name || member.full_name}`}
                     className="rounded-md p-2 text-ink-faint transition-colors duration-150 hover:bg-danger-50 hover:text-danger-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger-500 cursor-pointer"
                   >

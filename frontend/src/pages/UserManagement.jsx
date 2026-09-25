@@ -121,6 +121,7 @@ const UserManagement = () => {
     role: '',
     email: '',
     org_name: '',
+    abbreviation: '',
     no_member: '',
     adviser_name: '',
     co_advisers: [],
@@ -253,6 +254,7 @@ const UserManagement = () => {
       role: type === 'org' ? 'org-president' : 'chairman',
       email: '',
       org_name: '',
+      abbreviation: '',
       no_member: '',
       adviser_name: '',
       co_advisers: [],
@@ -268,7 +270,11 @@ const UserManagement = () => {
 
   const handleEditClick = (user) => {
     setIsEditMode(true);
-    setEditingUserId(user.id);
+    setEditingUserId(user.user_id || user.id);
+
+    const matchedOrg = orgUsers.find(o => o.id === user.id || o.user_id === user.id || (user.organization_id && o.organization_id === user.organization_id));
+    const matchedUser = users.find(u => u.id === user.id || u.id === user.user_id);
+    const existingAbbr = user.abbreviation || user.org_abbreviation || matchedOrg?.abbreviation || matchedUser?.abbreviation || detailData?.user?.abbreviation || '';
 
     if (user.role === 'admin') {
       setFormData({
@@ -276,6 +282,7 @@ const UserManagement = () => {
         role: user.role || 'admin',
         email: user.email || '',
         org_name: '',
+        abbreviation: '',
         no_member: '',
         adviser_name: '',
         co_advisers: [],
@@ -287,7 +294,7 @@ const UserManagement = () => {
       });
       setIsAdminModalOpen(true);
     } else {
-      setNewUserType(user.role === 'org-president' ? 'org' : 'admin-staff');
+      setNewUserType(user.role === 'org-president' || user.president_name ? 'org' : 'admin-staff');
 
       const isSuspended = user.status && user.status.startsWith('Suspended');
       const suspensionMsg = isSuspended && user.status.includes(':')
@@ -295,11 +302,12 @@ const UserManagement = () => {
         : '';
 
       setFormData({
-        full_name: user.full_name || '',
-        role: user.role || '',
+        full_name: user.president_name || user.full_name || '',
+        role: user.role || 'org-president',
         email: user.email || '',
         org_name: user.org_name || '',
-        no_member: user.no_member || '',
+        abbreviation: existingAbbr,
+        no_member: user.no_member != null ? user.no_member : '',
         adviser_name: user.adviser_name || '',
         co_advisers: parseCoAdvisersList(user.co_advisers),
         joined_date: user.joined_date || '',
@@ -540,6 +548,18 @@ const UserManagement = () => {
 
   const handleSaveUser = async (e) => {
     e.preventDefault();
+
+    if (newUserType === 'org' && !isEditMode && wizardStep < 3) {
+      return;
+    }
+
+    if (newUserType === 'org' && !isEditMode) {
+      if (!formData.email || !formData.email.trim()) {
+        showToast('Please enter Official Email Address.', 'error');
+        return;
+      }
+    }
+
     setIsSaving(true);
 
     if (formData.joined_date) {
@@ -572,7 +592,6 @@ const UserManagement = () => {
           : formData.status)
         : 'Pending Setup',
       org_name: formData.org_name || null,
-      abbreviation: formData.abbreviation ? formData.abbreviation.trim() : null,
       no_member: formData.no_member ? parseInt(formData.no_member) : null,
       adviser_name: formData.adviser_name || null,
       co_advisers: formData.co_advisers || [],
@@ -580,6 +599,19 @@ const UserManagement = () => {
       contact_no: formData.contact_no != null && formData.contact_no !== '' ? String(formData.contact_no) : null,
       student_no: formData.student_no || null
     };
+
+    if (formData.abbreviation && formData.abbreviation.trim()) {
+      payload.abbreviation = formData.abbreviation.trim().toUpperCase();
+    } else if (isEditMode) {
+      const matchedOrg = orgUsers.find(o => o.id === editingUserId || o.user_id === editingUserId);
+      const matchedUser = users.find(u => u.id === editingUserId);
+      const fallbackAbbr = matchedOrg?.abbreviation || matchedUser?.abbreviation || selectedUser?.abbreviation || null;
+      if (fallbackAbbr && formData.abbreviation === undefined) {
+        payload.abbreviation = fallbackAbbr;
+      } else {
+        payload.abbreviation = formData.abbreviation?.trim() ? formData.abbreviation.trim().toUpperCase() : null;
+      }
+    }
 
     if (!isEditMode) {
       payload.password = tempPassword;
@@ -1849,15 +1881,29 @@ const UserManagement = () => {
             {/* Step Wizard Indicator for Org Creation */}
             {newUserType === 'org' && !isEditMode && (
               <div className="flex items-center justify-between px-8 py-3.5 bg-white border-b border-gray-100 text-xs font-bold">
-                <div className={`flex items-center gap-2 ${wizardStep >= 1 ? 'text-primary-green' : 'text-gray-400'}`}>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (wizardStep > 1) setWizardStep(1);
+                  }}
+                  className={`flex items-center gap-2 ${wizardStep >= 1 ? 'text-primary-green' : 'text-gray-400'} ${wizardStep > 1 ? 'hover:underline cursor-pointer' : 'cursor-default'}`}
+                >
                   <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black ${wizardStep >= 1 ? 'bg-primary-green text-white' : 'bg-gray-200 text-gray-600'}`}>1</span>
                   <span>1. Org Info</span>
-                </div>
+                </button>
                 <div className="w-8 h-[2px] bg-gray-200" />
-                <div className={`flex items-center gap-2 ${wizardStep >= 2 ? 'text-primary-green' : 'text-gray-400'}`}>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (wizardStep > 2) setWizardStep(2);
+                  }}
+                  className={`flex items-center gap-2 ${wizardStep >= 2 ? 'text-primary-green' : 'text-gray-400'} ${wizardStep > 2 ? 'hover:underline cursor-pointer' : 'cursor-default'}`}
+                >
                   <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black ${wizardStep >= 2 ? 'bg-primary-green text-white' : 'bg-gray-200 text-gray-600'}`}>2</span>
                   <span>2. Leadership & Advisers</span>
-                </div>
+                </button>
                 <div className="w-8 h-[2px] bg-gray-200" />
                 <div className={`flex items-center gap-2 ${wizardStep >= 3 ? 'text-primary-green' : 'text-gray-400'}`}>
                   <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black ${wizardStep === 3 ? 'bg-primary-green text-white' : 'bg-gray-200 text-gray-600'}`}>3</span>
@@ -1867,7 +1913,18 @@ const UserManagement = () => {
             )}
 
             {/* Form Body */}
-            <form onSubmit={handleSaveUser} id="create-user-form" className="p-8 max-h-[60vh] overflow-y-auto text-gray-800">
+            <form
+              onSubmit={handleSaveUser}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
+                  if (newUserType === 'org' && !isEditMode && wizardStep < 3) {
+                    e.preventDefault();
+                  }
+                }
+              }}
+              id="create-user-form"
+              className="p-8 max-h-[60vh] overflow-y-auto text-gray-800"
+            >
               {newUserType === 'org' ? (
                 <div>
                   {/* Step 1: Org Info */}
@@ -1890,19 +1947,17 @@ const UserManagement = () => {
                         </div>
                       </div>
 
-                      <div className={isEditMode ? "grid grid-cols-1 md:grid-cols-2 gap-5" : ""}>
-                        {isEditMode && (
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Abbreviation / Acronym</label>
-                            <input
-                              type="text"
-                              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-green text-gray-800 uppercase"
-                              placeholder="e.g. SSC"
-                              value={formData.abbreviation || ''}
-                              onChange={(e) => setFormData({ ...formData, abbreviation: e.target.value.toUpperCase() })}
-                            />
-                          </div>
-                        )}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Abbreviation / Acronym</label>
+                          <input
+                            type="text"
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-green text-gray-800 uppercase"
+                            placeholder="e.g. SSC"
+                            value={formData.abbreviation || ''}
+                            onChange={(e) => setFormData({ ...formData, abbreviation: e.target.value.toUpperCase() })}
+                          />
+                        </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Date of Formation *</label>
                           <div className="relative">
@@ -2226,6 +2281,7 @@ const UserManagement = () => {
             {/* Modal Footer */}
             <div className="p-6 border-t border-gray-100 flex gap-3 justify-end bg-gray-50/50">
               <button
+                key="wizard-cancel-btn"
                 type="button"
                 onClick={() => setIsModalOpen(false)}
                 className="px-5 py-2.5 text-gray-500 font-semibold hover:text-gray-700 transition-colors text-sm"
@@ -2235,18 +2291,26 @@ const UserManagement = () => {
 
               {newUserType === 'org' && !isEditMode && wizardStep > 1 && (
                 <button
+                  key="wizard-back-btn"
                   type="button"
-                  onClick={() => setWizardStep(prev => prev - 1)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setWizardStep(prev => prev - 1);
+                  }}
                   className="px-5 py-2.5 border border-gray-300 text-gray-700 font-semibold rounded-xl hover:bg-gray-100 transition-all text-sm"
                 >
                   Back
                 </button>
               )}
 
-              {newUserType === 'org' && !isEditMode && wizardStep < 3 ? (
+              {newUserType === 'org' && !isEditMode && wizardStep < 3 && (
                 <button
+                  key="wizard-next-btn"
                   type="button"
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     if (wizardStep === 1) {
                       if (!formData.org_name || !formData.org_name.trim()) {
                         showToast('Please enter Organization Name.', 'error');
@@ -2285,8 +2349,11 @@ const UserManagement = () => {
                 >
                   Next Step
                 </button>
-              ) : (
+              )}
+
+              {(newUserType !== 'org' || isEditMode || wizardStep === 3) && (
                 <button
+                  key="wizard-submit-btn"
                   form="create-user-form"
                   type="submit"
                   disabled={isSaving}

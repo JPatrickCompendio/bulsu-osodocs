@@ -920,8 +920,40 @@ export const getReportGeneratorName = (user, activeMember) => {
     }
     return user.full_name;
   }
-
-  return 'System User';
+  return 'System User';
 };
 
+/**
+ * Filters a list of storage files to return only the files belonging to the latest submission batch.
+ * Prevents orphaned/deleted files from older resubmission attempts from persisting in the view.
+ */
+export const filterLatestBatchFiles = (files = []) => {
+  if (!Array.isArray(files) || files.length === 0) return [];
+  if (files.length === 1) return files;
+
+  const getTs = (f) => {
+    const name = f?.name || f?.file_name || '';
+    const m = name.match(/(\d{10,14})/);
+    if (m) return parseInt(m[1], 10);
+    if (f?.created_at) {
+      const parsed = new Date(f.created_at).getTime();
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    if (f?.updated_at) {
+      const parsed = new Date(f.updated_at).getTime();
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    return 0;
+  };
+
+  const timestamps = files.map(getTs).filter((ts) => ts > 0);
+  if (timestamps.length === 0) return files;
+
+  const maxTs = Math.max(...timestamps);
+  // Keep files that belong to the latest submission batch (within 120s of maxTs)
+  return files.filter((f) => {
+    const ts = getTs(f);
+    return ts > 0 ? Math.abs(ts - maxTs) <= 120000 : false;
+  });
+};
 

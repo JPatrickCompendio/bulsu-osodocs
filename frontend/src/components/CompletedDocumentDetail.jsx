@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import SubmissionTimeline from './SubmissionTimeline';
-import { parseObjectivesList, calculateProposalDuration } from '../utils/submissionLogUtils';
+import { parseObjectivesList, calculateProposalDuration, filterLatestBatchFiles } from '../utils/submissionLogUtils';
 import AccomplishmentReportPreviewModal from './AccomplishmentReportPreviewModal';
 
 const getStoragePublicUrl = (fileUrl) => {
@@ -149,8 +149,9 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
 
       if (!listErr && files && files.length > 0) {
         const imageFiles = files.filter((file) => /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(file.name));
+        const latestBatchImages = filterLatestBatchFiles(imageFiles);
         const imageUrls = await Promise.all(
-          imageFiles.map(async (file) => {
+          latestBatchImages.map(async (file) => {
             const path = `accom-report/${submissionId}/${file.name}`;
             const cacheKey = `accom:${path}`;
             if (completedSignedUrlCache.current.has(cacheKey)) {
@@ -352,8 +353,9 @@ const CompletedDocumentDetail = ({ submissionId, onBack }) => {
 
           if (!finErr && finData && finData.length > 0) {
             const validFinFiles = finData.filter((file) => /\.(jpg|jpeg|png|gif|webp|bmp|pdf)$/i.test(file.name));
+            const latestBatchFinFiles = filterLatestBatchFiles(validFinFiles);
             const finUrls = await Promise.all(
-              validFinFiles.map(async (file) => {
+              latestBatchFinFiles.map(async (file) => {
                 const path = `financial-report/${submissionId}/${file.name}`;
                 const isPdf = /\.pdf$/i.test(file.name);
                 const cacheKey = `fin:${path}`;

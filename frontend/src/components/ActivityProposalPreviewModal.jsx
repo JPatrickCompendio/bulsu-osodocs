@@ -4,6 +4,36 @@ import JoditEditor from 'jodit-react';
 import HEADER_LOGO_IMG from '../assets/headerLOGO.png';
 import { calculateProposalDuration } from '../utils/submissionLogUtils';
 
+export const formatAdvisersList = (primaryAdviser, coAdvisers) => {
+  const list = [];
+  if (primaryAdviser && String(primaryAdviser).trim()) {
+    list.push(String(primaryAdviser).trim());
+  }
+  let coList = [];
+  if (Array.isArray(coAdvisers)) {
+    coList = coAdvisers.map(s => String(s).trim()).filter(Boolean);
+  } else if (typeof coAdvisers === 'string' && coAdvisers.trim()) {
+    try {
+      const parsed = JSON.parse(coAdvisers);
+      if (Array.isArray(parsed)) coList = parsed.map(s => String(s).trim()).filter(Boolean);
+      else coList = [coAdvisers.trim()];
+    } catch {
+      coList = coAdvisers.split(',').map(s => s.trim()).filter(Boolean);
+    }
+  }
+
+  coList.forEach(co => {
+    if (co && !list.includes(co)) {
+      list.push(co);
+    }
+  });
+
+  if (list.length === 0) return '';
+  if (list.length === 1) return list[0];
+  if (list.length === 2) return `${list[0]} and ${list[1]}`;
+  return `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`;
+};
+
 const renderSignatureBlocksHtml = (proposalDetails, user, orgName) => {
   const allPeople = [];
 
@@ -17,8 +47,10 @@ const renderSignatureBlocksHtml = (proposalDetails, user, orgName) => {
     allPeople.push({ name: primaryAdviser, role: 'Adviser' });
   }
 
-  // 3. Co-Advisers
-  const rawCoAdvisers = proposalDetails?.co_advisers || user?.co_advisers;
+  // 3. Co-Advisers (strictly respect proposalDetails.co_advisers if proposalDetails is provided)
+  const rawCoAdvisers = proposalDetails
+    ? proposalDetails.co_advisers
+    : user?.co_advisers;
   if (rawCoAdvisers) {
     if (Array.isArray(rawCoAdvisers)) {
       rawCoAdvisers.forEach(item => {
@@ -186,7 +218,7 @@ const ActivityProposalPreviewModal = ({
           </div>
           <div class="form-row">
             <div class="form-label">Name of Adviser:</div>
-            <div class="form-line">${proposalDetails?.adviser_name || ''}</div>
+            <div class="form-line">${formatAdvisersList(proposalDetails?.adviser_name, proposalDetails?.co_advisers)}</div>
           </div>
           <div class="form-row">
             <div class="form-label">Activity Number:</div>

@@ -11,14 +11,14 @@ import {
   AlertCircle, Loader2, Info, Calendar, User, MapPin,
   Clock, Users, Search, ChevronRight, RefreshCcw, X,
   FileCheck, Download, Eye, Trash2, File as FileIcon,
-  Eraser, Check, CheckSquare, Lock, Paperclip, Settings, FilePlus, ChevronDown, WifiOff,
+  Eraser, Check, CheckSquare, Lock, Paperclip, Settings, FilePlus, ChevronDown, WifiOff, Plus,
   AlertTriangle, FileX, FileSignature, CalendarX, FileCode, HelpCircle, Award, FileQuestion
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import DEFAULT_HEADER_IMG from '../assets/HEADER.png';
 import DEFAULT_FOOTER_IMG from '../assets/FOOTER.png';
 import HEADER_LOGO_IMG from '../assets/headerLOGO.png';
-import ActivityProposalPreviewModal from '../components/ActivityProposalPreviewModal';
+import ActivityProposalPreviewModal, { formatAdvisersList } from '../components/ActivityProposalPreviewModal';
 import CustomDatePicker from '../components/CustomDatePicker';
 import { calculateProposalDuration } from '../utils/submissionLogUtils';
 
@@ -77,6 +77,25 @@ const fetchHistoricalAySnapshot = async (orgId, schoolYearId) => {
   return null;
 };
 
+const parseCoAdvisersList = (val) => {
+  if (!val) return [];
+  if (Array.isArray(val)) return val.map(s => String(s).trim()).filter(Boolean);
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (!trimmed) return [];
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) return parsed.map(s => String(s).trim()).filter(Boolean);
+      } catch (e) {
+        // ignore
+      }
+    }
+    return trimmed.split(',').map(s => s.trim()).filter(Boolean);
+  }
+  return [];
+};
+
 const renderSignatureBlocksHtml = (proposalDetails, user, orgName) => {
   const allPeople = [];
 
@@ -90,8 +109,10 @@ const renderSignatureBlocksHtml = (proposalDetails, user, orgName) => {
     allPeople.push({ name: primaryAdviser, role: 'Adviser' });
   }
 
-  // 3. Co-Advisers
-  const rawCoAdvisers = proposalDetails?.co_advisers || user?.co_advisers;
+  // 3. Co-Advisers (strictly respect proposalDetails.co_advisers if proposalDetails is provided)
+  const rawCoAdvisers = proposalDetails
+    ? proposalDetails.co_advisers
+    : user?.co_advisers;
   if (rawCoAdvisers) {
     if (Array.isArray(rawCoAdvisers)) {
       rawCoAdvisers.forEach(item => {
@@ -500,7 +521,7 @@ const SubmitNewDocument = () => {
 
   // Form Data
   const defaultForm = {
-    activity_number: '', organization_name: '', adviser_name: '', activity_title: '',
+    activity_number: '', organization_name: '', adviser_name: '', co_advisers: [], activity_title: '',
     person_in_charge: '', student_id_no: '', contact_number: '', target_venue: '',
     target_date: '', target_time: '', target_end_time: '', duration: '', is_indefinite_end_time: false, number_of_students: '',
     activity_dates: [], // Multi-date selection
@@ -517,7 +538,59 @@ const SubmitNewDocument = () => {
   const [draftLoadedFields, setDraftLoadedFields] = useState(new Set());
   const [isNewDraftThisSession, setIsNewDraftThisSession] = useState(false);
   const [pendingNavPath, setPendingNavPath] = useState(null);
+  const [aySnapshotData, setAySnapshotData] = useState(null);
+  const [isCoAdvDropdownOpen, setIsCoAdvDropdownOpen] = useState(false);
+  const coAdvDropdownRef = useRef(null);
+  const hasManuallyModifiedCoAdvisersRef = useRef(false);
   const location = useLocation();
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (coAdvDropdownRef.current && !coAdvDropdownRef.current.contains(e.target)) {
+        setIsCoAdvDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const availableCoAdvisers = useMemo(() => {
+    const raw = user?.co_advisers || aySnapshotData?.co_advisers;
+    return parseCoAdvisersList(raw);
+  }, [user?.co_advisers, aySnapshotData?.co_advisers]);
+
+  const selectedCoAdvisers = useMemo(() => {
+    return Array.isArray(proposalDetails?.co_advisers) ? proposalDetails.co_advisers : [];
+  }, [proposalDetails?.co_advisers]);
+
+  const unselectedCoAdvisers = useMemo(() => {
+    return availableCoAdvisers.filter(adv => !selectedCoAdvisers.includes(adv));
+  }, [availableCoAdvisers, selectedCoAdvisers]);
+
+  // Add all co-advisers by default on new proposal creation
+  useEffect(() => {
+    if (
+      !activeDraft?.submissionId &&
+      !hasManuallyModifiedCoAdvisersRef.current &&
+      (!proposalDetails.co_advisers || proposalDetails.co_advisers.length === 0) &&
+      availableCoAdvisers.length > 0
+    ) {
+      setProposalDetails(prev => ({
+        ...prev,
+        co_advisers: [...availableCoAdvisers]
+      }));
+    }
+  }, [activeDraft?.submissionId, availableCoAdvisers]);
+
+  useEffect(() => {
+    if (activeDraft?.submissionId && Array.isArray(proposalDetails?.co_advisers)) {
+      try {
+        localStorage.setItem(`proposal_co_advisers_${activeDraft.submissionId}`, JSON.stringify(proposalDetails.co_advisers));
+      } catch (e) {
+        // ignore
+      }
+    }
+  }, [activeDraft?.submissionId, proposalDetails?.co_advisers]);
 
   const ensureArrayOfStrings = (val) => {
     if (!val) return [];
@@ -1001,7 +1074,7 @@ const SubmitNewDocument = () => {
             </div>
             <div class="form-row">
               <div class="form-label">Name of Adviser:</div>
-              <div class="form-line">${proposalDetails.adviser_name || ''}</div>
+              <div class="form-line">${formatAdvisersList(proposalDetails.adviser_name, proposalDetails?.co_advisers)}</div>
             </div>
             <div class="form-row">
               <div class="form-label">Activity Number:</div>
@@ -1275,9 +1348,15 @@ const SubmitNewDocument = () => {
         }
         setScheduleMode(inferredMode);
 
+        const savedCoAdvisers = submission?.id ? localStorage.getItem(`proposal_co_advisers_${submission.id}`) : null;
+        const loadedCoAdvisers = details.co_advisers !== undefined
+          ? parseCoAdvisersList(details.co_advisers)
+          : (savedCoAdvisers !== null ? parseCoAdvisersList(savedCoAdvisers) : parseCoAdvisersList(user?.co_advisers));
+
         finalFormObject = {
           ...defaultForm,
           ...details,
+          co_advisers: loadedCoAdvisers,
           objectives: ensureArrayOfStrings(details.objectives),
           schedules: scheds.length > 0 ? scheds : (details.target_date ? details.target_date.split(',').map(d => ({
             activity_date: d.trim(),
@@ -1510,6 +1589,13 @@ const SubmitNewDocument = () => {
         const aySnapshot = (draft?.submission?.school_year_id && user?.organization_id)
           ? await fetchHistoricalAySnapshot(user.organization_id, draft.submission.school_year_id)
           : null;
+        setAySnapshotData(aySnapshot);
+
+        const draftSubId = draft.submission.id;
+        const savedCoAdvisers = draftSubId ? localStorage.getItem(`proposal_co_advisers_${draftSubId}`) : null;
+        const loadedCoAdvisers = details.co_advisers !== undefined
+          ? parseCoAdvisersList(details.co_advisers)
+          : (savedCoAdvisers ? parseCoAdvisersList(savedCoAdvisers) : []);
 
         if (isProposal) {
           const scheds = details.activity_schedules || [];
@@ -1524,6 +1610,7 @@ const SubmitNewDocument = () => {
           setProposalDetails({
             ...defaultForm,
             ...details,
+            co_advisers: loadedCoAdvisers,
             objectives: ensureArrayOfStrings(details.objectives),
             schedules: scheds.length > 0 ? scheds : (details.target_date ? details.target_date.split(',').map(d => ({
               activity_date: d.trim(),
@@ -1553,10 +1640,14 @@ const SubmitNewDocument = () => {
       } else {
         setIsNewDraftThisSession(true);
         setScheduleMode('single');
+        setAySnapshotData(null);
+        hasManuallyModifiedCoAdvisersRef.current = false;
+        const defaultCoAdvisers = parseCoAdvisersList(user?.co_advisers);
         if (isProposal) {
           const nextActNum = await fetchNextActivityNumber();
           setProposalDetails({
             ...defaultForm,
+            co_advisers: defaultCoAdvisers,
             activity_number: nextActNum,
             organization_name: user?.org_name || '',
             adviser_name: user?.adviser_name || '',
@@ -1567,6 +1658,7 @@ const SubmitNewDocument = () => {
         } else {
           setProposalDetails({
             ...defaultForm,
+            co_advisers: defaultCoAdvisers,
             organization_name: user?.org_name || '',
             adviser_name: user?.adviser_name || '',
             person_in_charge: user?.full_name || '',
@@ -2894,14 +2986,168 @@ const SubmitNewDocument = () => {
 
                   <fieldset disabled={isMemberReadOnly} className={`space-y-6 ${isMemberReadOnly ? 'opacity-90 select-text' : ''}`}>
                         {/* Basic Info */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 items-start">
                           <div className="space-y-2 md:col-span-2">
                             <label className="text-xs font-black text-gray-600 uppercase">Name of Student Organization <span className="text-red-500">*</span></label>
                             <input type="text" required className="w-full px-4 py-3 bg-gray-100 border-b-2 border-gray-200 text-gray-500 font-bold text-sm outline-none cursor-not-allowed" value={proposalDetails.organization_name} readOnly />
                           </div>
                           <div className="space-y-2">
-                            <label className="text-xs font-black text-gray-600 uppercase">Name of Adviser <span className="text-red-500">*</span></label>
+                            <div className="flex items-center justify-between">
+                              <label className="text-xs font-black text-gray-600 uppercase">
+                                Name of Adviser <span className="text-red-500">*</span>
+                              </label>
+
+                              {!isMemberReadOnly && (
+                                <div className="relative" ref={coAdvDropdownRef}>
+                                  {availableCoAdvisers.length === 0 ? (
+                                    <span
+                                      className="text-[10px] font-bold text-gray-400 flex items-center gap-1 cursor-help"
+                                      title="No co-advisers are configured in your profile. You can configure them in My Profile > Organization Details."
+                                    >
+                                      <Info size={11} /> No Co-Adviser on Account
+                                    </span>
+                                  ) : unselectedCoAdvisers.length === 0 ? (
+                                    <span className="text-[10px] font-bold text-primary-green flex items-center gap-1">
+                                      <Check size={11} /> All Co-Advisers Added
+                                    </span>
+                                  ) : (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          hasManuallyModifiedCoAdvisersRef.current = true;
+                                          if (unselectedCoAdvisers.length === 1) {
+                                            const toAdd = unselectedCoAdvisers[0];
+                                            setProposalDetails(prev => ({
+                                              ...prev,
+                                              co_advisers: [...(prev.co_advisers || []), toAdd]
+                                            }));
+                                            setHasFormChanges(true);
+                                            setHasUnsavedChanges(true);
+                                            window.__hasUnsavedChanges = true;
+                                            if (typeof showToast === 'function') {
+                                              showToast(`Added co-adviser: ${toAdd}`, 'success');
+                                            }
+                                          } else {
+                                            setIsCoAdvDropdownOpen(prev => !prev);
+                                          }
+                                        }}
+                                        className="text-[11px] font-black text-primary-green hover:text-green-800 flex items-center gap-1 hover:underline uppercase tracking-wider transition-all"
+                                        title="Add a co-adviser configured on this account"
+                                      >
+                                        <Plus size={13} strokeWidth={2.5} />
+                                        <span>Add Co-Adviser</span>
+                                        {unselectedCoAdvisers.length > 1 && (
+                                          <ChevronDown size={12} className={`transition-transform ${isCoAdvDropdownOpen ? 'rotate-180' : ''}`} />
+                                        )}
+                                      </button>
+
+                                      {/* Dropdown for multiple unselected co-advisers */}
+                                      {isCoAdvDropdownOpen && unselectedCoAdvisers.length > 1 && (
+                                        <div className="absolute right-0 top-full mt-1.5 w-64 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 z-30 animate-in fade-in zoom-in-95">
+                                          <div className="px-3 py-1.5 border-b border-gray-100 text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center justify-between">
+                                            <span>Select Co-Adviser</span>
+                                            <span className="text-primary-green font-bold">{unselectedCoAdvisers.length} available</span>
+                                          </div>
+                                          <div className="max-h-48 overflow-y-auto divide-y divide-gray-50">
+                                            {unselectedCoAdvisers.map((ca, idx) => (
+                                              <button
+                                                key={idx}
+                                                type="button"
+                                                onClick={() => {
+                                                  hasManuallyModifiedCoAdvisersRef.current = true;
+                                                  setProposalDetails(prev => ({
+                                                    ...prev,
+                                                    co_advisers: [...(prev.co_advisers || []), ca]
+                                                  }));
+                                                  setIsCoAdvDropdownOpen(false);
+                                                  setHasFormChanges(true);
+                                                  setHasUnsavedChanges(true);
+                                                  window.__hasUnsavedChanges = true;
+                                                  if (typeof showToast === 'function') {
+                                                    showToast(`Added co-adviser: ${ca}`, 'success');
+                                                  }
+                                                }}
+                                                className="w-full text-left px-3 py-2 text-xs font-bold text-gray-700 hover:bg-primary-green/5 hover:text-primary-green transition-colors flex items-center justify-between group"
+                                              >
+                                                <span className="truncate pr-2">{ca}</span>
+                                                <Plus size={12} className="opacity-0 group-hover:opacity-100 text-primary-green shrink-0" />
+                                              </button>
+                                            ))}
+                                          </div>
+                                          {unselectedCoAdvisers.length > 1 && (
+                                            <div className="p-1 border-t border-gray-100">
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  hasManuallyModifiedCoAdvisersRef.current = true;
+                                                  setProposalDetails(prev => ({
+                                                    ...prev,
+                                                    co_advisers: [...(prev.co_advisers || []), ...unselectedCoAdvisers]
+                                                  }));
+                                                  setIsCoAdvDropdownOpen(false);
+                                                  setHasFormChanges(true);
+                                                  setHasUnsavedChanges(true);
+                                                  window.__hasUnsavedChanges = true;
+                                                  if (typeof showToast === 'function') {
+                                                    showToast('Added all available co-advisers', 'success');
+                                                  }
+                                                }}
+                                                className="w-full text-center py-1.5 text-[11px] font-black text-primary-green hover:bg-primary-green/10 rounded-lg transition-colors uppercase tracking-wider"
+                                              >
+                                                + Add All ({unselectedCoAdvisers.length})
+                                              </button>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
                             <input type="text" required className="w-full px-4 py-3 bg-gray-100 border-b-2 border-gray-200 text-gray-500 font-bold text-sm outline-none cursor-not-allowed" value={proposalDetails.adviser_name} readOnly />
+
+                            {/* Added Co-Advisers */}
+                            {selectedCoAdvisers.map((coAdv, idx) => (
+                              <div key={idx} className="space-y-1.5 pt-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                                <div className="flex items-center justify-between">
+                                  <label className="text-[11px] font-black text-gray-600 uppercase tracking-wider flex items-center gap-1.5">
+                                    <User size={13} className="text-primary-green" />
+                                    Name of Co-Adviser {selectedCoAdvisers.length > 1 ? `#${idx + 1}` : ''}
+                                  </label>
+                                  {!isMemberReadOnly && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        hasManuallyModifiedCoAdvisersRef.current = true;
+                                        setProposalDetails(prev => ({
+                                          ...prev,
+                                          co_advisers: (prev.co_advisers || []).filter((_, i) => i !== idx)
+                                        }));
+                                        setHasFormChanges(true);
+                                        setHasUnsavedChanges(true);
+                                        window.__hasUnsavedChanges = true;
+                                        if (typeof showToast === 'function') {
+                                          showToast(`Removed co-adviser: ${coAdv}`, 'info');
+                                        }
+                                      }}
+                                      className="text-[10px] font-black text-red-500 hover:text-red-700 flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-red-50 transition-colors uppercase tracking-wider"
+                                      title="Remove this co-adviser from this proposal"
+                                    >
+                                      <X size={12} /> Remove
+                                    </button>
+                                  )}
+                                </div>
+                                <input
+                                  type="text"
+                                  className="w-full px-4 py-3 bg-gray-100 border-b-2 border-gray-200 text-gray-700 font-bold text-sm outline-none cursor-not-allowed"
+                                  value={coAdv}
+                                  readOnly
+                                />
+                              </div>
+                            ))}
                           </div>
                           <div className="space-y-2">
                             <label className="text-xs font-black text-gray-600 uppercase">Activity Number</label>

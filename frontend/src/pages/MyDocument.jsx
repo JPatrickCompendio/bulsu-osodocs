@@ -37,7 +37,8 @@ import {
   Info,
   Printer,
   Edit3,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Loader2
 } from 'lucide-react';
 import JoditEditor from 'jodit-react';
 import html2canvas from 'html2canvas';
@@ -48,6 +49,7 @@ import * as reqService from '../services/requirementService';
 import PageHeader from '../components/PageHeader';
 import { useToast } from '../hooks/useToast';
 import { compressImage } from '../utils/imageCompressionUtils';
+import { filterLatestBatchFiles } from '../utils/submissionLogUtils';
 
 const getStatusColor = (status) => {
   const s = (status || '').toLowerCase().trim();
@@ -205,7 +207,18 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy, subtypesMap =
     );
   });
 
-  if (subStatus === 'returned') category = 'Returned';
+  const returnRemarksStr = String(submission.remarks || submission.raw?.remarks || '').trim();
+  const hasReportReturnRemarks = /\[Accomplishment Report Returned\]|\[Financial Report Returned/i.test(returnRemarksStr);
+  const subLogsList = Array.isArray(submission.submission_logs) ? submission.submission_logs : [];
+  const hasReportReviewReturnLog = subLogsList.some(l => {
+    const wp = String(l.workflow_phase || '').toLowerCase();
+    const at = String(l.action_type || '').toLowerCase();
+    const ra = String(l.review_action || '').toLowerCase();
+    return (wp.includes('report') || at.includes('report')) && (ra === 'returned' || at === 'returned' || ra.includes('return') || at.includes('return'));
+  });
+  const isReturnedReport = hasReportReturnRemarks || (subStatus.includes('waiting for accomplishment report') && hasReportReviewReturnLog);
+
+  if (subStatus === 'returned' || isReturnedReport) category = 'Returned';
   else if (subStatus === 'to forward') category = user?.role === 'org-president' ? 'SDS Review' : 'Hard Copy';
   else if (subStatus === 'submitted' || subStatus === 'pending') category = 'OSO Staff review';
   else if (subStatus.includes('sds')) category = 'SDS Review';
@@ -249,13 +262,15 @@ const buildMyDocumentRow = (submission, latestLog, user, activeSy, subtypesMap =
     sender: orgName,
     type: docTypeName,
     submittedDate,
-    status: submission.status === 'submitted'
-      ? 'OSO STAFF REVIEW'
-      : (submission.status === 'to forward'
-        ? (user?.role === 'org-president' ? 'HARDCOPY SUBMISSION' : 'PENDING HARD COPY')
-        : (submission.status === 'dean review'
-          ? 'FINAL IN-CAMPUS REVIEW'
-          : (submission.status ? submission.status.toUpperCase() : 'PENDING'))),
+    status: (isReturnedReport || submission.status === 'returned')
+      ? 'RETURNED'
+      : (submission.status === 'submitted'
+        ? 'OSO STAFF REVIEW'
+        : (submission.status === 'to forward'
+          ? (user?.role === 'org-president' ? 'HARDCOPY SUBMISSION' : 'PENDING HARD COPY')
+          : (submission.status === 'dean review'
+            ? 'FINAL IN-CAMPUS REVIEW'
+            : (submission.status ? submission.status.toUpperCase() : 'PENDING')))),
     lastAction: lastActionDate,
     category,
     proposal_title: proposalTitle,
@@ -476,6 +491,9 @@ export const MyDocuments = () => {
   const reportEditorRef = React.useRef(null);
   const accomHeaderInputRef = React.useRef(null);
   const accomFooterInputRef = React.useRef(null);
+  const [isSubmittingReport, setIsSubmittingReport] = React.useState(false);
+  const [reportSubmittingStatus, setReportSubmittingStatus] = React.useState('');
+  const isSubmittingReportRef = React.useRef(false);
 
   React.useEffect(() => {
     if (!accomHeaderBase64 && DEFAULT_HEADER_IMG) setAccomHeaderBase64(DEFAULT_HEADER_IMG);
@@ -1066,10 +1084,13 @@ export const MyDocuments = () => {
 
   const getReportReturnInfo = (doc, logs = []) => {
     const s = getDocStatusLower(doc);
-    if (!s.includes('waiting for accomplishment report')) return null;
+    if (!s.includes('waiting for accomplishment report') && s !== 'returned') return null;
 
     const remarks = String(doc?.raw?.remarks || doc?.remarks || '').trim();
-    const hasReportRemarks = remarks.includes('[Accomplishment Report') || remarks.includes('[Financial Report');
+    const isAccomReturned = /\[Accomplishment Report Returned\]/i.test(remarks);
+    const isFinReturned = /\[Financial Report Returned/i.test(remarks);
+    const isAccomApproved = /\[Accomplishment Report\]:\s*Approved/i.test(remarks);
+    const isFinApproved = /\[Financial Report\]:\s*Approved/i.test(remarks);
 
     const reportLog = (logs || []).find((l) => {
       const wp = String(l.workflow_phase || '').toLowerCase();
@@ -1078,12 +1099,16 @@ export const MyDocuments = () => {
       return (wp.includes('report') || at.includes('report')) && (ra === 'returned' || at === 'returned' || ra.includes('return') || at.includes('return'));
     });
 
-    if (hasReportRemarks || reportLog) {
+    if (isAccomReturned || isFinReturned || reportLog) {
+      const accomRet = isAccomReturned || (!isFinReturned && !isAccomApproved);
+      const finRet = isFinReturned || (!isAccomReturned && !isFinApproved);
       return {
         isReturned: true,
         remarks: remarks || reportLog?.comment || reportLog?.description || 'OSO Staff requested revisions to your submitted reports.',
-        accomplishmentReturned: remarks.includes('[Accomplishment Report Returned]'),
-        financialReturned: remarks.includes('[Financial Report Returned]')
+        accomplishmentReturned: accomRet && !isAccomApproved,
+        financialReturned: finRet && !isFinApproved,
+        accomplishmentApproved: isAccomApproved && !isAccomReturned,
+        financialApproved: isFinApproved && !isFinReturned
       };
     }
     return null;
@@ -1186,6 +1211,39 @@ export const MyDocuments = () => {
     return filteredLogs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   };
 
+  const extractCleanFileComment = (rawText, file) => {
+    if (!rawText || typeof rawText !== 'string') return '';
+    const text = rawText.trim();
+    const fileName = file?.name || file?.file_name || '';
+    const escapedName = fileName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+
+    if (file?.type === 'accomplishment') {
+      const accomMatch = text.match(/\[Accomplishment Report Returned\]:?\s*([^[]+)/i);
+      if (accomMatch && accomMatch[1]) return accomMatch[1].trim();
+    }
+
+    if (file?.type === 'financial' || escapedName) {
+      if (escapedName) {
+        const finSpecific = text.match(new RegExp('\\[Financial Report Returned - ' + escapedName + '\\]:?\\s*([^[]+)', 'i'));
+        if (finSpecific && finSpecific[1]) return finSpecific[1].trim();
+        const genericFile = text.match(new RegExp('\\[' + escapedName + '[^\\]]*\\]:?\\s*([^[]+)', 'i'));
+        if (genericFile && genericFile[1]) return genericFile[1].trim();
+      }
+      const finGeneral = text.match(/\[Financial Report Returned[^\]]*\]:?\s*([^[]+)/i);
+      if (finGeneral && finGeneral[1]) return finGeneral[1].trim();
+    }
+
+    if (text.includes('[') && text.includes(']')) {
+      const cat = file?.category || file?.categoryLabel || '';
+      if (cat) {
+        const catMatch = text.match(new RegExp('\\[' + cat.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&') + '[^\\]]*\\]:?\\s*([^[]+)', 'i'));
+        if (catMatch && catMatch[1]) return catMatch[1].trim();
+      }
+    }
+
+    return text;
+  };
+
   const getStoragePath = (filePath) => {
     let path = String(filePath || '').trim();
     if (path.startsWith('http')) {
@@ -1281,8 +1339,9 @@ export const MyDocuments = () => {
           }
 
           const imageFiles = files.filter((file) => /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(file.name));
+          const latestBatchImages = filterLatestBatchFiles(imageFiles);
           const imageUrls = await Promise.all(
-            imageFiles.map(async (file) => {
+            latestBatchImages.map(async (file) => {
               const path = `accom-report/${submissionId}/${file.name}`;
               try {
                 const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600);
@@ -1312,8 +1371,9 @@ export const MyDocuments = () => {
 
         if (!finListErr && finFiles && finFiles.length > 0) {
           const validFinFiles = finFiles.filter((file) => /\.(jpg|jpeg|png|gif|webp|bmp|pdf)$/i.test(file.name));
+          const latestBatchFinFiles = filterLatestBatchFiles(validFinFiles);
           const finUrls = await Promise.all(
-            validFinFiles.map(async (file) => {
+            latestBatchFinFiles.map(async (file) => {
               const path = `financial-report/${submissionId}/${file.name}`;
               const isPdf = /\.pdf$/i.test(file.name);
               try {
@@ -2831,11 +2891,22 @@ export const MyDocuments = () => {
     const subStatus = rawStatus;
     const wpNorm = normalizeText(wp);
 
+    const returnRemarksStr = String(submission.remarks || submission.raw?.remarks || '').trim();
+    const hasReportReturnRemarks = /\[Accomplishment Report Returned\]|\[Financial Report Returned/i.test(returnRemarksStr);
+    const subLogsList = Array.isArray(subLogs) ? subLogs : [];
+    const hasReportReviewReturnLog = subLogsList.some(l => {
+      const wp = String(l.workflow_phase || '').toLowerCase();
+      const at = String(l.action_type || '').toLowerCase();
+      const ra = String(l.review_action || '').toLowerCase();
+      return (wp.includes('report') || at.includes('report')) && (ra === 'returned' || at === 'returned' || ra.includes('return') || at.includes('return'));
+    });
+    const isReturnedReport = hasReportReturnRemarks || (subStatus.includes('waiting for accomplishment report') && hasReportReviewReturnLog);
+
     // STATUS-FIRST mapping (authoritative): prevents stale workflow_phase values
     // from forcing wrong tabs on admin side.
     if (subStatus === 'draft') {
       category = 'Draft';
-    } else if (subStatus === 'returned') {
+    } else if (subStatus === 'returned' || isReturnedReport) {
       category = 'Returned';
     } else if (subStatus === 'to forward') {
       category = user?.role === 'org-president' ? 'SDS Review' : 'Hard Copy';
@@ -2942,19 +3013,21 @@ export const MyDocuments = () => {
       submittedDate,
       status: subStatus === 'draft'
         ? 'DRAFT'
-        : (subStatus === 'submitted'
-          ? 'OSO STAFF REVIEW'
-          : (subStatus === 'to forward'
-            ? (user?.role === 'org-president' ? 'HARDCOPY SUBMISSION' : 'PENDING HARD COPY')
-            : (subStatus === 'dean review'
-              ? 'FINAL IN-CAMPUS REVIEW'
-              : (subStatus === 'ready for retrieval'
-                ? 'READY FOR RETRIEVAL'
-                : (subStatus === 'document retrieved'
-                  ? 'DOCUMENT RETRIEVED'
-                  : (subStatus === 'waiting for accomplishment report'
-                    ? 'APPROVED'
-                    : (submission.status ? submission.status.toUpperCase() : 'PENDING'))))))),
+        : ((isReturnedReport || subStatus === 'returned')
+          ? 'RETURNED'
+          : (subStatus === 'submitted'
+            ? 'OSO STAFF REVIEW'
+            : (subStatus === 'to forward'
+              ? (user?.role === 'org-president' ? 'HARDCOPY SUBMISSION' : 'PENDING HARD COPY')
+              : (subStatus === 'dean review'
+                ? 'FINAL IN-CAMPUS REVIEW'
+                : (subStatus === 'ready for retrieval'
+                  ? 'READY FOR RETRIEVAL'
+                  : (subStatus === 'document retrieved'
+                    ? 'DOCUMENT RETRIEVED'
+                    : (subStatus === 'waiting for accomplishment report'
+                      ? 'APPROVED'
+                      : (submission.status ? submission.status.toUpperCase() : 'PENDING')))))))),
       lastAction: lastActionDate,
       category,
 
@@ -3656,13 +3729,27 @@ export const MyDocuments = () => {
         );
       });
 
+      const returnInfo = getReportReturnInfo(selectedDoc, timelineLogs);
+      const isReportReturn = Boolean(
+        returnInfo?.isReturned ||
+        docStatusLower.includes('waiting for accomplishment') ||
+        docStatusLower.includes('pending report') ||
+        docStatusLower === 'oso staff (pending report)' ||
+        (selectedDoc.raw?.remarks || '').includes('[Accomplishment Report Returned]') ||
+        (selectedDoc.raw?.remarks || '').includes('[Financial Report Returned')
+      );
+
       const isReturnedStatus =
-        String(selectedDoc?.status || '').toLowerCase() === 'returned' ||
+        !isReportReturn &&
+        (String(selectedDoc?.status || '').toLowerCase() === 'returned' ||
         String(selectedDoc?.raw?.status || '').toLowerCase() === 'returned' ||
-        selectedDoc?.category === 'Returned';
+        selectedDoc?.category === 'Returned');
+
+      const isWaitingForAccomplishment = docStatusLower.includes('waiting for accomplishment');
+      const isReportPendingReview = docStatusLower.includes('pending report') || docStatusLower === 'oso staff (pending report)' || docStatusLower.includes('report review');
 
       return (
-        <div className={`animate-in fade-in duration-500 max-w-6xl mx-auto px-6 py-10 ${isWaitingForAccomplishment ? 'pb-40' : 'pb-28'}`}>
+        <div className={`animate-in fade-in duration-500 max-w-6xl mx-auto px-6 py-10 ${(isWaitingForAccomplishment || returnInfo?.isReturned) ? 'pb-40' : 'pb-28'}`}>
           <button
             onClick={() => { setSelectedDoc(null); setSelectedVersionId(null); }}
             className="mb-6 inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-white border border-gray-200 text-xs font-extrabold uppercase tracking-widest text-gray-700 hover:border-primary-green hover:text-primary-green hover:bg-green-50/40 transition-all shadow-sm"
@@ -4240,18 +4327,7 @@ export const MyDocuments = () => {
                 });
 
                 const returnInfo = getReportReturnInfo(selectedDoc, timelineLogs);
-                const returnRemarks = returnInfo?.remarks || '';
-                let accomComment = '';
-                let finComment = '';
-                if (returnRemarks) {
-                  const accomMatch = returnRemarks.match(/\[Accomplishment Report Returned\]:?\s*([^[]+)/i);
-                  const finMatch = returnRemarks.match(/\[Financial Report Returned\]:?\s*([^[]+)/i);
-                  if (accomMatch && accomMatch[1]) accomComment = accomMatch[1].trim();
-                  if (finMatch && finMatch[1]) finComment = finMatch[1].trim();
-                  if (!accomComment && !finMatch) accomComment = returnRemarks;
-                  if (!finComment && !accomMatch) finComment = returnRemarks;
-                }
-
+                const returnRemarks = String(selectedDoc?.raw?.remarks || selectedDoc?.remarks || returnInfo?.remarks || '').trim();
                 const isCompletedDoc = getDocStatusLower(selectedDoc) === 'completed';
 
                 return (
@@ -4324,13 +4400,97 @@ export const MyDocuments = () => {
                         {filteredReportItems.length > 0 ? (
                           filteredReportItems.map((file, idx) => {
                             const isAccom = file.type === 'accomplishment';
-                            const isReturned = isAccom
-                              ? Boolean(returnInfo?.isReturned && (returnInfo.accomplishmentReturned || (!returnInfo.financialReturned && returnRemarks)))
-                              : Boolean(returnInfo?.isReturned && (returnInfo.financialReturned || (!returnInfo.accomplishmentReturned && returnRemarks)));
+                            let isReturned = false;
+                            let isApproved = false;
+                            let itemComment = '';
 
-                            const itemComment = isAccom ? accomComment : finComment;
-                            const isApproved = isCompletedDoc && !isReturned;
+                            const viewingLatestVersion = !selectedVersionId || currentVersion?.id === selectedDoc.raw?.current_version_id;
+                            const versionSpecificLogs = !viewingLatestVersion && currentVersion?.id
+                              ? (timelineLogs || []).filter(l => l.submission_version_id === currentVersion.id)
+                              : [];
+                            const versionReturnLog = versionSpecificLogs.find(l => {
+                              const at = String(l.action_type || '').toLowerCase();
+                              const ra = String(l.review_action || '').toLowerCase();
+                              const text = `${l.comment || ''} ${l.description || ''}`.toLowerCase();
+                              return at.includes('return') || ra.includes('return') || text.includes('returned');
+                            });
+                            const versionRemarks = versionReturnLog ? (versionReturnLog.comment || versionReturnLog.description || '') : returnRemarks;
 
+                            if (viewingLatestVersion) {
+                              const isAccomReturned = Boolean(returnInfo?.isReturned && returnInfo.accomplishmentReturned) || (docStatusLower === 'returned' && /\[Accomplishment Report Returned\]/i.test(returnRemarks));
+                              const isFinReturned = Boolean(returnInfo?.isReturned && returnInfo.financialReturned) || (docStatusLower === 'returned' && /\[Financial Report Returned/i.test(returnRemarks));
+
+                              if (isAccom) {
+                                isReturned = isAccomReturned;
+                                if (isReturned) {
+                                  const accomMatch = returnRemarks.match(/\[Accomplishment Report Returned\]:?\s*([^[]+)/i);
+                                  if (accomMatch && accomMatch[1]) itemComment = accomMatch[1].trim();
+                                }
+                                isApproved = isCompletedDoc || (!isAccomReturned && (
+                                  /\[Accomplishment Report\]:\s*Approved/i.test(returnRemarks) ||
+                                  /Accomplishment Report (is )?previously approved/i.test(returnRemarks) ||
+                                  (returnInfo?.isReturned && !returnInfo?.accomplishmentReturned)
+                                ));
+                              } else {
+                                const fileName = file.name || '';
+                                const escapedName = fileName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                                const finFileMatch = returnRemarks.match(new RegExp('\\[Financial Report Returned - ' + escapedName + '\\]:?\\s*([^[]+)', 'i'));
+                                const finGeneralMatch = returnRemarks.match(/\[Financial Report Returned[^\]]*\]:?\s*([^[]+)/i);
+
+                                if (finFileMatch) {
+                                  isReturned = true;
+                                  itemComment = finFileMatch[1]?.trim() || '';
+                                } else if (isFinReturned) {
+                                  isReturned = true;
+                                  if (finGeneralMatch && finGeneralMatch[1]) itemComment = finGeneralMatch[1].trim();
+                                }
+
+                                isApproved = isCompletedDoc || (!isFinReturned && (
+                                  /\[Financial Report\]:\s*Approved/i.test(returnRemarks) ||
+                                  /Financial Report (is )?previously approved/i.test(returnRemarks) ||
+                                  (returnInfo?.isReturned && !returnInfo?.financialReturned) ||
+                                  returnRemarks.includes(`[Approved] ${fileName}`)
+                                ));
+                              }
+                            } else {
+                              // Older Version from version dropdown:
+                              if (isAccom) {
+                                const accomReturnedInOldVer = /\[Accomplishment Report Returned\]/i.test(versionRemarks) ||
+                                  versionSpecificLogs.some(l => {
+                                    const text = `${l.comment || ''} ${l.description || ''}`;
+                                    return /Accomplishment Report.*(returned|revision)/i.test(text);
+                                  });
+                                if (accomReturnedInOldVer) {
+                                  isReturned = true;
+                                  const m = versionRemarks.match(/\[Accomplishment Report Returned\]:?\s*([^[]+)/i);
+                                  if (m && m[1]) itemComment = m[1].trim();
+                                } else if (/\[Accomplishment Report\]:\s*Approved/i.test(versionRemarks)) {
+                                  isApproved = true;
+                                }
+                              } else {
+                                const fileName = file.name || '';
+                                const escapedName = fileName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                                const finFileMatch = versionRemarks.match(new RegExp('\\[Financial Report Returned - ' + escapedName + '\\]:?\\s*([^[]+)', 'i'));
+                                const finGeneralMatch = versionRemarks.match(/\[Financial Report Returned[^\]]*\]:?\s*([^[]+)/i);
+                                const finReturnedInOldVer = Boolean(finFileMatch || finGeneralMatch) ||
+                                  versionSpecificLogs.some(l => {
+                                    const text = `${l.comment || ''} ${l.description || ''}`;
+                                    return /Financial Report.*(returned|revision)/i.test(text);
+                                  });
+
+                                if (finFileMatch) {
+                                  isReturned = true;
+                                  itemComment = finFileMatch[1]?.trim() || '';
+                                } else if (finReturnedInOldVer) {
+                                  isReturned = true;
+                                  if (finGeneralMatch && finGeneralMatch[1]) itemComment = finGeneralMatch[1].trim();
+                                } else if (/\[Financial Report\]:\s*Approved/i.test(versionRemarks)) {
+                                  isApproved = true;
+                                }
+                              }
+                            }
+
+                            // Neutral gray for new or resubmitted files pending review, orange for returned, green for approved
                             let containerBg = 'bg-[#525252]';
                             let textColor = 'text-white';
                             let subtitleColor = 'text-gray-300';
@@ -4447,28 +4607,28 @@ export const MyDocuments = () => {
               />
             </div>
 
-            <div className="space-y-4 self-start sticky top-0 z-20">
+            <div className="space-y-3 self-start sticky top-4 z-20 max-h-[calc(100vh-2rem)] overflow-y-auto pr-0.5 scrollbar-thin">
               {/* Viewed By + Controls (match screenshot format) */}
-              <div className="bg-gradient-to-r from-[#e9ad00] to-[#d89b00] rounded-2xl p-4 text-white shadow-md">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
-                      <Eye size={18} />
+              <div className="bg-gradient-to-r from-[#e9ad00] to-[#d89b00] rounded-xl p-3 text-white shadow-sm">
+                <div className="flex items-start justify-between gap-2.5">
+                  <div className="flex items-start gap-2.5">
+                    <div className="mt-0.5 w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center shrink-0">
+                      <Eye size={15} />
                     </div>
                     <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-widest opacity-90">Viewed by</p>
-                      <p className="text-sm font-semibold leading-tight">
+                      <p className="text-[9px] font-bold uppercase tracking-wider opacity-90">Viewed by</p>
+                      <p className="text-xs font-bold leading-tight">
                         {lastViewerName || '—'}
                       </p>
                       {lastViewerRole && (
-                        <span className="mt-1 inline-flex px-2 py-0.5 rounded-full bg-white/20 text-[10px] font-medium uppercase tracking-wider">
+                        <span className="mt-0.5 inline-flex px-1.5 py-0.5 rounded-full bg-white/20 text-[9px] font-semibold uppercase tracking-wider">
                           {lastViewerRole}
                         </span>
                       )}
                     </div>
                   </div>
                   {lastViewerTime && (
-                    <span className="shrink-0 mt-1 px-3 py-1 rounded-full bg-white/20 text-[10px] font-medium uppercase tracking-wider">
+                    <span className="shrink-0 mt-0.5 px-2 py-0.5 rounded-full bg-white/20 text-[9px] font-medium uppercase tracking-wider">
                       {lastViewerTime}
                     </span>
                   )}
@@ -4479,7 +4639,7 @@ export const MyDocuments = () => {
                 <select
                   value={currentVersion?.id || ''}
                   onChange={(e) => setSelectedVersionId(e.target.value)}
-                  className="w-full bg-white border border-gray-200 rounded-xl pl-4 pr-10 py-3 text-sm font-medium text-gray-700 outline-none cursor-pointer focus:ring-2 focus:ring-primary-green/20 appearance-none"
+                  className="w-full bg-white border border-gray-200 rounded-xl pl-3 pr-8 py-2 text-xs font-semibold text-gray-700 outline-none cursor-pointer focus:ring-2 focus:ring-primary-green/20 appearance-none shadow-xs"
                 >
                   {allVersions.map(v => (
                     <option key={v.id} value={v.id}>
@@ -4487,59 +4647,59 @@ export const MyDocuments = () => {
                     </option>
                   ))}
                 </select>
-                <ChevronDown size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <ChevronDown size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
               </div>
 
-              <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 space-y-4">
-                <h3 className="text-sm font-semibold text-gray-800 uppercase tracking-widest">
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-2.5">
+                <h3 className="text-xs font-bold text-gray-800 uppercase tracking-wider">
                   Document Details
                 </h3>
-                <div className="space-y-3 text-sm">
+                <div className="space-y-2 text-xs">
                   <div>
-                    <span className="block text-gray-500 mb-1">Document Title</span>
-                    <p className="text-sm font-medium text-gray-800 leading-snug">
+                    <span className="block text-[11px] text-gray-400 mb-0.5 font-medium">Document Title</span>
+                    <p className="text-xs font-bold text-gray-800 leading-snug line-clamp-2">
                       {versionTitle}
                     </p>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-gray-500 inline-flex items-center gap-1.5"><AlertCircle size={14} /> Status</span>
+                    <span className="text-gray-500 inline-flex items-center gap-1.5"><AlertCircle size={13} /> Status</span>
                     <span
-                      className="px-3 py-1 rounded-full text-[11px] font-semibold uppercase text-white"
+                      className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase text-white shadow-xs"
                       style={{ backgroundColor: getStatusColor(isEffectiveReadyForRetrieval ? 'ready for retrieval' : (docStatusLower === 'waiting for accomplishment report' ? 'approved' : versionStatus)) }}
                     >
                       {isEffectiveReadyForRetrieval ? 'FOR RETRIEVAL' : (docStatusLower === 'waiting for accomplishment report' ? 'APPROVED' : versionStatus)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-gray-500 inline-flex items-center gap-1.5"><Calendar size={14} /> Date</span>
-                    <span className="text-gray-800 font-medium">{versionSubmittedAt}</span>
+                    <span className="text-gray-500 inline-flex items-center gap-1.5"><Calendar size={13} /> Date</span>
+                    <span className="text-gray-800 font-semibold">{versionSubmittedAt}</span>
                   </div>
                   <div>
-                    <span className="block text-gray-500 mb-1 inline-flex items-center gap-1.5"><User size={14} /> Submitted By</span>
-                    <p className="text-sm font-medium text-gray-800">{submittedByName}</p>
+                    <span className="block text-[11px] text-gray-400 mb-0.5 inline-flex items-center gap-1.5 font-medium"><User size={13} /> Submitted By</span>
+                    <p className="text-xs font-semibold text-gray-800">{submittedByName}</p>
                     {submittedByRole && (
-                      <p className="text-[11px] text-gray-500">{submittedByRole}</p>
+                      <p className="text-[10px] text-gray-400 font-medium">{submittedByRole}</p>
                     )}
                   </div>
                 </div>
               </div>
 
-              <div className="bg-amber-50 rounded-2xl border border-amber-100 p-4 flex items-start gap-3">
-                <div className="mt-1">
-                  <Clock size={18} className="text-amber-500" />
+              <div className="bg-amber-50 rounded-xl border border-amber-100 p-3 flex items-start gap-2.5">
+                <div className="mt-0.5">
+                  <Clock size={16} className="text-amber-500" />
                 </div>
-                <div>
-                  <p className="text-xs font-semibold text-amber-800 uppercase tracking-widest">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">
                     System Remarks
                   </p>
-                  <p className="mt-1 text-sm font-medium text-amber-900 whitespace-pre-wrap">
+                  <p className="mt-0.5 text-xs font-medium text-amber-900 whitespace-pre-wrap leading-relaxed">
                     {systemRemarksText}
                   </p>
                   {isExternalReviewStatus && ((externalProofs && externalProofs.length > 0) || proofStoragePath) ? (
                     <button
                       type="button"
                       onClick={() => handleViewDeliveryProof(proofStoragePath)}
-                      className="mt-3 w-full px-5 py-3.5 bg-amber-500 text-white rounded-xl text-sm font-semibold hover:bg-amber-600 transition-all shadow-sm"
+                      className="mt-2 w-full px-4 py-2 bg-amber-500 text-white rounded-lg text-xs font-semibold hover:bg-amber-600 transition-all shadow-xs"
                     >
                       View Proof Of Delivery
                     </button>
@@ -4717,55 +4877,40 @@ export const MyDocuments = () => {
                 ) : null
               )}
 
-              {/* Return Feedback Alert Banner for Org President */}
-              {(() => {
-                const returnInfo = getReportReturnInfo(selectedDoc, timelineLogs);
-                const isPendingReview = isReportReviewPending(selectedDoc);
 
-                if (returnInfo?.isReturned) {
-                  return (
-                    <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 sm:p-5 text-amber-900 shadow-sm animate-in fade-in">
-                      <div className="flex items-start gap-3">
-                        <div className="p-2 bg-amber-200 text-amber-800 rounded-xl shrink-0 mt-0.5">
-                          <AlertCircle size={20} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h4 className="font-bold text-sm text-amber-900">Report Revision Requested</h4>
-                          <p className="text-xs text-amber-700 mt-0.5">The OSO Staff reviewed your submitted reports and requested revisions before final approval.</p>
-                          <div className="mt-2.5 p-3 bg-white/90 rounded-xl border border-amber-200 text-xs text-gray-800 whitespace-pre-wrap font-sans leading-relaxed">
-                            {returnInfo.remarks}
-                          </div>
-                          <p className="text-[11px] text-amber-800 mt-2 font-medium">
-                            Click <strong>"Edit and Resubmit Accomplishment & Financial Report"</strong> below to update the returned items.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                }
-
-                return null;
-              })()}
 
               {/* Action Button (Desktop) */}
               {(() => {
                 const returnInfo = getReportReturnInfo(selectedDoc, timelineLogs);
+                const isPresident = user?.role === 'org-president';
+                if (!isPresident) return null;
                 if (!isWaitingForAccomplishment && !returnInfo?.isReturned) return null;
+                if (isReportPendingReview) return null;
 
                 let buttonLabel = 'Submit Accomplishment and Financial Report';
                 let btnColor = 'bg-blue-700 hover:bg-blue-800';
 
                 if (returnInfo?.isReturned) {
-                  buttonLabel = 'Edit and Resubmit Accomplishment & Financial Report';
-                  btnColor = 'bg-blue-700 hover:bg-blue-800';
+                  btnColor = 'bg-amber-500 hover:bg-amber-600';
+                  if (returnInfo.accomplishmentApproved && returnInfo.financialReturned) {
+                    buttonLabel = 'Edit & Resubmit Financial Report';
+                  } else if (returnInfo.financialApproved && returnInfo.accomplishmentReturned) {
+                    buttonLabel = 'Edit & Resubmit Accomplishment Report';
+                  } else {
+                    buttonLabel = 'Edit and Resubmit Accomplishment & Financial Report';
+                  }
                 }
 
                 return (
                   <button
                     onClick={() => {
                       setIsAccomReadOnly(false);
-                      setAccomModalStep(1);
-                      setAccomStep1View('form');
+                      if (returnInfo?.isReturned && returnInfo.accomplishmentApproved && !returnInfo.accomplishmentReturned) {
+                        setAccomModalStep(2);
+                      } else {
+                        setAccomModalStep(1);
+                        setAccomStep1View('form');
+                      }
                       setIsAccomReportModalOpen(true);
                     }}
                     className={`hidden md:flex items-center justify-center gap-2 w-full px-5 py-3.5 ${btnColor} text-white rounded-xl text-sm font-semibold transition-all shadow-sm mt-3`}
@@ -4781,14 +4926,23 @@ export const MyDocuments = () => {
           {/* Action Button (Mobile Fixed Bottom) */}
           {(() => {
             const returnInfo = getReportReturnInfo(selectedDoc, timelineLogs);
+            const isPresident = user?.role === 'org-president';
+            if (!isPresident) return null;
             if (!isWaitingForAccomplishment && !returnInfo?.isReturned) return null;
+            if (isReportPendingReview) return null;
 
             let buttonLabel = 'Submit Accomplishment and Financial Report';
             let btnColor = 'bg-blue-700 hover:bg-blue-800';
 
             if (returnInfo?.isReturned) {
-              buttonLabel = 'Edit and Resubmit Accomplishment & Financial Report';
-              btnColor = 'bg-blue-700 hover:bg-blue-800';
+              btnColor = 'bg-amber-500 hover:bg-amber-600';
+              if (returnInfo.accomplishmentApproved && returnInfo.financialReturned) {
+                buttonLabel = 'Edit & Resubmit Financial Report';
+              } else if (returnInfo.financialApproved && returnInfo.accomplishmentReturned) {
+                buttonLabel = 'Edit & Resubmit Accomplishment Report';
+              } else {
+                buttonLabel = 'Edit and Resubmit Accomplishment & Financial Report';
+              }
             }
 
             return (
@@ -4796,8 +4950,12 @@ export const MyDocuments = () => {
                 <button
                   onClick={() => {
                     setIsAccomReadOnly(false);
-                    setAccomModalStep(1);
-                    setAccomStep1View('form');
+                    if (returnInfo?.isReturned && returnInfo.accomplishmentApproved && !returnInfo.accomplishmentReturned) {
+                      setAccomModalStep(2);
+                    } else {
+                      setAccomModalStep(1);
+                      setAccomStep1View('form');
+                    }
                     setIsAccomReportModalOpen(true);
                   }}
                   className={`w-full px-5 py-3.5 ${btnColor} text-white rounded-xl text-sm font-semibold hover:opacity-95 transition-all shadow-lg flex items-center justify-center gap-2`}
@@ -4810,775 +4968,1046 @@ export const MyDocuments = () => {
           })()}
 
           {/* 2-Step Report Submission / View Modal */}
-          {isAccomReportModalOpen && (
-            <div
-              className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[100] flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-300"
-              onClick={(e) => { if (e.target === e.currentTarget) setIsAccomReportModalOpen(false); }}
-            >
-              <div className={`bg-white rounded-2xl sm:rounded-3xl w-full ${
-                accomModalStep === 1 && accomStep1View === 'generated'
-                  ? 'max-w-5xl h-[92vh] sm:h-[88vh]'
-                  : 'max-w-2xl max-h-[90vh] sm:max-h-[85vh]'
-              } p-4 sm:p-7 flex flex-col shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300 transition-all`}>
-                <input type="file" ref={accomHeaderInputRef} accept="image/*" className="hidden" onChange={e => handleAccomImageUpload(e, 'header')} />
-                <input type="file" ref={accomFooterInputRef} accept="image/*" className="hidden" onChange={e => handleAccomImageUpload(e, 'footer')} />
+          {isAccomReportModalOpen && (() => {
+            const returnInfo = getReportReturnInfo(selectedDoc, timelineLogs);
+            const isAccomApproved = Boolean(returnInfo?.isReturned && returnInfo.accomplishmentApproved);
+            const isFinApproved = Boolean(returnInfo?.isReturned && returnInfo.financialApproved);
+            const isAccomStepReadOnly = isAccomReadOnly || isAccomApproved;
+            const isFinStepReadOnly = isAccomReadOnly || isFinApproved;
 
-                {/* Modal Header */}
-                <div className="flex items-center justify-between mb-4 border-b border-gray-100 pb-4">
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div className="w-10 h-10 sm:w-11 sm:h-11 bg-blue-50 text-blue-700 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0">
-                      <FileText size={22} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <h3 className="font-bold text-gray-800 text-sm sm:text-base truncate">
-                        {isAccomReadOnly ? 'Submitted Activity Reports (In Review)' : 'Submit Accomplishment & Financial Report'}
+            const handleReportSubmit = async () => {
+              if (!selectedDoc) return;
+              if (isSubmittingReportRef.current) return;
+              isSubmittingReportRef.current = true;
+              setIsSubmittingReport(true);
+              setReportSubmittingStatus('Validating report requirements...');
+
+              // Validation
+              if (!isAccomApproved) {
+                if (!accomParticipants.trim()) {
+                  showToast('Please specify the participants.');
+                  setAccomModalStep(1);
+                  setAccomStep1View('form');
+                  isSubmittingReportRef.current = false;
+                  setIsSubmittingReport(false);
+                  return;
+                }
+                if (!accomResources.trim()) {
+                  showToast('Please specify the resources used.');
+                  setAccomModalStep(1);
+                  setAccomStep1View('form');
+                  isSubmittingReportRef.current = false;
+                  setIsSubmittingReport(false);
+                  return;
+                }
+                if (accomplishmentImages.length === 0 && accomReportFiles.length === 0) {
+                  showToast('Please attach at least one proof of activity photo.');
+                  setAccomModalStep(1);
+                  setAccomStep1View('form');
+                  isSubmittingReportRef.current = false;
+                  setIsSubmittingReport(false);
+                  return;
+                }
+              }
+
+              if (!isFinApproved) {
+                if (financialReportFiles.length === 0 && financialReportExisting.length === 0) {
+                  showToast('Please upload at least one financial report document (PDF).');
+                  setAccomModalStep(2);
+                  isSubmittingReportRef.current = false;
+                  setIsSubmittingReport(false);
+                  return;
+                }
+                const nonPdfs = financialReportFiles.filter(
+                  file => !file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf'
+                );
+                if (nonPdfs.length > 0) {
+                  showToast('All financial report files must be in PDF format (.pdf).');
+                  setAccomModalStep(2);
+                  isSubmittingReportRef.current = false;
+                  setIsSubmittingReport(false);
+                  return;
+                }
+              }
+
+              setLoading(true);
+              try {
+                const submissionId = selectedDoc.id;
+
+                // 1. Generate & Upload Accomplishment Report as an Official PDF Document if not already approved
+                if (!isAccomApproved) {
+                  setReportSubmittingStatus('Generating official Accomplishment Report PDF...');
+                  const pdfBlob = await generateAccomplishmentReportPdfBlob();
+                  const pdfFileName = `Accomplishment_Report_${Date.now()}.pdf`;
+                  const pdfFilePath = `accom-report/${submissionId}/${pdfFileName}`;
+
+                  // Remove old accomplishment report PDF files so only the latest remains
+                  try {
+                    const { data: existingAccomFiles } = await supabase.storage
+                      .from('documents')
+                      .list(`accom-report/${submissionId}`);
+                    const oldPdfs = (existingAccomFiles || []).filter(f => /\.pdf$/i.test(f.name));
+                    if (oldPdfs.length > 0) {
+                      await supabase.storage
+                        .from('documents')
+                        .remove(oldPdfs.map(f => `accom-report/${submissionId}/${f.name}`));
+                    }
+                  } catch (cleanErr) {
+                    console.warn('Could not clean old accomplishment pdfs:', cleanErr);
+                  }
+
+                  const { error: pdfUploadErr } = await supabase.storage
+                    .from('documents')
+                    .upload(pdfFilePath, pdfBlob, {
+                      contentType: 'application/pdf',
+                      cacheControl: '36000',
+                      upsert: true
+                    });
+                  if (pdfUploadErr) throw pdfUploadErr;
+
+                  // Clean up any removed proof images from storage
+                  try {
+                    const { data: existingAccomFiles } = await supabase.storage
+                      .from('documents')
+                      .list(`accom-report/${submissionId}`);
+                    const activeExistingImgNames = new Set((accomplishmentImages || []).map(img => img.name));
+                    const toRemoveImgs = (existingAccomFiles || []).filter(
+                      f => !/\.pdf$/i.test(f.name) && !activeExistingImgNames.has(f.name)
+                    );
+                    if (toRemoveImgs.length > 0) {
+                      await supabase.storage
+                        .from('documents')
+                        .remove(toRemoveImgs.map(f => `accom-report/${submissionId}/${f.name}`));
+                    }
+                  } catch (cleanImgErr) {
+                    console.warn('Could not clean old proof images:', cleanImgErr);
+                  }
+
+                  // 2. Upload new Accomplishment Proof Images (deduplicated)
+                  if (accomReportFiles.length > 0) {
+                    setReportSubmittingStatus('Uploading activity proof photos...');
+                    const uniqueProofFiles = accomReportFiles.filter((file, idx, arr) =>
+                      arr.findIndex(f => f.name === file.name && f.size === file.size) === idx
+                    );
+                    await Promise.all(
+                      uniqueProofFiles.map(async (file, index) => {
+                        const compressed = await compressImage(file, { maxWidth: 1600, maxHeight: 1600, quality: 0.82 });
+                        const safeFileName = compressed.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
+                        const filePath = `accom-report/${submissionId}/${Date.now()}-${index}-${safeFileName}`;
+                        return supabase.storage
+                          .from('documents')
+                          .upload(filePath, compressed, { cacheControl: '36000', upsert: false });
+                      })
+                    );
+                  }
+
+                  // 3. Upsert activity_accomplishments record
+                  const { data: existingReport } = await supabase
+                    .from('activity_accomplishments')
+                    .select('id')
+                    .eq('submission_id', submissionId)
+                    .maybeSingle();
+
+                  if (existingReport) {
+                    const { error: updateAccomErr } = await supabase
+                      .from('activity_accomplishments')
+                      .update({
+                        participants: accomParticipants.trim() || null,
+                        benefiting_group: accomBenefitingGroup.trim() || null,
+                        resources_used: accomResources.trim() || null,
+                        problems_encountered: accomReportComments.trim() || null,
+                        updated_at: new Date().toISOString()
+                      })
+                      .eq('id', existingReport.id);
+                    if (updateAccomErr) throw updateAccomErr;
+                  } else {
+                    const { error: insertAccomErr } = await supabase
+                      .from('activity_accomplishments')
+                      .insert([{
+                        submission_id: submissionId,
+                        submitted_by: user.id,
+                        participants: accomParticipants.trim() || null,
+                        benefiting_group: accomBenefitingGroup.trim() || null,
+                        resources_used: accomResources.trim() || null,
+                        problems_encountered: accomReportComments.trim() || null,
+                        created_at: new Date().toISOString()
+                      }]);
+                    if (insertAccomErr) throw insertAccomErr;
+                  }
+                }
+
+                // 4. Upload new Financial Report Files (PDF Only, deduplicated) & Clean up removed old files if not already approved
+                if (!isFinApproved) {
+                  const uniqueFinFiles = financialReportFiles.filter((file, idx, arr) =>
+                    arr.findIndex(f => f.name === file.name && f.size === file.size) === idx
+                  );
+
+                  // Clean up any removed financial files from storage so old deleted files are NOT included
+                  try {
+                    const { data: existingFinStorage } = await supabase.storage
+                      .from('documents')
+                      .list(`financial-report/${submissionId}`);
+                    const activeExistingNames = new Set((financialReportExisting || []).map(f => f.name));
+                    const toRemoveFin = (existingFinStorage || []).filter(
+                      f => !activeExistingNames.has(f.name)
+                    );
+                    if (toRemoveFin.length > 0) {
+                      await supabase.storage
+                        .from('documents')
+                        .remove(toRemoveFin.map(f => `financial-report/${submissionId}/${f.name}`));
+                    }
+                  } catch (cleanFinErr) {
+                    console.warn('Could not clean old financial files:', cleanFinErr);
+                  }
+
+                  if (uniqueFinFiles.length > 0) {
+                    setReportSubmittingStatus('Uploading financial report PDF documents...');
+                    await Promise.all(
+                      uniqueFinFiles.map(async (file, index) => {
+                        const safeFileName = file.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
+                        const filePath = `financial-report/${submissionId}/${Date.now()}-${index}-${safeFileName}`;
+                        return supabase.storage
+                          .from('documents')
+                          .upload(filePath, file, { cacheControl: '36000', upsert: false });
+                      })
+                    );
+                  }
+                }
+
+                // 5. Build remarks and log descriptions & handle version increment if resubmitted
+                setReportSubmittingStatus('Finalizing workflow status and audit trail...');
+                const isAccomReturned = Boolean(returnInfo?.accomplishmentReturned);
+                const isFinReturned = Boolean(returnInfo?.financialReturned);
+
+                const activeVersionId = selectedDoc.raw?.current_version_id ||
+                  (Array.isArray(selectedDoc.raw?.submission_versions)
+                    ? selectedDoc.raw?.submission_versions[0]?.id
+                    : selectedDoc.raw?.submission_versions?.id);
+
+                const isReportResubmission = Boolean(
+                  returnInfo?.isReturned ||
+                  isAccomReturned ||
+                  isFinReturned ||
+                  /returned/i.test(selectedDoc.raw?.status || selectedDoc.status || '') ||
+                  /\[Accomplishment Report Returned\]|\[Financial Report Returned/i.test(selectedDoc.raw?.remarks || '') ||
+                  (Array.isArray(selectedDoc.raw?.submission_logs) && selectedDoc.raw.submission_logs.some(l => {
+                    const wp = String(l.workflow_phase || '').toLowerCase();
+                    const at = String(l.action_type || '').toLowerCase();
+                    const ra = String(l.review_action || '').toLowerCase();
+                    return (wp.includes('report') || at.includes('report')) && (ra === 'returned' || at === 'returned');
+                  }))
+                );
+
+                let targetVersionId = activeVersionId;
+                let newVersionNumber = null;
+
+                if (isReportResubmission && activeVersionId) {
+                  const newVer = await subService.createNewVersion(submissionId, activeVersionId, user.id);
+                  targetVersionId = newVer.id;
+                  newVersionNumber = newVer.version_number;
+                  await subService.copyApprovedAttachments(activeVersionId, newVer.id, [], submissionId);
+                }
+
+                let remarksText = 'Accomplishment and Financial Reports submitted for OSO Staff review';
+                let accomLogDesc = 'Activity Accomplishment and Financial Reports submitted';
+                if (isAccomApproved && !isFinApproved) {
+                  remarksText = 'Financial Report resubmitted for OSO Staff review (Accomplishment Report previously approved)';
+                  accomLogDesc = newVersionNumber
+                    ? `Financial Report resubmitted for OSO Staff review (Version ${newVersionNumber})`
+                    : 'Financial Report resubmitted for OSO Staff review';
+                } else if (isFinApproved && !isAccomApproved) {
+                  remarksText = 'Accomplishment Report resubmitted for OSO Staff review (Financial Report previously approved)';
+                  accomLogDesc = newVersionNumber
+                    ? `Accomplishment Report resubmitted for OSO Staff review (Version ${newVersionNumber})`
+                    : 'Accomplishment Report resubmitted for OSO Staff review';
+                } else if (isReportResubmission) {
+                  remarksText = 'Accomplishment and Financial Reports resubmitted for OSO Staff review';
+                  accomLogDesc = newVersionNumber
+                    ? `Accomplishment and Financial Reports resubmitted for OSO Staff review (Version ${newVersionNumber})`
+                    : 'Accomplishment and Financial Reports resubmitted for OSO Staff review';
+                }
+
+                // 6. Update submission status to 'oso staff (pending report)'
+                const { error: subErr } = await supabase
+                  .from('submissions')
+                  .update({
+                    status: 'oso staff (pending report)',
+                    current_version_id: targetVersionId,
+                    remarks: remarksText,
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq('id', submissionId);
+
+                if (subErr) throw subErr;
+
+                // 7. Insert audit log
+                try {
+                  const activeMemberRaw = sessionStorage.getItem('osodocs_active_member');
+                  if (activeMemberRaw) {
+                    const activeMember = JSON.parse(activeMemberRaw);
+                    if (activeMember?.full_name && !activeMember.is_president) {
+                      accomLogDesc += ` [Performed by ${activeMember.full_name} (${activeMember.position})]`;
+                    }
+                  }
+                } catch (_) {}
+
+                await supabase.from('submission_logs').insert([{
+                  submission_id: submissionId,
+                  submission_version_id: targetVersionId,
+                  user_id: user.id,
+                  workflow_phase: 'report_review',
+                  action_type: isReportResubmission ? 'resubmitted' : 'submitted',
+                  review_action: 'pending_report_review',
+                  description: accomLogDesc,
+                  comment: remarksText,
+                  created_at: new Date().toISOString()
+                }]);
+
+                // 8. Refresh and notify
+                setAccomReportFiles([]);
+                setFinancialReportFiles([]);
+                await refreshSelectedDoc(submissionId);
+
+                if (selectedDoc) {
+                  setSelectedDoc(prev => prev ? ({
+                    ...prev,
+                    status: 'OSO STAFF (PENDING REPORT)',
+                    raw: {
+                      ...(prev.raw || {}),
+                      status: 'oso staff (pending report)',
+                      remarks: remarksText
+                    }
+                  }) : null);
+                }
+
+                setIsAccomReportModalOpen(false);
+                showToast(
+                  isAccomApproved
+                    ? 'Financial Report resubmitted for OSO Staff review!'
+                    : isFinApproved
+                      ? 'Accomplishment Report resubmitted for OSO Staff review!'
+                      : 'Accomplishment and Financial Reports submitted for OSO Staff review!'
+                );
+                await fetchHandledLogs();
+                window.dispatchEvent(new CustomEvent('inbox-updated'));
+                window.dispatchEvent(new CustomEvent('document-status-changed'));
+                window.dispatchEvent(new CustomEvent('submission-submitted'));
+                try {
+                  const realtimeChannel = supabase.channel('global-workflow-notifications');
+                  await realtimeChannel.send({
+                    type: 'broadcast',
+                    event: 'inbox-update',
+                    payload: { submissionId, updatedBy: user.id }
+                  });
+                } catch (_) {}
+                await fetchDocuments();
+              } catch (err) {
+                console.error('Failed to submit reports:', err);
+                showToast(err.message || 'Failed to submit reports.', 'error');
+              } finally {
+                setLoading(false);
+                isSubmittingReportRef.current = false;
+                setIsSubmittingReport(false);
+                setReportSubmittingStatus('');
+              }
+            };
+
+            return (
+              <div
+                className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[100] flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-300"
+                onClick={(e) => { if (e.target === e.currentTarget && !isSubmittingReport) setIsAccomReportModalOpen(false); }}
+              >
+                <div className={`relative overflow-hidden bg-white rounded-2xl sm:rounded-3xl w-full ${
+                  accomModalStep === 1 && accomStep1View === 'generated'
+                    ? 'max-w-5xl h-[92vh] sm:h-[88vh]'
+                    : 'max-w-2xl max-h-[90vh] sm:max-h-[85vh]'
+                } p-4 sm:p-7 flex flex-col shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-300 transition-all`}>
+                  
+                  {/* Full Loading Screen Overlay while Submitting */}
+                  {isSubmittingReport && (
+                    <div className="absolute inset-0 bg-white/95 backdrop-blur-md z-50 flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-200">
+                      <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mb-4 shadow-sm border border-blue-100 animate-pulse">
+                        <Loader2 size={36} className="animate-spin text-blue-600" />
+                      </div>
+                      <h3 className="text-lg font-bold text-gray-900 mb-1">
+                        Submitting Report Documents
                       </h3>
-                      <p className="text-gray-500 text-xs truncate">
-                        {accomModalStep === 1
-                          ? accomStep1View === 'generated'
-                            ? 'Step 1 of 2: Generated Accomplishment Report Document Preview & Editor'
-                            : 'Step 1 of 2: Accomplishment Details & Proof of Activity'
-                          : 'Step 2 of 2: Financial Report & Liquidation Documents (PDF Only)'}
+                      <p className="text-sm font-medium text-blue-600 mb-3 animate-pulse">
+                        {reportSubmittingStatus || 'Processing documents...'}
+                      </p>
+                      <p className="text-xs text-gray-500 max-w-sm">
+                        Please wait while your reports are securely generated, uploaded, and submitted to OSO Staff. Do not close or refresh this page.
                       </p>
                     </div>
-                  </div>
-                  <button onClick={() => setIsAccomReportModalOpen(false)} className="text-gray-400 hover:text-gray-800 p-2 shrink-0">
-                    <X size={20} />
-                  </button>
-                </div>
+                  )}
 
-                {/* Step Indicator Wizard Tabs */}
-                <div className="grid grid-cols-2 gap-2 mb-3">
-                  <button
-                    type="button"
-                    onClick={() => setAccomModalStep(1)}
-                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all ${
-                      accomModalStep === 1
-                        ? 'border-blue-600 bg-blue-50/70 text-blue-900 font-bold shadow-xs'
-                        : 'border-gray-200 bg-gray-50/60 text-gray-600 hover:bg-gray-100'
-                    }`}
-                  >
-                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
-                      accomModalStep === 1 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
-                    }`}>
-                      1
-                    </span>
-                    <span className="text-xs truncate">Accomplishment Report</span>
-                  </button>
+                  <input type="file" ref={accomHeaderInputRef} accept="image/*" className="hidden" onChange={e => handleAccomImageUpload(e, 'header')} />
+                  <input type="file" ref={accomFooterInputRef} accept="image/*" className="hidden" onChange={e => handleAccomImageUpload(e, 'footer')} />
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (isAccomReadOnly) {
-                        setAccomModalStep(2);
-                        return;
-                      }
-                      if (!accomParticipants.trim() || !accomBenefitingGroup.trim() || !accomResources.trim()) {
-                        showToast('Please complete required fields in Step 1 first.');
-                        return;
-                      }
-                      if (accomplishmentImages.length === 0 && accomReportFiles.length === 0) {
-                        showToast('Please attach at least one proof image in Step 1 first.');
-                        return;
-                      }
-                      if (!isAccomGenerated) {
-                        showToast('Please click "Generate" to generate your Accomplishment Report first.');
-                        return;
-                      }
-                      setAccomModalStep(2);
-                    }}
-                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all ${
-                      accomModalStep === 2
-                        ? 'border-blue-600 bg-blue-50/70 text-blue-900 font-bold shadow-xs'
-                        : 'border-gray-200 bg-gray-50/60 text-gray-600 hover:bg-gray-100'
-                    }`}
-                  >
-                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
-                      accomModalStep === 2 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
-                    }`}>
-                      2
-                    </span>
-                    <span className="text-xs truncate">Financial Report (PDF Only)</span>
-                  </button>
-                </div>
-
-                {/* Modal Body Container */}
-                <div className="flex-1 overflow-y-auto pr-1 space-y-4 mb-4">
-                  {/* STEP 1: ACCOMPLISHMENT REPORT */}
-                  {accomModalStep === 1 && (
-                    accomStep1View === 'form' ? (
-                      <div className="space-y-4 animate-in fade-in duration-200">
-                      <div>
-                        <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5">
-                          Participants (College/Unit & Year Level) <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          disabled={isAccomReadOnly}
-                          value={accomParticipants}
-                          onChange={(e) => setAccomParticipants(e.target.value)}
-                          placeholder="e.g., CICS 3rd Year Students, 150 Attendees"
-                          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:opacity-75 disabled:bg-gray-100"
-                        />
+                  {/* Modal Header */}
+                  <div className="flex items-center justify-between mb-4 border-b border-gray-100 pb-4">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className="w-10 h-10 sm:w-11 sm:h-11 bg-blue-50 text-blue-700 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0">
+                        <FileText size={22} />
                       </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5">
-                          Benefiting Group <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          disabled={isAccomReadOnly}
-                          value={accomBenefitingGroup}
-                          onChange={(e) => setAccomBenefitingGroup(e.target.value)}
-                          placeholder="e.g., Local Community, High School Students, University Body"
-                          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:opacity-75 disabled:bg-gray-100"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5">
-                          Resources Used <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          disabled={isAccomReadOnly}
-                          value={accomResources}
-                          onChange={(e) => setAccomResources(e.target.value)}
-                          placeholder="e.g., Organization Funds, Donated Materials, Partner Sponsorship"
-                          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:opacity-75 disabled:bg-gray-100"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5">
-                          Problem Encountered & Recommendations
-                        </label>
-                        <textarea
-                          disabled={isAccomReadOnly}
-                          value={accomReportComments}
-                          onChange={(e) => setAccomReportComments(e.target.value)}
-                          placeholder="Detail any challenges faced during the activity and recommendations for future iterations..."
-                          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all min-h-[75px] disabled:opacity-75 disabled:bg-gray-100"
-                        />
-                      </div>
-
-                      {/* Proof of activity images */}
-                      <div>
-                        <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5">
-                          Proof of Activity Photos <span className="text-red-500">*</span>
-                        </label>
-
-                        {/* Existing saved images */}
-                        {accomplishmentImages.length > 0 && (
-                          <div className="mb-3">
-                            <p className="text-[11px] text-gray-500 font-medium mb-1.5">Previously Uploaded Photos ({accomplishmentImages.length})</p>
-                            <div className="grid grid-cols-3 gap-2.5">
-                              {accomplishmentImages.map((img, idx) => (
-                                <div key={img.path || idx} className="relative group rounded-xl overflow-hidden border border-gray-200 aspect-video bg-gray-100">
-                                  <img src={img.url} alt="proof" className="w-full h-full object-cover" />
-                                  <a
-                                    href={img.url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                                  >
-                                    View
-                                  </a>
-                                  {!isAccomReadOnly && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setAccomplishmentImages(prev => prev.filter((_, i) => i !== idx))}
-                                      className="absolute top-1 right-1 bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
-                                    >
-                                      <X size={12} />
-                                    </button>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Upload zone for new images */}
-                        {!isAccomReadOnly && (
-                          <div className="w-full border-2 border-dashed border-gray-300 rounded-xl p-5 flex flex-col items-center justify-center hover:border-blue-500 transition-all bg-gray-50/50">
-                            <label className="cursor-pointer flex flex-col items-center">
-                              <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-xl text-xs font-bold hover:bg-blue-100 transition-all mb-1 flex items-center gap-1.5">
-                                <Upload size={14} />
-                                <span>Choose Proof Images</span>
-                              </div>
-                              <input
-                                type="file"
-                                accept=".jpg,.jpeg,.png,.gif,.webp"
-                                multiple
-                                onChange={(e) => {
-                                  const newFiles = Array.from(e.target.files || []);
-                                  setAccomReportFiles((prev) => [...prev, ...newFiles]);
-                                  e.target.value = '';
-                                }}
-                                className="hidden"
-                              />
-                              <span className="text-[11px] text-gray-400 text-center mt-1">PNG, JPG, JPEG, WEBP photos of the event</span>
-                            </label>
-                          </div>
-                        )}
-
-                        {/* Gallery of new files waiting upload */}
-                        {accomReportFiles.length > 0 && (
-                          <div className="mt-3">
-                            <p className="text-[11px] text-gray-500 font-medium mb-1.5">New Photos Selected ({accomReportFiles.length})</p>
-                            <div className="grid grid-cols-3 gap-2.5">
-                              {accomReportFiles.map((file, idx) => (
-                                <div key={idx} className="relative group rounded-xl overflow-hidden border border-gray-200 aspect-video bg-gray-100">
-                                  <img
-                                    src={URL.createObjectURL(file)}
-                                    alt="preview"
-                                    className="w-full h-full object-cover"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => setAccomReportFiles(prev => prev.filter((_, i) => i !== idx))}
-                                    className="absolute top-1 right-1 bg-red-600 text-white rounded-full p-1 shadow-sm hover:bg-red-700 transition-colors"
-                                  >
-                                    <X size={12} />
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
+                      <div className="min-w-0 flex-1">
+                        <h3 className="font-bold text-gray-800 text-sm sm:text-base truncate">
+                          {isAccomReadOnly ? 'Submitted Activity Reports (In Review)' : 'Submit Accomplishment & Financial Report'}
+                        </h3>
+                        <p className="text-gray-500 text-xs truncate">
+                          {accomModalStep === 1
+                            ? accomStep1View === 'generated'
+                              ? 'Step 1 of 2: Generated Accomplishment Report Document Preview & Editor'
+                              : 'Step 1 of 2: Accomplishment Details & Proof of Activity'
+                            : 'Step 2 of 2: Financial Report & Liquidation Documents (PDF Only)'}
+                        </p>
                       </div>
                     </div>
-                  ) : (
-                      /* GENERATED DOCUMENT PREVIEW & EDITOR */
-                      <div className="flex-1 w-full bg-gray-200 overflow-auto p-2 sm:p-4 md:p-6 custom-scrollbar rounded-2xl animate-in fade-in duration-200">
-                        <div
-                          className="w-[794px] max-w-full sm:max-w-[794px] shrink-0 mx-auto min-h-[1123px] flex flex-col relative bg-white shadow-xl"
-                        >
-                          {/* Visual Header */}
-                          {accomHeaderBase64 && (
-                            <div
-                              className="relative w-full cursor-pointer group"
-                              onClick={() => !isAccomReadOnly && accomHeaderInputRef.current?.click()}
-                              title={!isAccomReadOnly ? "Click to change header image" : ""}
-                            >
-                              <img src={accomHeaderBase64} alt="Header" className="w-full max-h-[160px] object-fill block" />
-                              {!isAccomReadOnly && (
-                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity text-white">
-                                  <ImageIcon size={22} className="mb-1" />
-                                  <span className="font-bold text-xs tracking-wider uppercase">Change Header</span>
-                                </div>
-                              )}
+                    <button 
+                      onClick={() => setIsAccomReportModalOpen(false)} 
+                      disabled={isSubmittingReport}
+                      className="text-gray-400 hover:text-gray-800 p-2 shrink-0 disabled:opacity-40 disabled:pointer-events-none"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+
+                  {/* Step Indicator Wizard Tabs */}
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    <button
+                      type="button"
+                      disabled={isSubmittingReport}
+                      onClick={() => setAccomModalStep(1)}
+                      className={`flex items-center justify-between gap-2 p-2.5 rounded-xl border text-left transition-all ${
+                        accomModalStep === 1
+                          ? 'border-blue-600 bg-blue-50/70 text-blue-900 font-bold shadow-xs'
+                          : 'border-gray-200 bg-gray-50/60 text-gray-600 hover:bg-gray-100'
+                      } ${isSubmittingReport ? 'opacity-50 pointer-events-none' : ''}`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                          accomModalStep === 1 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
+                        }`}>
+                          1
+                        </span>
+                        <span className="text-xs truncate">Accomplishment Report</span>
+                      </div>
+                      {isAccomApproved && (
+                        <span className="px-1.5 py-0.5 rounded-md text-[9px] font-extrabold bg-emerald-100 text-emerald-700 uppercase tracking-wider shrink-0">
+                          APPROVED
+                        </span>
+                      )}
+                      {!isAccomApproved && returnInfo?.isReturned && returnInfo?.accomplishmentReturned && (
+                        <span className="px-1.5 py-0.5 rounded-md text-[9px] font-extrabold bg-red-100 text-red-700 uppercase tracking-wider shrink-0">
+                          RETURNED
+                        </span>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isSubmittingReport}
+                      onClick={() => {
+                        if (isAccomReadOnly || isAccomApproved) {
+                          setAccomModalStep(2);
+                          return;
+                        }
+                        if (!accomParticipants.trim() || !accomBenefitingGroup.trim() || !accomResources.trim()) {
+                          showToast('Please complete required fields in Step 1 first.');
+                          return;
+                        }
+                        if (accomplishmentImages.length === 0 && accomReportFiles.length === 0) {
+                          showToast('Please attach at least one proof image in Step 1 first.');
+                          return;
+                        }
+                        if (!isAccomGenerated) {
+                          showToast('Please click "Generate" to generate your Accomplishment Report first.');
+                          return;
+                        }
+                        setAccomModalStep(2);
+                      }}
+                      className={`flex items-center justify-between gap-2 p-2.5 rounded-xl border text-left transition-all ${
+                        accomModalStep === 2
+                          ? 'border-blue-600 bg-blue-50/70 text-blue-900 font-bold shadow-xs'
+                          : 'border-gray-200 bg-gray-50/60 text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                          accomModalStep === 2 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
+                        }`}>
+                          2
+                        </span>
+                        <span className="text-xs truncate">Financial Report (PDF Only)</span>
+                      </div>
+                      {isFinApproved && (
+                        <span className="px-1.5 py-0.5 rounded-md text-[9px] font-extrabold bg-emerald-100 text-emerald-700 uppercase tracking-wider shrink-0">
+                          APPROVED
+                        </span>
+                      )}
+                      {!isFinApproved && returnInfo?.isReturned && returnInfo?.financialReturned && (
+                        <span className="px-1.5 py-0.5 rounded-md text-[9px] font-extrabold bg-amber-100 text-amber-700 uppercase tracking-wider shrink-0">
+                          RETURNED
+                        </span>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Modal Body Container */}
+                  <div className="flex-1 overflow-y-auto pr-1 space-y-4 mb-4">
+                    {/* STEP 1: ACCOMPLISHMENT REPORT */}
+                    {accomModalStep === 1 && (
+                      accomStep1View === 'form' ? (
+                        <div className="space-y-4 animate-in fade-in duration-200">
+                          {isAccomApproved && (
+                            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2.5">
+                              <CheckCircle size={17} className="text-emerald-600 shrink-0" />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-bold text-emerald-900">Accomplishment Report is already Approved</p>
+                                <p className="text-[11px] text-emerald-700 mt-0.5">This report has been approved by OSO Staff. No revisions are required for Accomplishment Report.</p>
+                              </div>
                             </div>
                           )}
 
-                          {/* Jodit Content (Body) */}
-                          <div className="flex-1 jodit-seamless-wrapper relative">
-                            <style>{`
-                              .jodit-seamless-wrapper .jodit-container {
-                                border: none !important;
-                              }
-                              .jodit-seamless-wrapper .jodit-toolbar__box {
-                                position: sticky;
-                                top: 0;
-                                z-index: 50;
-                                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                              }
-                              .jodit-seamless-wrapper .jodit-workplace {
-                                background: transparent !important;
-                              }
-                              .jodit-seamless-wrapper .jodit-wysiwyg {
-                                background: transparent !important;
-                                padding: 0 !important;
-                              }
-                              button[aria-label="Image properties"],
-                              button[aria-label="Image"],
-                              .jodit-toolbar-button_image,
-                              .jodit-toolbar-button_pencil {
-                                display: none !important;
-                              }
-                              .default-center-img {
-                                display: block;
-                                margin: 0 auto;
-                              }
-                            `}</style>
-                            <JoditEditor
-                              ref={reportEditorRef}
-                              value={accomGeneratedHtml}
-                              config={joditConfig}
-                              onBlur={newContent => setAccomGeneratedHtml(newContent)}
-                              onChange={() => {}}
+                          <div>
+                            <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5">
+                              Participants (College/Unit & Year Level) <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              disabled={isAccomStepReadOnly}
+                              value={accomParticipants}
+                              onChange={(e) => setAccomParticipants(e.target.value)}
+                              placeholder="e.g., CICS 3rd Year Students, 150 Attendees"
+                              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:opacity-75 disabled:bg-gray-100"
                             />
                           </div>
 
-                          {/* Visual Footer */}
-                          {accomFooterBase64 && (
-                            <div
-                              className="relative w-full cursor-pointer group mt-auto"
-                              onClick={() => !isAccomReadOnly && accomFooterInputRef.current?.click()}
-                              title={!isAccomReadOnly ? "Click to change footer image" : ""}
-                            >
-                              <img src={accomFooterBase64} alt="Footer" className="w-full max-h-[120px] object-fill block" />
-                              {!isAccomReadOnly && (
-                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity text-white">
-                                  <ImageIcon size={22} className="mb-1" />
-                                  <span className="font-bold text-xs tracking-wider uppercase">Change Footer</span>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  )}
-
-                  {/* STEP 2: FINANCIAL REPORT */}
-                  {accomModalStep === 2 && (
-                    <div className="space-y-4 animate-in fade-in duration-200">
-                      <div className="p-3.5 bg-emerald-50/80 border border-emerald-200 rounded-2xl">
-                        <h4 className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
-                          <CheckCircle size={15} className="text-emerald-600" />
-                          <span>Financial Report Requirements (PDF Only)</span>
-                        </h4>
-                        <p className="text-xs text-emerald-700 mt-1 leading-relaxed">
-                          Please attach official liquidation documents, summary statement of expenses, and supporting receipts. Supported format: <strong>PDF (.pdf) only</strong>.
-                        </p>
-                      </div>
-
-                      {/* Existing Uploaded Financial Documents */}
-                      {financialReportExisting.length > 0 && (
-                        <div>
-                          <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">
-                            Previously Uploaded Financial Documents ({financialReportExisting.length})
-                          </label>
-                          <div className="space-y-2">
-                            {financialReportExisting.map((file, idx) => (
-                              <div key={file.path || idx} className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-xl">
-                                <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-2">
-                                  {file.isPdf ? (
-                                    <div className="w-8 h-8 rounded-lg bg-red-100 text-red-700 font-bold text-[10px] flex items-center justify-center shrink-0 border border-red-200">
-                                      PDF
-                                    </div>
-                                  ) : (
-                                    <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 overflow-hidden border border-blue-200">
-                                      <img src={file.url} alt="preview" className="w-full h-full object-cover" />
-                                    </div>
-                                  )}
-                                  <span className="text-xs font-medium text-gray-800 truncate">{file.name}</span>
-                                </div>
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  <a
-                                    href={file.url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="px-2.5 py-1 bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-bold rounded-lg transition-colors flex items-center gap-1"
-                                  >
-                                    <Eye size={12} />
-                                    <span>View</span>
-                                  </a>
-                                  {!isAccomReadOnly && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setFinancialReportExisting(prev => prev.filter((_, i) => i !== idx))}
-                                      className="p-1 text-gray-400 hover:text-red-600 rounded-lg transition-colors"
-                                      title="Remove file"
-                                    >
-                                      <Trash2 size={15} />
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Upload zone for new financial files */}
-                      {!isAccomReadOnly && (
-                        <div>
-                          <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">
-                            Attach Financial Documents (PDF Only) <span className="text-red-500">*</span>
-                          </label>
-                          <div className="w-full border-2 border-dashed border-gray-300 rounded-2xl p-6 flex flex-col items-center justify-center hover:border-emerald-500 transition-all bg-gray-50/50">
-                            <label className="cursor-pointer flex flex-col items-center">
-                              <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mb-2 shadow-xs">
-                                <Upload size={22} />
-                              </div>
-                              <span className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-xs mb-1">
-                                Choose PDF Documents
-                              </span>
-                              <input
-                                type="file"
-                                accept=".pdf,application/pdf"
-                                multiple
-                                onChange={(e) => {
-                                  const newFiles = Array.from(e.target.files || []);
-                                  const validPdfs = newFiles.filter(file => file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf');
-                                  const invalidFiles = newFiles.filter(file => !file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf');
-                                  if (invalidFiles.length > 0) {
-                                    showToast('Only PDF files (.pdf) are accepted for Financial Reports.');
-                                  }
-                                  if (validPdfs.length > 0) {
-                                    setFinancialReportFiles((prev) => [...prev, ...validPdfs]);
-                                  }
-                                  e.target.value = '';
-                                }}
-                                className="hidden"
-                              />
-                              <span className="text-[11px] text-gray-400 text-center mt-1">PDF receipts, liquidation forms, or financial statements (PDF only)</span>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5">
+                              Benefiting Group <span className="text-red-500">*</span>
                             </label>
+                            <input
+                              type="text"
+                              disabled={isAccomStepReadOnly}
+                              value={accomBenefitingGroup}
+                              onChange={(e) => setAccomBenefitingGroup(e.target.value)}
+                              placeholder="e.g., Local Community, High School Students, University Body"
+                              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:opacity-75 disabled:bg-gray-100"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5">
+                              Resources Used <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              disabled={isAccomStepReadOnly}
+                              value={accomResources}
+                              onChange={(e) => setAccomResources(e.target.value)}
+                              placeholder="e.g., Organization Funds, Donated Materials, Partner Sponsorship"
+                              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:opacity-75 disabled:bg-gray-100"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5">
+                              Problem Encountered & Recommendations
+                            </label>
+                            <textarea
+                              disabled={isAccomStepReadOnly}
+                              value={accomReportComments}
+                              onChange={(e) => setAccomReportComments(e.target.value)}
+                              placeholder="Detail any challenges faced during the activity and recommendations for future iterations..."
+                              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all min-h-[75px] disabled:opacity-75 disabled:bg-gray-100"
+                            />
+                          </div>
+
+                          {/* Proof of activity images */}
+                          <div>
+                            <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5">
+                              Proof of Activity Photos <span className="text-red-500">*</span>
+                            </label>
+
+                            {/* Existing saved images */}
+                            {accomplishmentImages.length > 0 && (
+                              <div className="mb-3">
+                                <p className="text-[11px] text-gray-500 font-medium mb-1.5">Previously Uploaded Photos ({accomplishmentImages.length})</p>
+                                <div className="grid grid-cols-3 gap-2.5">
+                                  {accomplishmentImages.map((img, idx) => (
+                                    <div key={img.path || idx} className="relative group rounded-xl overflow-hidden border border-gray-200 aspect-video bg-gray-100">
+                                      <img src={img.url} alt="proof" className="w-full h-full object-cover" />
+                                      <a
+                                        href={img.url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                                      >
+                                        View
+                                      </a>
+                                      {!isAccomStepReadOnly && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setAccomplishmentImages(prev => prev.filter((_, i) => i !== idx))}
+                                          className="absolute top-1 right-1 bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                                        >
+                                          <X size={12} />
+                                        </button>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Upload zone for new images */}
+                            {!isAccomStepReadOnly && (
+                              <div className="w-full border-2 border-dashed border-gray-300 rounded-xl p-5 flex flex-col items-center justify-center hover:border-blue-500 transition-all bg-gray-50/50">
+                                <label className="cursor-pointer flex flex-col items-center">
+                                  <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-xl text-xs font-bold hover:bg-blue-100 transition-all mb-1 flex items-center gap-1.5">
+                                    <Upload size={14} />
+                                    <span>Choose Proof Images</span>
+                                  </div>
+                                  <input
+                                    type="file"
+                                    accept=".jpg,.jpeg,.png,.gif,.webp"
+                                    multiple
+                                    onChange={(e) => {
+                                      const newFiles = Array.from(e.target.files || []);
+                                      setAccomReportFiles((prev) => [...prev, ...newFiles]);
+                                      e.target.value = '';
+                                    }}
+                                    className="hidden"
+                                  />
+                                  <span className="text-[11px] text-gray-400 text-center mt-1">PNG, JPG, JPEG, WEBP photos of the event</span>
+                                </label>
+                              </div>
+                            )}
+
+                            {/* Gallery of new files waiting upload */}
+                            {accomReportFiles.length > 0 && (
+                              <div className="mt-3">
+                                <p className="text-[11px] text-gray-500 font-medium mb-1.5">New Photos Selected ({accomReportFiles.length})</p>
+                                <div className="grid grid-cols-3 gap-2.5">
+                                  {accomReportFiles.map((file, idx) => (
+                                    <div key={idx} className="relative group rounded-xl overflow-hidden border border-gray-200 aspect-video bg-gray-100">
+                                      <img
+                                        src={URL.createObjectURL(file)}
+                                        alt="preview"
+                                        className="w-full h-full object-cover"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => setAccomReportFiles(prev => prev.filter((_, i) => i !== idx))}
+                                        className="absolute top-1 right-1 bg-red-600 text-white rounded-full p-1 shadow-sm hover:bg-red-700 transition-colors"
+                                      >
+                                        <X size={12} />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
-                      )}
+                      ) : (
+                        /* GENERATED DOCUMENT PREVIEW & EDITOR */
+                        <div className="flex-1 w-full bg-gray-200 overflow-auto p-2 sm:p-4 md:p-6 custom-scrollbar rounded-2xl animate-in fade-in duration-200">
+                          <div
+                            className="w-[794px] max-w-full sm:max-w-[794px] shrink-0 mx-auto min-h-[1123px] flex flex-col relative bg-white shadow-xl"
+                          >
+                            {/* Visual Header */}
+                            {accomHeaderBase64 && (
+                              <div
+                                className="relative w-full cursor-pointer group"
+                                onClick={() => !isAccomStepReadOnly && accomHeaderInputRef.current?.click()}
+                                title={!isAccomStepReadOnly ? "Click to change header image" : ""}
+                              >
+                                <img src={accomHeaderBase64} alt="Header" className="w-full max-h-[160px] object-fill block" />
+                                {!isAccomStepReadOnly && (
+                                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity text-white">
+                                    <ImageIcon size={22} className="mb-1" />
+                                    <span className="font-bold text-xs tracking-wider uppercase">Change Header</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
 
-                      {/* Selected new financial files list */}
-                      {financialReportFiles.length > 0 && (
-                        <div>
-                          <p className="text-[11px] text-gray-500 font-medium mb-1.5">New Financial Files to Upload ({financialReportFiles.length})</p>
-                          <div className="space-y-2">
-                            {financialReportFiles.map((file, idx) => {
-                              const isPdf = /\.pdf$/i.test(file.name);
-                              const sizeKb = Math.round(file.size / 1024);
-                              return (
-                                <div key={idx} className="flex items-center justify-between p-2.5 bg-gray-50 border border-gray-200 rounded-xl">
+                            {/* Jodit Content (Body) */}
+                            <div className="flex-1 jodit-seamless-wrapper relative">
+                              <style>{`
+                                .jodit-seamless-wrapper .jodit-container {
+                                  border: none !important;
+                                }
+                                .jodit-seamless-wrapper .jodit-toolbar__box {
+                                  position: sticky;
+                                  top: 0;
+                                  z-index: 50;
+                                  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                                }
+                                .jodit-seamless-wrapper .jodit-workplace {
+                                  background: transparent !important;
+                                }
+                                .jodit-seamless-wrapper .jodit-wysiwyg {
+                                  background: transparent !important;
+                                  padding: 0 !important;
+                                }
+                                button[aria-label="Image properties"],
+                                button[aria-label="Image"],
+                                .jodit-toolbar-button_image,
+                                .jodit-toolbar-button_pencil {
+                                  display: none !important;
+                                }
+                                .default-center-img {
+                                  display: block;
+                                  margin: 0 auto;
+                                }
+                              `}</style>
+                              <JoditEditor
+                                ref={reportEditorRef}
+                                value={accomGeneratedHtml}
+                                config={{
+                                  ...joditConfig,
+                                  readonly: isAccomStepReadOnly
+                                }}
+                                onBlur={newContent => setAccomGeneratedHtml(newContent)}
+                                onChange={() => {}}
+                              />
+                            </div>
+
+                            {/* Visual Footer */}
+                            {accomFooterBase64 && (
+                              <div
+                                className="relative w-full cursor-pointer group mt-auto"
+                                onClick={() => !isAccomStepReadOnly && accomFooterInputRef.current?.click()}
+                                title={!isAccomStepReadOnly ? "Click to change footer image" : ""}
+                              >
+                                <img src={accomFooterBase64} alt="Footer" className="w-full max-h-[120px] object-fill block" />
+                                {!isAccomStepReadOnly && (
+                                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity text-white">
+                                    <ImageIcon size={22} className="mb-1" />
+                                    <span className="font-bold text-xs tracking-wider uppercase">Change Footer</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    )}
+
+                    {/* STEP 2: FINANCIAL REPORT */}
+                    {accomModalStep === 2 && (
+                      <div className="space-y-4 animate-in fade-in duration-200">
+                        {isFinApproved ? (
+                          <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2.5">
+                            <CheckCircle size={18} className="text-emerald-600 shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <h4 className="text-xs font-bold text-emerald-900">Financial Report is already Approved</h4>
+                              <p className="text-xs text-emerald-700 mt-0.5">
+                                Your liquidation documents and financial statement are verified and approved by OSO Staff. No re-upload required.
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-3.5 bg-emerald-50/80 border border-emerald-200 rounded-2xl">
+                            <h4 className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                              <CheckCircle size={15} className="text-emerald-600" />
+                              <span>Financial Report Requirements (PDF Only)</span>
+                            </h4>
+                            <p className="text-xs text-emerald-700 mt-1 leading-relaxed">
+                              Please attach official liquidation documents, summary statement of expenses, and supporting receipts. Supported format: <strong>PDF (.pdf) only</strong>.
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Existing Uploaded Financial Documents */}
+                        {financialReportExisting.length > 0 && (
+                          <div>
+                            <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">
+                              Previously Uploaded Financial Documents ({financialReportExisting.length})
+                            </label>
+                            <div className="space-y-2">
+                              {financialReportExisting.map((file, idx) => (
+                                <div key={file.path || idx} className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-xl">
                                   <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-2">
-                                    {isPdf ? (
+                                    {file.isPdf ? (
                                       <div className="w-8 h-8 rounded-lg bg-red-100 text-red-700 font-bold text-[10px] flex items-center justify-center shrink-0 border border-red-200">
                                         PDF
                                       </div>
                                     ) : (
-                                      <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 border border-blue-200">
-                                        <FileText size={16} />
+                                      <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 overflow-hidden border border-blue-200">
+                                        <img src={file.url} alt="preview" className="w-full h-full object-cover" />
                                       </div>
                                     )}
-                                    <div className="min-w-0 flex-1">
-                                      <p className="text-xs font-semibold text-gray-800 truncate">{file.name}</p>
-                                      <p className="text-[10px] text-gray-400">{sizeKb} KB</p>
-                                    </div>
+                                    <span className="text-xs font-medium text-gray-800 truncate">{file.name}</span>
                                   </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => setFinancialReportFiles(prev => prev.filter((_, i) => i !== idx))}
-                                    className="p-1 text-gray-400 hover:text-red-600 rounded-lg transition-colors"
-                                  >
-                                    <X size={16} />
-                                  </button>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <a
+                                      href={file.url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="px-2.5 py-1 bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-bold rounded-lg transition-colors flex items-center gap-1"
+                                    >
+                                      <Eye size={12} />
+                                      <span>View</span>
+                                    </a>
+                                    {!isFinStepReadOnly && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setFinancialReportExisting(prev => prev.filter((_, i) => i !== idx))}
+                                        className="p-1 text-gray-400 hover:text-red-600 rounded-lg transition-colors"
+                                        title="Remove file"
+                                      >
+                                        <Trash2 size={15} />
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
-                              );
-                            })}
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
+                        )}
 
-                {/* Modal Footer Controls */}
-                <div className="flex items-center justify-between gap-3 pt-4 border-t border-gray-100">
-                  {accomModalStep === 1 ? (
-                    accomStep1View === 'form' ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => setIsAccomReportModalOpen(false)}
-                          className="px-5 py-2.5 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-bold transition-all text-xs uppercase"
-                        >
-                          Cancel
-                        </button>
+                        {/* Upload zone for new financial files */}
+                        {!isFinStepReadOnly && (
+                          <div>
+                            <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">
+                              Attach Financial Documents (PDF Only) <span className="text-red-500">*</span>
+                            </label>
+                            <div className="w-full border-2 border-dashed border-gray-300 rounded-2xl p-6 flex flex-col items-center justify-center hover:border-emerald-500 transition-all bg-gray-50/50">
+                              <label className="cursor-pointer flex flex-col items-center">
+                                <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mb-2 shadow-xs">
+                                  <Upload size={22} />
+                                </div>
+                                <span className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-xs mb-1">
+                                  Choose PDF Documents
+                                </span>
+                                <input
+                                  type="file"
+                                  accept=".pdf,application/pdf"
+                                  multiple
+                                  onChange={(e) => {
+                                    const newFiles = Array.from(e.target.files || []);
+                                    const validPdfs = newFiles.filter(file => file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf');
+                                    const invalidFiles = newFiles.filter(file => !file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf');
+                                    if (invalidFiles.length > 0) {
+                                      showToast('Only PDF files (.pdf) are accepted for Financial Reports.');
+                                    }
+                                    if (validPdfs.length > 0) {
+                                      setFinancialReportFiles((prev) => [...prev, ...validPdfs]);
+                                    }
+                                    e.target.value = '';
+                                  }}
+                                  className="hidden"
+                                />
+                                <span className="text-[11px] text-gray-400 text-center mt-1">PDF receipts, liquidation forms, or financial statements (PDF only)</span>
+                              </label>
+                            </div>
+                          </div>
+                        )}
 
-                        <div className="flex items-center gap-2">
-                          {isAccomGenerated && (
-                            <button
-                              type="button"
-                              onClick={() => setAccomStep1View('generated')}
-                              className="px-4 py-2.5 border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-xl font-bold transition-all text-xs uppercase flex items-center gap-1.5"
-                            >
-                              <Eye size={14} />
-                              <span>View Generated</span>
-                            </button>
-                          )}
+                        {/* Selected new financial files list */}
+                        {financialReportFiles.length > 0 && (
+                          <div>
+                            <p className="text-[11px] text-gray-500 font-medium mb-1.5">New Financial Files to Upload ({financialReportFiles.length})</p>
+                            <div className="space-y-2">
+                              {financialReportFiles.map((file, idx) => {
+                                const isPdf = /\.pdf$/i.test(file.name);
+                                const sizeKb = Math.round(file.size / 1024);
+                                return (
+                                  <div key={idx} className="flex items-center justify-between p-2.5 bg-gray-50 border border-gray-200 rounded-xl">
+                                    <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-2">
+                                      {isPdf ? (
+                                        <div className="w-8 h-8 rounded-lg bg-red-100 text-red-700 font-bold text-[10px] flex items-center justify-center shrink-0 border border-red-200">
+                                          PDF
+                                        </div>
+                                      ) : (
+                                        <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 border border-blue-200">
+                                          <FileText size={16} />
+                                        </div>
+                                      )}
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-xs font-semibold text-gray-800 truncate">{file.name}</p>
+                                        <p className="text-[10px] text-gray-400">{sizeKb} KB</p>
+                                      </div>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setFinancialReportFiles(prev => prev.filter((_, i) => i !== idx))}
+                                      className="p-1 text-gray-400 hover:text-red-600 rounded-lg transition-colors"
+                                    >
+                                      <X size={16} />
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Modal Footer Controls */}
+                  <div className="flex items-center justify-between gap-3 pt-4 border-t border-gray-100">
+                    {accomModalStep === 1 ? (
+                      accomStep1View === 'form' ? (
+                        <>
                           <button
                             type="button"
-                            onClick={handleGenerateAccomplishmentReport}
-                            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all text-xs uppercase shadow-sm flex items-center gap-1.5"
+                            onClick={() => setIsAccomReportModalOpen(false)}
+                            className="px-5 py-2.5 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-bold transition-all text-xs uppercase"
                           >
-                            <FileText size={16} />
-                            <span>{isAccomGenerated ? 'Update Generated Report' : 'Generate'}</span>
+                            Cancel
                           </button>
-                        </div>
-                      </>
+
+                          <div className="flex items-center gap-2">
+                            {isAccomApproved ? (
+                              <button
+                                type="button"
+                                onClick={() => setAccomModalStep(2)}
+                                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all text-xs uppercase shadow-sm flex items-center gap-1.5"
+                              >
+                                <span>Proceed to Financial Report</span>
+                                <ChevronRight size={16} />
+                              </button>
+                            ) : (
+                              <>
+                                {isAccomGenerated && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setAccomStep1View('generated')}
+                                    className="px-4 py-2.5 border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-xl font-bold transition-all text-xs uppercase flex items-center gap-1.5"
+                                  >
+                                    <Eye size={14} />
+                                    <span>View Generated</span>
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={handleGenerateAccomplishmentReport}
+                                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all text-xs uppercase shadow-sm flex items-center gap-1.5"
+                                >
+                                  <FileText size={16} />
+                                  <span>{isAccomGenerated ? 'Update Generated Report' : 'Generate'}</span>
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setAccomStep1View('form')}
+                            className="px-5 py-2.5 border border-gray-300 text-gray-700 hover:bg-gray-100 rounded-xl font-bold transition-all text-xs uppercase flex items-center gap-1.5"
+                          >
+                            <ChevronLeft size={16} />
+                            <span>Back to Form</span>
+                          </button>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handlePrintAccomReport}
+                              className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2.5 rounded-xl text-xs font-bold transition-all border border-gray-300"
+                            >
+                              <Printer size={15} />
+                              <span className="hidden sm:inline">Print / Save as PDF</span>
+                            </button>
+
+                            {isFinApproved ? (
+                              /* Financial is already approved, so Org President can submit directly from Step 1! */
+                              <button
+                                type="button"
+                                disabled={loading || isSubmittingReport}
+                                onClick={handleReportSubmit}
+                                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold transition-all text-xs uppercase shadow-sm flex items-center gap-1.5 disabled:opacity-50 disabled:pointer-events-none"
+                              >
+                                {isSubmittingReport ? (
+                                  <>
+                                    <Loader2 size={16} className="animate-spin" />
+                                    <span>Submitting...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <CheckCircle size={16} />
+                                    <span>Submit Accomplishment Report</span>
+                                  </>
+                                )}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={isSubmittingReport}
+                                onClick={() => setAccomModalStep(2)}
+                                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all text-xs uppercase shadow-sm flex items-center gap-1.5 disabled:opacity-50 disabled:pointer-events-none"
+                              >
+                                <span>Next: Financial Report</span>
+                                <ChevronRight size={16} />
+                              </button>
+                            )}
+                          </div>
+                        </>
+                      )
                     ) : (
                       <>
                         <button
                           type="button"
-                          onClick={() => setAccomStep1View('form')}
-                          className="px-5 py-2.5 border border-gray-300 text-gray-700 hover:bg-gray-100 rounded-xl font-bold transition-all text-xs uppercase flex items-center gap-1.5"
+                          disabled={isSubmittingReport}
+                          onClick={() => {
+                            setAccomModalStep(1);
+                            setAccomStep1View(isAccomStepReadOnly ? 'form' : 'generated');
+                          }}
+                          className="px-5 py-2.5 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-bold transition-all text-xs uppercase flex items-center gap-1.5 disabled:opacity-50 disabled:pointer-events-none"
                         >
                           <ChevronLeft size={16} />
-                          <span>Back to Form</span>
+                          <span>Back to Step 1</span>
                         </button>
 
-                        <div className="flex items-center gap-2">
+                        {isAccomReadOnly ? (
                           <button
                             type="button"
-                            onClick={handlePrintAccomReport}
-                            className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2.5 rounded-xl text-xs font-bold transition-all border border-gray-300"
+                            onClick={() => setIsAccomReportModalOpen(false)}
+                            className="px-6 py-2.5 bg-gray-700 hover:bg-gray-800 text-white rounded-xl font-bold transition-all text-xs uppercase shadow-sm"
                           >
-                            <Printer size={15} />
-                            <span className="hidden sm:inline">Print / Save as PDF</span>
+                            Close
                           </button>
-
+                        ) : (
                           <button
                             type="button"
-                            onClick={() => setAccomModalStep(2)}
-                            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all text-xs uppercase shadow-sm flex items-center gap-1.5"
+                            disabled={loading || isSubmittingReport}
+                            onClick={handleReportSubmit}
+                            className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold transition-all text-xs uppercase shadow-sm flex items-center gap-1.5 disabled:opacity-50 disabled:pointer-events-none"
                           >
-                            <span>Next: Financial Report</span>
-                            <ChevronRight size={16} />
+                            {isSubmittingReport ? (
+                              <>
+                                <Loader2 size={16} className="animate-spin" />
+                                <span>Submitting...</span>
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle size={16} />
+                                <span>
+                                  {isAccomApproved
+                                    ? 'Submit Financial Report'
+                                    : isFinApproved
+                                      ? 'Submit Accomplishment Report'
+                                      : 'Submit Reports'}
+                                </span>
+                              </>
+                            )}
                           </button>
-                        </div>
+                        )}
                       </>
-                    )
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAccomModalStep(1);
-                          setAccomStep1View('generated');
-                        }}
-                        className="px-5 py-2.5 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl font-bold transition-all text-xs uppercase flex items-center gap-1.5"
-                      >
-                        <ChevronLeft size={16} />
-                        <span>Back to Step 1</span>
-                      </button>
-
-                      {isAccomReadOnly ? (
-                        <button
-                          type="button"
-                          onClick={() => setIsAccomReportModalOpen(false)}
-                          className="px-6 py-2.5 bg-gray-700 hover:bg-gray-800 text-white rounded-xl font-bold transition-all text-xs uppercase shadow-sm"
-                        >
-                          Close
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={loading}
-                          onClick={async () => {
-                            if (!selectedDoc) {
-                              showToast('No document selected.');
-                              return;
-                            }
-                            if (!accomParticipants.trim() || !accomBenefitingGroup.trim() || !accomResources.trim()) {
-                              showToast('Please complete Step 1 fields before submitting.');
-                              setAccomModalStep(1);
-                              setAccomStep1View('form');
-                              return;
-                            }
-                            if (accomplishmentImages.length === 0 && accomReportFiles.length === 0) {
-                              showToast('Please attach at least one proof image in Step 1.');
-                              setAccomModalStep(1);
-                              setAccomStep1View('form');
-                              return;
-                            }
-                            if (financialReportExisting.length === 0 && financialReportFiles.length === 0) {
-                              showToast('Please upload at least one financial report PDF document.');
-                              return;
-                            }
-                            const nonPdfs = financialReportFiles.filter(
-                              file => !file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf'
-                            );
-                            if (nonPdfs.length > 0) {
-                              showToast('All financial report files must be in PDF format (.pdf).');
-                              return;
-                            }
-
-                            setLoading(true);
-                            try {
-                              const submissionId = selectedDoc.id;
-
-                              // 1. Generate & Upload Accomplishment Report as an Official PDF Document
-                              const pdfBlob = await generateAccomplishmentReportPdfBlob();
-                              const pdfFileName = `Accomplishment_Report_${Date.now()}.pdf`;
-                              const pdfFilePath = `accom-report/${submissionId}/${pdfFileName}`;
-
-                              // Remove old accomplishment report PDF files so only the latest remains
-                              try {
-                                const { data: existingAccomFiles } = await supabase.storage
-                                  .from('documents')
-                                  .list(`accom-report/${submissionId}`);
-                                const oldPdfs = (existingAccomFiles || []).filter(f => /\.pdf$/i.test(f.name));
-                                if (oldPdfs.length > 0) {
-                                  await supabase.storage
-                                    .from('documents')
-                                    .remove(oldPdfs.map(f => `accom-report/${submissionId}/${f.name}`));
-                                }
-                              } catch (cleanErr) {
-                                console.warn('Could not clean old accomplishment pdfs:', cleanErr);
-                              }
-
-                              const { error: pdfUploadErr } = await supabase.storage
-                                .from('documents')
-                                .upload(pdfFilePath, pdfBlob, {
-                                  contentType: 'application/pdf',
-                                  cacheControl: '36000',
-                                  upsert: true
-                                });
-                              if (pdfUploadErr) throw pdfUploadErr;
-
-                              // 2. Upload new Accomplishment Proof Images
-                              if (accomReportFiles.length > 0) {
-                                await Promise.all(
-                                  accomReportFiles.map(async (file, index) => {
-                                    const compressed = await compressImage(file, { maxWidth: 1600, maxHeight: 1600, quality: 0.82 });
-                                    const safeFileName = compressed.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
-                                    const filePath = `accom-report/${submissionId}/${Date.now()}-${index}-${safeFileName}`;
-                                    return supabase.storage
-                                      .from('documents')
-                                      .upload(filePath, compressed, { cacheControl: '36000', upsert: false });
-                                  })
-                                );
-                              }
-
-                              // 3. Upload new Financial Report Files (PDF Only)
-                              if (financialReportFiles.length > 0) {
-                                await Promise.all(
-                                  financialReportFiles.map(async (file, index) => {
-                                    const safeFileName = file.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
-                                    const filePath = `financial-report/${submissionId}/${Date.now()}-${index}-${safeFileName}`;
-                                    return supabase.storage
-                                      .from('documents')
-                                      .upload(filePath, file, { cacheControl: '36000', upsert: false });
-                                  })
-                                );
-                              }
-
-                              // 3. Upsert activity_accomplishments record
-                              const { data: existingReport } = await supabase
-                                .from('activity_accomplishments')
-                                .select('id')
-                                .eq('submission_id', submissionId)
-                                .maybeSingle();
-
-                              if (existingReport) {
-                                const { error: updateAccomErr } = await supabase
-                                  .from('activity_accomplishments')
-                                  .update({
-                                    participants: accomParticipants.trim() || null,
-                                    benefiting_group: accomBenefitingGroup.trim() || null,
-                                    resources_used: accomResources.trim() || null,
-                                    problems_encountered: accomReportComments.trim() || null,
-                                    updated_at: new Date().toISOString()
-                                  })
-                                  .eq('id', existingReport.id);
-                                if (updateAccomErr) throw updateAccomErr;
-                              } else {
-                                const { error: insertAccomErr } = await supabase
-                                  .from('activity_accomplishments')
-                                  .insert([{
-                                    submission_id: submissionId,
-                                    submitted_by: user.id,
-                                    participants: accomParticipants.trim() || null,
-                                    benefiting_group: accomBenefitingGroup.trim() || null,
-                                    resources_used: accomResources.trim() || null,
-                                    problems_encountered: accomReportComments.trim() || null,
-                                    created_at: new Date().toISOString()
-                                  }]);
-                                if (insertAccomErr) throw insertAccomErr;
-                              }
-
-                              // 4. Update submission status to 'oso staff (pending report)'
-                              const { error: subErr } = await supabase
-                                .from('submissions')
-                                .update({
-                                  status: 'oso staff (pending report)',
-                                  remarks: 'Accomplishment and Financial Reports submitted for OSO Staff review'
-                                })
-                                .eq('id', submissionId);
-
-                              if (subErr) throw subErr;
-
-                              // 5. Insert audit log
-                              const activeVersionId = selectedDoc.raw?.current_version_id ||
-                                (Array.isArray(selectedDoc.raw?.submission_versions)
-                                  ? selectedDoc.raw?.submission_versions[0]?.id
-                                  : selectedDoc.raw?.submission_versions?.id);
-
-                              let accomLogDesc = 'Activity Accomplishment and Financial Reports submitted';
-                              try {
-                                const activeMemberRaw = sessionStorage.getItem('osodocs_active_member');
-                                if (activeMemberRaw) {
-                                  const activeMember = JSON.parse(activeMemberRaw);
-                                  if (activeMember?.full_name && !activeMember.is_president) {
-                                    accomLogDesc += ` [Performed by ${activeMember.full_name} (${activeMember.position})]`;
-                                  }
-                                }
-                              } catch (_) {}
-
-                              await supabase.from('submission_logs').insert([{
-                                submission_id: submissionId,
-                                submission_version_id: activeVersionId,
-                                user_id: user.id,
-                                workflow_phase: 'report_review',
-                                action_type: 'submitted',
-                                review_action: 'pending_report_review',
-                                description: accomLogDesc,
-                                comment: 'Accomplishment Report and Financial Report submitted for OSO Staff review',
-                                created_at: new Date().toISOString()
-                              }]);
-
-                              // 6. Reload report data & update selectedDoc
-                              await loadAccomplishmentReport(submissionId);
-                              if (selectedDoc) {
-                                setSelectedDoc(prev => prev ? ({
-                                  ...prev,
-                                  status: 'OSO STAFF (PENDING REPORT)',
-                                  raw: {
-                                    ...(prev.raw || {}),
-                                    status: 'oso staff (pending report)',
-                                    remarks: 'Accomplishment and Financial Reports submitted for OSO Staff review'
-                                  }
-                                }) : null);
-                              }
-
-                              setIsAccomReportModalOpen(false);
-                              setAccomReportFiles([]);
-                              setFinancialReportFiles([]);
-                              showToast('Accomplishment and Financial Reports submitted for OSO Staff review!');
-                              await fetchHandledLogs();
-                              window.dispatchEvent(new CustomEvent('inbox-updated'));
-                              window.dispatchEvent(new CustomEvent('document-status-changed'));
-                              window.dispatchEvent(new CustomEvent('submission-submitted'));
-                              try {
-                                const realtimeChannel = supabase.channel('global-workflow-notifications');
-                                await realtimeChannel.send({
-                                  type: 'broadcast',
-                                  event: 'inbox-update',
-                                  payload: { submissionId, status: 'oso staff (pending report)' }
-                                });
-                                supabase.removeChannel(realtimeChannel);
-                              } catch (_) {}
-                            } catch (err) {
-                              console.error('Error submitting reports:', err);
-                              showToast(err?.message || 'Failed to submit accomplishment and financial reports.');
-                            } finally {
-                              setLoading(false);
-                            }
-                          }}
-                          className="px-6 py-2.5 bg-blue-700 hover:bg-blue-800 text-white rounded-xl font-bold transition-all text-xs uppercase shadow-md disabled:opacity-50 flex items-center gap-1.5"
-                        >
-                          <Send size={14} />
-                          <span>Submit Reports</span>
-                        </button>
-                      )}
-                    </>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Resubmit Modal Overlay (Org President) */}
           {isResubmitModalOpen && (() => {
@@ -5677,9 +6106,57 @@ export const MyDocuments = () => {
             const fileLog = getLatestAttachmentLog(timelineLogs, previewFile.id, currentVersion, allVersions);
             const previewReturnHistory = getFileReturnHistory(previewFile, allVersions, attachmentReturnLogs, currentVersion);
             const latestPreviewReturn = previewReturnHistory[0] || null;
-            const previewDisplayLog =
-              latestPreviewReturn ||
-              (RETURN_REASONS.includes(String(fileLog?.review_action || '').toLowerCase()) ? fileLog : null);
+
+            const isReportItem = previewFile.type === 'accomplishment' || previewFile.type === 'financial';
+            let reportReturnLog = null;
+            let isApprovedReport = false;
+
+            if (isReportItem) {
+              const returnRemarks = selectedDoc?.raw?.remarks || selectedDoc?.remarks || '';
+              if (previewFile.type === 'accomplishment') {
+                const accomMatch = returnRemarks.match(/\[Accomplishment Report Returned\]:?\s*([^[]+)/i);
+                const logWithAccom = (timelineLogs || []).find(l => /\[Accomplishment Report Returned\]/i.test(l.comment || l.description || ''));
+                const comment = accomMatch ? accomMatch[1].trim() : (logWithAccom ? extractCleanFileComment(logWithAccom.comment || logWithAccom.description, previewFile) : '');
+                if (comment) {
+                  reportReturnLog = {
+                    review_action: 'returned',
+                    users: logWithAccom?.users || { full_name: 'OSO Staff', role: 'Staff' },
+                    comment: comment
+                  };
+                } else if (/\[Accomplishment Report\]:\s*Approved/i.test(returnRemarks) || /Accomplishment Report (is )?previously approved/i.test(returnRemarks) || getDocStatusLower(selectedDoc) === 'completed') {
+                  isApprovedReport = true;
+                }
+              } else if (previewFile.type === 'financial') {
+                const fileName = previewFile.name || previewFile.file_name || '';
+                const escapedName = fileName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                const finFileMatch = returnRemarks.match(new RegExp('\\[Financial Report Returned - ' + escapedName + '\\]:?\\s*([^[]+)', 'i'));
+                const finGeneralMatch = returnRemarks.match(/\[Financial Report Returned[^\]]*\]:?\s*([^[]+)/i);
+                const logWithFin = (timelineLogs || []).find(l =>
+                  new RegExp('\\[Financial Report Returned - ' + escapedName + '\\]', 'i').test(l.comment || l.description || '') ||
+                  /\[Financial Report Returned/i.test(l.comment || l.description || '')
+                );
+                const comment = finFileMatch ? finFileMatch[1].trim() : (finGeneralMatch ? finGeneralMatch[1].trim() : (logWithFin ? extractCleanFileComment(logWithFin.comment || logWithFin.description, previewFile) : ''));
+                if (comment) {
+                  reportReturnLog = {
+                    review_action: 'returned',
+                    users: logWithFin?.users || { full_name: 'OSO Staff', role: 'Staff' },
+                    comment: comment
+                  };
+                } else if (/\[Financial Report\]:\s*Approved/i.test(returnRemarks) || /Financial Report (is )?previously approved/i.test(returnRemarks) || returnRemarks.includes(`[Approved] ${fileName}`) || getDocStatusLower(selectedDoc) === 'completed') {
+                  isApprovedReport = true;
+                }
+              }
+            }
+
+            const rawDisplayLog =
+              reportReturnLog ||
+              (!isReportItem ? latestPreviewReturn : null) ||
+              (!isReportItem && RETURN_REASONS.includes(String(fileLog?.review_action || '').toLowerCase()) ? fileLog : null);
+
+            const previewDisplayLog = rawDisplayLog ? {
+              ...rawDisplayLog,
+              comment: extractCleanFileComment(rawDisplayLog.comment || rawDisplayLog.description, previewFile)
+            } : null;
 
             return (
               <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-300">
@@ -5691,7 +6168,7 @@ export const MyDocuments = () => {
                         <Paperclip size={20} />
                       </div>
                       <div>
-                        <h3 className="font-bold text-gray-800 text-lg">{previewFile.file_name || 'Attached File'}</h3>
+                        <h3 className="font-bold text-gray-800 text-lg">{previewFile.name || previewFile.file_name || 'Attached File'}</h3>
                         <p className="text-gray-400 text-xs font-medium">Verify Document Attachment</p>
                       </div>
                     </div>
@@ -5708,13 +6185,13 @@ export const MyDocuments = () => {
                     {/* Left Side: Preview iframe */}
                     <div className="flex-1 bg-gray-100 p-6 flex flex-col h-full overflow-hidden border-r border-gray-100">
                       <div className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-200/50 relative">
-                        {previewFile.file_name?.toLowerCase().includes('.pdf') || previewFile.file_url?.toLowerCase().includes('.pdf') ? (
+                        {previewFile.file_name?.toLowerCase().includes('.pdf') || previewFile.name?.toLowerCase().includes('.pdf') || previewFile.file_url?.toLowerCase().includes('.pdf') ? (
                           <iframe
                             src={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=Fit` : null}
                             className="w-full h-full border-0 rounded-2xl"
                             title="PDF Preview"
                           />
-                        ) : previewFile.file_name?.toLowerCase().includes('.docx') || previewFile.file_url?.toLowerCase().includes('.docx') ? (
+                        ) : previewFile.file_name?.toLowerCase().includes('.docx') || previewFile.name?.toLowerCase().includes('.docx') || previewFile.file_url?.toLowerCase().includes('.docx') ? (
                           <iframe
                             src={filePreviewUrl ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(filePreviewUrl)}` : null}
                             className="w-full h-full border-0 rounded-2xl"
@@ -5726,7 +6203,7 @@ export const MyDocuments = () => {
                             <h4 className="font-bold text-gray-700 mb-1">Preview is not supported for this file type</h4>
                             <p className="text-gray-400 text-xs max-w-xs mb-4">You can download it to view locally on your device.</p>
                             <button
-                              onClick={() => handleDownload(previewFile.file_url, previewFile.file_name || 'Attached File')}
+                              onClick={() => handleDownload(previewFile.path || previewFile.file_url || previewFile.url, previewFile.name || previewFile.file_name || 'Attached File')}
                               className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-md inline-flex items-center gap-2"
                             >
                               Download Attachment
@@ -5759,6 +6236,17 @@ export const MyDocuments = () => {
                                 "{previewDisplayLog.comment || previewDisplayLog.description}"
                               </p>
                             )}
+                          </div>
+                        )}
+
+                        {!previewDisplayLog && isApprovedReport && (
+                          <div className="bg-green-50 rounded-2xl p-4 border border-green-100">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="px-2 py-0.5 rounded bg-green-100 text-green-800 text-[10px] font-bold uppercase">
+                                ✓ APPROVED
+                              </span>
+                            </div>
+                            <p className="text-xs text-green-700 font-medium">This report has been approved by the OSO Staff.</p>
                           </div>
                         )}
                       </div>
@@ -6249,18 +6737,7 @@ export const MyDocuments = () => {
           });
 
           const returnInfo = getReportReturnInfo(selectedDoc, timelineLogs);
-          const returnRemarks = returnInfo?.remarks || '';
-          let accomComment = '';
-          let finComment = '';
-          if (returnRemarks) {
-            const accomMatch = returnRemarks.match(/\[Accomplishment Report Returned\]:?\s*([^[]+)/i);
-            const finMatch = returnRemarks.match(/\[Financial Report Returned\]:?\s*([^[]+)/i);
-            if (accomMatch && accomMatch[1]) accomComment = accomMatch[1].trim();
-            if (finMatch && finMatch[1]) finComment = finMatch[1].trim();
-            if (!accomComment && !finMatch) accomComment = returnRemarks;
-            if (!finComment && !accomMatch) finComment = returnRemarks;
-          }
-
+          const returnRemarks = String(selectedDoc?.raw?.remarks || selectedDoc?.remarks || returnInfo?.remarks || '').trim();
           const isCompletedDoc = getDocStatusLower(selectedDoc) === 'completed';
 
           return (
@@ -6333,12 +6810,50 @@ export const MyDocuments = () => {
                   {filteredReportItems.length > 0 ? (
                     filteredReportItems.map((file, idx) => {
                       const isAccom = file.type === 'accomplishment';
-                      const isReturned = isAccom
-                        ? Boolean(returnInfo?.isReturned && (returnInfo.accomplishmentReturned || (!returnInfo.financialReturned && returnRemarks)))
-                        : Boolean(returnInfo?.isReturned && (returnInfo.financialReturned || (!returnInfo.accomplishmentReturned && returnRemarks)));
+                      let isReturned = false;
+                      let isApproved = false;
+                      let itemComment = '';
 
-                      const itemComment = isAccom ? accomComment : finComment;
-                      const isApproved = isCompletedDoc && !isReturned;
+                      const isAccomResubmitted = /Accomplishment Report resubmitted/i.test(returnRemarks);
+                      const isFinResubmitted = /Financial Report resubmitted/i.test(returnRemarks);
+
+                      const isAccomReturned = Boolean(returnInfo?.isReturned && returnInfo.accomplishmentReturned) || /\[Accomplishment Report Returned\]/i.test(returnRemarks);
+                      const isFinReturned = Boolean(returnInfo?.isReturned && returnInfo.financialReturned) || /\[Financial Report Returned/i.test(returnRemarks);
+
+                      if (isAccom) {
+                        isReturned = isAccomReturned;
+                        if (isReturned) {
+                          const accomMatch = returnRemarks.match(/\[Accomplishment Report Returned\]:?\s*([^[]+)/i);
+                          if (accomMatch && accomMatch[1]) itemComment = accomMatch[1].trim();
+                        }
+                        isApproved = isCompletedDoc || (!isAccomReturned && !isAccomResubmitted && (
+                          /\[Accomplishment Report\]:\s*Approved/i.test(returnRemarks) ||
+                          /Accomplishment Report (is )?previously approved/i.test(returnRemarks) ||
+                          (returnInfo?.isReturned && !returnInfo?.accomplishmentReturned)
+                        ));
+                      } else {
+                        const fileName = file.name || '';
+                        const escapedName = fileName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                        const finFileMatch = returnRemarks.match(new RegExp('\\[Financial Report Returned - ' + escapedName + '\\]:?\\s*([^[]+)', 'i'));
+                        const finGeneralMatch = returnRemarks.match(/\[Financial Report Returned[^\]]*\]:?\s*([^[]+)/i);
+
+                        if (finFileMatch) {
+                          isReturned = true;
+                          itemComment = finFileMatch[1]?.trim() || '';
+                        } else if (isFinReturned) {
+                          isReturned = true;
+                          if (finGeneralMatch && finGeneralMatch[1]) itemComment = finGeneralMatch[1].trim();
+                        }
+
+                        isApproved = isCompletedDoc || (!isFinReturned && !isFinResubmitted && (
+                          /\[Financial Report\]:\s*Approved/i.test(returnRemarks) ||
+                          /Financial Report (is )?previously approved/i.test(returnRemarks) ||
+                          (returnInfo?.isReturned && !returnInfo?.financialReturned) ||
+                          returnRemarks.includes(`[Approved] ${fileName}`)
+                        ));
+                      }
+
+                      const isResubmitted = isAccom ? isAccomResubmitted : isFinResubmitted;
 
                       let containerBg = 'bg-[#525252]';
                       let textColor = 'text-white';
@@ -6346,7 +6861,7 @@ export const MyDocuments = () => {
                       let iconStyle = 'bg-white/10 text-white/80';
                       let badgeStyle = 'bg-white/10 text-white/90 border border-white/20';
 
-                      if (isReturned) {
+                      if (isReturned || isResubmitted) {
                         containerBg = 'bg-[#f59e0b]';
                         textColor = 'text-[#451a03]';
                         subtitleColor = 'text-[#78350f]';
@@ -6386,6 +6901,10 @@ export const MyDocuments = () => {
                                 ) : isReturned ? (
                                   <span className="text-[8px] sm:text-[9px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-amber-100/90 text-amber-900 border border-amber-300/80 shrink-0">
                                     RETURNED
+                                  </span>
+                                ) : isResubmitted ? (
+                                  <span className="text-[8px] sm:text-[9px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-amber-100/90 text-amber-900 border border-amber-300/80 shrink-0">
+                                    RESUBMITTED
                                   </span>
                                 ) : (
                                   <span className="text-[8px] sm:text-[9px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-white/10 text-white/90 border border-white/20 shrink-0">
@@ -6469,24 +6988,39 @@ export const MyDocuments = () => {
         )}
 
         {/* Action buttons (Chairman / Vice Chairman - Bottom of the page) */}
-        {isChairmanLikeReviewer(user?.role) && !disableVersionActions && selectedDoc?.category === 'Returned' && (
-          <div className="fixed bottom-4 sm:bottom-10 left-1/2 -translate-x-1/2 z-[100] w-[92vw] sm:w-auto">
-            <div className="bg-white/90 backdrop-blur-2xl px-4 sm:px-10 py-3 sm:py-5 rounded-2xl sm:rounded-[2rem] border border-white/50 shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex items-center justify-center gap-3 sm:gap-6 animate-in slide-in-from-bottom-12 duration-1000">
-              <button
-                onClick={() => {
-                  setDecisionType('disapprove');
-                  setReturnComments('');
-                  setIsReturnModalOpen(true);
-                }}
-                disabled={disableVersionActions}
-                className="flex items-center justify-center gap-2 sm:gap-3 px-4 sm:px-8 py-2.5 sm:py-3.5 bg-red-600 text-white text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-lg shadow-red-600/20 uppercase tracking-wider sm:tracking-widest animate-in"
-              >
-                <X size={16} />
-                <span>Disapprove</span>
-              </button>
+        {(() => {
+          if (!isChairmanLikeReviewer(user?.role) || disableVersionActions || selectedDoc?.category !== 'Returned') {
+            return null;
+          }
+
+          // Check if this returned document is specifically for Accomplishment Report or Financial Report
+          const reportReturnInfo = getReportReturnInfo(selectedDoc, timelineLogs);
+          const isReportReturn = Boolean(reportReturnInfo?.isReturned);
+
+          // Accomplishment and financial reports cannot be disapproved
+          if (isReportReturn) {
+            return null;
+          }
+
+          return (
+            <div className="fixed bottom-4 sm:bottom-10 left-1/2 -translate-x-1/2 z-[100] w-[92vw] sm:w-auto">
+              <div className="bg-white/90 backdrop-blur-2xl px-4 sm:px-10 py-3 sm:py-5 rounded-2xl sm:rounded-[2rem] border border-white/50 shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex items-center justify-center gap-3 sm:gap-6 animate-in slide-in-from-bottom-12 duration-1000">
+                <button
+                  onClick={() => {
+                    setDecisionType('disapprove');
+                    setReturnComments('');
+                    setIsReturnModalOpen(true);
+                  }}
+                  disabled={disableVersionActions}
+                  className="flex items-center justify-center gap-2 sm:gap-3 px-4 sm:px-8 py-2.5 sm:py-3.5 bg-red-600 text-white text-xs font-bold rounded-xl sm:rounded-2xl hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed transition-all shadow-lg shadow-red-600/20 uppercase tracking-wider sm:tracking-widest animate-in"
+                >
+                  <X size={16} />
+                  <span>Disapprove</span>
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Workflow actions in My Documents */}
         {(() => {
@@ -6840,9 +7374,57 @@ export const MyDocuments = () => {
           const fileLog = getLatestAttachmentLog(timelineLogs, previewFile.id, currentVersion, allVersions);
           const previewReturnHistory = getFileReturnHistory(previewFile, allVersions, attachmentReturnLogs, currentVersion);
           const latestPreviewReturn = previewReturnHistory[0] || null;
-          const previewDisplayLog =
-            latestPreviewReturn ||
-            (RETURN_REASONS.includes(String(fileLog?.review_action || '').toLowerCase()) ? fileLog : null);
+
+          const isReportItem = previewFile.type === 'accomplishment' || previewFile.type === 'financial';
+          let reportReturnLog = null;
+          let isApprovedReport = false;
+
+          if (isReportItem) {
+            const returnRemarks = selectedDoc?.raw?.remarks || selectedDoc?.remarks || '';
+            if (previewFile.type === 'accomplishment') {
+              const accomMatch = returnRemarks.match(/\[Accomplishment Report Returned\]:?\s*([^[]+)/i);
+              const logWithAccom = (timelineLogs || []).find(l => /\[Accomplishment Report Returned\]/i.test(l.comment || l.description || ''));
+              const comment = accomMatch ? accomMatch[1].trim() : (logWithAccom ? extractCleanFileComment(logWithAccom.comment || logWithAccom.description, previewFile) : '');
+              if (comment) {
+                reportReturnLog = {
+                  review_action: 'returned',
+                  users: logWithAccom?.users || { full_name: 'OSO Staff', role: 'Staff' },
+                  comment: comment
+                };
+              } else if (/\[Accomplishment Report\]:\s*Approved/i.test(returnRemarks) || /Accomplishment Report (is )?previously approved/i.test(returnRemarks) || getDocStatusLower(selectedDoc) === 'completed') {
+                isApprovedReport = true;
+              }
+            } else if (previewFile.type === 'financial') {
+              const fileName = previewFile.name || previewFile.file_name || '';
+              const escapedName = fileName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+              const finFileMatch = returnRemarks.match(new RegExp('\\[Financial Report Returned - ' + escapedName + '\\]:?\\s*([^[]+)', 'i'));
+              const finGeneralMatch = returnRemarks.match(/\[Financial Report Returned[^\]]*\]:?\s*([^[]+)/i);
+              const logWithFin = (timelineLogs || []).find(l =>
+                new RegExp('\\[Financial Report Returned - ' + escapedName + '\\]', 'i').test(l.comment || l.description || '') ||
+                /\[Financial Report Returned/i.test(l.comment || l.description || '')
+              );
+              const comment = finFileMatch ? finFileMatch[1].trim() : (finGeneralMatch ? finGeneralMatch[1].trim() : (logWithFin ? extractCleanFileComment(logWithFin.comment || logWithFin.description, previewFile) : ''));
+              if (comment) {
+                reportReturnLog = {
+                  review_action: 'returned',
+                  users: logWithFin?.users || { full_name: 'OSO Staff', role: 'Staff' },
+                  comment: comment
+                };
+              } else if (/\[Financial Report\]:\s*Approved/i.test(returnRemarks) || /Financial Report (is )?previously approved/i.test(returnRemarks) || returnRemarks.includes(`[Approved] ${fileName}`) || getDocStatusLower(selectedDoc) === 'completed') {
+                isApprovedReport = true;
+              }
+            }
+          }
+
+          const rawDisplayLog =
+            reportReturnLog ||
+            (!isReportItem ? latestPreviewReturn : null) ||
+            (!isReportItem && RETURN_REASONS.includes(String(fileLog?.review_action || '').toLowerCase()) ? fileLog : null);
+
+          const previewDisplayLog = rawDisplayLog ? {
+            ...rawDisplayLog,
+            comment: extractCleanFileComment(rawDisplayLog.comment || rawDisplayLog.description, previewFile)
+          } : null;
 
           return (
             <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[9999] flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-300">
@@ -6854,7 +7436,7 @@ export const MyDocuments = () => {
                       <Paperclip size={18} className="sm:w-5 sm:h-5" />
                     </div>
                     <div className="min-w-0">
-                      <h3 className="font-bold text-gray-800 text-sm sm:text-lg truncate">{previewFile.file_name || 'Attached File'}</h3>
+                      <h3 className="font-bold text-gray-800 text-sm sm:text-lg truncate">{previewFile.name || previewFile.file_name || 'Attached File'}</h3>
                       <p className="text-gray-400 text-[10px] sm:text-xs font-medium">Verify Document Attachment</p>
                     </div>
                   </div>
@@ -6871,7 +7453,7 @@ export const MyDocuments = () => {
                   {/* Left Side: Preview iframe */}
                   <div className="flex-1 bg-gray-100 p-3 sm:p-6 flex flex-col h-[65vh] md:h-full min-h-[380px] md:min-h-0 overflow-hidden border-b md:border-b-0 md:border-r border-gray-200 shrink-0 md:shrink">
                     <div className="flex-1 bg-white rounded-xl sm:rounded-2xl overflow-y-auto -webkit-overflow-scrolling-touch touch-pan-y shadow-sm border border-gray-200/50 relative h-full w-full">
-                      {previewFile.file_name?.toLowerCase().includes('.pdf') || previewFile.file_url?.toLowerCase().includes('.pdf') ? (
+                      {previewFile.file_name?.toLowerCase().includes('.pdf') || previewFile.name?.toLowerCase().includes('.pdf') || previewFile.file_url?.toLowerCase().includes('.pdf') ? (
                         <object
                           data={filePreviewUrl ? `${filePreviewUrl}#toolbar=1&navpanes=0&view=FitH` : null}
                           type="application/pdf"
@@ -6883,7 +7465,7 @@ export const MyDocuments = () => {
                             title="PDF Preview"
                           />
                         </object>
-                      ) : previewFile.file_name?.toLowerCase().includes('.docx') || previewFile.file_url?.toLowerCase().includes('.docx') ? (
+                      ) : previewFile.file_name?.toLowerCase().includes('.docx') || previewFile.name?.toLowerCase().includes('.docx') || previewFile.file_url?.toLowerCase().includes('.docx') ? (
                         <iframe
                           src={filePreviewUrl ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(filePreviewUrl)}` : null}
                           className="w-full h-full min-h-full border-0 rounded-xl sm:rounded-2xl relative z-10 pointer-events-auto touch-pan-y"
@@ -6895,7 +7477,7 @@ export const MyDocuments = () => {
                           <h4 className="font-bold text-gray-700 text-xs sm:text-sm mb-1">Preview is not supported for this file type</h4>
                           <p className="text-gray-400 text-[10px] sm:text-xs max-w-xs mb-4">You can download it to view locally on your device.</p>
                           <button
-                            onClick={() => handleDownload(previewFile.file_url, previewFile.file_name || 'Attached File')}
+                            onClick={() => handleDownload(previewFile.path || previewFile.file_url || previewFile.url, previewFile.name || previewFile.file_name || 'Attached File')}
                             className="bg-indigo-600 text-white px-5 py-2 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-md inline-flex items-center gap-2"
                           >
                             Download Attachment
@@ -6982,6 +7564,17 @@ export const MyDocuments = () => {
                               "{previewDisplayLog.comment || previewDisplayLog.description}"
                             </p>
                           )}
+                        </div>
+                      )}
+
+                      {!previewDisplayLog && isApprovedReport && (
+                        <div className="bg-green-50 rounded-2xl p-4 border border-green-100">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="px-2 py-0.5 rounded bg-green-100 text-green-800 text-[10px] font-bold uppercase">
+                              ✓ APPROVED
+                            </span>
+                          </div>
+                          <p className="text-xs text-green-700 font-medium">This report has been approved by the OSO Staff.</p>
                         </div>
                       )}
 
@@ -7902,6 +8495,19 @@ export const MyDocuments = () => {
                             } else {
                               subLabelText = 'FOR RETRIEVAL';
                               subLabelColorClass = 'text-amber-500 animate-pulse';
+                            }
+                          } else if (stageText === 'Returned') {
+                            const remarksStr = String(doc.raw?.remarks || doc.remarks || '');
+                            if (
+                              remarksStr.includes('[Accomplishment Report') ||
+                              remarksStr.includes('[Financial Report') ||
+                              rawStatusLower.includes('waiting for accomplishment') ||
+                              rawStatusLower.includes('report')
+                            ) {
+                              subLabelText = 'REPORT SUBMISSION';
+                              subLabelColorClass = 'text-blue-600 font-bold';
+                            } else {
+                              subLabelText = null;
                             }
                           } else {
                             // For all other stage tabs (e.g. Main Campus Review, OSO Staff review, Drafts, etc.)

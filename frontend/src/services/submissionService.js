@@ -321,6 +321,7 @@ export const saveProposalDetails = async (versionId, details, subtypeId = null, 
   delete safeDetails.target_end_time;
   delete safeDetails.activity_dates;
   delete safeDetails.activity_number;
+  delete safeDetails.co_advisers;
 
   // Clean up empty strings to null to avoid Postgres type errors for date/time/numeric columns
   Object.keys(safeDetails).forEach(key => {
@@ -478,7 +479,8 @@ export const createNewVersion = async (submissionId, oldVersionId, userId) => {
       submission_id: submissionId,
       version_number: newVersionNumber,
       status: 'submitted',
-      submitted_by: userId
+      submitted_by: userId,
+      created_at: new Date().toISOString()
     }])
     .select()
     .single();
@@ -528,7 +530,8 @@ export const createNewVersion = async (submissionId, oldVersionId, userId) => {
     .from('submissions')
     .update({ 
       current_version_id: newVersion.id,
-      remarks: `Resubmitted as Version ${newVersionNumber}`
+      remarks: `Resubmitted as Version ${newVersionNumber}`,
+      updated_at: new Date().toISOString()
     })
     .eq('id', submissionId);
 
